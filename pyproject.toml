@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roflo"
+version = "0.1.0"
+description = "Self-hosted LLM inference with a pluggable backend and no prompt or output middleware."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "httpx>=0.27",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+local = ["transformers>=4.40", "torch>=2.2", "accelerate>=0.29"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+roflo = "roflo.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["roflo*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

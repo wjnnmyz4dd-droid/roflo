@@ -1,0 +1,41 @@
+# roflo configuration. Every value here is also settable via ROFLO_* env vars
+# and per-invocation CLI flags; the precedence is flags > env > this file.
+
+# Chat template. Must match what your checkpoint was tuned on, or the model
+# will behave oddly for reasons that have nothing to do with the model.
+#   chatml | llama3 | mistral | gemma | alpaca | raw
+# Run `roflo info` for the list, `roflo render "text"` to see the exact output.
+template = "chatml"
+
+# Commented out on purpose. With no system prompt, your turns are the entire
+# context -- nothing is prepended on your behalf. Set it if you want one.
+# system_prompt = "You are a helpful assistant."
+
+[backend]
+# ollama | llamacpp | vllm | transformers | echo
+kind = "ollama"
+model = "qwen2.5:14b-instruct"
+# base_url = "http://127.0.0.1:11434"
+timeout = 600.0
+
+# Passed straight through to the backend; keys here win over the derived
+# values above. For ollama these land in "options" (num_ctx, num_gpu, ...).
+[backend.options]
+# num_ctx = 8192
+
+[sampling]
+max_tokens = 1024
+temperature = 0.8
+top_p = 0.95
+top_k = 40
+min_p = 0.0
+repeat_penalty = 1.0
+# seed = 42
+
+[server]
+host = "127.0.0.1"
+port = 8080
+# Access control for this port, not a content control. Set it before binding
+# to anything other than localhost.
+# api_key = "change-me"
+# cors_origins = ["http://localhost:3000"]
