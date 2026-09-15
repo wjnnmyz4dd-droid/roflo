@@ -118,7 +118,26 @@ regardless.
 
 ---
 
-## OD-5 — How is the owner's identity authenticated? · **OPEN, MITIGATED**
+## OD-5 — How is the owner's identity authenticated? · **CLOSED IN CODE, NEEDS A KEY**
+
+**Resolved by the Owner Channel** (`solvent/owner.py`). An approval is now an
+HMAC-signed, scoped, single-use, expiring grant. Forgery, tampering with the
+ceiling or the job, replay, a wrong key, and an approval this channel never
+issued are all refused — each with a regression test. Once real external
+execution is enabled, an unsigned approval is refused outright; the rule is tied
+to the actual safety posture so it cannot be forgotten at the moment it starts to
+matter.
+
+**What remains is operational, not architectural:** provision
+`SOLVENT_OWNER_KEY` outside the worker namespace, alongside the other
+credentials. **No key means no approvals** — an unauthenticated system cannot
+approve spending, which is the correct failure.
+
+**Honest limit.** This is a shared-secret scheme: anything that can read the key
+can mint approvals. It authenticates an *approval*, not a *human being*. That is
+proportionate for first revenue and should be revisited before autonomy expands.
+
+<details><summary>Original entry (superseded)</summary>
 
 **Question.** How does Solvent know an approval genuinely came from the owner?
 
@@ -141,6 +160,8 @@ and one action class, single-use, and expire.
 **Recommendation.** Bind identity to a device-held key in the P1 Owner Channel.
 Until then, keep external execution fail-closed. **Phone and SMS remain
 notification only — never authorisation.**
+
+</details>
 
 ---
 
@@ -280,6 +301,77 @@ this document deliberately names no platform.
 **Does NOT block.** The entire acquisition pipeline, which runs today over a
 fixture board and refuses most of what it finds.
 
-**Recommendation.** Do this *after* the first manually sourced real job, not
-before. Building an adapter first would automate a pipeline into a process that
-has never completed once.
+**Researched on 15 September 2026** — see `docs/solvent-work-source-research.md`.
+
+**Recommendation, now evidence-based:**
+
+- **First source: direct / owner-sourced work via the manual bridge.** Already
+  implemented. Blocked by nothing external.
+- **First source worth automating: open-source bounties**, because payment is on
+  merge and completion is verified by someone other than the worker. **Requires a
+  per-repository AI-policy screen** — a substantial number of projects now ban or
+  restrict AI-generated contributions (OpenJDK, GCC, Zig, NetBSD, GIMP, Gentoo,
+  qemu; 37 of 120 surveyed ban outright). Clearing the platform is not enough.
+- **Defer:** agent-native marketplaces. Right shape, unverified.
+- **Do not use for autonomous operation:** general freelance marketplaces.
+  Automated proposals are prohibited, there is no proposal API, and personal-
+  performance requirements are something an AI operator structurally cannot meet.
+
+**Owner action:** confirm the above from primary sources before any adapter is
+built. Upwork's own pages returned 403 to automated fetch and were not worked
+around, so that finding rests on secondary reporting.
+
+
+---
+
+## OD-12 — Which service does Solvent sell first? · **BLOCKING FOR REAL WORK**
+
+**Question.** Which single capability is Solvent's first product?
+
+**Why required.** The Capability Registry is deliberately almost empty: a
+capability must be registered by the owner and marked proven, and Solvent cannot
+register one for itself. Qualification refuses work whose needs no proven
+capability covers — which is why the acquisition demo correctly rejects video
+editing. Without one proven, sellable capability there is nothing to qualify
+*for*.
+
+**Blocks.** Accepting any real job.
+
+**Does NOT block.** The whole pipeline, which runs today against a fixture
+capability.
+
+**Options.** (a) A narrow document or spreadsheet service — closest to what is
+already modelled. (b) A coding service, which pairs with the bounty channel but
+requires the per-repository AI-policy screen in OD-11. (c) Research or data
+analysis.
+
+**Recommendation.** (a) first: it is narrow, its output is machine-checkable
+(totals reconcile, schema validates), which makes T1 verification cheap and
+honest. Cheap verification matters more than headline rate for a first job,
+because a job that cannot afford to be verified is one Solvent refuses.
+
+**Consequence.** Until answered, `readiness` reports "a proven capability to
+sell" as blocking, and it is right to.
+
+---
+
+## Summary (revised)
+
+| ID | Decision | Blocks real work? | Blocks development? |
+| --- | --- | --- | --- |
+| OD-1 | Legal contracting entity | **Yes** | No |
+| OD-2 | Payment rail with verification | **Yes** | No |
+| OD-3 | Model commercial licence | **Yes** | No |
+| OD-4 | Network isolation at deploy | Production claim only | No |
+| **OD-5** | **Authenticated owner identity** | **Closed in code; needs a key provisioned** | No |
+| OD-6 | Repository licence | Third parties only | No |
+| OD-7 | Real pricing sources | **Binding quotes** | No |
+| OD-8 | Packaging | No | No |
+| OD-9 | Marketplace terms | P1b only | No |
+| OD-10 | Client-stated jurisdiction | No (documented risk) | No |
+| OD-11 | First work source | Automated discovery only | No |
+| **OD-12** | **First sellable capability** | **Yes** | No |
+
+**Four decisions stand between a working architecture and a first real job:
+OD-1, OD-2, OD-3 and OD-12.** None is an engineering problem. Run
+`python3 -m solvent.cli readiness` for the live list.

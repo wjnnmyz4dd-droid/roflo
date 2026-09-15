@@ -81,6 +81,30 @@ DEFAULT_POLICY: dict[str, Any] = {
 }
 
 
+#: The constrained profile for getting from a working simulation to one small
+#: real paid job. Every value is configuration, not a hardcoded business rule:
+#: the owner sets the numbers, and the profile only decides *which knobs matter*.
+#:
+#: The restrictions are deliberate. First revenue is not the moment to discover
+#: that Solvent will take four jobs at once from three sources.
+FIRST_REVENUE_PROFILE: dict[str, Any] = {
+    "first_revenue_mode": True,
+    "qualification": {
+        "max_concurrent_jobs": 1,          # one job at a time, start to finish
+    },
+    "financial": {
+        "max_committed_unverified_cents": 0,   # owner sets the real exposure cap
+        "max_job_spend_cents": 0,              # owner sets the real spend cap
+    },
+    "growth": {
+        "autonomous_capability_install": False,
+        "autonomous_contract_changes": False,
+        "autonomous_source_registration": False,
+    },
+    "verification": {"mandatory_before_delivery": True},
+}
+
+
 class PolicyStore:
     """Owner-governed authority. Versioned, append-only, never self-modified."""
 
@@ -188,6 +212,47 @@ class PolicyStore:
                 why="HALT abandons in-flight obligations; see abandoned_jobs",
                 decision="HALT", result="external effects and spending stopped",
             )
+        return version
+
+    @property
+    def first_revenue_mode(self) -> bool:
+        return bool(self.get("first_revenue_mode", default=False))
+
+    def enter_first_revenue_mode(self, *, owner_identity: str,
+                                 max_job_spend_cents: int,
+                                 max_committed_unverified_cents: int,
+                                 margin_floor: float, source: str,
+                                 capabilities: list[str], reason: str) -> int:
+        """Apply the constrained first-revenue profile.
+
+        The caller must supply the money limits: these are business decisions the
+        owner owns, so the profile refuses to invent them. Passing zero or a
+        negative number is treated as "not decided" rather than "no limit", which
+        is the safe reading of an unset financial ceiling.
+        """
+        if max_job_spend_cents <= 0 or max_committed_unverified_cents <= 0:
+            raise FailClosed(
+                "first-revenue mode needs real spend limits from the owner; "
+                "an unset ceiling is an undecided ceiling, not an unlimited one")
+        if not 0.0 < margin_floor < 1.0:
+            raise FailClosed(f"margin floor {margin_floor!r} is not a fraction")
+        if not source:
+            raise FailClosed("first-revenue mode runs against exactly one source")
+
+        patch = copy.deepcopy(FIRST_REVENUE_PROFILE)
+        patch["financial"]["max_job_spend_cents"] = max_job_spend_cents
+        patch["financial"]["max_committed_unverified_cents"] = \
+            max_committed_unverified_cents
+        patch["financial"]["margin_floor"] = margin_floor
+        patch["discovery"] = {"approved_sources": [source]}
+        patch["qualification"] = {**FIRST_REVENUE_PROFILE["qualification"],
+                                  "approved_capabilities": list(capabilities)}
+        version = self.amend(patch, owner_identity, reason)
+        self._audit.record(
+            event="policy.first_revenue_mode", authority="policy",
+            initiator=owner_identity, why=reason, decision="FIRST_REVENUE_MODE",
+            result=f"one source ({source}), one job at a time",
+            financial_authorization=f"job cap {max_job_spend_cents} cents")
         return version
 
     def permission_for(self, action_class: ActionClass) -> PermissionLevel:

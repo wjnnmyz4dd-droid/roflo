@@ -31,6 +31,7 @@ from . import egress
 from .audit import AuditLog, new_id, now
 from .errors import EgressDenied
 from .governor import FinancialGovernor
+from .owner import OwnerChannel, SignedApproval
 from .policy import PolicyStore
 from .store import Store
 from .types import ActionClass, Cents, PermissionLevel, PrivacyClass, fmt
@@ -98,13 +99,19 @@ class ActionGate:
     """The only path to the outside."""
 
     def __init__(self, store: Store, audit: AuditLog, policy: PolicyStore,
-                 governor: FinancialGovernor) -> None:
+                 governor: FinancialGovernor,
+                 owner_channel: OwnerChannel | None = None) -> None:
         self._db = store.for_authority("gate")
         self._audit = audit
         self._policy = policy
         self._governor = governor
+        self._owner = owner_channel
         self._used_approvals: set[str] = set()
         egress.install()
+
+    def _real_execution_enabled(self) -> bool:
+        """Whether anything can actually leave this process."""
+        return not self._policy.get("egress", "simulation_only", default=True)
 
     def request(
         self, *, action_class: ActionClass, destination: str, privacy: PrivacyClass,
@@ -122,7 +129,10 @@ class ActionGate:
             # Consumed only on success: a request denied by a *later* check must
             # not burn the owner's approval, or a caller could exhaust approvals
             # by repeatedly failing a downstream condition.
-            self._used_approvals.add(consume)
+            if isinstance(approval, SignedApproval) and self._owner is not None:
+                self._owner.consume(approval)
+            else:
+                self._used_approvals.add(consume)
 
         simulated = False
         response = None
@@ -179,7 +189,7 @@ class ActionGate:
             problem = self._approval_problem(approval, job_id, action_class, amount_cents)
             if problem:
                 return False, f"{action_class.value} requires owner approval: {problem}", None
-            consume = approval.id
+            consume = _approval_id(approval)
         elif level is PermissionLevel.PREAUTHORIZED:
             if self._policy.preauthorization_for(action_class, amount_cents) is None:
                 problem = self._approval_problem(approval, job_id, action_class,
@@ -187,7 +197,7 @@ class ActionGate:
                 if problem:
                     return False, (f"{action_class.value} exceeds any preauthorization "
                                    f"and {problem}"), None
-                consume = approval.id
+                consume = _approval_id(approval)
 
         entry = self._policy.egress_entry(destination)
         if entry is None:
@@ -218,8 +228,31 @@ class ActionGate:
         return True, f"authorized: {action_class.value} -> {destination}", consume
 
     def _approval_problem(self, approval, job_id, action_class, amount_cents) -> str:
+        """Validate an approval without consuming it.
+
+        An authenticated Owner Channel is **required** once real external
+        execution is enabled. While everything is fail-closed and nothing can
+        leave, an unsigned approval is a development affordance and is recorded as
+        such; the moment simulation is switched off it stops being accepted. Tying
+        the rule to the actual safety posture means it cannot be forgotten at the
+        moment it starts to matter.
+        """
         if approval is None:
             return "no authenticated owner approval supplied"
+
+        if isinstance(approval, SignedApproval):
+            if self._owner is None:
+                return "a signed approval was supplied but no Owner Channel is wired"
+            return self._owner.verify(approval, action_class=action_class,
+                                      job_id=job_id or "", amount_cents=amount_cents)
+
+        if self._real_execution_enabled():
+            return ("consequential approval requires an authenticated Owner Channel "
+                    "once real external execution is enabled; an unsigned approval "
+                    "is not acceptable")
+        if self._owner is not None and self._owner.available:
+            return ("an Owner Channel is configured, so approvals must be signed by "
+                    "it")
         if approval.id in self._used_approvals:
             return "approval already used (approvals are single-use)"
         return approval.problem(job_id=job_id or "", action_class=action_class,
@@ -251,3 +284,8 @@ class ActionGate:
     def requests_for(self, job_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM action_requests WHERE job_id = ? ORDER BY ts", (job_id,))]
+
+
+def _approval_id(approval) -> str:
+    """Stable identifier for either approval form."""
+    return getattr(approval, "nonce", None) or getattr(approval, "id", "")

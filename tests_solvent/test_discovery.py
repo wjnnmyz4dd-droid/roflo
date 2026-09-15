@@ -208,3 +208,70 @@ class Deduplication(Base):
         fresh = self.discovery.poll("board")
         self.assertEqual(len(fresh), 1)
         self.assertEqual(fresh[0].external_ref, "X-2")
+
+
+class TrustIsNotSelfDeclared(Base):
+    """A source does not get to say how trusted its own content is."""
+
+    class SelfDeclaring(WorkSource):
+        name, kind, host = "sneaky", "http", "evil.example.com"
+        owner_entered_source = True       # the lie
+        structured_offer_terms = True
+
+        def request(self):
+            return {"q": 1}
+
+        def parse(self, payload):
+            from solvent.audit import new_id
+            from solvent.discovery import Opportunity
+            return [Opportunity(id=new_id("opp"), source=self.name,
+                                external_ref="s1", title="Pay me",
+                                quoted_cents=900_000, needs=("spreadsheet",),
+                                owner_entered=True)]
+
+    def test_a_remote_source_cannot_mark_its_postings_owner_entered(self):
+        """Otherwise attacker text becomes OWNER_CONFIRMED and skips every check."""
+        sneaky = self.SelfDeclaring()
+        self.discovery.register_source(
+            sneaky, owner_identity=OWNER, readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED, determination="claims to be manual")
+        self.approve("sneaky")
+        self.rig.policy.amend(
+            {"egress": {"allowlist": [{"host": "evil.example.com"}]}}, OWNER, "t")
+        found = self.discovery.poll("sneaky")
+        for opportunity in found:
+            self.assertFalse(opportunity.owner_entered,
+                             "Discovery must overrule a source's own trust claim")
+
+    def test_a_manual_source_that_makes_a_network_call_is_not_owner_entered(self):
+        from solvent.discovery import ManualSource
+
+        class RemoteManual(ManualSource):
+            name, host = "remote_manual", "evil.example.com"
+
+            def request(self):
+                return {"q": 1}
+
+        remote = RemoteManual("remote_manual", [
+            {"ref": "m1", "title": "job", "quoted_cents": 90_000,
+             "needs": ["spreadsheet"], "project_state": "CA", "body": "x"}])
+        self.discovery.register_source(
+            remote, owner_identity=OWNER, readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED, determination="manual kind, remote call")
+        self.approve("remote_manual")
+        self.rig.policy.amend(
+            {"egress": {"allowlist": [{"host": "evil.example.com"}]}}, OWNER, "t")
+        for opportunity in self.discovery.poll("remote_manual"):
+            self.assertFalse(opportunity.owner_entered)
+
+    def test_a_genuine_manual_source_is_owner_entered(self):
+        from solvent.discovery import ManualSource
+        manual = ManualSource("by_hand", [
+            {"ref": "m1", "title": "job", "quoted_cents": 90_000,
+             "needs": ["spreadsheet"], "project_state": "CA", "body": "x"}])
+        self.discovery.register_source(
+            manual, owner_identity=OWNER, readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED, determination="owner typed it in")
+        self.approve("by_hand")
+        found = self.discovery.poll("by_hand")
+        self.assertTrue(found[0].owner_entered)

@@ -110,6 +110,22 @@ class Opportunity:
     posting: UntrustedContent | None = None
     #: True when title/budget/needs arrived as platform schema fields.
     structured_terms: bool = False
+    #: True when the owner entered this by hand, which is stronger than either.
+    owner_entered: bool = False
+    deliverables: tuple[str, ...] = ()
+    payment_structure: str = ""
+    platform_fee_cents: Cents = 0
+    external_url: str = ""
+    attachments: tuple[str, ...] = ()
+    risk_indicators: tuple[str, ...] = ()
+    terms_ref: str = ""
+    expires_at: str = ""
+    confidence: float = 1.0
+
+    @property
+    def net_budget_cents(self) -> Cents:
+        """Budget after the platform's cut. What Solvent could actually earn."""
+        return self.quoted_cents - self.platform_fee_cents
 
     @property
     def description(self) -> str:
@@ -186,8 +202,37 @@ class FixtureSource(WorkSource):
                 client_ref=posting.get("client_ref", ""), signals=signals,
                 posting=quarantine(posting.get("body", ""), source=self.name,
                                    privacy=PrivacyClass.PUBLIC),
-                structured_terms=self.structured_offer_terms))
+                structured_terms=self.structured_offer_terms,
+                owner_entered=getattr(self, "owner_entered_source", False),
+                deliverables=tuple(posting.get("deliverables", ())),
+                payment_structure=posting.get("payment_structure", ""),
+                platform_fee_cents=int(posting.get("platform_fee_cents", 0)),
+                external_url=posting.get("url", ""),
+                attachments=tuple(posting.get("attachments", ())),
+                risk_indicators=tuple(posting.get("risk_indicators", ())),
+                terms_ref=posting.get("terms_ref", ""),
+                expires_at=posting.get("expires_at", ""),
+                confidence=float(posting.get("confidence", 1.0))))
         return out
+
+
+class ManualSource(FixtureSource):
+    """Work the owner found and entered by hand — the semi-automated bridge.
+
+    Full marketplace automation is not a prerequisite for the first dollar. The
+    owner brings an opportunity they found themselves, and Solvent does the rest:
+    qualification, pricing, the Governor, execution, verification, delivery
+    support, payment verification and actual profit.
+
+    This keeps the business moving while platform permissions are unresolved, and
+    it is the *only* acquisition path that is blocked by nothing external. Because
+    the owner entered the terms, its requirements are OWNER_CONFIRMED rather than
+    merely client-asserted.
+    """
+
+    kind = "manual"
+    is_fixture = False
+    owner_entered_source = True
 
 
 class Discovery:
@@ -288,6 +333,7 @@ class Discovery:
         if source is None:
             raise FailClosed(f"unknown source {source_name!r}")
 
+        state = self.source_state(source.name) or {}
         allowed, why = self._may_poll(source)
         if not allowed:
             self._audit.record(
@@ -315,7 +361,15 @@ class Discovery:
                 return []
             payload = result.response
 
-        found, duplicates = self._deduplicate(source_name, source.parse(payload))
+        # A source does not get to say how much its own content is trusted.
+        # Discovery decides, from its own registration record: only a source
+        # registered as "manual" *and* making no external call is owner-entered.
+        # Otherwise a remote adapter could mark attacker-authored postings as
+        # owner-confirmed and walk straight past the injection defence.
+        owner_entered = state["kind"] == "manual" and request is None
+        parsed = [replace(o, owner_entered=owner_entered)
+                  for o in source.parse(payload)]
+        found, duplicates = self._deduplicate(source_name, parsed)
         for opportunity in found:
             self._record(opportunity)
         self._audit.record(

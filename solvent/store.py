@@ -51,6 +51,7 @@ TABLE_OWNER = {
     "work_sources": "discovery",
     "opportunities": "discovery",
     "qualification_verdicts": "qualification",
+    "owner_approvals": "owner",
 }
 
 _WRITE = re.compile(
@@ -144,6 +145,12 @@ CREATE TABLE IF NOT EXISTS action_requests (
   action_class TEXT NOT NULL, destination TEXT NOT NULL, privacy TEXT NOT NULL,
   grant_id TEXT, allowed INTEGER NOT NULL, reason TEXT NOT NULL,
   cost_cents INTEGER NOT NULL DEFAULT 0, simulated INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS owner_approvals (
+  nonce TEXT PRIMARY KEY, issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+  owner_identity TEXT NOT NULL, subject TEXT NOT NULL, action_class TEXT NOT NULL,
+  job_id TEXT NOT NULL DEFAULT '', max_cents INTEGER NOT NULL DEFAULT 0,
+  used_at TEXT, key_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS work_sources (
   name TEXT PRIMARY KEY, kind TEXT NOT NULL, readiness TEXT NOT NULL,

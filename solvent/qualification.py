@@ -235,6 +235,15 @@ class Qualification:
         one grant itself authority.
         """
         requirements = RequirementSet()
+        if candidate.owner_entered and candidate.needs:
+            # The owner typed these in. Nothing is more confirmed than that.
+            for need in candidate.needs:
+                requirements.add(confirm(
+                    Requirement(id=new_id("req"), text=need,
+                                source=RequirementSource.MODEL_EXTRACTED_UNCONFIRMED),
+                    by=self._owner_identity(),
+                    source=RequirementSource.OWNER_CONFIRMED))
+            return requirements
         if candidate.structured_terms and candidate.needs:
             for need in candidate.needs:
                 requirements.add(confirm(
@@ -331,6 +340,12 @@ class Qualification:
         return len([j for j in self._orchestrator.jobs()
                     if not j.state.is_terminal
                     and j.state not in (JobState.INTAKE, JobState.QUALIFYING)])
+
+    def _owner_identity(self) -> str:
+        owners = self._policy.get("governance", "owner_identities", default=[])
+        if not owners:
+            raise FailClosed("no registered owner identity to attribute to")
+        return owners[0]
 
     def _at_capacity(self) -> bool:
         limit = int(self._policy.get("qualification", "max_concurrent_jobs",

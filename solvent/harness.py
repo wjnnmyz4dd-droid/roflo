@@ -21,8 +21,12 @@ from dataclasses import dataclass, field
 from .audit import AuditLog
 from .capability import Capability, CapabilityRegistry
 from .content import RequirementSet, confirm, extract_requirements, quarantine
-from .discovery import Compliance, Discovery, FixtureSource, Readiness
+from .discovery import (
+    Compliance, Discovery, FixtureSource, ManualSource, Readiness,
+)
 from .metrics import business_metrics
+from .owner import OwnerChannel
+from .readiness import first_revenue_readiness
 from .qualification import Qualification, Verdict
 from .gate import ActionGate, approval
 from .governor import FinancialGovernor
@@ -76,7 +80,9 @@ class Solvent:
         self.pricing = PricingReference(self.store, self.policy)
         self.governor = FinancialGovernor(self.store, self.audit, self.policy,
                                           self.ledger, self.pricing)
-        self.gate = ActionGate(self.store, self.audit, self.policy, self.governor)
+        self.owner = OwnerChannel(self.store, self.audit, self.policy)
+        self.gate = ActionGate(self.store, self.audit, self.policy, self.governor,
+                               owner_channel=self.owner)
         self.orchestrator = JobOrchestrator(self.store, self.audit, self.policy,
                                             self.governor, self.ledger)
         self.capability = CapabilityRegistry(self.store, self.audit, self.policy)
@@ -90,6 +96,11 @@ class Solvent:
         return project(job_id=job_id, orchestrator=self.orchestrator,
                        ledger=self.ledger, governor=self.governor, audit=self.audit,
                        gate=self.gate, memory=self.memory)
+
+    def readiness(self):
+        return first_revenue_readiness(
+            policy=self.policy, ledger=self.ledger, capability=self.capability,
+            discovery=self.discovery, owner_channel=self.owner)
 
     def metrics(self):
         return business_metrics(
@@ -422,3 +433,75 @@ def run_acquisition_cycle(*, path: str = ":memory:",
         "Every posting here is an invented fixture. No platform was contacted and "
         "no opportunity is real.")
     return report
+
+
+# ---------------------------------------------------------------------------
+# The manual bridge: the acquisition path blocked by nothing external
+# ---------------------------------------------------------------------------
+
+def run_manual_opportunity(*, title: str, client_ref: str, quote_dollars: str,
+                           needs: list[str], project_state: str,
+                           deliverables: list[str] | None = None,
+                           notes: str = "", path: str = ":memory:") -> dict:
+    """Qualify one opportunity the owner found and entered by hand.
+
+    Full marketplace automation is not a prerequisite for the first dollar. This
+    is the path that works today: the owner brings the job, Solvent decides
+    whether it is worth taking and at what price, and every authority applies
+    exactly as it would for a discovered one.
+
+    Returns the decision. Nothing external happens; the job is qualified, not
+    performed.
+    """
+    s = Solvent(path)
+    for st, rate in FIXTURE_RATES.items():
+        s.pricing.ingest(
+            category=CostCategory.ON_SITE_LABOR, jurisdiction=Jurisdiction(state=st),
+            tier=PricingTier.MARKET_DATA, unit_cents=rate, unit="hour",
+            source="FIXTURE", effective_date="2026-06-01", retrieved_date="2026-09-01",
+            confidence=0.9, owner_identity=OWNER, is_fixture=True)
+    for need in needs:
+        s.capability.register(Capability(name=need, covers=frozenset({need}),
+                                         proven=True), owner_identity=OWNER)
+
+    source = ManualSource("owner_entered", [{
+        "ref": f"manual-{title[:16]}", "title": title,
+        "quoted_cents": money(quote_dollars), "needs": needs,
+        "project_state": project_state, "client_ref": client_ref,
+        "deliverables": deliverables or [], "body": notes,
+        "payment_structure": "agreed directly with the client"}])
+    s.discovery.register_source(
+        source, owner_identity=OWNER, readiness=Readiness.PERMITTED_AUTOMATION,
+        compliance=Compliance.PERMITTED,
+        determination="owner-entered: no platform terms apply, no external call")
+    s.policy.amend({
+        "discovery": {"approved_sources": ["owner_entered"]},
+        "qualification": {"minimum_value_cents": money("25"),
+                          "max_concurrent_jobs": 1, "default_hours": 2.0},
+        "financial": {"max_job_spend_cents": money("600"),
+                      "max_committed_unverified_cents": money("5000"),
+                      "owner_approval_above_cents": money("2000")},
+    }, OWNER, "manual bridge: one owner-entered opportunity")
+
+    candidates = s.discovery.poll("owner_entered")
+    survivors, cheap = s.qualification.triage(candidates)
+    if not survivors:
+        decision = cheap[0]
+    else:
+        decision = s.qualification.qualify(survivors[0])
+        ranked = s.qualification.rank([decision])
+        s.qualification.select(ranked)
+
+    return {
+        "opportunity": decision.opportunity.external_ref,
+        "verdict": decision.verdict.value,
+        "reason": decision.reason,
+        "reject_reason": decision.reject_reason.value if decision.reject_reason else None,
+        "governor": decision.governor_verdict.value if decision.governor_verdict else None,
+        "expected_profit": fmt(decision.expected_profit_cents),
+        "job_state": s.orchestrator.job(decision.job_id).state.value
+                     if decision.job_id else "no job created",
+        "requirements_source": [r["source"] for r in
+                                s.orchestrator.requirements(decision.job_id)]
+                               if decision.job_id else [],
+    }

@@ -108,6 +108,50 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_readiness(args: argparse.Namespace) -> int:
+    """What stands between Solvent and its first real paid job."""
+    solvent = Solvent(args.db)
+    report = solvent.readiness()
+    print("First-revenue readiness")
+    print("=" * 66)
+    for check in report.checks:
+        print(f"  [{check.mark:5}] {check.name}")
+        print(f"          {check.detail}")
+    print(f"\n{report.summary}")
+    if report.blocking:
+        print("\nblocking:")
+        for item in report.blocking:
+            print(f"  - {item}")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """Business status without terminal archaeology."""
+    solvent = Solvent(args.db)
+    metrics = solvent.metrics().to_dict()
+    print("Solvent business status")
+    print("=" * 66)
+    print(f"\n{metrics['headline']}\n")
+    groups = {
+        "acquisition": ["opportunities_discovered", "opportunities_by_status",
+                        "rejected_by_reason", "jobs_accepted", "jobs_rejected"],
+        "delivery": ["jobs_completed", "jobs_failed", "jobs_active", "jobs_blocked",
+                     "jobs_overdue"],
+        "money": ["revenue_invoiced", "revenue_collected", "real_revenue_collected",
+                  "actual_costs", "actual_profit", "actual_margin"],
+        "quality": ["estimate_accuracy", "verification_failures", "lessons_learned"],
+        "concentration": ["client_concentration", "source_concentration"],
+    }
+    for group, keys in groups.items():
+        print(f"{group}")
+        for key in keys:
+            print(f"  {key:<28} {metrics[key]}")
+        print()
+    for caveat in metrics["caveats"]:
+        print(f"!! {caveat}")
+    return 0
+
+
 def cmd_laws(args: argparse.Namespace) -> int:
     """Print the laws and where each is enforced in code."""
     print("  Solvent exists to FIND, QUALIFY, COMPLETE, DELIVER and PROFIT FROM")
@@ -155,6 +199,15 @@ def build_parser() -> argparse.ArgumentParser:
     metrics = sub.add_parser("metrics", help="print business metrics")
     metrics.add_argument("--db", default=":memory:")
     metrics.set_defaults(func=cmd_metrics)
+
+    status = sub.add_parser("status", help="business status dashboard")
+    status.add_argument("--db", default=":memory:")
+    status.set_defaults(func=cmd_status)
+
+    readiness = sub.add_parser("readiness",
+                               help="what blocks the first real paid job")
+    readiness.add_argument("--db", default=":memory:")
+    readiness.set_defaults(func=cmd_readiness)
 
     demo = sub.add_parser("demo", help="run the complete-job harness (fixtures only)")
     demo.add_argument("--state", default="CA", help="project jurisdiction")

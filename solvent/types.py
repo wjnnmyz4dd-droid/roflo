@@ -243,6 +243,9 @@ class PaymentState(Enum):
     AUTHORIZED = "AUTHORIZED"
     INCURRED = "INCURRED"
     INVOICED = "INVOICED"
+    #: Client says they have paid, or the rail reports money in flight. This is
+    #: an expectation, not money: it is deliberately not collected.
+    PAYMENT_PENDING = "PAYMENT_PENDING"
     PAID = "PAID"
     PARTIALLY_PAID = "PARTIALLY_PAID"
     OVERDUE = "OVERDUE"

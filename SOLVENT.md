@@ -119,14 +119,21 @@ because a better opportunity is competing for the same capacity.
 | --- | --- |
 | Simulated job, end to end | **Working** — `python3 -m solvent.cli demo` |
 | Acquisition cycle over a fixture board | **Working** — `python3 -m solvent.cli acquire` |
-| Manually sourced **real** job | **Blocked on OD-1, OD-2, OD-3** |
-| Controlled discovery against a real platform | Not started; needs a per-platform terms determination |
+| Owner-entered opportunity through the full pipeline | **Working** — the manual bridge |
+| Authenticated owner approval | **Working** — signed, scoped, single-use; needs a key provisioned |
+| First-Revenue Mode | **Available** — one source, one job, owner-set caps |
+| Manually sourced **real** job | **Blocked on OD-1, OD-2, OD-3, OD-12** |
+| Controlled discovery against a real platform | Researched; see `docs/solvent-work-source-research.md` |
 | Owner-approved first platform | Not started |
 | Limited automated discovery | Not started |
 | Earned autonomy | Not started; requires verified performance evidence |
 
-No platform has been contacted. No opportunity in this repository is real. No
-money has moved.
+No platform has been contacted for work, no account exists, no proposal has been
+sent, no opportunity in this repository is real, and no money has moved.
+Public documentation was read as research; two primary sources returned 403 to an
+automated fetch and were **not** worked around.
+
+Run `python3 -m solvent.cli readiness` for the live list of what is blocking.
 
 ## Reading order for a new developer or agent
 

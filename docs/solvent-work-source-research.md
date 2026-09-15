@@ -1,132 +1,163 @@
 # Solvent — Work Source Research
 
-How a place that has paid work becomes a place Solvent is allowed to look.
+**Research date: 15 September 2026.** Terms change; re-verify before acting.
 
-**Nothing in this document is a verified claim about any platform.** No platform
-was contacted while writing it, no terms of service were fetched, and none of the
-candidate assessments below has been researched. Terms change, and a confident
-statement from memory about what a platform permits is exactly the kind of
-fabrication Solvent is built to refuse. Every row therefore starts at
-`RESEARCH_REQUIRED`, and only a human reading current terms can move it.
+Last revision of this document asserted nothing because no research had been
+done. This revision reports what was actually found, separates what was verified
+from what was not, and records where verification was refused.
+
+## What could and could not be verified
+
+| Attempt | Result |
+| --- | --- |
+| Upwork automation help page (primary) | **HTTP 403** to an automated fetch |
+| Upwork user agreement (primary) | **HTTP 403** to an automated fetch |
+| Algora API docs (primary) | **HTTP 503** |
+| Algora source repository | **Fetched successfully** |
+| Secondary reporting on all of the above | Fetched successfully |
+
+**The 403s were not worked around.** A platform returning 403 to an automated
+client is expressing a preference, and circumventing it would be the first thing
+this architecture forbids. Where only secondary sources were available, findings
+are labelled as such and remain an owner-verification item.
 
 ---
 
-## The readiness ladder
+## Finding 1 — General freelance marketplaces: **DO NOT USE** for autonomous operation
 
-Each rung is a separate, checkable claim. **Being able to scrape a page is not
-marketplace readiness.** `solvent/discovery.py` enforces the ladder: a source may
-not be marked `PERMITTED` for automation until it has reached
-`PERMITTED_AUTOMATION`, and it may not reach that without a recorded written
-determination.
+Secondary sources are consistent and mutually corroborating:
 
-| Rung | What it claims | Evidence required |
-| --- | --- | --- |
-| `RESEARCH_REQUIRED` | Nothing. Default for every source. | — |
-| `RESEARCHED` | Someone has read the current terms and documented them | The determination text, dated |
-| `SUPPORTED_BY_API` | An official documented API exists for this purpose | API docs reference |
-| `SUPPORTED_BY_BROWSER` | Reachable only by driving a browser | Working access without circumventing a protection |
-| `PERMITTED_AUTOMATION` | The terms permit the automation Solvent would do | **A human determination naming the clause** |
-| `IMPLEMENTED` | An adapter exists | Code |
-| `TESTED` | The adapter is covered by tests | Passing tests |
-| `ENFORCED` | Access runs through the Action Gate with an allowlist entry | Gate records |
-| `PRODUCTION_READY` | All of the above **and** OD-1/2/3 resolved | Owner sign-off |
+- Automated proposal submission at scale is prohibited and treated as spam.
+- **There is no public API for submitting proposals.** The public API is limited
+  to basic functions such as retrieving profiles.
+- The user agreement is reported to name "robots, scripts, and automated
+  interaction with the site through your account" explicitly.
+- 2026 guidance is reported to require freelancers to **personally review and
+  customise all client communications**.
+- Bulk scraping of job feeds or profiles is prohibited even where technically
+  possible.
 
-## Hard limits, regardless of readiness
+**Assessment.** A personal-performance requirement is not a technical obstacle to
+route around — it is a statement that the contracted human must do the work.
+Solvent is an AI operator, so it structurally cannot satisfy that clause, and no
+implementation makes it acceptable. **Recommended: DO NOT USE for autonomous
+operation.** A human freelancer using Solvent as a private back-office tool is a
+different question, and is the owner's to answer, not Solvent's to assume.
 
-No anti-bot circumvention. No CAPTCHA bypass. No impersonation. No shared or
-borrowed credentials. No rate-limit evasion. No scraping a surface a platform has
-asked automated clients not to take.
+Sources: [Upwork help — use bots and other automation properly](https://support.upwork.com/hc/en-us/articles/43342677368467-Use-bots-and-other-automation-properly) (403 to automated fetch; title only) · [UpHunt on auto-apply and ToS](https://uphunt.io/blog/upwork-auto-apply-api) · [GigRadar responsible-automation guide](https://gigradar.io/blog/responsible-automation-on-upwork) · [GigUp on 2026 AI-proposal rules](https://giguphq.com/blog/upwork-ai-proposals-banned-2026)
 
-A source that would require any of these is recorded `PROHIBITED` and never
-polled. This is not a preference; `Compliance.PROHIBITED` cannot be polled, and
-`Discovery` has no path around itself.
+---
 
-## The per-source research template
+## Finding 2 — Open-source bounties: strong structural fit, **one serious new risk**
 
-`§24` of the mission brief asks for these fields. Reproduced here as the form to
-fill in, once, per candidate — before any adapter is written.
+**Why the structure fits Solvent unusually well:** a bounty is paid on merge, so
+completion is verified by someone other than the worker — which is exactly the
+T3 external fact Solvent's verify-before-learn law requires, and exactly what an
+invoice does not provide. Reported payouts settle via Stripe 1–3 business days
+after merge, giving a real payment-verification signal. Upfront cost is zero.
 
-```
-SOURCE:
-TYPE OF WORK:
-API AVAILABLE:                  (official / unofficial / none)
-AUTOMATION PERMITTED:           (quote the clause; do not summarise it)
-TOS CONSTRAINTS:
-PERSONAL-PERFORMANCE CLAUSE:    (does it require the contracted party to do the work?)
-IDENTITY REQUIREMENTS:          (individual / business / verified identity / KYC)
-PAYMENT METHOD:
-PAYMENT VERIFICATION SIGNAL:    (webhook / API / statement only / none)
-FEES:
-RATE LIMITS:
-TECHNICAL DIFFICULTY:
-JOB QUALITY:
-TYPICAL JOB VALUE:              (only if verifiable; otherwise UNKNOWN)
-CAPABILITY FIT:                 (against the Capability Registry, not aspiration)
-RISK:
-DETERMINATION:                  (PERMITTED / PROHIBITED / UNDETERMINED + why)
-DETERMINED BY / DATE:
-RECOMMENDED PRIORITY:
-```
+**Verified directly:** the Algora repository is **AGPL-3.0**, and its README
+documents **no public API** for listing bounties. Claims of an unauthenticated
+`/api/orgs/{org}/bounties` endpoint come from third parties, not from the
+project, and remain **unverified**.
 
-## What makes a good *first* source
+**The risk that changes the recommendation.** A substantial and growing number of
+open-source projects now restrict or ban AI-generated contributions:
 
-Not popularity. Not job volume. A first source should be chosen on whether
-Solvent can operate there **legally, verifiably and cheaply**:
+- Oracle imposed an interim ban on AI-generated contributions to **OpenJDK**,
+  covering content generated "in part or in full" by LLMs.
+- **GCC** banned AI-generated contributions on 29 July 2026, including material
+  derived from LLM output "even after human revision".
+- **Zig, NetBSD, GIMP, Gentoo and qemu** reject LLM-generated pull requests.
+- Of 120 projects surveyed with written policies: **72 allow with conditions, 37
+  ban outright, 11 undecided.**
+- **LLVM** permits AI assistance but requires disclosure and that the contributor
+  can answer questions about the code under review.
+- A recurring stated reason is that a contributor cannot honestly certify the
+  Developer Certificate of Origin for generated code.
 
-1. **A legal automation path that is explicit**, not merely unmentioned. Silence
-   in the terms is not permission.
-2. **Official programmatic access**, so the offer arrives as structured fields
-   rather than prose. This matters more than convenience: Solvent's injection
-   defence treats free text as untrusted, so a source with structured offer terms
-   can be qualified automatically while a scraped one always needs a human to
-   confirm the requirements. That is a deliberate design consequence, visible in
-   `Qualification._requirements_for`.
-3. **A payment verification signal.** Without one, `PAID` is unreachable, profit
-   cannot be computed, and the Governor never gets a calibration sample. A source
-   that pays by an unverifiable route cannot close Solvent's loop at all.
-4. **Work that matches a *registered, proven* capability** — currently a very
-   short list.
-5. **No upfront cost**, per the bootstrap model.
-6. **An identity posture Solvent can honestly satisfy.** If a platform requires a
-   named individual to personally perform the work, an AI operator does not
-   qualify, and no wording makes that acceptable.
+**Assessment.** Clearing the bounty *platform's* terms is not sufficient.
+**Every target repository's AI policy must be screened before work begins**, and
+where assistance is permitted, disclosed. A capability that silently submits
+AI-written patches into projects that ban them would be both a terms violation
+and a reputational failure that ends the channel. This is a per-repository gate,
+and it belongs in Capability & Conformance, not in a source adapter.
 
-## Candidate categories
+Sources: [algora-io/algora (AGPL-3.0)](https://github.com/algora-io/algora) · [Oracle bans AI contributions to OpenJDK](https://www.opensourceforu.com/2026/08/oracle-bans-ai-generated-contributions-to-openjdk/) · [GCC draws a hard line](https://www.marcpope.com/blog/gcc-just-drew-a-hard-line-on-ai-generated-code-the-rest-of-open-source-should-be-watching) · [survey of 120 project AI policies](https://medium.com/@yadavrakshit60/i-read-the-ai-policies-of-120-open-source-projects-here-is-what-they-actually-say-9a5ea6897893) · [Algora agent earning guide](https://gigs.sh/p/algora)
 
-Structural observations only. **Every one is a hypothesis to verify, not a
-finding.** Named platforms are deliberately omitted: naming one here would invite
-exactly the unverified assumption this document exists to prevent.
+---
 
-| Category | Structural attraction | Structural concern to verify first |
-| --- | --- | --- |
-| **Agent-oriented / machine task APIs** | Built for programmatic clients, so automation permission is likely explicit and offers arrive structured | Whether pay is real and verifiable, and whether the work matches a proven capability |
-| **Open-source bounty programmes** | Deliverable is machine-checkable (a merged change); outcome is externally verified by definition | Payment rail and its verification signal; whether the project accepts AI-assisted contributions |
-| **Public RFP / tender feeds** | Frequently published deliberately for machine consumption | Bidding almost always requires a legal entity and often registration — OD-1 blocks this outright |
-| **General freelance marketplaces** | Largest volume of work | **Highest-risk category.** Personal-performance clauses, identity verification, and restrictions on automated bidding are all common patterns that must be checked before anything is built |
-| **Direct inbound leads** | No platform terms at all; Solvent's own terms apply | No discovery to automate — this is a channel, not a source |
+## Finding 3 — Agent-native work marketplaces: promising, **unverified**
 
-**Recommended first source *category*: agent-oriented task APIs or bounty
-programmes** — because both tend to offer structured terms and externally
-verifiable completion, which are the two properties Solvent's architecture most
-needs. **The specific platform is an owner decision** and must follow a completed
-research template above.
+A category exists that is *designed* for the thing Solvent does: platforms where
+agents discover work, deliver and get paid without a human driving a browser.
+Reported examples include OpenTask (hosted MCP tools and published agent cards),
+Circle's agent services marketplace (launched 11 May 2026, reported 32 services /
+349 endpoints), and the x402 HTTP payment protocol for agent-to-agent payment.
 
-## Why discovery is not urgent
+**Assessment.** Structurally this is the correct long-term home for Solvent: an
+explicit automation path rather than an absent prohibition. But none of it was
+verified from primary sources, the economics are unknown, and a new marketplace
+is exactly where a "fake high-paying job" is most likely to appear. **Recommended:
+DEFER pending owner verification**, and treat the first engagement as a research
+exercise rather than a revenue plan.
 
-Solvent can prove the whole loop without any platform: `solvent acquire` runs a
-full acquisition cycle over a fixture board today, and `solvent demo` carries one
-job to verified profit. The remaining blockers to a first real job (OD-1, OD-2,
-OD-3) are not discovery blockers. **Building a marketplace adapter first would be
-building an automated pipeline into a business process that has never completed
-once.**
+Sources: [OpenTask](https://opentask.ai/) · [platforms where agents earn](https://dev.to/kirothebot/the-agent-economy-is-real-12-platforms-where-ai-agents-actually-earn-money-may-2026-5bm2) · [agent-to-agent marketplace guide](https://dev.to/nikhilranka23/the-complete-guide-to-agent-to-agent-marketplaces-in-2026-5f9a)
 
-The progression, in order:
+---
 
-```
-SIMULATED JOB  →  MANUALLY SOURCED REAL JOB  →  CONTROLLED DISCOVERY
-→  OWNER-APPROVED FIRST PLATFORM  →  LIMITED AUTOMATED DISCOVERY
-→  CONTROLLED ACCEPTANCE  →  EARNED AUTONOMY
-```
+## Recommendation
 
-Solvent is at step one. Step two is blocked on three owner decisions, none of
-them technical.
+### BEST FIRST SOURCE — **direct / owner-sourced work, via the manual bridge**
+
+**Implemented and working today** (`ManualSource`, `run_manual_opportunity`).
+
+**Why.** It is the only acquisition path blocked by *nothing external*. No
+platform terms apply, no API is needed, no identity question arises beyond OD-1,
+and the client relationship is the owner's own. Solvent still does the entire
+job: qualification, capability and conformance, jurisdiction-aware pricing, the
+Governor, permission, execution, verification, delivery support, payment
+verification, actual profit and learning. Owner-entered terms are
+`OWNER_CONFIRMED`, so qualification proceeds without a human re-confirming what
+the owner just typed.
+
+- **Allowed automation:** everything after acquisition.
+- **Solvent may:** qualify, price, plan, execute, verify, prepare delivery,
+  track payment, compute actual profit, learn.
+- **Solvent may not:** find the client, sign the contract, or receive the money —
+  those are the owner's, and OD-1/OD-2 govern them.
+- **Identity:** the owner's own, already established.
+- **Payment path:** however the owner already gets paid (OD-2 records it).
+- **Fees:** none beyond the owner's existing arrangements.
+- **Integration:** none required.
+- **Risks:** does not scale, and proves nothing about automated discovery.
+- **Owner action:** OD-1, OD-2, OD-3, plus one real client.
+
+### SECOND CHOICE — **open-source bounties, with per-repository AI-policy screening**
+
+The first path worth *automating*, because completion is externally verified by
+merge and payment has a real signal. Requires: verifying the platform's current
+terms from primary sources; registering and proving a coding capability (none is
+registered today); and a per-repository AI-policy screen with disclosure where
+required.
+
+### DEFER — agent-native marketplaces
+
+Right shape, unverified substance. Revisit once one real job has completed.
+
+### DO NOT USE — general freelance marketplaces for autonomous operation
+
+Personal-performance requirements and explicit automation prohibitions.
+
+---
+
+## Standing rules
+
+No anti-bot circumvention. No CAPTCHA bypass. No impersonation. No borrowed
+credentials. No rate-limit evasion. No account creation without authorisation. No
+proposal submitted to anyone until a source has a completed determination and the
+owner has approved it.
+
+A source reaches `PERMITTED` only via `Discovery.register_source`, which requires
+a registered owner, the `PERMITTED_AUTOMATION` rung, and a recorded written
+determination. None of the sources above has one.
