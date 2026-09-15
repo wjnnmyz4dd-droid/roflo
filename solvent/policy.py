@@ -19,6 +19,7 @@ from quietly lowering the standards it is measured against.
 from __future__ import annotations
 
 import copy
+import re
 import json
 from typing import Any
 
@@ -92,6 +93,9 @@ DEFAULT_POLICY: dict[str, Any] = {
 #:
 #: The restrictions are deliberate. First revenue is not the moment to discover
 #: that Solvent will take four jobs at once from three sources.
+#: A content digest identifies weights; a tag is only a pointer at them.
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
 FIRST_REVENUE_PROFILE: dict[str, Any] = {
     "first_revenue_mode": True,
     "qualification": {
@@ -258,6 +262,45 @@ class PolicyStore:
             initiator=owner_identity, why=reason, decision="FIRST_REVENUE_MODE",
             result=f"one source ({source}), one job at a time",
             financial_authorization=f"job cap {max_job_spend_cents} cents")
+        return version
+
+    def approve_model_artifact(self, *, owner_identity: str, model: str, tag: str,
+                               digest: str, license_id: str, license_source: str,
+                               verified_on: str, reason: str,
+                               restrictions: str = "none") -> int:
+        """Record that one **exact** model artifact is cleared for paid client work.
+
+        Clearance attaches to an artifact, never to a family. Within Qwen2.5, for
+        instance, 0.5B/7B/14B/32B are Apache-2.0 while 3B is research-only and 72B
+        carries a user-count threshold — so "the Qwen2.5 licence" is not a fact.
+        The record is therefore keyed on the content digest, which a tag cannot
+        launder, and every evidence field is required: a clearance that does not
+        say what was checked, against what source, and when, is a claim rather
+        than evidence.
+
+        **Owner path only**, via :meth:`amend`, so no Solvent component — worker,
+        Learning, Discovery or a client's text — can write it.
+        """
+        fields = {"model": model, "tag": tag, "digest": digest,
+                  "license_id": license_id, "license_source": license_source,
+                  "verified_on": verified_on}
+        missing = sorted(k for k, v in fields.items() if not str(v).strip())
+        if missing:
+            raise FailClosed(
+                f"model clearance is missing evidence: {', '.join(missing)}. "
+                "An incomplete clearance is not a clearance")
+        if not DIGEST_RE.match(digest):
+            raise FailClosed(
+                f"{digest!r} is not a content digest. Clearance attaches to the "
+                "exact weights, not to a name a tag can be repointed at")
+
+        version = self.amend({"governance": {
+            "approved_model_artifact": {**fields, "restrictions": restrictions},
+        }}, owner_identity, reason)
+        self._audit.record(
+            event="policy.model_artifact_approved", authority="policy",
+            initiator=owner_identity, why=reason, decision="MODEL_CLEARED",
+            result=f"{tag} @ {digest} under {license_id}", input_ref=license_source)
         return version
 
     def permission_for(self, action_class: ActionClass) -> PermissionLevel:

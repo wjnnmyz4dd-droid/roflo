@@ -93,19 +93,49 @@ the Ledger records honestly and which must never feed autonomy evidence.
 
 ---
 
-## OD-3 — Model commercial rights · **CONDITIONAL — one owner check remains**
+## OD-3 — Model commercial rights · **RESOLVED — clearance ready for the owner to record**
 
-**Configured model, read from `roflo.toml`:** backend `ollama`, model
-`qwen2.5:14b-instruct`.
+**Artifact, read from `roflo.toml` rather than remembered:** backend `ollama`,
+tag **`qwen2.5:14b-instruct`** — a **Q4_K_M GGUF quantisation**, model layer
+`sha256:2049f5674b1e…` (8.99 GB), derived from `Qwen/Qwen2.5-14B-Instruct`.
 
-**Finding:** the upstream Qwen2.5-14B-Instruct model card states **Apache-2.0**,
-which permits commercial use, requires licence/notice only on redistribution
-(Solvent consumes output, it does not redistribute weights), places no restriction
-on output, and has no monthly-active-user threshold.
+**Finding: Apache-2.0, and the chain is closed.** The licence blob Ollama
+packages inside that tag (`sha256:832dd9e00a68…`, 11,343 bytes) is
+**byte-identical** to the publisher's own `LICENSE` file on Hugging Face — same
+SHA-256, compared directly, not two web pages read separately. It is the Apache
+License 2.0, "Copyright 2024 Alibaba Cloud". The prior gap — *does the Ollama tag
+package those exact terms?* — is closed by hash equality, not by assertion.
 
-**The remaining check is one look:** confirm the `ollama` tag packages those exact
-Apache-2.0 weights rather than a re-quantisation under different terms. Until
-that is recorded, OD-3 stays open.
+Apache-2.0 permits commercial use, imposes **no term on model output**, carries
+no acceptable-use policy (the HF repo has no such file and is not gated), no
+field-of-use limit, no revenue share and no user-count threshold. Its §4 notice
+duties attach to **redistribution**; Solvent consumes output.
+
+**Why this is recorded per artifact and never per family.** Within Qwen2.5 the
+licence differs by size: 0.5B/7B/14B/32B are Apache-2.0, **3B is `qwen-research`
+— "FOR NON-COMMERCIAL PURPOSES ONLY"** — and 72B is the `qwen` licence with a
+100-million-MAU threshold. A family-level clearance would have cleared the
+research-only 3B for paid work. So Solvent keys clearance on the **content
+digest**, which a tag cannot launder.
+
+**Material conditions the owner inherits:**
+
+1. **No trademark licence** (§6) — do not brand the service with Qwen or Alibaba
+   marks.
+2. **No warranty** (§7–8) — bad output is Solvent's liability, not the
+   publisher's. This is what the verification tiers exist for.
+3. **Redistribution changes the answer** — shipping weights or a fine-tune to a
+   client triggers §4 notice duties. Consuming output does not.
+4. **The clearance is for this digest.** A repointed tag, a different
+   quantisation or a different size is uncleared until re-verified.
+
+**Remaining owner action: record it.** `policy.approve_model_artifact(...)` needs
+a registered owner identity, which is the owner's to supply. The exact call is in
+`docs/solvent-model-rights-evidence.md` §10. Nothing was written to the
+repository on the owner's behalf.
+
+**Full evidence chain, sources and stated limits:**
+`docs/solvent-model-rights-evidence.md`.
 
 <details><summary>Original entry (superseded)</summary>
 
@@ -413,7 +443,7 @@ record, not a new component.
 | --- | --- | --- | --- |
 | OD-1 | Legal contracting entity | **Yes** | No |
 | OD-2 | Payment rail with verification | **Yes** | No |
-| OD-3 | Model commercial licence | **Yes** | No |
+| OD-3 | Model commercial licence | Resolved — owner records the clearance | No |
 | OD-4 | Network isolation at deploy | Production claim only | No |
 | **OD-5** | **Authenticated owner identity** | **Closed in code; needs a key provisioned** | No |
 | OD-6 | Repository licence | Third parties only | No |
@@ -425,6 +455,6 @@ record, not a new component.
 | **OD-12** | **First sellable capability** | **Yes** | No |
 | OD-13 | Source payment-reality check | No (hardening) | No |
 
-**Four decisions stand between a working architecture and a first real job:
-OD-1, OD-2, OD-3 and OD-12.** None is an engineering problem. Run
+**Three decisions stand between a working architecture and a first real job:
+OD-1, OD-2 and OD-12** — OD-3 is verified and needs only to be recorded. None is an engineering problem. Run
 `python3 -m solvent.cli readiness` for the live list.

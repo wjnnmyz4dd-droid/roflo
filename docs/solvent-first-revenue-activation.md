@@ -88,23 +88,22 @@ Policy or Gate. 29 tests cover it.
 
 **No charge was created, no invoice sent, and no Stripe setting altered.**
 
-## 4. OD-3 — production model commercial rights
+## 4. OD-3 — production model commercial rights · **RESOLVED**
 
-**Configured model** (from `roflo.toml`, not assumed): backend `ollama`, model
-`qwen2.5:14b-instruct`.
+Superseded by a full provenance trace. **The short version:** the artifact is
+`qwen2.5:14b-instruct`, a Q4_K_M quantisation of `Qwen/Qwen2.5-14B-Instruct`, and
+the licence blob Ollama packages inside that tag is **byte-identical** (same
+SHA-256) to the publisher's own `LICENSE` — Apache-2.0, Copyright 2024 Alibaba
+Cloud. Commercial use is permitted, output is unrestricted, there is no
+acceptable-use policy and no user-count threshold.
 
-**Finding: the upstream Qwen2.5-14B-Instruct model card states Apache-2.0**, which
-permits commercial use. Apache-2.0 requires the licence and notice of
-modifications to be carried on **redistribution**; Solvent consumes output rather
-than redistributing weights. Apache-2.0 places no restriction on model output and
-has no monthly-active-user threshold.
+The gap this document previously recorded — *does the tag package those exact
+terms?* — is closed by hash equality rather than assertion. The clearance is
+recorded against the **content digest**, not the model name, because within
+Qwen2.5 the licence differs by size (3B is research-only; 72B has a 100M-MAU
+threshold).
 
-**Status: CONDITIONAL — one owner check remains.** I verified the upstream model
-card. I did **not** verify that the `ollama` tag `qwen2.5:14b-instruct` packages
-those exact Apache-2.0 weights rather than a re-quantisation under different
-terms. That is a one-look confirmation, and until it is done OD-3 stays open.
-
-Source: [Qwen2.5-14B-Instruct model card](https://huggingface.co/Qwen/Qwen2.5-14B-Instruct)
+Full chain, conditions and stated limits: `docs/solvent-model-rights-evidence.md`.
 
 ## 5. OD-12 — what Solvent sells first
 

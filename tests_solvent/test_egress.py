@@ -26,7 +26,8 @@ class GuardInstallation(unittest.TestCase):
         egress.install()
         sys.addaudithook(lambda event, args: None)
         with self.assertRaises(EgressDenied):
-            socket.socket().connect(("192.0.2.1", 443))
+            with socket.socket() as sock:
+                sock.connect(("192.0.2.1", 443))
 
 
 class BypassAttempts(unittest.TestCase):
@@ -37,7 +38,8 @@ class BypassAttempts(unittest.TestCase):
 
     def test_g1_raw_socket_connect_is_denied(self):
         with self.assertRaises(EgressDenied):
-            socket.socket().connect(("192.0.2.1", 443))
+            with socket.socket() as sock:
+                sock.connect(("192.0.2.1", 443))
 
     def test_g2_dns_resolution_is_denied(self):
         with self.assertRaises(EgressDenied):
@@ -62,7 +64,8 @@ class BypassAttempts(unittest.TestCase):
     def test_socket_bind_is_denied(self):
         """Listening is an external effect too: it invites traffic in."""
         with self.assertRaises(EgressDenied):
-            socket.socket().bind(("0.0.0.0", 0))
+            with socket.socket() as sock:
+                sock.bind(("0.0.0.0", 0))
 
 
 class GateWindow(unittest.TestCase):
@@ -74,7 +77,8 @@ class GateWindow(unittest.TestCase):
             self.assertTrue(egress._window_open())
         self.assertFalse(egress._window_open())
         with self.assertRaises(EgressDenied):
-            socket.socket().connect(("192.0.2.1", 443))
+            with socket.socket() as sock:
+                sock.connect(("192.0.2.1", 443))
 
     def test_window_closes_even_when_the_action_raises(self):
         """An exception must not leave the boundary open."""
@@ -83,7 +87,8 @@ class GateWindow(unittest.TestCase):
                 raise ValueError("transport blew up")
         self.assertFalse(egress._window_open())
         with self.assertRaises(EgressDenied):
-            socket.socket().connect(("192.0.2.1", 443))
+            with socket.socket() as sock:
+                sock.connect(("192.0.2.1", 443))
 
     def test_window_requires_a_reason(self):
         with self.assertRaises(EgressDenied):
@@ -97,7 +102,8 @@ class GateWindow(unittest.TestCase):
 
         def other():
             try:
-                socket.socket().connect(("192.0.2.1", 443))
+                with socket.socket() as sock:
+                    sock.connect(("192.0.2.1", 443))
                 seen["result"] = "ALLOWED"
             except EgressDenied:
                 seen["result"] = "DENIED"

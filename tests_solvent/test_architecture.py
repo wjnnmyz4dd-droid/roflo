@@ -89,6 +89,8 @@ class NoComponentGrantsItselfAuthority(unittest.TestCase):
                                  f"{name}.py must not amend Policy")
                 self.assertNotIn("set_operating_mode", calls_in(tree),
                                  f"{name}.py must not set the kill switch")
+                self.assertNotIn("approve_model_artifact", calls_in(tree),
+                                 f"{name}.py must not clear a model for paid work")
 
     def test_no_authority_module_registers_capabilities(self):
         for name, tree in modules().items():

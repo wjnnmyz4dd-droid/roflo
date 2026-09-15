@@ -15,10 +15,12 @@ model output — and none of those is a coding problem.
 
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass, field
 
 from .errors import FailClosed
 from .ledger import SIMULATED_PREFIX
+from .policy import DIGEST_RE
 from .types import fmt
 
 
@@ -64,8 +66,70 @@ class Readiness:
         }
 
 
+#: Evidence an artifact clearance must carry. Policy refuses to store a record
+#: missing any of these, and this side re-checks rather than trusting that.
+ARTIFACT_EVIDENCE = ("model", "tag", "digest", "license_id", "license_source",
+                     "verified_on")
+
+
+def configured_model(config_path: str = "roflo.toml") -> tuple[str, str]:
+    """``(backend_kind, model_tag)`` the deployment is configured to run.
+
+    Read from configuration rather than remembered, because configuration is what
+    the process will actually load. An unreadable file yields ``("", "")``:
+    unknown is not approved.
+    """
+    try:
+        with open(config_path, "rb") as handle:
+            doc = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return "", ""
+    backend = doc.get("backend")
+    if not isinstance(backend, dict):
+        return "", ""
+    return str(backend.get("kind", "")), str(backend.get("model", ""))
+
+
+def model_artifact_check(policy, config_path: str = "roflo.toml") -> Check:
+    """Is the exact artifact the deployment will run cleared for paid work?
+
+    Two facts must agree: Policy has cleared a specific artifact by digest, and
+    configuration names that same artifact. Either alone is insufficient — a
+    clearance nothing runs is useless, and a configured model nobody cleared is
+    the defect this check exists to catch.
+    """
+    blocked = lambda detail: Check(  # noqa: E731 - one shape, four call sites
+        "model commercial rights", False, detail,
+        "OD-3: commercial use of the exact production artifact",
+        category=EXTERNAL_VERIFICATION)
+
+    record = policy.get("governance", "approved_model_artifact", default=None)
+    if not isinstance(record, dict):
+        return blocked("no artifact cleared for commercial use")
+    missing = [f for f in ARTIFACT_EVIDENCE if not str(record.get(f, "")).strip()]
+    if missing:
+        return blocked(f"clearance is missing evidence: {', '.join(missing)}")
+    if not DIGEST_RE.match(str(record["digest"])):
+        return blocked(f"clearance carries no content digest ({record['digest']!r})")
+
+    _, configured = configured_model(config_path)
+    if not configured:
+        return blocked("cannot read the configured production model")
+    if configured != str(record["tag"]):
+        # Configuration must not be able to move production onto weights nobody
+        # cleared. Within one family the licence genuinely differs by size.
+        return blocked(f"configured {configured!r} is not the cleared "
+                       f"{record['tag']!r}")
+
+    return Check("model commercial rights", True,
+                 f"{record['tag']} @ {str(record['digest'])[:19]}… under "
+                 f"{record['license_id']} (verified {record['verified_on']})",
+                 category=EXTERNAL_VERIFICATION)
+
+
 def first_revenue_readiness(*, policy, ledger, capability, discovery,
-                            owner_channel=None) -> Readiness:
+                            owner_channel=None,
+                            config_path: str = "roflo.toml") -> Readiness:
     """Report what is ready and what is not, from the authorities themselves."""
     report = Readiness()
     add = report.checks.append
@@ -121,12 +185,7 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               "OD-2: without a verification signal PAID is unreachable and "
               "profit cannot be computed", category=EXTERNAL_VERIFICATION))
 
-    cleared = policy.get("governance", "model_commercial_rights", default="")
-    add(Check("model commercial rights", bool(cleared),
-              cleared or "not cleared for any checkpoint",
-              "" if cleared else
-              "OD-3: commercial use of the exact production checkpoint",
-              category=EXTERNAL_VERIFICATION))
+    add(model_artifact_check(policy, config_path))
 
     # --- posture ----------------------------------------------------------
     simulation = policy.get("egress", "simulation_only", default=True)
