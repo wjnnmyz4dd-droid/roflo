@@ -31,9 +31,10 @@ recorded ``PROHIBITED`` and never polled.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 
 from .audit import AuditLog, new_id, now
@@ -163,7 +164,9 @@ class FixtureSource(WorkSource):
     def __init__(self, name: str, postings: list[dict], *,
                  structured: bool = True) -> None:
         self.name = name
-        self._postings = postings
+        # Copied, not aliased: a source must not share mutable state with whoever
+        # constructed it, or one caller's edit silently changes another's board.
+        self._postings = list(postings)
         self.structured_offer_terms = structured
 
     def parse(self, payload: object) -> list[Opportunity]:
@@ -312,14 +315,39 @@ class Discovery:
                 return []
             payload = result.response
 
-        found = source.parse(payload)
+        found, duplicates = self._deduplicate(source_name, source.parse(payload))
         for opportunity in found:
             self._record(opportunity)
         self._audit.record(
             event="discovery.polled", authority="discovery", initiator=initiator,
-            why=f"polled {source_name}", result=f"{len(found)} candidate(s)",
+            why=f"polled {source_name}",
+            result=f"{len(found)} new candidate(s), {duplicates} already seen",
             external_effect=f"poll {source_name}", is_fixture=source.is_fixture)
         return found
+
+    def _deduplicate(self, source_name: str,
+                     found: list[Opportunity]) -> tuple[list[Opportunity], int]:
+        """Drop postings already seen from this source.
+
+        Boards repeat. Without this, polling twice would produce two candidates
+        for one posting, two jobs, and potentially two commitments to the same
+        client for the same work — which is a business failure, not a tidiness
+        problem. A source with no stable reference gets a content key instead, so
+        deduplication does not depend on the platform being well behaved.
+        """
+        seen = {r["external_ref"] for r in self._db.query(
+            "SELECT external_ref FROM opportunities WHERE source = ?", (source_name,))}
+        fresh: list[Opportunity] = []
+        duplicates = 0
+        for opportunity in found:
+            key = opportunity.external_ref or _content_key(opportunity)
+            if key in seen:
+                duplicates += 1
+                continue
+            seen.add(key)
+            fresh.append(opportunity if opportunity.external_ref
+                         else replace(opportunity, external_ref=key))
+        return fresh, duplicates
 
     def poll_all(self, *, initiator: str = "discovery") -> list[Opportunity]:
         found: list[Opportunity] = []
@@ -371,3 +399,11 @@ def _signals(signals: LocationSignals) -> dict:
         if value:
             out[name] = value.path()
     return out
+
+
+def _content_key(opportunity: Opportunity) -> str:
+    """A stable key for a source that supplies no reference of its own."""
+    digest = hashlib.sha256(
+        f"{opportunity.source}|{opportunity.title}|{opportunity.quoted_cents}".encode()
+    ).hexdigest()[:16]
+    return f"content:{digest}"

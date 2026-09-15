@@ -1,5 +1,9 @@
 # Solvent P0 — Implementation Status
 
+> **Solvent exists to find, qualify, complete, deliver and profit from legitimate
+> client work.** The authorities below are infrastructure protecting that mission,
+> not the mission itself. See `SOLVENT.md`.
+
 Honest classification of every P0 requirement. The distinction that matters:
 
 | Level | Meaning |
@@ -81,9 +85,47 @@ measured error against an estimate including an unspent verification allowance
 against the wrong baseline, and the spend anomaly check was unreachable dead code.
 All three are fixed and carry regression tests.
 
+## The acquisition mission
+
+| Requirement | Status | Evidence |
+| --- | --- | --- |
+| Opportunity Discovery exists as a product capability | **TESTED** | `solvent/discovery.py`; `solvent acquire` finds a board and refuses most of it |
+| Discovery cannot accept, bid, claim or spend | **ENFORCED** | No such method exists; asserted by test |
+| A source is polled only when Policy approves **and** a human determination permits it | **ENFORCED** | Both checked per poll; either missing yields nothing |
+| Readiness ladder prevents claiming marketplace capability without evidence | **ENFORCED** | `PERMITTED` is refused below `PERMITTED_AUTOMATION`, and requires a recorded determination |
+| Remote fetches pass the Action Gate | **TESTED** | Gate denial yields no candidates; a gateless Discovery refuses to fetch |
+| No anti-bot circumvention, CAPTCHA bypass or impersonation | **BY CONSTRUCTION** | `PROHIBITED` sources cannot be polled; no such code exists |
+| Postings are untrusted; structured offer terms are distinguished from prose | **TESTED** | Scraped prose always needs human confirmation; a body is context, never a requirement |
+| Qualification owns the one accept/reject/escalate verdict | **TESTED** | `solvent/qualification.py` |
+| Qualification owns **no** economics | **ENFORCED** | Architectural test asserts the module contains no margin, cost or calibration arithmetic |
+| Solvent can say no, with a recorded reason | **TESTED** | 15 rejection reasons; distribution is a business metric |
+| Ranking orders acceptable work best-first | **TESTED** | Higher-value work outranks lower |
+| Opportunity cost defers weaker work | **TESTED** | Deferred as `BETTER_OPPORTUNITY_AVAILABLE`, not as failure |
+| Every candidate is judged before any is committed | **TESTED** | Assess-then-commit: the best job wins, not the first seen |
+| Ranking never overturns the Governor | **TESTED** | A rejected job is unrankable at any score |
+| Duplicate postings cannot become duplicate commitments | **TESTED** | Deduplicated per source by reference or content key |
+| Business metrics lead with verified profitable work | **IMPLEMENTED** | `solvent metrics`; simulated money excluded by construction |
+| Marketplace integration | **RESEARCH_REQUIRED** | No platform contacted, none named, no terms asserted |
+
+### Acquisition attacks found and fixed
+
+| # | Attack | Outcome |
+| --- | --- | --- |
+| B1 | Poll a board twice and bid twice on one posting | **FIXED** — deduplicated per source |
+| B2 | Promote a Governor-rejected job through ranking | **Already blocked** — rejected work is unrankable |
+| B3 | Forge an ACCEPT with no Governor verdict | **Already blocked** — nothing to commit without one |
+| B4 | Have Discovery write another authority's table | **Already blocked** — connection cannot |
+| B5 | Keep polling after Policy revokes approval | **Already blocked** — checked per poll |
+
+A hostile board is a standing test: its highest-paying posting carries an
+injection payload, ranks first on price and is selected — and still cannot
+proceed. Its value triggers owner approval, its instructions change no policy,
+its capability claim is refused by the registry, and its asserted labour rate is
+ignored in favour of reference records.
+
 ## Not built, deliberately
 
-Discovery and marketplace automation (P1b, gated on OD-9), Owner Channel with
+Marketplace adapters for any real platform (gated on OD-9 and OD-11), Owner Channel with
 authenticated approval (P1, OD-5), Client Channel (P2), Analyst and controlled
 self-growth (P3), voice and phone escalation (P4). The P0 question is whether one
 real job can travel the whole architecture safely — not whether thousands can be
@@ -92,7 +134,9 @@ found.
 ## How to check any of this yourself
 
 ```bash
-python3 -m unittest discover -s tests_solvent -t .   # 192 tests
+python3 -m unittest discover -s tests_solvent -t .   # 251 tests
+python3 -m solvent.cli acquire                       # find work, refuse most of it
+python3 -m solvent.cli metrics                       # business metrics
 python3 tools/verify_egress.py                       # measured egress enforcement
 python3 -m solvent.cli doctor                        # measured readiness
 python3 -m solvent.cli demo                          # the complete job, fixtures only

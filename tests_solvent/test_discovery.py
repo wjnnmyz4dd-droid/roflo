@@ -171,3 +171,40 @@ class PostingsAreUntrusted(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Deduplication(Base):
+    """Boards repeat. Solvent must not bid twice on one posting."""
+
+    def test_polling_twice_yields_the_posting_once(self):
+        self.register()
+        self.approve()
+        first = self.discovery.poll("board")
+        second = self.discovery.poll("board")
+        self.assertEqual(len(first), 1)
+        self.assertEqual(second, [], "an already-seen posting is not a new candidate")
+        self.assertEqual(len(self.discovery.opportunities()), 1)
+
+    def test_a_source_with_no_reference_is_deduplicated_by_content(self):
+        unreferenced = FixtureSource(
+            "noref", [{"title": "Sheet", "quoted_cents": 90_000,
+                       "needs": ["spreadsheet"], "project_state": "CA", "body": "x"}])
+        self.discovery.register_source(
+            unreferenced, owner_identity=OWNER,
+            readiness=Readiness.PERMITTED_AUTOMATION, compliance=Compliance.PERMITTED,
+            determination="fixture without stable refs")
+        self.approve("noref")
+        self.assertEqual(len(self.discovery.poll("noref")), 1)
+        self.assertEqual(self.discovery.poll("noref"), [])
+
+    def test_a_genuinely_new_posting_is_still_discovered(self):
+        """Deduplication must not blind Solvent to new work."""
+        self.register()
+        self.approve()
+        self.discovery.poll("board")
+        self.source._postings.append(
+            {"ref": "X-2", "title": "Another sheet", "quoted_cents": 120_000,
+             "needs": ["spreadsheet"], "project_state": "NC", "body": "more work"})
+        fresh = self.discovery.poll("board")
+        self.assertEqual(len(fresh), 1)
+        self.assertEqual(fresh[0].external_ref, "X-2")
