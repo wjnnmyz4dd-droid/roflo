@@ -11,7 +11,7 @@ import json
 import sys
 
 from . import egress
-from .harness import Solvent, run_first_job
+from .harness import Solvent, run_acquisition_cycle, run_first_job
 from .store import TABLE_OWNER
 
 
@@ -76,9 +76,45 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_acquire(args: argparse.Namespace) -> int:
+    """Run one acquisition cycle over a fixture board."""
+    report = run_acquisition_cycle()
+    print(f"discovered {report.discovered} opportunit"
+          f"{'y' if report.discovered == 1 else 'ies'}\n")
+    print("triaged out (cheap checks, no estimate run)")
+    for line in report.triaged_out:
+        print(f"  - {line}")
+    print("\nqualified")
+    for line in report.decisions:
+        print(f"  - {line}")
+    print("\nranked (best first)")
+    for line in report.ranked:
+        print(f"  - {line}")
+    print(f"\nselected : {', '.join(report.selected) or '(none)'}")
+    for line in report.deferred:
+        print(f"deferred : {line}")
+    metrics = report.metrics
+    print(f"\n{metrics['headline']}")
+    print(f"refusals by reason: {metrics['rejected_by_reason']}")
+    for warning in report.warnings:
+        print(f"\n!! {warning}")
+    return 0
+
+
+def cmd_metrics(args: argparse.Namespace) -> int:
+    """Print business metrics for a fresh instance (or a database)."""
+    solvent = Solvent(args.db)
+    print(json.dumps(solvent.metrics().to_dict(), indent=2))
+    return 0
+
+
 def cmd_laws(args: argparse.Namespace) -> int:
     """Print the laws and where each is enforced in code."""
+    print("  Solvent exists to FIND, QUALIFY, COMPLETE, DELIVER and PROFIT FROM")
+    print("  legitimate client work. Everything below protects that mission.\n")
     laws = [
+        ("discovery finds work, never takes it", "discovery.Discovery (no accept path)"),
+        ("qualification owns no economics", "qualification.Qualification -> Governor"),
         ("one authority per decision", "store.TABLE_OWNER + AuthorityConnection"),
         ("policy is owner-writable only", "policy.PolicyStore.amend"),
         ("governor before spend", "governor.authorize_spend"),
@@ -111,8 +147,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="report measured enforcement").set_defaults(
         func=cmd_doctor)
-    sub.add_parser("laws", help="print the laws and where each is enforced").set_defaults(
-        func=cmd_laws)
+    sub.add_parser("laws", help="print the mission, laws, and where each is enforced"
+                   ).set_defaults(func=cmd_laws)
+    sub.add_parser("acquire", help="run one acquisition cycle (fixtures only)"
+                   ).set_defaults(func=cmd_acquire)
+
+    metrics = sub.add_parser("metrics", help="print business metrics")
+    metrics.add_argument("--db", default=":memory:")
+    metrics.set_defaults(func=cmd_metrics)
 
     demo = sub.add_parser("demo", help="run the complete-job harness (fixtures only)")
     demo.add_argument("--state", default="CA", help="project jurisdiction")

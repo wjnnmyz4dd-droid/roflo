@@ -27,6 +27,7 @@ from .errors import AuthorityError, ImmutableRecord
 APPEND_ONLY = (
     "audit_log", "verification_evidence", "ledger_entries",
     "governor_decisions", "action_requests", "price_estimates", "policy_versions",
+    "qualification_verdicts",
 )
 
 #: Which authority owns which tables. The single source of this mapping.
@@ -47,6 +48,9 @@ TABLE_OWNER = {
     "budget_grants": "governor",
     "action_requests": "gate",
     "memory_facts": "memory",
+    "work_sources": "discovery",
+    "opportunities": "discovery",
+    "qualification_verdicts": "qualification",
 }
 
 _WRITE = re.compile(
@@ -140,6 +144,26 @@ CREATE TABLE IF NOT EXISTS action_requests (
   action_class TEXT NOT NULL, destination TEXT NOT NULL, privacy TEXT NOT NULL,
   grant_id TEXT, allowed INTEGER NOT NULL, reason TEXT NOT NULL,
   cost_cents INTEGER NOT NULL DEFAULT 0, simulated INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS work_sources (
+  name TEXT PRIMARY KEY, kind TEXT NOT NULL, readiness TEXT NOT NULL,
+  compliance TEXT NOT NULL, determination TEXT NOT NULL DEFAULT '',
+  determined_by TEXT NOT NULL DEFAULT '', determined_at TEXT,
+  is_fixture INTEGER NOT NULL DEFAULT 0, healthy INTEGER NOT NULL DEFAULT 1,
+  last_error TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS opportunities (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, source TEXT NOT NULL,
+  external_ref TEXT NOT NULL, title TEXT NOT NULL, quoted_cents INTEGER NOT NULL,
+  deadline TEXT NOT NULL DEFAULT '', client_ref TEXT NOT NULL DEFAULT '',
+  needs TEXT NOT NULL DEFAULT '[]', signals TEXT NOT NULL DEFAULT '{}',
+  raw_ref TEXT NOT NULL DEFAULT '', job_id TEXT, status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS qualification_verdicts (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, opportunity_id TEXT NOT NULL,
+  job_id TEXT, verdict TEXT NOT NULL, reason TEXT NOT NULL,
+  governor_verdict TEXT NOT NULL DEFAULT '', conformance TEXT NOT NULL DEFAULT '',
+  score REAL NOT NULL DEFAULT 0.0, rank_position INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS memory_facts (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT NOT NULL,

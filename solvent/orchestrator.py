@@ -198,9 +198,44 @@ class JobOrchestrator:
 
     # ------------------------------------------------------------ qualifying
 
+    def assess_financials(self, *, job_id: str, assessment: Assessment,
+                          estimate: Estimate, initiator: str) -> tuple[GovernorVerdict, str]:
+        """Get the financial verdict and hold the job in QUALIFYING.
+
+        Separated from committing so that several candidates can be judged and
+        ranked *before* any of them is accepted. Deciding a job is worth doing and
+        deciding to start it now are different questions, and answering the second
+        one first is how a business ends up taking the first job it sees instead of
+        the best one.
+        """
+        job = self.job(job_id)
+        if job.state is JobState.INTAKE:
+            self._transition(job_id, JobState.QUALIFYING, why="assessing",
+                             initiator=initiator)
+        return self._governor.decide(
+            job_id=job_id, revenue_cents=job.quoted_cents, estimate=estimate,
+            conformance_ok=assessment.may_commit, initiator=initiator)
+
+    def apply_verdict(self, *, job_id: str, verdict: GovernorVerdict, reason: str,
+                      initiator: str) -> None:
+        """Move a held job to the state its verdict implies."""
+        if verdict is GovernorVerdict.PROFITABLE:
+            self._transition(job_id, JobState.ACCEPTED, why=reason, initiator=initiator)
+        elif verdict is GovernorVerdict.REQUIRES_APPROVAL:
+            self._transition(job_id, JobState.AWAITING_OWNER_APPROVAL, why=reason,
+                             initiator=initiator)
+        elif verdict in (GovernorVerdict.NEEDS_INFORMATION,
+                         GovernorVerdict.PRICING_LOCATION_UNKNOWN):
+            self._transition(job_id, JobState.BLOCKED, why=reason, initiator=initiator,
+                             blocked_on=BlockedOn.INFORMATION,
+                             resume_state=JobState.QUALIFYING)
+        else:
+            self._transition(job_id, JobState.REJECTED, why=reason,
+                             initiator=initiator, fail_reason=reason)
+
     def qualify(self, *, job_id: str, assessment: Assessment, estimate: Estimate,
                 initiator: str) -> GovernorVerdict:
-        """Run conformance, then the Governor, then move to the right state.
+        """Assess and commit in one step, for the single-job path.
 
         The order is the law: conformance before price, location before a binding
         price, Governor before any commitment.
@@ -324,6 +359,21 @@ class JobOrchestrator:
         self._transition(job_id, JobState.COMPLETE,
                          why=f"payment of {collected} cents verified via {method}",
                          initiator=initiator)
+
+    def reject(self, *, job_id: str, reason: str, initiator: str) -> None:
+        """Decline work. A rejection is an outcome, not a failure.
+
+        Kept distinct from :meth:`fail` because declining well is a capability:
+        conflating the two would corrupt every learning and autonomy statistic.
+        """
+        job = self.job(job_id)
+        if job.state.is_terminal:
+            return
+        if job.state is JobState.INTAKE:
+            self._transition(job_id, JobState.QUALIFYING, why=reason,
+                             initiator=initiator)
+        self._transition(job_id, JobState.REJECTED, why=reason, initiator=initiator,
+                         fail_reason=reason)
 
     def fail(self, *, job_id: str, reason: str, initiator: str) -> None:
         self._transition(job_id, JobState.FAILED, why=reason, initiator=initiator,

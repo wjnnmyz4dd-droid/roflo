@@ -235,3 +235,51 @@ circumvent a platform protection.
 
 **Three decisions (OD-1, OD-2, OD-3) stand between a proven architecture and a
 first real job.** None is an engineering problem.
+
+---
+
+## OD-10 — Can a client choose their own pricing jurisdiction? · **OPEN, DOCUMENTED**
+
+**Question.** A marketplace posting states where the project is. Solvent prices
+from that statement. What stops a client from naming a cheaper state?
+
+**Why required.** Found while attacking the acquisition pipeline. It is a
+*business* risk rather than a control bypass: nothing is circumvented, but a
+misstated location produces a wrong price and a thinner margin than expected.
+
+**Current behaviour, deliberate and tested.** The stated jurisdiction drives the
+cost lines, and the resulting estimate error surfaces in the Governor's
+calibration over time — an optimistic pattern raises K and tightens the gate
+automatically. `test_adversarial.py` records this behaviour explicitly so it is
+visible rather than assumed.
+
+**Blocks.** Nothing today. All pricing is fixture-based and no quote is binding.
+
+**Options.** (a) Accept it: the error is bounded per job and self-correcting in
+aggregate. (b) Require owner confirmation of jurisdiction above a value
+threshold. (c) Flag a mismatch between stated client location and stated project
+location for review.
+
+**Recommendation.** (a) until real jobs exist, then (b) — the threshold makes the
+control proportionate to the exposure. Not worth building before there is a real
+quote to protect.
+
+---
+
+## OD-11 — Which work source is researched first? · **NOT BLOCKING**
+
+**Question.** Which platform gets the first completed research template in
+`docs/solvent-work-source-research.md`?
+
+**Why required.** A source cannot be marked automatable without a human reading
+its current terms and recording the determination. Solvent refuses to guess, and
+this document deliberately names no platform.
+
+**Blocks.** Automated discovery against a real source. Nothing else.
+
+**Does NOT block.** The entire acquisition pipeline, which runs today over a
+fixture board and refuses most of what it finds.
+
+**Recommendation.** Do this *after* the first manually sourced real job, not
+before. Building an adapter first would automate a pipeline into a process that
+has never completed once.
