@@ -1,0 +1,240 @@
+"""Durable storage, with the one-authority law enforced by the database.
+
+Two things here are enforcement rather than convention:
+
+**Append-only tables.** ``audit_log``, ``verification_evidence``, ``ledger_entries``,
+``governor_decisions`` and ``action_requests`` carry SQLite triggers that ABORT on
+UPDATE and DELETE. The immutability holds even against code that bypasses this
+module entirely, including a direct ``sqlite3`` connection.
+
+**Table ownership.** Each authority opens a :class:`AuthorityConnection` naming the
+tables it owns. A write to any other table raises :class:`AuthorityError`. This is
+how "one responsibility, one authoritative owner" becomes testable instead of
+aspirational.
+"""
+
+from __future__ import annotations
+
+import re
+import sqlite3
+import threading
+from pathlib import Path
+from typing import Any, Iterable, Sequence
+
+from .errors import AuthorityError, ImmutableRecord
+
+#: Tables whose rows may never change once written.
+APPEND_ONLY = (
+    "audit_log", "verification_evidence", "ledger_entries",
+    "governor_decisions", "action_requests", "price_estimates", "policy_versions",
+)
+
+#: Which authority owns which tables. The single source of this mapping.
+TABLE_OWNER = {
+    "audit_log": "audit",
+    "verification_evidence": "audit",
+    "policy_versions": "policy",
+    "policy_current": "policy",
+    "pricing_reference": "policy",
+    "ledger_entries": "ledger",
+    "payments": "ledger",
+    "jobs": "orchestrator",
+    "requirements": "orchestrator",
+    "capability_assessments": "capability",
+    "price_estimates": "governor",
+    "calibration_state": "governor",
+    "governor_decisions": "governor",
+    "budget_grants": "governor",
+    "action_requests": "gate",
+    "memory_facts": "memory",
+}
+
+_WRITE = re.compile(
+    r"^\s*(?:INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+"
+    r"[\"'`\[]?(?P<table>\w+)", re.IGNORECASE,
+)
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS audit_log (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL, event TEXT NOT NULL, authority TEXT NOT NULL,
+  initiator TEXT NOT NULL, job_id TEXT, why TEXT NOT NULL,
+  input_ref TEXT, decision TEXT, permission TEXT, financial_authorization TEXT,
+  external_effect TEXT, result TEXT, verification_ref TEXT,
+  payload TEXT NOT NULL, prev_hash TEXT NOT NULL, hash TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS verification_evidence (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, subject_ref TEXT NOT NULL,
+  tier TEXT NOT NULL, method TEXT NOT NULL,
+  executor_identity TEXT NOT NULL, verifier_identity TEXT NOT NULL,
+  verdict TEXT NOT NULL, raw_output TEXT NOT NULL, consequence TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS policy_versions (
+  version INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
+  owner_identity TEXT NOT NULL, doc TEXT NOT NULL, reason TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS policy_current (
+  id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pricing_reference (
+  id TEXT PRIMARY KEY, category TEXT NOT NULL, jurisdiction TEXT NOT NULL,
+  tier INTEGER NOT NULL, unit_cents INTEGER NOT NULL, unit TEXT NOT NULL,
+  source TEXT NOT NULL, effective_date TEXT NOT NULL, retrieved_date TEXT NOT NULL,
+  confidence REAL NOT NULL, is_fixture INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS ledger_entries (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL,
+  category TEXT NOT NULL, amount_cents INTEGER NOT NULL, direction TEXT NOT NULL,
+  source TEXT NOT NULL, corrects TEXT, note TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY, job_id TEXT NOT NULL, state TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL, collected_cents INTEGER NOT NULL DEFAULT 0,
+  rail TEXT NOT NULL, verification_method TEXT NOT NULL DEFAULT '',
+  verified_at TEXT, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  state TEXT NOT NULL, blocked_on TEXT, title TEXT NOT NULL,
+  client_id TEXT NOT NULL, quoted_cents INTEGER NOT NULL DEFAULT 0,
+  consequence TEXT NOT NULL, state_entered_at TEXT NOT NULL,
+  signals TEXT NOT NULL DEFAULT '{}', fail_reason TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS requirements (
+  id TEXT PRIMARY KEY, job_id TEXT NOT NULL, text TEXT NOT NULL,
+  source TEXT NOT NULL, confirmed_by TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS capability_assessments (
+  id TEXT PRIMARY KEY, job_id TEXT NOT NULL, verdict TEXT NOT NULL,
+  conformance TEXT NOT NULL, assessor TEXT NOT NULL, ts TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS price_estimates (
+  id TEXT PRIMARY KEY, job_id TEXT NOT NULL, ts TEXT NOT NULL,
+  lines TEXT NOT NULL, known_cents INTEGER NOT NULL, estimated_cents INTEGER NOT NULL,
+  calibration REAL NOT NULL, effective_cost_cents INTEGER NOT NULL,
+  pricing_context TEXT NOT NULL, preliminary INTEGER NOT NULL DEFAULT 0,
+  job_class TEXT NOT NULL DEFAULT 'general',
+  allowance_cents INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS calibration_state (
+  job_class TEXT PRIMARY KEY, k REAL NOT NULL, n INTEGER NOT NULL,
+  updated_at TEXT NOT NULL, reason TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS governor_decisions (
+  id TEXT PRIMARY KEY, job_id TEXT NOT NULL, ts TEXT NOT NULL,
+  verdict TEXT NOT NULL, estimate_id TEXT, revenue_cents INTEGER NOT NULL,
+  effective_cost_cents INTEGER NOT NULL, margin REAL NOT NULL,
+  floor REAL NOT NULL, policy_version INTEGER NOT NULL,
+  calibration REAL NOT NULL, reason TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS budget_grants (
+  id TEXT PRIMARY KEY, job_id TEXT NOT NULL, ts TEXT NOT NULL,
+  authorized_cents INTEGER NOT NULL, spent_cents INTEGER NOT NULL DEFAULT 0,
+  decision_id TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0,
+  spend_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS action_requests (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT,
+  action_class TEXT NOT NULL, destination TEXT NOT NULL, privacy TEXT NOT NULL,
+  grant_id TEXT, allowed INTEGER NOT NULL, reason TEXT NOT NULL,
+  cost_cents INTEGER NOT NULL DEFAULT 0, simulated INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS memory_facts (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT NOT NULL,
+  payload TEXT NOT NULL, evidence_ref TEXT NOT NULL, tier TEXT NOT NULL
+);
+"""
+
+
+def _immutability_triggers() -> str:
+    out = []
+    for table in APPEND_ONLY:
+        for op in ("UPDATE", "DELETE"):
+            out.append(
+                f"CREATE TRIGGER IF NOT EXISTS {table}_no_{op.lower()} "
+                f"BEFORE {op} ON {table} BEGIN "
+                f"SELECT RAISE(ABORT, '{table} is append-only: {op} forbidden'); END;"
+            )
+    return "\n".join(out)
+
+
+class AuthorityConnection:
+    """A connection that may only write the tables its authority owns."""
+
+    def __init__(self, conn: sqlite3.Connection, authority: str,
+                 lock: threading.RLock) -> None:
+        self._conn = conn
+        self._authority = authority
+        self._lock = lock
+        self._owned = {t for t, owner in TABLE_OWNER.items() if owner == authority}
+
+    @property
+    def authority(self) -> str:
+        return self._authority
+
+    def _check(self, sql: str) -> None:
+        match = _WRITE.match(sql)
+        if not match:
+            return
+        table = match.group("table").lower()
+        if table not in self._owned:
+            owner = TABLE_OWNER.get(table, "<unknown table>")
+            raise AuthorityError(
+                f"authority {self._authority!r} may not write {table!r}; "
+                f"that table is owned by {owner!r}"
+            )
+
+    def execute(self, sql: str, params: Sequence[Any] = ()) -> sqlite3.Cursor:
+        self._check(sql)
+        with self._lock:
+            try:
+                return self._conn.execute(sql, params)
+            except sqlite3.IntegrityError as exc:
+                if "append-only" in str(exc):
+                    raise ImmutableRecord(str(exc)) from exc
+                raise
+
+    def query(self, sql: str, params: Sequence[Any] = ()) -> list[sqlite3.Row]:
+        """Reads are unrestricted: every authority may read, none may write another's."""
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def query_one(self, sql: str, params: Sequence[Any] = ()) -> sqlite3.Row | None:
+        rows = self.query(sql, params)
+        return rows[0] if rows else None
+
+    def commit(self) -> None:
+        with self._lock:
+            self._conn.commit()
+
+
+class Store:
+    """Owns the database file and hands out per-authority connections."""
+
+    def __init__(self, path: str | Path = ":memory:") -> None:
+        self.path = str(path)
+        self._lock = threading.RLock()
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA foreign_keys = ON")
+        self._conn.executescript(SCHEMA)
+        self._conn.executescript(_immutability_triggers())
+        self._conn.commit()
+
+    def for_authority(self, authority: str) -> AuthorityConnection:
+        if authority not in set(TABLE_OWNER.values()):
+            raise AuthorityError(f"unknown authority {authority!r}")
+        return AuthorityConnection(self._conn, authority, self._lock)
+
+    def raw_readonly(self, sql: str, params: Sequence[Any] = ()) -> list[sqlite3.Row]:
+        """Read path for projections and tests. Never writes."""
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def tables(self) -> Iterable[str]:
+        return sorted(TABLE_OWNER)
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
