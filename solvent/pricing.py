@@ -109,7 +109,7 @@ class PricingReference:
                owner_identity: str, is_fixture: bool = False,
                reference_id: str | None = None) -> str:
         """Load a reference record. Owner path only, and only approved sources."""
-        if not owner_identity.startswith("owner:"):
+        if not self._policy.is_owner(owner_identity):
             raise FailClosed(
                 f"pricing reference data is owner-governed (got {owner_identity!r})")
         approved = self._policy.get("pricing", "approved_sources", default=[])

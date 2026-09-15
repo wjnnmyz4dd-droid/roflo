@@ -176,7 +176,7 @@ class PermissionEnforcement(GateRig):
             purpose="self-approved", job_id="J1", amount_cents=1_000,
             approval=forged, grant_id=grant)
         self.assertFalse(result.allowed)
-        self.assertIn("not an owner", result.reason)
+        self.assertIn("not a registered owner", result.reason)
 
 
 class GovernorIsUpstream(GateRig):

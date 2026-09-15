@@ -58,9 +58,11 @@ class OwnerApproval:
     expires_at: str
 
     def problem(self, *, job_id: str, action_class: ActionClass,
-                amount_cents: Cents) -> str:
-        if not self.owner_identity.startswith("owner:"):
-            return f"approval identity {self.owner_identity!r} is not an owner"
+                amount_cents: Cents, is_owner=None) -> str:
+        registered = (is_owner(self.owner_identity) if is_owner
+                      else self.owner_identity.startswith("owner:"))
+        if not registered:
+            return f"approval identity {self.owner_identity!r} is not a registered owner"
         if self.job_id != job_id:
             return f"approval is scoped to job {self.job_id!r}, not {job_id!r}"
         if self.action_class is not action_class:
@@ -208,7 +210,7 @@ class ActionGate:
             if not grant_id:
                 return False, "spending action has no Financial Governor budget grant", None
             ok, why = self._governor.authorize_spend(
-                grant_id=grant_id, amount_cents=amount_cents,
+                grant_id=grant_id, amount_cents=amount_cents, job_id=job_id,
                 what=f"{action_class.value} -> {destination}")
             if not ok:
                 return False, f"Financial Governor refused: {why}", None
@@ -221,7 +223,8 @@ class ActionGate:
         if approval.id in self._used_approvals:
             return "approval already used (approvals are single-use)"
         return approval.problem(job_id=job_id or "", action_class=action_class,
-                                amount_cents=amount_cents)
+                                amount_cents=amount_cents,
+                                is_owner=self._policy.is_owner)
 
     # --------------------------------------------------------------- recording
 

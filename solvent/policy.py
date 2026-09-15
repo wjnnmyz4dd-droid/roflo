@@ -31,6 +31,10 @@ from .types import ActionClass, ConsequenceTier, OperatingMode, PermissionLevel
 #: so it must find clearly profitable work rather than marginal work.
 DEFAULT_POLICY: dict[str, Any] = {
     "operating_mode": OperatingMode.NORMAL.value,
+    # Which identities are the owner. Recorded at bootstrap and changeable only
+    # by an identity already on the list, so a component cannot mint one by
+    # calling itself "owner:something".
+    "governance": {"owner_identities": []},
     "permissions": {
         ActionClass.C0_INTERNAL_READ.value: PermissionLevel.AUTONOMOUS.value,
         ActionClass.C1_EXTERNAL_READ.value: PermissionLevel.AUTONOMOUS.value,
@@ -80,11 +84,15 @@ DEFAULT_POLICY: dict[str, Any] = {
 class PolicyStore:
     """Owner-governed authority. Versioned, append-only, never self-modified."""
 
-    def __init__(self, store: Store, audit: AuditLog) -> None:
+    def __init__(self, store: Store, audit: AuditLog,
+                 owner_identity: str = "owner:root") -> None:
         self._db = store.for_authority("policy")
         self._audit = audit
         if self._db.query_one("SELECT version FROM policy_current WHERE id = 1") is None:
-            self._write(DEFAULT_POLICY, "system:bootstrap", "initial default policy")
+            doc = copy.deepcopy(DEFAULT_POLICY)
+            doc["governance"]["owner_identities"] = [owner_identity]
+            self._write(doc, "system:bootstrap",
+                        f"initial policy; owner is {owner_identity}")
 
     # -------------------------------------------------------------- writing
 
@@ -100,16 +108,34 @@ class PolicyStore:
         self._db.commit()
         return version
 
+    def is_owner(self, identity: str) -> bool:
+        """Is this identity a registered owner?
+
+        Membership of a policy-held list, not merely a string that looks like an
+        owner. A component cannot promote itself by choosing its own name.
+
+        **Known P0 limitation:** this checks *registration*, not *authentication*.
+        Anything running in-process with the registered name is accepted. Binding
+        an identity to a key belongs to the authenticated Owner Channel, which is
+        P1; until then external execution stays fail-closed. Recorded as OD-5 in
+        OWNER_DECISIONS.md.
+        """
+        if not identity or not identity.startswith("owner:"):
+            return False
+        registered = self.get("governance", "owner_identities", default=[])
+        return identity in registered
+
     def amend(self, patch: dict, owner_identity: str, reason: str) -> int:
         """Apply an owner amendment. **Owner path only.**
 
         No Solvent authority may call this; that is asserted by an architectural
         test rather than left to discipline.
         """
-        if not owner_identity or not owner_identity.startswith("owner:"):
+        if not self.is_owner(owner_identity):
             raise FailClosed(
-                "policy may only be amended by an authenticated owner identity "
-                f"(got {owner_identity!r})"
+                "policy may only be amended by a registered owner identity "
+                f"(got {owner_identity!r}); registered owners: "
+                f"{self.get('governance', 'owner_identities', default=[])}"
             )
         if not reason:
             raise FailClosed("policy amendments require a recorded reason")

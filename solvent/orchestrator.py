@@ -114,11 +114,14 @@ class JobOrchestrator:
     """The job state machine. The only writer of job state."""
 
     def __init__(self, store: Store, audit: AuditLog, policy: PolicyStore,
-                 governor: FinancialGovernor) -> None:
+                 governor: FinancialGovernor, ledger=None) -> None:
         self._db = store.for_authority("orchestrator")
         self._audit = audit
         self._policy = policy
         self._governor = governor
+        # Completion asks the Ledger what was actually collected rather than
+        # believing its caller. Without it, "complete" is an assertion.
+        self._ledger = ledger
 
     # ----------------------------------------------------------------- intake
 
@@ -227,9 +230,9 @@ class JobOrchestrator:
         return verdict
 
     def owner_approves(self, *, job_id: str, owner_identity: str, why: str) -> None:
-        if not owner_identity.startswith("owner:"):
+        if not self._policy.is_owner(owner_identity):
             raise FailClosed(
-                f"approval requires an authenticated owner identity (got "
+                f"approval requires a registered owner identity (got "
                 f"{owner_identity!r}); a notification is not an authorization")
         self._transition(job_id, JobState.ACCEPTED, why=why, initiator=owner_identity)
 
@@ -300,17 +303,26 @@ class JobOrchestrator:
         self._transition(job_id, JobState.AWAITING_PAYMENT, why=why,
                          initiator=initiator)
 
-    def complete(self, *, job_id: str, initiator: str, collected_cents: Cents,
-                 verification_method: str) -> None:
-        """Completion requires externally verified payment, not an invoice."""
-        if not verification_method:
+    def complete(self, *, job_id: str, initiator: str) -> None:
+        """Completion requires externally verified payment, read from the Ledger.
+
+        The caller does not get to assert that it was paid. The Ledger is the only
+        authority on what money arrived, so this asks it.
+        """
+        if self._ledger is None:
             raise FailClosed(
-                "completion requires externally verified payment; "
-                "expected revenue is not collected revenue")
-        if collected_cents <= 0:
-            raise FailClosed("completion requires collected revenue")
+                "completion requires a Ledger; the Orchestrator may not take a "
+                "caller's word for payment")
+        collected = self._ledger.collected_for(job_id)
+        if collected <= 0:
+            raise FailClosed(
+                f"cannot complete {job_id}: the Ledger records no externally "
+                "verified collected revenue. Expected revenue is not collected "
+                "revenue")
+        payment = self._ledger.payment_for(job_id) or {}
+        method = payment.get("verification_method", "")
         self._transition(job_id, JobState.COMPLETE,
-                         why=f"payment verified via {verification_method}",
+                         why=f"payment of {collected} cents verified via {method}",
                          initiator=initiator)
 
     def fail(self, *, job_id: str, reason: str, initiator: str) -> None:

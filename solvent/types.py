@@ -344,6 +344,15 @@ class Jurisdiction:
     city: str = ""
     postal: str = ""
 
+    def __post_init__(self) -> None:
+        # ">" separates levels in path(); allowing it inside a component would let
+        # a crafted value forge a different jurisdiction's reference key.
+        for name in ("country", "state", "county", "city", "postal"):
+            value = getattr(self, name)
+            if ">" in value:
+                raise ValueError(
+                    f"jurisdiction {name}={value!r} may not contain '>'")
+
     def path(self) -> str:
         parts = [p for p in (self.country, self.state, self.county, self.city, self.postal) if p]
         return ">".join(parts)

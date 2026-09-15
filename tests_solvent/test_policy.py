@@ -14,7 +14,7 @@ OWNER = "owner:test"
 class OwnerOnly(unittest.TestCase):
     def setUp(self):
         store = Store()
-        self.policy = PolicyStore(store, AuditLog(store))
+        self.policy = PolicyStore(store, AuditLog(store), owner_identity=OWNER)
 
     def test_non_owner_identity_cannot_amend(self):
         """Learning, the Governor and every worker are all 'not the owner'."""
@@ -43,7 +43,7 @@ class OwnerOnly(unittest.TestCase):
 class Permissions(unittest.TestCase):
     def setUp(self):
         store = Store()
-        self.policy = PolicyStore(store, AuditLog(store))
+        self.policy = PolicyStore(store, AuditLog(store), owner_identity=OWNER)
 
     def test_authority_change_is_prohibited_not_merely_gated(self):
         """Solvent may never change its own authority, at any value or urgency."""
@@ -71,7 +71,7 @@ class Permissions(unittest.TestCase):
 class KillSwitch(unittest.TestCase):
     def setUp(self):
         store = Store()
-        self.policy = PolicyStore(store, AuditLog(store))
+        self.policy = PolicyStore(store, AuditLog(store), owner_identity=OWNER)
 
     def test_mode_semantics(self):
         cases = {
@@ -101,7 +101,7 @@ class KillSwitch(unittest.TestCase):
 class ConsequenceScaling(unittest.TestCase):
     def setUp(self):
         store = Store()
-        self.policy = PolicyStore(store, AuditLog(store))
+        self.policy = PolicyStore(store, AuditLog(store), owner_identity=OWNER)
 
     def test_consequence_tier_scales_with_value(self):
         self.assertIs(self.policy.consequence_for(1_000), ConsequenceTier.C_LOW)

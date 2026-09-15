@@ -29,7 +29,7 @@ class Base(unittest.TestCase):
         self.rig.load_labor_fixtures()
         self.rig.relax_caps()
         self.orch = JobOrchestrator(self.rig.store, self.rig.audit, self.rig.policy,
-                                    self.rig.governor)
+                                    self.rig.governor, self.rig.ledger)
 
     def make_job(self, dollars="600", state="CA"):
         return self.orch.intake(
@@ -174,14 +174,22 @@ class VerificationGate(Base):
             raw_output="ok", consequence=self.orch.job(job_id).consequence)
         self.orch.mark_verified(job_id=job_id, initiator="qc")
         self.orch.record_delivery(job_id=job_id, initiator="x", gate_request_id="act")
+        # The Ledger records nothing collected yet, so completion is refused
+        # however confidently the caller asserts payment.
         with self.assertRaises(FailClosed):
-            self.orch.complete(job_id=job_id, initiator="x", collected_cents=1,
-                               verification_method="")
+            self.orch.complete(job_id=job_id, initiator="x")
+
+        from solvent.types import PaymentState
+        payment = self.rig.ledger.open_payment(job_id=job_id,
+                                               amount_cents=money("600"), rail="t")
+        self.rig.ledger.set_payment_state(payment, PaymentState.INVOICED)
         with self.assertRaises(FailClosed):
-            self.orch.complete(job_id=job_id, initiator="x", collected_cents=0,
-                               verification_method="rail")
-        self.orch.complete(job_id=job_id, initiator="x", collected_cents=money("600"),
-                           verification_method="rail_webhook")
+            self.orch.complete(job_id=job_id, initiator="x")
+
+        self.rig.ledger.set_payment_state(
+            payment, PaymentState.PAID, collected_cents=money("600"),
+            verification_method="rail_webhook")
+        self.orch.complete(job_id=job_id, initiator="x")
         self.assertIs(self.orch.job(job_id).state, JobState.COMPLETE)
 
 

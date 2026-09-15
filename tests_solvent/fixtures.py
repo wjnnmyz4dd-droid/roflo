@@ -29,7 +29,7 @@ class Rig:
     def __init__(self) -> None:
         self.store = Store()
         self.audit = AuditLog(self.store)
-        self.policy = PolicyStore(self.store, self.audit)
+        self.policy = PolicyStore(self.store, self.audit, owner_identity=OWNER)
         self.ledger = Ledger(self.store, self.audit)
         self.pricing = PricingReference(self.store, self.policy)
         self.governor = FinancialGovernor(

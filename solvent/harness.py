@@ -68,15 +68,15 @@ class Solvent:
     def __init__(self, path: str = ":memory:") -> None:
         self.store = Store(path)
         self.audit = AuditLog(self.store)
-        self.policy = PolicyStore(self.store, self.audit)
+        self.policy = PolicyStore(self.store, self.audit, owner_identity=OWNER)
         self.ledger = Ledger(self.store, self.audit)
         self.pricing = PricingReference(self.store, self.policy)
         self.governor = FinancialGovernor(self.store, self.audit, self.policy,
                                           self.ledger, self.pricing)
         self.gate = ActionGate(self.store, self.audit, self.policy, self.governor)
         self.orchestrator = JobOrchestrator(self.store, self.audit, self.policy,
-                                            self.governor)
-        self.capability = CapabilityRegistry(self.store, self.audit)
+                                            self.governor, self.ledger)
+        self.capability = CapabilityRegistry(self.store, self.audit, self.policy)
         self.memory = BusinessMemory(self.store, self.audit)
 
     def project(self, job_id: str):
@@ -188,6 +188,7 @@ def run_first_job(*, state: str = "CA", quote_dollars: str = "900",
     # OBSERVE -> DIAGNOSE -> PROPOSE collapse into deterministic steps for cheap
     # work; ACT and VERIFY never merge.
     ok, reason = s.governor.authorize_spend(grant_id=grant, amount_cents=money("1.20"),
+                                            job_id=job_id,
                                             what="inference for the spreadsheet")
     assert ok, reason
     s.ledger.record_cost(job_id=job_id, category=CostCategory.AI_API,
@@ -258,9 +259,7 @@ def run_first_job(*, state: str = "CA", quote_dollars: str = "900",
     s.ledger.set_payment_state(
         payment, PaymentState.PAID, collected_cents=money(quote_dollars),
         verification_method=f"{SIMULATED_PREFIX}fixture_rail_webhook")
-    s.orchestrator.complete(job_id=job_id, initiator="ledger",
-                            collected_cents=money(quote_dollars),
-                            verification_method=f"{SIMULATED_PREFIX}fixture_rail_webhook")
+    s.orchestrator.complete(job_id=job_id, initiator="ledger")
     r.step("payment verified (SIMULATED) and job completed")
 
     # --- 11. learning, only now ------------------------------------------------

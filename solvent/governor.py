@@ -285,6 +285,12 @@ class FinancialGovernor:
     def decide(self, *, job_id: str, revenue_cents: Cents, estimate: Estimate,
                conformance_ok: bool, initiator: str = "governor") -> tuple[GovernorVerdict, str]:
         """The financial verdict. Final, and unappealable by any component."""
+        if estimate.job_id != job_id:
+            # Otherwise a cheap job's estimate could be laundered into an
+            # expensive job's decision.
+            raise FailClosed(
+                f"estimate {estimate.id} was made for job {estimate.job_id!r}, "
+                f"not {job_id!r}; an estimate may only decide its own job")
         mode = self._policy.operating_mode
         floor = float(self._policy.get("financial", "margin_floor", default=0.30))
         approval_above = int(self._policy.get(
@@ -375,8 +381,8 @@ class FinancialGovernor:
             result=fmt(authorized_cents))
         return grant_id
 
-    def authorize_spend(self, *, grant_id: str, amount_cents: Cents,
-                        what: str) -> tuple[bool, str]:
+    def authorize_spend(self, *, grant_id: str, amount_cents: Cents, what: str,
+                        job_id: str | None = None) -> tuple[bool, str]:
         """Checked before **every** spend — this is chokepoint one of two.
 
         The kill switch is enforced here rather than at job start, so a mode
@@ -390,6 +396,10 @@ class FinancialGovernor:
             return False, f"no budget grant {grant_id!r}"
         if int(row["revoked"]):
             return False, "budget grant revoked"
+        if job_id is not None and row["job_id"] != job_id:
+            # Without this, one job's authorised budget funds another's work.
+            return False, (f"grant {grant_id} belongs to job {row['job_id']!r}, "
+                           f"not {job_id!r}")
         spent, authorized = int(row["spent_cents"]), int(row["authorized_cents"])
         if spent + amount_cents > authorized:
             return False, (f"spend {fmt(amount_cents)} would exceed grant "
@@ -418,10 +428,11 @@ class FinancialGovernor:
             result=fmt(amount_cents))
         return True, "authorized"
 
-    def require_spend(self, *, grant_id: str, amount_cents: Cents, what: str) -> None:
+    def require_spend(self, *, grant_id: str, amount_cents: Cents, what: str,
+                      job_id: str | None = None) -> None:
         """Authorise or raise. Callers that cannot handle refusal use this."""
         ok, reason = self.authorize_spend(
-            grant_id=grant_id, amount_cents=amount_cents, what=what)
+            grant_id=grant_id, amount_cents=amount_cents, what=what, job_id=job_id)
         if not ok:
             raise GovernorRefused(reason)
 

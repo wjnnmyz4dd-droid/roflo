@@ -12,7 +12,7 @@ from tests_solvent.fixtures import OWNER, Rig
 class Registration(unittest.TestCase):
     def setUp(self):
         self.rig = Rig()
-        self.registry = CapabilityRegistry(self.rig.store, self.rig.audit)
+        self.registry = CapabilityRegistry(self.rig.store, self.rig.audit, self.rig.policy)
 
     def test_solvent_cannot_register_a_capability_for_itself(self):
         """Solvent may propose growth; it may never authorise it."""
@@ -31,7 +31,7 @@ class Registration(unittest.TestCase):
 class Assessment(unittest.TestCase):
     def setUp(self):
         self.rig = Rig()
-        self.registry = CapabilityRegistry(self.rig.store, self.rig.audit)
+        self.registry = CapabilityRegistry(self.rig.store, self.rig.audit, self.rig.policy)
         self.registry.register(
             Capability(name="spreadsheet", covers=frozenset({"spreadsheet"}),
                        proven=True), owner_identity=OWNER)
@@ -75,7 +75,7 @@ class Assessment(unittest.TestCase):
 
     def test_an_unproven_capability_needs_owner_approval(self):
         """Absence of evidence is not capability."""
-        registry = CapabilityRegistry(self.rig.store, self.rig.audit)
+        registry = CapabilityRegistry(self.rig.store, self.rig.audit, self.rig.policy)
         registry.register(Capability(name="design", covers=frozenset({"design"}),
                                      proven=False), owner_identity=OWNER)
         assessment = registry.assess(job_id="J2", requirements=self._requirements(),
@@ -89,7 +89,7 @@ class ConformanceBeforePrice(unittest.TestCase):
 
     def test_a_cheaper_non_conforming_option_is_removed_not_ranked(self):
         rig = Rig()
-        registry = CapabilityRegistry(rig.store, rig.audit)
+        registry = CapabilityRegistry(rig.store, rig.audit, rig.policy)
         options = [
             {"name": "A", "price_cents": 1_200_000, "provides": ["x", "y"],
              "verified": True},
@@ -103,7 +103,7 @@ class ConformanceBeforePrice(unittest.TestCase):
 
     def test_an_unverified_claim_is_not_conformance(self):
         rig = Rig()
-        registry = CapabilityRegistry(rig.store, rig.audit)
+        registry = CapabilityRegistry(rig.store, rig.audit, rig.policy)
         conforming, rejected = registry.conforming_options(
             [{"name": "C", "price_cents": 1, "provides": ["x"], "verified": False}],
             {"x"})

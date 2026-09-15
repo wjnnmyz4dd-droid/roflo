@@ -59,14 +59,17 @@ class Assessment:
 class CapabilityRegistry:
     """What Solvent can do. It may veto work; it may never add to itself."""
 
-    def __init__(self, store: Store, audit: AuditLog) -> None:
+    def __init__(self, store: Store, audit: AuditLog, policy=None) -> None:
         self._db = store.for_authority("capability")
         self._audit = audit
+        self._policy = policy
         self._capabilities: dict[str, Capability] = {}
 
     def register(self, capability: Capability, *, owner_identity: str) -> None:
         """Add a capability. Owner path only — Solvent cannot extend itself."""
-        if not owner_identity.startswith("owner:"):
+        registered = (self._policy.is_owner(owner_identity) if self._policy
+                      else owner_identity.startswith("owner:"))
+        if not registered:
             raise FailClosed(
                 f"capabilities are owner-registered (got {owner_identity!r}); "
                 "Solvent may propose growth, never authorise it")
