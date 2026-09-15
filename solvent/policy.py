@@ -203,12 +203,25 @@ class PolicyStore:
             return grant
         return None
 
+    def egress_entry(self, destination: str) -> dict | None:
+        """Find the allowlist entry for a destination, or None.
+
+        An entry may cap the privacy class it is allowed to receive, so that
+        "this host is approved" never silently means "approved for anything".
+        Entries may be plain hostnames or dicts; an empty allowlist permits
+        nothing.
+        """
+        for entry in self.get("egress", "allowlist", default=[]):
+            if isinstance(entry, str):
+                entry = {"host": entry}
+            host = entry.get("host", "")
+            if host and (destination == host or destination.endswith("." + host)):
+                return entry
+        return None
+
     def egress_allowed(self, destination: str) -> bool:
         """Allowlist membership. Empty allowlist means nothing may leave."""
-        for entry in self.get("egress", "allowlist", default=[]):
-            if destination == entry or destination.endswith("." + entry):
-                return True
-        return False
+        return self.egress_entry(destination) is not None
 
 
 def _deep_merge(base: dict, patch: dict) -> dict:
