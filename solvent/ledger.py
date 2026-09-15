@@ -29,6 +29,11 @@ from .types import Cents, CostCategory, PaymentState
 TRUSTED_COST_SOURCES = frozenset({"PROVIDER_BILLING", "RECEIPT", "VERIFIED_PAYMENT",
                                   "OWNER_RECORDED", "SIMULATED_FIXTURE"})
 
+#: Prefix marking a verification that did not come from a real payment rail.
+#: Simulated money must never be reportable as real revenue, so the marker lives
+#: in the stored value rather than in a comment or a caller's good intentions.
+SIMULATED_PREFIX = "SIMULATED:"
+
 
 class Ledger:
     """Financial truth. Append-oriented, idempotent, verification-gated."""
@@ -155,6 +160,27 @@ class Ledger:
         row = self._db.query_one(
             "SELECT * FROM payments WHERE job_id = ? ORDER BY updated_at DESC", (job_id,))
         return dict(row) if row else None
+
+    def is_simulated(self, job_id: str) -> bool:
+        row = self._db.query_one(
+            "SELECT verification_method FROM payments WHERE job_id = ?", (job_id,))
+        return bool(row) and str(row["verification_method"]).startswith(SIMULATED_PREFIX)
+
+    def real_revenue_cents(self) -> Cents:
+        """Collected revenue excluding anything verified by a simulated rail.
+
+        The harness proves the loop with fixtures; this is what stops fixture
+        money ever being counted, displayed, or reported as earnings.
+        """
+        total = 0
+        for row in self._db.query("SELECT * FROM payments"):
+            if not PaymentState(row["state"]).is_collected:
+                continue
+            method = str(row["verification_method"] or "")
+            if not method or method.startswith(SIMULATED_PREFIX):
+                continue
+            total += int(row["collected_cents"])
+        return total
 
     def collected_for(self, job_id: str) -> Cents:
         """Revenue that actually arrived and was externally verified."""

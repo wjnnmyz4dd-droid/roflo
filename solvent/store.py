@@ -98,7 +98,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   state TEXT NOT NULL, blocked_on TEXT, title TEXT NOT NULL,
   client_id TEXT NOT NULL, quoted_cents INTEGER NOT NULL DEFAULT 0,
   consequence TEXT NOT NULL, state_entered_at TEXT NOT NULL,
-  signals TEXT NOT NULL DEFAULT '{}', fail_reason TEXT NOT NULL DEFAULT ''
+  signals TEXT NOT NULL DEFAULT '{}', fail_reason TEXT NOT NULL DEFAULT '',
+  resume_state TEXT, grant_id TEXT, job_class TEXT NOT NULL DEFAULT 'general'
 );
 CREATE TABLE IF NOT EXISTS requirements (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, text TEXT NOT NULL,
