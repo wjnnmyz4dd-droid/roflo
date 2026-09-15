@@ -276,25 +276,6 @@ circumvent a platform protection.
 
 ---
 
-## Summary
-
-| ID | Decision | Blocks real work? | Blocks development? |
-| --- | --- | --- | --- |
-| OD-1 | Legal contracting entity | **Yes** | No |
-| OD-2 | Payment rail with verification | **Yes** | No |
-| OD-3 | Model commercial licence | **Yes** | No |
-| OD-4 | Network isolation at deploy | Production claim only | No |
-| OD-5 | Authenticated owner identity | High-value autonomy | No |
-| OD-6 | Repository licence | Third parties only | No |
-| OD-7 | Real pricing sources | **Binding quotes** | No |
-| OD-8 | Packaging | No | No |
-| OD-9 | Marketplace terms | P1b only | No |
-
-**Three decisions (OD-1, OD-2, OD-3) stand between a proven architecture and a
-first real job.** None is an engineering problem.
-
----
-
 ## OD-10 — Can a client choose their own pricing jurisdiction? · **OPEN, DOCUMENTED**
 
 **Question.** A marketplace posting states where the project is. Solvent prices
@@ -426,7 +407,7 @@ record, not a new component.
 
 ---
 
-## Summary (revised)
+## Summary
 
 | ID | Decision | Blocks real work? | Blocks development? |
 | --- | --- | --- | --- |
@@ -442,6 +423,7 @@ record, not a new component.
 | OD-10 | Client-stated jurisdiction | No (documented risk) | No |
 | OD-11 | First work source | Automated discovery only | No |
 | **OD-12** | **First sellable capability** | **Yes** | No |
+| OD-13 | Source payment-reality check | No (hardening) | No |
 
 **Four decisions stand between a working architecture and a first real job:
 OD-1, OD-2, OD-3 and OD-12.** None is an engineering problem. Run

@@ -260,6 +260,17 @@ class Ledger:
                  now(), row["id"]))
             return f"applied: payout {state.value} (collected revenue unchanged)"
 
+        if (event.kind in (EventKind.CUSTOMER_PAID, EventKind.REFUNDED)
+                and event.amount_cents <= 0):
+            # A valid signature proves an event came from the rail, not that its
+            # contents make sense. Money moving by zero or by a negative amount is
+            # an anomaly of the same class as an overpayment: a negative "refund"
+            # would inflate revenue, and a negative payment would make collected
+            # revenue negative. Refused and recorded, never applied.
+            return (f"refused: non-positive amount {event.amount_cents} on "
+                    f"{event.raw_type}; an amount that does not move money "
+                    "forward is an anomaly")
+
         if event.currency and row["currency"] and event.currency != row["currency"]:
             return (f"refused: currency mismatch (event {event.currency}, "
                     f"invoice {row['currency']})")

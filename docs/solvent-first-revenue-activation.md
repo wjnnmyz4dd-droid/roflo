@@ -61,8 +61,9 @@ Conflating them would let Solvent report cash it does not have.
 ### What the Ledger refuses, each with a test
 
 no job attribution · a job with no payment record · currency mismatch ·
-amount above the invoice (an overpayment is an anomaly) · a duplicate event id ·
-an unhandled event type. Refusals are recorded exactly like acceptances, so a
+amount above the invoice (an overpayment is an anomaly) · a non-positive amount
+on a payment or refund (a negative "refund" would inflate revenue) · a duplicate
+event id · an unhandled event type. Refusals are recorded exactly like acceptances, so a
 refused event is as visible as an applied one.
 
 **Test-mode money is recorded and is never revenue.** A genuine signature over a

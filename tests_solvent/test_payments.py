@@ -234,3 +234,45 @@ class RailIsNotAnAuthority(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NonPositiveAmounts(unittest.TestCase):
+    """A genuine signature does not make the contents sensible.
+
+    Found by red-teaming the rail after it was written: the signature check
+    passed a negative amount straight through, and the Ledger applied it.
+    """
+
+    def setUp(self):
+        self.rig = Rig()
+        self.rail = StripeRail()
+        self.rig.ledger.open_payment(
+            job_id="J1", amount_cents=money("450"), rail="stripe", currency="usd")
+
+    def apply(self, **kwargs):
+        raw = body(**kwargs)
+        return self.rig.ledger.apply_payment_event(
+            self.rail.verify_event(raw, headers(raw), SECRET))
+
+    def test_a_negative_payment_is_refused(self):
+        self.assertIn("non-positive", self.apply(event_id="np1", amount=-50_000))
+        self.assertEqual(self.rig.ledger.collected_for("J1"), 0)
+
+    def test_a_zero_payment_changes_no_state(self):
+        self.assertIn("non-positive", self.apply(event_id="np2", amount=0))
+        self.assertEqual(self.rig.ledger.payment_for("J1")["state"],
+                         PaymentState.ESTIMATED.value)
+
+    def test_a_negative_refund_cannot_inflate_revenue(self):
+        self.apply(event_id="np3")
+        before = self.rig.ledger.collected_for("J1")
+        self.assertIn("non-positive",
+                      self.apply(event_id="np4", event_type="charge.refunded",
+                                 amount=-100_000))
+        self.assertEqual(self.rig.ledger.collected_for("J1"), before)
+
+    def test_the_refusal_is_recorded_like_any_other_event(self):
+        self.apply(event_id="np5", amount=-1)
+        events = self.rig.ledger.payment_events("J1")
+        self.assertTrue(any(e["event_id"] == "np5" and not e["applied"]
+                            and "non-positive" in e["outcome"] for e in events))
