@@ -22,7 +22,8 @@ from __future__ import annotations
 from .audit import AuditLog, new_id, now
 from .errors import FailClosed
 from .store import Store
-from .types import Cents, CostCategory, PaymentState
+from .payments import EventKind, VerifiedPaymentEvent
+from .types import Cents, CostCategory, PaymentState, PayoutState
 
 #: Cost sources Solvent trusts. A heuristic token count is not among them:
 #: roflo's ``len(text)/4`` estimator must never reach the books.
@@ -113,12 +114,14 @@ class Ledger:
     # -------------------------------------------------------------- payments
 
     def open_payment(self, *, job_id: str, amount_cents: Cents, rail: str,
-                     payment_id: str | None = None) -> str:
+                     payment_id: str | None = None, currency: str = "usd",
+                     external_ref: str = "") -> str:
         payment_id = payment_id or new_id("pay")
         self._db.execute(
             "INSERT INTO payments(id,job_id,state,amount_cents,collected_cents,rail,"
-            "updated_at) VALUES(?,?,?,?,0,?,?)",
-            (payment_id, job_id, PaymentState.ESTIMATED.value, amount_cents, rail, now()))
+            "updated_at,currency,external_ref) VALUES(?,?,?,?,0,?,?,?,?)",
+            (payment_id, job_id, PaymentState.ESTIMATED.value, amount_cents, rail,
+             now(), currency.lower(), external_ref))
         self._db.commit()
         self._audit.record(
             event="payment.opened", authority="ledger", initiator="ledger",
@@ -192,6 +195,123 @@ class Ledger:
         if not row["verification_method"]:
             return 0
         return int(row["collected_cents"])
+
+    # --------------------------------------------------- external rail events
+
+    def apply_payment_event(self, event: VerifiedPaymentEvent) -> str:
+        """Apply a cryptographically verified rail event. The Ledger decides.
+
+        The rail established that the event is genuine; this decides what it
+        means for the books. Every event is recorded whether or not it is
+        applied, so a refusal is as visible as an acceptance.
+
+        Test-mode money is recorded and deliberately not counted: a genuine
+        signature over a test payment is still not revenue.
+        """
+        seen = self._db.query_one(
+            "SELECT outcome FROM payment_events WHERE event_id = ?", (event.event_id,))
+        if seen is not None:
+            # Rails re-deliver. Idempotency is by event id, not by content.
+            return f"duplicate event ignored (first outcome: {seen['outcome']})"
+
+        outcome = self._decide_event(event)
+        self._db.execute(
+            "INSERT INTO payment_events(event_id,ts,rail,event_type,job_id,"
+            "payment_id,amount_cents,currency,livemode,applied,outcome) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (event.event_id, now(), event.rail, event.raw_type, event.job_id,
+             self._payment_id_for(event.job_id) or "", event.amount_cents,
+             event.currency, 1 if event.livemode else 0,
+             1 if outcome.startswith("applied") else 0, outcome))
+        self._db.commit()
+        self._audit.record(
+            event="payment.event", authority="ledger", initiator=f"rail:{event.rail}",
+            why=event.raw_type, job_id=event.job_id or None,
+            input_ref=event.event_id, decision=event.kind, result=outcome,
+            external_effect=f"inbound {event.rail} event", livemode=event.livemode)
+        return outcome
+
+    def _payment_id_for(self, job_id: str) -> str | None:
+        row = self._db.query_one(
+            "SELECT id FROM payments WHERE job_id = ?", (job_id,))
+        return row["id"] if row else None
+
+    def _decide_event(self, event: VerifiedPaymentEvent) -> str:
+        """What a verified event is allowed to change. Ordered strictest-first."""
+        if event.kind == EventKind.IGNORED:
+            return f"not a payment event ({event.raw_type})"
+        if not event.job_id:
+            return ("refused: event carries no job attribution; a payment that "
+                    "cannot be tied to a job cannot be counted")
+        row = self._db.query_one(
+            "SELECT * FROM payments WHERE job_id = ?", (event.job_id,))
+        if row is None:
+            return f"refused: no payment record for job {event.job_id!r}"
+
+        if event.kind in (EventKind.PAYOUT_PAID, EventKind.PAYOUT_FAILED):
+            # A payout is money reaching the bank. It says nothing about whether
+            # a customer paid, so it must never change collected revenue.
+            state = (PayoutState.PAID if event.kind == EventKind.PAYOUT_PAID
+                     else PayoutState.FAILED)
+            self._db.execute(
+                "UPDATE payments SET payout_state=?, payout_verified_at=?, "
+                "updated_at=? WHERE id=?",
+                (state.value, now() if state is PayoutState.PAID else None,
+                 now(), row["id"]))
+            return f"applied: payout {state.value} (collected revenue unchanged)"
+
+        if event.currency and row["currency"] and event.currency != row["currency"]:
+            return (f"refused: currency mismatch (event {event.currency}, "
+                    f"invoice {row['currency']})")
+
+        if event.kind == EventKind.CUSTOMER_PAID:
+            invoiced = int(row["amount_cents"])
+            if event.amount_cents > invoiced:
+                return (f"refused: event amount {event.amount_cents} exceeds the "
+                        f"invoiced {invoiced}; an overpayment is an anomaly")
+            state = (PaymentState.PAID if event.amount_cents == invoiced
+                     else PaymentState.PARTIALLY_PAID)
+            method = f"{event.rail}:{event.raw_type}:{event.external_ref}"
+            if event.is_test_money:
+                # A real signature over test money is still not revenue.
+                method = f"{SIMULATED_PREFIX}{method}"
+            self._db.execute(
+                "UPDATE payments SET state=?, collected_cents=?, "
+                "verification_method=?, verified_at=?, updated_at=? WHERE id=?",
+                (state.value, event.amount_cents, method, now(), now(), row["id"]))
+            return (f"applied: {state.value}"
+                    + (" (TEST MODE — not revenue)" if event.is_test_money else ""))
+
+        if event.kind == EventKind.REFUNDED:
+            self._db.execute(
+                "UPDATE payments SET state=?, refunded_cents=?, collected_cents=?, "
+                "updated_at=? WHERE id=?",
+                (PaymentState.REFUNDED.value, event.amount_cents,
+                 max(0, int(row["collected_cents"]) - event.amount_cents), now(),
+                 row["id"]))
+            return "applied: REFUNDED (collected revenue reduced)"
+
+        if event.kind == EventKind.DISPUTED:
+            self._db.execute(
+                "UPDATE payments SET state=?, collected_cents=0, updated_at=? "
+                "WHERE id=?", (PaymentState.DISPUTED.value, now(), row["id"]))
+            return "applied: DISPUTED (collected revenue withdrawn pending outcome)"
+
+        return f"refused: unhandled event kind {event.kind}"
+
+    def payout_state(self, job_id: str) -> PayoutState:
+        """Whether the money reached the bank — a different question to PAID."""
+        row = self._db.query_one(
+            "SELECT payout_state FROM payments WHERE job_id = ?", (job_id,))
+        return PayoutState(row["payout_state"]) if row else PayoutState.NOT_APPLICABLE
+
+    def payment_events(self, job_id: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM payment_events"
+        params: tuple = ()
+        if job_id:
+            sql += " WHERE job_id = ?"
+            params = (job_id,)
+        return [dict(r) for r in self._db.query(sql + " ORDER BY ts", params)]
 
     # ---------------------------------------------------------------- profit
 

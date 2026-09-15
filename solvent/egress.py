@@ -108,11 +108,12 @@ def probe() -> dict:
 
     results = {}
     try:
-        sock = socket.socket()
-        sock.settimeout(1)
-        sock.connect(("192.0.2.1", 443))  # TEST-NET-1, never routable
-        results["socket.connect"] = "ALLOWED"
-        sock.close()
+        # ``with`` matters: the probe usually ends in an exception, and a module
+        # that polices the network must not leak a descriptor every time it runs.
+        with socket.socket() as sock:
+            sock.settimeout(1)
+            sock.connect(("192.0.2.1", 443))  # TEST-NET-1, never routable
+            results["socket.connect"] = "ALLOWED"
     except EgressDenied:
         results["socket.connect"] = "DENIED_BY_GUARD"
     except OSError as exc:

@@ -258,6 +258,20 @@ class PaymentState(Enum):
         return self in (PaymentState.PAID, PaymentState.PARTIALLY_PAID)
 
 
+class PayoutState(Enum):
+    """Whether the money reached the owner's bank.
+
+    Deliberately separate from :class:`PaymentState`. A customer paying and the
+    funds landing in a bank account are two different events, often days apart,
+    and conflating them would let Solvent report cash it does not have.
+    """
+
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    PENDING = "PENDING"
+    PAID = "PAID"
+    FAILED = "FAILED"
+
+
 class CostCategory(Enum):
     """Cost lines. Each names the jurisdiction signal it takes pricing from."""
 

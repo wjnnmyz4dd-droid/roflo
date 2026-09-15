@@ -115,6 +115,8 @@ class Opportunity:
     deliverables: tuple[str, ...] = ()
     payment_structure: str = ""
     platform_fee_cents: Cents = 0
+    #: External money that must be spent before the work can start.
+    upfront_cost_cents: Cents = 0
     external_url: str = ""
     attachments: tuple[str, ...] = ()
     risk_indicators: tuple[str, ...] = ()
@@ -207,6 +209,7 @@ class FixtureSource(WorkSource):
                 deliverables=tuple(posting.get("deliverables", ())),
                 payment_structure=posting.get("payment_structure", ""),
                 platform_fee_cents=int(posting.get("platform_fee_cents", 0)),
+                upfront_cost_cents=int(posting.get("upfront_cost_cents", 0)),
                 external_url=posting.get("url", ""),
                 attachments=tuple(posting.get("attachments", ())),
                 risk_indicators=tuple(posting.get("risk_indicators", ())),

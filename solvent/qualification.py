@@ -381,10 +381,32 @@ class Qualification:
         if decision.conformance is not Conformance.CONFORMS:
             probability *= 0.5
         probability *= self._client_factor(decision.opportunity.client_ref)
+        preference = self._bootstrap_preference(decision)
         decision.notes.append(
             f"score = {fmt(decision.expected_profit_cents)}/{hours:g}h "
-            f"x {probability:.2f}")
-        return profit_per_hour * probability
+            f"x {probability:.2f} x {preference:.2f}")
+        return profit_per_hour * probability * preference
+
+    def _bootstrap_preference(self, decision: Decision) -> float:
+        """Prefer work that needs no money up front. A nudge, never a veto.
+
+        Before there is an operating reserve, a job requiring cash up front is
+        worse than an equivalent job that does not — but it is not *disqualified*,
+        and a clearly superior opportunity must still be able to win. The penalty
+        is therefore a bounded multiplier applied to an already Governor-approved
+        job, and it can never move a job out of the acceptable set.
+        """
+        if not self._policy.get("bootstrap", "prefer_low_upfront", default=False):
+            return 1.0
+        if decision.opportunity.upfront_cost_cents <= 0:
+            return 1.0
+        penalty = float(self._policy.get("bootstrap", "upfront_penalty",
+                                         default=0.15))
+        penalty = min(max(penalty, 0.0), 0.5)   # bounded: never a disguised veto
+        decision.notes.append(
+            f"bootstrap: {fmt(decision.opportunity.upfront_cost_cents)} needed "
+            f"up front, preference reduced by {penalty:.0%}")
+        return 1.0 - penalty
 
     def _client_factor(self, client_ref: str) -> float:
         """What this client has actually done, from verified history only.

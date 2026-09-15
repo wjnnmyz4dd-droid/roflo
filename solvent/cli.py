@@ -11,6 +11,7 @@ import json
 import sys
 
 from . import egress
+from . import services
 from .harness import Solvent, run_acquisition_cycle, run_first_job
 from .store import TABLE_OWNER
 
@@ -184,6 +185,43 @@ def cmd_state(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_services(args: argparse.Namespace) -> int:
+    """Print the service-selection scorecard and the first service's contract.
+
+    Ranking only. The Financial Governor still prices every individual job, so
+    nothing printed here is a price or an authorisation to trade.
+    """
+    print("Service selection scorecard (ranking only — no prices)")
+    print("=" * 66)
+    for candidate, score in services.scorecard():
+        print(f"  {score:>6.1f}  {candidate.name}")
+        if candidate.note:
+            print(f"          {candidate.note}")
+
+    first, backup = services.recommended()
+    print(f"\nRecommended first service : {first.name}")
+    print(f"Backup service            : {backup.name}")
+
+    contract = services.SPREADSHEET_CLEANUP
+    print(f"\nContract for {contract.id}")
+    print("-" * 66)
+    for label, values in (
+        ("accepted inputs", contract.accepted_inputs),
+        ("deliverables", contract.deliverables),
+        ("will not accept", contract.unsupported_requests),
+        ("verification", contract.verification_requirements),
+        ("rejects when", contract.rejection_conditions),
+        ("owner approval", contract.owner_approval_triggers),
+    ):
+        print(f"  {label}:")
+        for value in values:
+            print(f"    - {value}")
+
+    print("\nSelection is a recommendation. OD-12 is answered by the owner, and")
+    print("the capability must be proven before readiness clears it.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="solvent", description="Owner-governed business operating system.")
@@ -195,6 +233,8 @@ def build_parser() -> argparse.ArgumentParser:
                    ).set_defaults(func=cmd_laws)
     sub.add_parser("acquire", help="run one acquisition cycle (fixtures only)"
                    ).set_defaults(func=cmd_acquire)
+    sub.add_parser("services", help="print the service-selection scorecard"
+                   ).set_defaults(func=cmd_services)
 
     metrics = sub.add_parser("metrics", help="print business metrics")
     metrics.add_argument("--db", default=":memory:")

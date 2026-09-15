@@ -44,7 +44,25 @@ one.
 
 ---
 
-## OD-2 — Which payment rail, and does it expose a verification signal? · **BLOCKING FOR REAL WORK**
+## OD-2 — Which payment rail? · **ENGINEERING_READY — owner configuration remains**
+
+**Stripe adapter implemented and tested** (`solvent/payments.py`), verified
+against Stripe's primary documentation: HMAC-SHA256 over `"{timestamp}.{raw_body}"`,
+`v1` schemes only (ignoring others prevents a downgrade attack), constant-time
+comparison, 5-minute replay tolerance, idempotency by event id, and refusal of an
+empty signing secret — a published advisory describes exactly that bypass. The
+rail cannot write the Ledger, move money, or touch the store; 29 tests cover it.
+
+Customer payment and bank payout are tracked separately: `payout.paid` explicitly
+leaves collected revenue unchanged. Test-mode money is recorded and excluded from
+real revenue by construction.
+
+**Still required from the owner:** create the webhook endpoint, subscribe to the
+needed events, inject the `whsec_` secret in the Gate namespace, confirm payout
+configuration, and exercise the path in test mode. See
+`docs/solvent-first-revenue-activation.md` §3.
+
+<details><summary>Original entry (superseded)</summary>
 
 **Question.** Which rail collects client money, and does it emit an event
 (webhook, API, reconciliation feed) that confirms payment arrived?
@@ -71,9 +89,25 @@ transfer with manual reconciliation. (c) A marketplace's own escrow.
 (b) works but each payment carries a weaker, manually-asserted verification, which
 the Ledger records honestly and which must never feed autonomy evidence.
 
+</details>
+
 ---
 
-## OD-3 — Are the model checkpoints licensed for commercial output? · **BLOCKING FOR REAL WORK**
+## OD-3 — Model commercial rights · **CONDITIONAL — one owner check remains**
+
+**Configured model, read from `roflo.toml`:** backend `ollama`, model
+`qwen2.5:14b-instruct`.
+
+**Finding:** the upstream Qwen2.5-14B-Instruct model card states **Apache-2.0**,
+which permits commercial use, requires licence/notice only on redistribution
+(Solvent consumes output, it does not redistribute weights), places no restriction
+on output, and has no monthly-active-user threshold.
+
+**The remaining check is one look:** confirm the `ollama` tag packages those exact
+Apache-2.0 weights rather than a re-quantisation under different terms. Until
+that is recorded, OD-3 stays open.
+
+<details><summary>Original entry (superseded)</summary>
 
 **Question.** For each checkpoint used on paid work, does its licence permit
 commercial use of the output?
@@ -91,6 +125,8 @@ model assistance.
 
 **Recommendation.** Clear the specific checkpoints in use and record each result
 in the Capability Registry, which is designed to hold that record.
+
+</details>
 
 ---
 
@@ -324,7 +360,21 @@ around, so that finding rests on secondary reporting.
 
 ---
 
-## OD-12 — Which service does Solvent sell first? · **BLOCKING FOR REAL WORK**
+## OD-12 — Which service does Solvent sell first? · **ANSWERED — owner approval remains**
+
+**Recommendation: spreadsheet / CSV cleanup with computed totals**, from a
+deterministic sixteen-dimension scorecard (`solvent/services.py`) that weights
+provability above rate. It scored 116.5; the backup, small coding tasks, scored
+100.0. Its deliverable is machine-checkable — totals recompute, row counts
+reconcile, the file opens — so verification is arithmetic rather than opinion.
+
+The full contract is `services.SPREADSHEET_CLEANUP`, and it names no price: the
+Governor prices every job. Selecting it does not make Solvent a spreadsheet
+company; it registers through the existing Capability registry like any other.
+
+**Owner action:** approve it and register the capability as proven.
+
+<details><summary>Original entry (superseded)</summary>
 
 **Question.** Which single capability is Solvent's first product?
 
@@ -352,6 +402,27 @@ because a job that cannot afford to be verified is one Solvent refuses.
 
 **Consequence.** Until answered, `readiness` reports "a proven capability to
 sell" as blocking, and it is right to.
+
+</details>
+
+---
+
+## OD-13 — Should Solvent check that a work source actually pays? · **NEW, NOT BLOCKING**
+
+**Question.** Before committing labour to a source, should Solvent require
+evidence that the source has actually paid anyone?
+
+**Why it arose.** From the Penniless Agent playbook's first rule: *payment
+evidence precedes work* — check for confirmed payouts, and reject boards with
+"many hopeful submissions and zero merges". Solvent can reject a *client* for
+`BAD_PAYMENT_HISTORY`, but performs no payment-reality check on a **source**.
+
+**Blocks.** Nothing today: the manual bridge has no source risk, since the owner
+knows the client.
+
+**Recommendation.** Add it as a required field in the source determination when
+the first real platform is researched — not before. It is a field in an existing
+record, not a new component.
 
 ---
 

@@ -26,7 +26,7 @@ from .discovery import (
 )
 from .metrics import business_metrics
 from .owner import OwnerChannel
-from .readiness import first_revenue_readiness
+from .readiness import assert_may_attempt_first_real_job, first_revenue_readiness
 from .qualification import Qualification, Verdict
 from .gate import ActionGate, approval
 from .governor import FinancialGovernor
@@ -101,6 +101,10 @@ class Solvent:
         return first_revenue_readiness(
             policy=self.policy, ledger=self.ledger, capability=self.capability,
             discovery=self.discovery, owner_channel=self.owner)
+
+    def assert_ready_for_real_job(self) -> None:
+        """Raise unless every precondition for a first real job is satisfied."""
+        assert_may_attempt_first_real_job(self.readiness())
 
     def metrics(self):
         return business_metrics(

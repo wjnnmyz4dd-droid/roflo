@@ -178,3 +178,112 @@ class PaymentLifecycle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BootstrapIsAPreferenceNotAVeto(unittest.TestCase):
+    """Bootstrap nudges ranking. It can never reject a job."""
+
+    def _rig(self, board, **policy):
+        from solvent.capability import Capability
+        from solvent.discovery import Compliance, FixtureSource
+        from solvent.discovery import Readiness as R
+        from solvent.types import CostCategory, Jurisdiction, PricingTier
+        from solvent.harness import OWNER as HOWNER, Solvent
+        s = Solvent()
+        for state, rate in (("CA", 9_500), ("NC", 5_200)):
+            s.pricing.ingest(
+                category=CostCategory.ON_SITE_LABOR,
+                jurisdiction=Jurisdiction(state=state), tier=PricingTier.MARKET_DATA,
+                unit_cents=rate, unit="hour", source="FIXTURE",
+                effective_date="2026-06-01", retrieved_date="2026-09-01",
+                confidence=0.9, owner_identity=HOWNER, is_fixture=True)
+        s.capability.register(
+            Capability(name="spreadsheet", covers=frozenset({"spreadsheet"}),
+                       proven=True), owner_identity=HOWNER)
+        s.discovery.register_source(
+            FixtureSource("board", board), owner_identity=HOWNER,
+            readiness=R.PERMITTED_AUTOMATION, compliance=Compliance.PERMITTED,
+            determination="fixture")
+        s.policy.amend({
+            "discovery": {"approved_sources": ["board"]},
+            "qualification": {"minimum_value_cents": money("50"),
+                              "max_concurrent_jobs": 3, "default_hours": 2.0},
+            "financial": {"max_job_spend_cents": money("5000"),
+                          "max_committed_unverified_cents": money("50000"),
+                          "owner_approval_above_cents": money("10000")},
+            **policy}, HOWNER, "bootstrap test")
+        return s
+
+    @staticmethod
+    def _posting(ref, dollars, upfront=0):
+        return {"ref": ref, "title": f"job {ref}", "quoted_cents": money(dollars),
+                "needs": ["spreadsheet"], "project_state": "NC",
+                "client_ref": "c", "body": "x", "upfront_cost_cents": money(upfront)}
+
+    def _run(self, s):
+        candidates = s.discovery.poll("board")
+        survivors, _ = s.qualification.triage(candidates)
+        return [s.qualification.qualify(c) for c in survivors]
+
+    def test_a_job_needing_money_up_front_still_gets_accepted(self):
+        """The preference must not become a disguised rejection."""
+        from solvent.qualification import Verdict
+        s = self._rig([self._posting("upfront", "900", upfront="50")])
+        decisions = self._run(s)
+        self.assertIs(decisions[0].verdict, Verdict.ACCEPT)
+
+    def test_between_equal_jobs_the_zero_upfront_one_ranks_higher(self):
+        s = self._rig([self._posting("needs_cash", "900", upfront="50"),
+                       self._posting("no_cash", "900")])
+        ranked = s.qualification.rank(self._run(s))
+        self.assertEqual(ranked[0].opportunity.external_ref, "no_cash")
+
+    def test_a_clearly_better_job_still_wins_despite_needing_money_up_front(self):
+        """Bootstrap must not block an obviously superior opportunity."""
+        s = self._rig([self._posting("small_free", "600"),
+                       self._posting("big_upfront", "2400", upfront="50")])
+        ranked = s.qualification.rank(self._run(s))
+        self.assertEqual(ranked[0].opportunity.external_ref, "big_upfront")
+
+    def test_the_penalty_is_bounded_so_it_cannot_become_a_veto(self):
+        s = self._rig([self._posting("upfront", "900", upfront="50")],
+                      bootstrap={"prefer_low_upfront": True, "upfront_penalty": 5.0})
+        ranked = s.qualification.rank(self._run(s))
+        self.assertGreater(ranked[0].score, 0.0,
+                           "an unbounded penalty would zero the score")
+
+    def test_bootstrap_can_be_switched_off(self):
+        s = self._rig([self._posting("a", "900", upfront="50"),
+                       self._posting("b", "900")],
+                      bootstrap={"prefer_low_upfront": False})
+        ranked = s.qualification.rank(self._run(s))
+        self.assertAlmostEqual(ranked[0].score, ranked[1].score, places=2)
+
+
+class FirstRealJobAcceptanceContract(unittest.TestCase):
+    """The preconditions are an executable check, not a checklist to remember."""
+
+    def test_a_fresh_instance_refuses_and_lists_every_blocker(self):
+        from solvent.harness import Solvent
+        solvent = Solvent()
+        with self.assertRaises(FailClosed) as ctx:
+            solvent.assert_ready_for_real_job()
+        message = str(ctx.exception)
+        for expected in ("OD-1", "OD-2", "OD-3", "OD-12"):
+            with self.subTest(blocker=expected):
+                self.assertIn(expected, message)
+
+    def test_fail_closed_external_execution_alone_blocks_a_real_job(self):
+        """A job that cannot be delivered or paid is not a job worth starting."""
+        from solvent.harness import Solvent
+        solvent = Solvent()
+        with self.assertRaises(FailClosed) as ctx:
+            solvent.assert_ready_for_real_job()
+        self.assertIn("fail-closed", str(ctx.exception))
+
+    def test_the_contract_names_the_category_of_each_blocker(self):
+        from solvent.harness import Solvent
+        report = Solvent().readiness()
+        for item in report.blocking:
+            with self.subTest(item=item):
+                self.assertTrue(item.startswith("["), item)

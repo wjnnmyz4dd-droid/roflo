@@ -77,6 +77,11 @@ DEFAULT_POLICY: dict[str, Any] = {
                             "C_CRITICAL": 0.25},
     },
     "egress": {"allowlist": [], "simulation_only": True},
+    # Bootstrap is a *preference*, not a prohibition. It nudges ranking toward
+    # work that needs no money up front, which matters most before there is an
+    # operating reserve. It can never reject a job: the Financial Governor is the
+    # only authority that decides whether work is worth doing.
+    "bootstrap": {"prefer_low_upfront": True, "upfront_penalty": 0.15},
     "preauthorizations": [],
 }
 

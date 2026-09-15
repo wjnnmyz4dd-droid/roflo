@@ -27,7 +27,7 @@ from .errors import AuthorityError, ImmutableRecord
 APPEND_ONLY = (
     "audit_log", "verification_evidence", "ledger_entries",
     "governor_decisions", "action_requests", "price_estimates", "policy_versions",
-    "qualification_verdicts",
+    "qualification_verdicts", "payment_events",
 )
 
 #: Which authority owns which tables. The single source of this mapping.
@@ -39,6 +39,7 @@ TABLE_OWNER = {
     "pricing_reference": "policy",
     "ledger_entries": "ledger",
     "payments": "ledger",
+    "payment_events": "ledger",
     "jobs": "orchestrator",
     "requirements": "orchestrator",
     "capability_assessments": "capability",
@@ -96,7 +97,17 @@ CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, state TEXT NOT NULL,
   amount_cents INTEGER NOT NULL, collected_cents INTEGER NOT NULL DEFAULT 0,
   rail TEXT NOT NULL, verification_method TEXT NOT NULL DEFAULT '',
-  verified_at TEXT, updated_at TEXT NOT NULL
+  verified_at TEXT, updated_at TEXT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'usd', external_ref TEXT NOT NULL DEFAULT '',
+  refunded_cents INTEGER NOT NULL DEFAULT 0,
+  payout_state TEXT NOT NULL DEFAULT 'NOT_APPLICABLE', payout_verified_at TEXT
+);
+CREATE TABLE IF NOT EXISTS payment_events (
+  event_id TEXT PRIMARY KEY, ts TEXT NOT NULL, rail TEXT NOT NULL,
+  event_type TEXT NOT NULL, job_id TEXT NOT NULL DEFAULT '',
+  payment_id TEXT NOT NULL DEFAULT '', amount_cents INTEGER NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT '', livemode INTEGER NOT NULL DEFAULT 0,
+  applied INTEGER NOT NULL DEFAULT 0, outcome TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
