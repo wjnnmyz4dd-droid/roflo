@@ -1,0 +1,90 @@
+# systemd unit for the always-on Solvent runtime.
+#
+# Install to /etc/systemd/system/solvent.service, then:
+#   systemctl daemon-reload && systemctl enable --now solvent
+#
+# systemd owns PROCESS supervision. Solvent's Job Orchestrator owns JOB
+# supervision. Neither is allowed to do the other's job: this unit restarts a
+# dead process, and that is all. It never decides that business work should be
+# repeated -- `solvent run` re-reads durable state on every start and stops at
+# anything ambiguous.
+
+[Unit]
+Description=Solvent - owner-governed business runtime
+Documentation=file:///opt/solvent/docs/solvent-always-on-deployment.md
+After=network-online.target
+Wants=network-online.target
+
+# Restart rate limiting. These are [Unit] directives per systemd.unit(5); in
+# [Service] systemd ignores them with an "Unknown key name" warning and the
+# protection silently does not apply. Five starts in five minutes means the
+# fault is not transient, and hammering it buries the reason in the journal.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=solvent
+Group=solvent
+WorkingDirectory=/opt/solvent
+
+# Secrets live here, outside the repository and readable only by this user.
+# 0600 root:solvent. If the file is absent the service still starts and reports
+# the gap through `solvent health` -- refusing to boot would leave the owner
+# unable to inspect the very thing that is missing.
+EnvironmentFile=-/etc/solvent/solvent.env
+
+ExecStart=/opt/solvent/.venv/bin/python -m solvent.cli run \
+          --db /var/lib/solvent/solvent.db --always-on
+
+# Stop politely. `solvent run` treats SIGTERM as "finish this tick and come
+# back", so the window is for an in-flight tick, not for finishing a job.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+# Restart on failure, but not instantly. The rate limit that stops a restart
+# storm lives in [Unit] above, where systemd actually reads it.
+Restart=on-failure
+RestartSec=10s
+
+# Resource ceilings. These protect the machine; the Financial Governor protects
+# the money. Two different failure modes, two different limits.
+MemoryMax=2G
+CPUQuota=150%
+TasksMax=128
+LimitNOFILE=1024
+
+# Filesystem and privilege reduction. Solvent needs exactly two writable paths.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/var/lib/solvent /var/log/solvent
+
+# Egress, at the OS layer. This is the control the in-process audit hook cannot
+# be: a ctypes call straight to libc bypasses Python, but it cannot bypass the
+# kernel. Start closed and add only what the owner has approved.
+#
+#   IPAddressDeny=any
+#
+# Uncomment the line above once the deployment is ready to be sealed, then add
+# one IPAddressAllow per approved destination. Leaving it commented is the
+# honest default for a host that has not yet been through that step -- see
+# docs/solvent-egress-deployment-contract.md. Do not treat this file as
+# enforcement until that line is live.
+
+# Journald handles rotation and retention, so Solvent never writes an unbounded
+# log file of its own. Configure size in journald.conf, not here.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=solvent
+
+[Install]
+WantedBy=multi-user.target

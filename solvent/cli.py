@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 
 from . import egress
+from . import runtime as rt
 from . import services
-from .harness import Solvent, run_acquisition_cycle, run_first_job
+from .errors import FailClosed
+from .harness import OWNER, Solvent, run_acquisition_cycle, run_first_job
 from .store import TABLE_OWNER
+from .types import OperatingMode
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -222,6 +226,103 @@ def cmd_services(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mode(args: argparse.Namespace) -> rt.Mode:
+    return rt.Mode.ALWAYS_ON if getattr(args, "always_on", False) else rt.Mode.LOCAL
+
+
+def _open(args: argparse.Namespace) -> Solvent | None:
+    """Open the store, or explain why not.
+
+    A corrupt or unreadable database raises before any startup check can run, so
+    without this the operator gets a traceback and systemd gets an exit code with
+    no explanation in the journal. Refusing is already the right behaviour; this
+    makes the refusal legible.
+    """
+    try:
+        return Solvent(args.db)
+    except sqlite3.Error as exc:
+        print(f"cannot open {args.db}: {exc}", file=sys.stderr)
+        print("The database is unreadable. Restore the most recent verified "
+              "backup rather than deleting it — see deploy/backup.sh.",
+              file=sys.stderr)
+        return None
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """Run Solvent as a long-lived service. This is what the service unit execs.
+
+    It runs in the foreground and stops on SIGTERM, because that is what a
+    service manager expects; daemonising here would take process supervision away
+    from the thing that is good at it.
+    """
+    solvent = _open(args)
+    if solvent is None:
+        return 1
+    try:
+        report = rt.serve(solvent, mode=_mode(args), tick_s=args.tick,
+                          max_ticks=args.max_ticks)
+    except FailClosed as refusal:
+        print(f"solvent did not start: {refusal}", file=sys.stderr)
+        return 1
+    print(f"stopped: {report}")
+    return 0
+
+
+def cmd_health(args: argparse.Namespace) -> int:
+    """Report what this Solvent can currently do — not merely that it is alive."""
+    solvent = _open(args)
+    if solvent is None:
+        return 1
+    started = rt.startup_checks(solvent, mode=_mode(args))
+    print(started.render())
+    state, why = rt.health(solvent, started=started)
+    print(f"\nHealth: {state.value} — {why}")
+    print("May start work:", "yes" if state.may_start_work else "no")
+    unsettled = solvent.gate.unsettled()
+    if unsettled:
+        print(f"\n{len(unsettled)} external action(s) of unknown outcome:")
+        for row in unsettled:
+            print(f"  {row['request_id']}  {row['action_class']} -> "
+                  f"{row['destination']}  (job {row['job_id'] or 'none'})")
+        print("\nNothing here may be retried on the strength of this list.")
+    return 0 if state.may_start_work else 2
+
+
+def cmd_recover(args: argparse.Namespace) -> int:
+    """Bring durable state to a safe resting point after a crash or reboot."""
+    solvent = _open(args)
+    if solvent is None:
+        return 1
+    notes = rt.reconcile(solvent)
+    if not notes:
+        print("nothing outstanding")
+        return 0
+    for note in notes:
+        print(f"  {note}")
+    print(f"\n{len(notes)} item(s) need the owner to confirm what actually "
+          "happened before anything is repeated.")
+    return 0
+
+
+def cmd_halt(args: argparse.Namespace) -> int:
+    """Throw the kill switch. Survives restarts because Policy is durable."""
+    solvent = Solvent(args.db)
+    solvent.policy.set_operating_mode(OperatingMode.HALT, OWNER, args.reason)
+    print(f"operating mode: HALT — {args.reason}")
+    print("No new work, no spending, no external effects. A restart will not "
+          "clear this; `solvent resume` is the only way back.")
+    return 0
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    solvent = Solvent(args.db)
+    solvent.policy.set_operating_mode(OperatingMode.NORMAL, OWNER, args.reason)
+    state, why = rt.health(solvent)
+    print(f"operating mode: NORMAL — {args.reason}")
+    print(f"health: {state.value} — {why}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="solvent", description="Owner-governed business operating system.")
@@ -253,6 +354,35 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--state", default="CA", help="project jurisdiction")
     demo.add_argument("--quote", default="900", help="quoted price in dollars")
     demo.set_defaults(func=cmd_demo)
+
+    run = sub.add_parser("run", help="run Solvent as a long-lived service")
+    run.add_argument("--db", default=rt.DEFAULT_DB)
+    run.add_argument("--always-on", action="store_true",
+                     help="production mode: refuse to start without durable storage")
+    run.add_argument("--tick", type=float, default=1.0, help="loop interval seconds")
+    run.add_argument("--max-ticks", type=int, default=None,
+                     help="stop after N ticks (testing)")
+    run.set_defaults(func=cmd_run)
+
+    health = sub.add_parser("health", help="what this Solvent can currently do")
+    health.add_argument("--db", default=":memory:")
+    health.add_argument("--always-on", action="store_true")
+    health.set_defaults(func=cmd_health)
+
+    recover = sub.add_parser("recover",
+                             help="reconcile durable state after a crash or reboot")
+    recover.add_argument("--db", default=":memory:")
+    recover.set_defaults(func=cmd_recover)
+
+    halt = sub.add_parser("halt", help="throw the kill switch (survives restarts)")
+    halt.add_argument("--db", default=":memory:")
+    halt.add_argument("--reason", default="owner halted Solvent")
+    halt.set_defaults(func=cmd_halt)
+
+    resume = sub.add_parser("resume", help="clear the kill switch")
+    resume.add_argument("--db", default=":memory:")
+    resume.add_argument("--reason", default="owner resumed Solvent")
+    resume.set_defaults(func=cmd_resume)
 
     state = sub.add_parser("state", help="print the Project State projection")
     state.add_argument("job_id")

@@ -23,6 +23,18 @@ from typing import Any, Iterable, Sequence
 
 from .errors import AuthorityError, ImmutableRecord
 
+#: How long to wait for another writer before giving up. A 24/7 process has a
+#: scheduler and a webhook path that can collide; failing instantly on a lock that
+#: clears in milliseconds would turn a non-event into an incident.
+BUSY_TIMEOUT_S = 10.0
+
+#: ``(table, column, column-spec)`` added to databases created before the column
+#: existed. Append to this list; never edit or remove an entry.
+MIGRATIONS = (
+    ("action_requests", "phase", "TEXT NOT NULL DEFAULT 'SETTLED'"),
+    ("action_requests", "request_id", "TEXT NOT NULL DEFAULT ''"),
+)
+
 #: Tables whose rows may never change once written.
 APPEND_ONLY = (
     "audit_log", "verification_evidence", "ledger_entries",
@@ -155,7 +167,8 @@ CREATE TABLE IF NOT EXISTS action_requests (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT,
   action_class TEXT NOT NULL, destination TEXT NOT NULL, privacy TEXT NOT NULL,
   grant_id TEXT, allowed INTEGER NOT NULL, reason TEXT NOT NULL,
-  cost_cents INTEGER NOT NULL DEFAULT 0, simulated INTEGER NOT NULL DEFAULT 0
+  cost_cents INTEGER NOT NULL DEFAULT 0, simulated INTEGER NOT NULL DEFAULT 0,
+  phase TEXT NOT NULL DEFAULT 'SETTLED', request_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS owner_approvals (
   nonce TEXT PRIMARY KEY, issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
@@ -258,12 +271,38 @@ class Store:
     def __init__(self, path: str | Path = ":memory:") -> None:
         self.path = str(path)
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._conn = sqlite3.connect(self.path, check_same_thread=False,
+                                     timeout=BUSY_TIMEOUT_S)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
+        if self.path != ":memory:":
+            # Settings that only matter once the process runs for weeks rather
+            # than for one command. WAL survives a killed writer without leaving
+            # the database locked against the next start; synchronous=FULL means
+            # a committed transaction is on disk before the commit returns, which
+            # is the property every recovery claim here depends on. Neither
+            # applies to an in-memory database, and WAL cannot be set on one.
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            self._conn.execute("PRAGMA synchronous = FULL")
+        self._conn.execute(f"PRAGMA busy_timeout = {int(BUSY_TIMEOUT_S * 1000)}")
         self._conn.executescript(SCHEMA)
         self._conn.executescript(_immutability_triggers())
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns a newer Solvent needs to a database an older one created.
+
+        ``CREATE TABLE IF NOT EXISTS`` silently leaves an existing table alone, so
+        without this an upgraded Solvent would read columns that are not there.
+        Additive only: no column is dropped, renamed or retyped, and no row is
+        rewritten, so an append-only table stays append-only.
+        """
+        for table, column, spec in MIGRATIONS:
+            existing = {r["name"] for r in
+                        self._conn.execute(f"PRAGMA table_info({table})")}
+            if existing and column not in existing:
+                self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
 
     def for_authority(self, authority: str) -> AuthorityConnection:
         if authority not in set(TABLE_OWNER.values()):

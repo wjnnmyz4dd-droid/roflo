@@ -81,6 +81,11 @@ components can decide the same thing. They are infrastructure, not the product.
 | **Ledger** | What money actually moved? |
 | **Audit Log** | What happened, and on whose authority? |
 
+The always-on runtime (`solvent/runtime.py`) is deliberately **not** in that
+table. It starts the process, ticks tasks on a schedule and stops cleanly; it
+answers no business question. systemd owns process supervision, the Job
+Orchestrator owns job supervision, and the runtime owns neither.
+
 Discovery finds work and **can never take it**. Qualification decides what is
 worth taking and **owns no economics**. The Governor is the only place economics
 are computed. That separation is what makes automating the search for work safe
@@ -122,7 +127,9 @@ because a better opportunity is competing for the same capacity.
 | Owner-entered opportunity through the full pipeline | **Working** — the manual bridge |
 | Authenticated owner approval | **Working** — signed, scoped, single-use; needs a key provisioned |
 | First-Revenue Mode | **Available** — one source, one job, owner-set caps |
-| Manually sourced **real** job | **Blocked on OD-1, OD-2, OD-3, OD-12** |
+| 24/7 operation on an always-on host | **Working** — `solvent run --always-on`; see `docs/solvent-always-on-deployment.md` |
+| Crash and reboot recovery | **Working** — an unsettled external action blocks its job rather than repeating it |
+| Manually sourced **real** job | **Blocked on OD-1, OD-2, OD-12** (OD-3 verified; owner records it) |
 | Controlled discovery against a real platform | Researched; see `docs/solvent-work-source-research.md` |
 | Owner-approved first platform | Not started |
 | Limited automated discovery | Not started |

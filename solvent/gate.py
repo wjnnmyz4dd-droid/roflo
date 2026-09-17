@@ -86,6 +86,11 @@ def approval(*, owner_identity: str, job_id: str, action_class: ActionClass,
         expires_at=(datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)).isoformat())
 
 
+#: An intent written before the effect; the outcome written after it. A request
+#: with an intent and no outcome is of unknown result — see :meth:`ActionGate.unsettled`.
+ATTEMPTING, SETTLED = "ATTEMPTING", "SETTLED"
+
+
 @dataclass(frozen=True, slots=True)
 class ActionResult:
     allowed: bool
@@ -141,6 +146,16 @@ class ActionGate:
                 simulated = True
                 reason = f"{reason}; recorded as SIMULATED (egress.simulation_only)"
             elif perform is not None:
+                # Write the intent down BEFORE the effect can happen. If the
+                # process dies inside perform() the effect may already have landed
+                # out in the world, and without this row the restart would have no
+                # idea it was ever attempted — so it would do it again. One
+                # duplicated invoice or delivery is worse than any amount of
+                # uncertainty, so the uncertainty is what gets recorded.
+                self._record(new_id("act"), action_class, destination, privacy,
+                             job_id, grant_id, True, f"attempting: {purpose}",
+                             amount_cents, False, initiator, purpose,
+                             phase=ATTEMPTING, request_id=request_id)
                 try:
                     with egress.window(f"gate:{request_id} {purpose}"):
                         response = perform()
@@ -148,11 +163,12 @@ class ActionGate:
                     self._record(request_id, action_class, destination, privacy,
                                  job_id, grant_id, False,
                                  f"transport failed: {exc}", amount_cents, False,
-                                 initiator, purpose)
+                                 initiator, purpose, request_id=request_id)
                     raise
 
         self._record(request_id, action_class, destination, privacy, job_id, grant_id,
-                     allowed, reason, amount_cents, simulated, initiator, purpose)
+                     allowed, reason, amount_cents, simulated, initiator, purpose,
+                     request_id=request_id)
         return ActionResult(allowed=allowed, reason=reason, request_id=request_id,
                             simulated=simulated, response=response)
 
@@ -261,25 +277,38 @@ class ActionGate:
 
     # --------------------------------------------------------------- recording
 
-    def _record(self, request_id, action_class, destination, privacy, job_id,
+    def _record(self, row_id, action_class, destination, privacy, job_id,
                 grant_id, allowed, reason, amount_cents, simulated, initiator,
-                purpose) -> None:
+                purpose, *, phase: str = SETTLED, request_id: str = "") -> None:
         self._db.execute(
             "INSERT INTO action_requests(id,ts,job_id,action_class,destination,"
-            "privacy,grant_id,allowed,reason,cost_cents,simulated) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (request_id, now(), job_id, action_class.value, destination, privacy.value,
+            "privacy,grant_id,allowed,reason,cost_cents,simulated,phase,request_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (row_id, now(), job_id, action_class.value, destination, privacy.value,
              grant_id, 1 if allowed else 0, reason, amount_cents,
-             1 if simulated else 0))
+             1 if simulated else 0, phase, request_id or row_id))
         self._db.commit()
         self._audit.record(
             event="gate.allow" if allowed else "gate.deny", authority="gate",
-            initiator=initiator, why=purpose, job_id=job_id, input_ref=request_id,
+            initiator=initiator, why=purpose, job_id=job_id, input_ref=row_id,
             decision="ALLOW" if allowed else "DENY",
             permission=self._policy.permission_for(action_class).value,
             financial_authorization=grant_id or "",
             external_effect=f"{action_class.value} -> {destination}",
             result=reason, simulated=simulated, privacy=privacy.value)
+
+    def unsettled(self) -> list[dict]:
+        """Actions that were started but whose outcome was never written down.
+
+        Each one is a real external effect that **may or may not** have happened.
+        This returns the question, not an answer: nothing here may be retried on
+        the strength of appearing in this list, because a retry of an effect that
+        did land is the duplicate the intent record exists to prevent.
+        """
+        return [dict(r) for r in self._db.query(
+            "SELECT * FROM action_requests WHERE phase = ? AND request_id NOT IN "
+            "(SELECT request_id FROM action_requests WHERE phase = ?) ORDER BY ts",
+            (ATTEMPTING, SETTLED))]
 
     def requests_for(self, job_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(

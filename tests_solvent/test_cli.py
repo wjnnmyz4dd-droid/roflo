@@ -44,6 +44,52 @@ class ReadOnlyCommands(unittest.TestCase):
         # Selection is strategic. A price here would be a second Governor.
         self.assertNotIn("$", out)
 
+    def test_health_distinguishes_alive_from_able(self):
+        code, out = run("health")
+        self.assertEqual(code, 0)
+        self.assertIn("Health:", out)
+        self.assertIn("May start work:", out)
+
+    def test_halt_then_health_reports_halted_and_refuses_work(self):
+        import pathlib as _p, tempfile as _t
+        db = str(_p.Path(_t.mkdtemp()) / "s.db")
+        self.assertEqual(run("halt", "--db", db)[0], 0)
+        code, out = run("health", "--db", db)
+        self.assertEqual(code, 2, "a halted Solvent must not report success")
+        self.assertIn("HALTED", out)
+
+    def test_recover_reports_nothing_to_do_on_a_clean_system(self):
+        code, out = run("recover")
+        self.assertEqual(code, 0)
+        self.assertIn("nothing outstanding", out)
+
+    def test_run_refuses_always_on_mode_without_durable_storage(self):
+        import contextlib as _c, io as _io
+        from solvent.cli import main
+        err = _io.StringIO()
+        with _c.redirect_stderr(err), _c.redirect_stdout(_io.StringIO()):
+            code = main(["run", "--db", ":memory:", "--always-on", "--max-ticks", "1"])
+        self.assertEqual(code, 1)
+        self.assertIn("did not start", err.getvalue())
+
+    def test_an_unreadable_database_is_explained_not_traced(self):
+        """systemd gets an exit code; the operator needs a sentence."""
+        import contextlib as _c, io as _io, pathlib as _p, tempfile as _t
+        from solvent.cli import main
+        from solvent.harness import Solvent
+
+        db = str(_p.Path(_t.mkdtemp()) / "s.db")
+        Solvent(db).store.close()
+        torn = _p.Path(db)
+        torn.write_bytes(torn.read_bytes()[: len(torn.read_bytes()) // 2])
+
+        err = _io.StringIO()
+        with _c.redirect_stderr(err), _c.redirect_stdout(_io.StringIO()):
+            code = main(["health", "--db", db])
+        self.assertEqual(code, 1)
+        self.assertIn("cannot open", err.getvalue())
+        self.assertIn("backup", err.getvalue())
+
     def test_status_runs_on_an_empty_business(self):
         code, out = run("status")
         self.assertEqual(code, 0)
@@ -60,7 +106,8 @@ class NoCommandSellsWork(unittest.TestCase):
         self.assertEqual(
             set(actions),
             {"doctor", "laws", "acquire", "services", "metrics", "status",
-             "readiness", "demo", "state"},
+             "readiness", "demo", "state", "run", "health", "recover", "halt",
+             "resume"},
             "a new subcommand was added without reviewing it for external effect",
         )
 
