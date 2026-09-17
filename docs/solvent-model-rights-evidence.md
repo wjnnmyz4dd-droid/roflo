@@ -1,7 +1,12 @@
 # Solvent — Production Model Commercial-Rights Evidence (OD-3)
 
-**Verification date: 15 September 2026.** One question: *may the exact model
-Solvent intends to use produce paid client work?*
+**Verified 15 September 2026. Re-verified 17 September 2026.** One question:
+*may the exact model Solvent intends to use produce paid client work?*
+
+**Re-verification result (17 Sep):** every digest below re-fetched **unchanged**,
+the packaged licence still hashes byte-identical to the publisher's, the upstream
+repo commit is still `cf98f3b3…`, and the family licence spread is unchanged. The
+answer holds. The re-run did, however, expose an enforcement defect — see §9.
 
 This record exists because the previous answer — "the Ollama tag packages
 Apache-2.0 weights" — was a claim, not evidence. What follows is the chain.
@@ -139,12 +144,18 @@ library is Apache-2.0 licensed and may be used for paid client work.
 
 Two honest limits:
 
-1. **Solvent cannot verify what is running locally.** External execution is
+1. **A per-invocation CLI flag is invisible to any pre-flight check.** roflo's
+   precedence is *flags > env > file*. Solvent now reads the two **persistent**
+   layers (§9), but `roflo -m <tag>` overrides both at the moment of the call,
+   after any readiness check has run. Nothing checkable before execution can see
+   it. The mitigation is operational, not architectural: production invocations
+   must not pass `-m`/`-b`.
+2. **Solvent cannot verify what is running locally.** External execution is
    fail-closed, so Solvent cannot query a local Ollama and confirm the installed
    blob digest matches the approved one. Integrity at pull time rests on
    Ollama's own content-addressed verification. Solvent verifies the *approval*,
    not the *installation*.
-2. **A tag is a pointer.** Ollama could repoint `14b-instruct` at different
+3. **A tag is a pointer.** Ollama could repoint `14b-instruct` at different
    weights. That is why the approval record stores the **digest**, and why
    `ollama pull` re-verifying a changed digest is the owner's signal to re-clear.
 
@@ -161,10 +172,29 @@ a family name cannot be substituted for one. It is the owner path only, via
 it; an architectural test asserts no authority module even calls it.
 
 `readiness.model_artifact_check()` then requires **two facts to agree**: Policy
-has cleared a specific artifact, *and* `roflo.toml` names that same tag. A
+has cleared a specific artifact, *and* configuration names that same tag. A
 clearance nothing runs is useless; a configured model nobody cleared is the
 defect. Either mismatch blocks the first real job through
 `assert_may_attempt_first_real_job()`.
+
+### The defect the 17 Sep re-run found
+
+The first implementation read **only `roflo.toml`**. But roflo's documented
+precedence is *flags > env > file*, and `roflo/config.py::_env_overrides` honours
+`ROFLO_MODEL` and `ROFLO_BACKEND`. So:
+
+```
+ROFLO_MODEL=qwen2.5:3b-instruct
+  → roflo loads qwen2.5:3b-instruct        (research-only: NON-COMMERCIAL ONLY)
+  → readiness reads roflo.toml             (still says 14b-instruct)
+  → OD-3 reports CLEARED                   ← reproduced live, then fixed
+```
+
+Checking the lower-precedence layer and calling it "the configured model" was
+the defect — the environment is what wins. `configured_model()` now applies the
+same precedence the runtime does, and a test asserts the variable names still
+match `roflo/config.py`, so a rename there fails the suite rather than silently
+blinding the check.
 
 Simulation is deliberately untouched by this — development keeps working; only
 paid client work is gated.

@@ -14,7 +14,8 @@ import unittest
 
 from solvent.errors import FailClosed
 from solvent.readiness import (
-    configured_model, first_revenue_readiness, model_artifact_check,
+    ENV_BACKEND, ENV_MODEL, configured_model, first_revenue_readiness,
+    model_artifact_check,
 )
 from solvent.harness import OWNER as DEMO_OWNER, Solvent
 from tests_solvent.fixtures import OWNER, Rig
@@ -89,7 +90,7 @@ class OnlyTheClearedArtifactPasses(unittest.TestCase):
             owner_identity=OWNER, reason="OD-3", **EVIDENCE)
 
     def check(self, tag: str):
-        return model_artifact_check(self.rig.policy, config(tag))
+        return model_artifact_check(self.rig.policy, config(tag), env={})
 
     def test_the_approved_exact_artifact_is_accepted(self):
         check = self.check(TAG)
@@ -113,7 +114,8 @@ class OnlyTheClearedArtifactPasses(unittest.TestCase):
         self.assertFalse(self.check("some-model:latest").ready)
 
     def test_unreadable_configuration_is_refused_rather_than_assumed(self):
-        check = model_artifact_check(self.rig.policy, "/nonexistent/roflo.toml")
+        check = model_artifact_check(
+            self.rig.policy, "/nonexistent/roflo.toml", env={})
         self.assertFalse(check.ready)
         self.assertIn("cannot read", check.detail)
 
@@ -129,7 +131,7 @@ class MissingProvenance(unittest.TestCase):
         self.rig = Rig()
 
     def test_no_clearance_at_all_blocks(self):
-        check = model_artifact_check(self.rig.policy, config(TAG))
+        check = model_artifact_check(self.rig.policy, config(TAG), env={})
         self.assertFalse(check.ready)
         self.assertIn("no artifact cleared", check.detail)
 
@@ -139,7 +141,7 @@ class MissingProvenance(unittest.TestCase):
             "model": "Qwen2.5-14B-Instruct", "tag": TAG, "digest": DIGEST,
             "license_id": "Apache-2.0", "license_source": "", "verified_on": "",
         }}}, OWNER, "hand-written record")
-        check = model_artifact_check(self.rig.policy, config(TAG))
+        check = model_artifact_check(self.rig.policy, config(TAG), env={})
         self.assertFalse(check.ready)
         self.assertIn("missing evidence", check.detail)
 
@@ -148,31 +150,31 @@ class MissingProvenance(unittest.TestCase):
         self.rig.policy.amend(
             {"governance": {"model_commercial_rights": "commercial use okay"}},
             OWNER, "vague claim")
-        self.assertFalse(model_artifact_check(self.rig.policy, config(TAG)).ready)
+        self.assertFalse(model_artifact_check(self.rig.policy, config(TAG), env={}).ready)
 
     def test_a_non_dict_record_is_refused(self):
         self.rig.policy.amend(
             {"governance": {"approved_model_artifact": "Apache-2.0"}},
             OWNER, "string instead of a record")
-        self.assertFalse(model_artifact_check(self.rig.policy, config(TAG)).ready)
+        self.assertFalse(model_artifact_check(self.rig.policy, config(TAG), env={}).ready)
 
 
 class ConfiguredModelReading(unittest.TestCase):
     def test_this_repository_declares_the_artifact_under_verification(self):
-        kind, model = configured_model("roflo.toml")
+        kind, model = configured_model("roflo.toml", env={})
         self.assertEqual((kind, model), ("ollama", TAG))
 
     def test_a_malformed_config_is_unknown_not_permissive(self):
         directory = tempfile.mkdtemp()
         path = pathlib.Path(directory) / "roflo.toml"
         path.write_text("this is not = valid = toml [[[")
-        self.assertEqual(configured_model(str(path)), ("", ""))
+        self.assertEqual(configured_model(str(path), env={}), ("", ""))
 
     def test_a_config_without_a_backend_table_is_unknown(self):
         directory = tempfile.mkdtemp()
         path = pathlib.Path(directory) / "roflo.toml"
         path.write_text('template = "chatml"\n')
-        self.assertEqual(configured_model(str(path)), ("", ""))
+        self.assertEqual(configured_model(str(path), env={}), ("", ""))
 
 
 class Adversarial(unittest.TestCase):
@@ -204,7 +206,7 @@ class Adversarial(unittest.TestCase):
         self.assertIn("72b", posting)  # the text exists
         record = self.rig.policy.get("governance", "approved_model_artifact")
         self.assertEqual(record["tag"], TAG)          # the record does not move
-        self.assertTrue(model_artifact_check(self.rig.policy, config(TAG)).ready)
+        self.assertTrue(model_artifact_check(self.rig.policy, config(TAG), env={}).ready)
 
     def test_license_laundering_the_runtime_onto_the_weights_is_refused(self):
         """roflo's own licence says nothing about the weights it loads."""
@@ -220,7 +222,7 @@ class Adversarial(unittest.TestCase):
                           "qwen2.5:7b-instruct", "qwen2.5"):
             with self.subTest(tag=neighbour):
                 self.assertFalse(
-                    model_artifact_check(self.rig.policy, config(neighbour)).ready)
+                    model_artifact_check(self.rig.policy, config(neighbour), env={}).ready)
 
     def test_an_owner_may_re_clear_a_different_artifact_deliberately(self):
         """Governance is not a trap: the owner can move, on the record."""
@@ -231,8 +233,8 @@ class Adversarial(unittest.TestCase):
             **{**EVIDENCE, "tag": "qwen2.5:32b-instruct", "digest": OTHER_DIGEST,
                "model": "Qwen2.5-32B-Instruct"})
         self.assertTrue(model_artifact_check(
-            self.rig.policy, config("qwen2.5:32b-instruct")).ready)
-        self.assertFalse(model_artifact_check(self.rig.policy, config(TAG)).ready)
+            self.rig.policy, config("qwen2.5:32b-instruct"), env={}).ready)
+        self.assertFalse(model_artifact_check(self.rig.policy, config(TAG), env={}).ready)
 
 
 class UnknownRightsCannotActivateProductionWork(unittest.TestCase):
@@ -243,7 +245,7 @@ class UnknownRightsCannotActivateProductionWork(unittest.TestCase):
         return first_revenue_readiness(
             policy=self.solvent.policy, ledger=self.solvent.ledger,
             capability=self.solvent.capability,
-            discovery=self.solvent.discovery, config_path=config_path)
+            discovery=self.solvent.discovery, config_path=config_path, env={})
 
     def test_od3_blocks_the_first_real_job_while_rights_are_unknown(self):
         blocking = self.report(config(TAG)).blocking
@@ -267,3 +269,65 @@ class UnknownRightsCannotActivateProductionWork(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnvironmentOverrides(unittest.TestCase):
+    """roflo's precedence is flags > env > file, so a file-only check is wrong.
+
+    Found on re-verification: ``ROFLO_MODEL`` silently moved production onto the
+    research-only 3B while readiness, reading only roflo.toml, still reported
+    OD-3 cleared. The environment is the higher-precedence layer; checking the
+    lower one and calling it "the configured model" was the defect.
+    """
+
+    def setUp(self):
+        self.rig = Rig()
+        self.rig.policy.approve_model_artifact(
+            owner_identity=OWNER, reason="OD-3", **EVIDENCE)
+        self.config = config(TAG)
+
+    def check(self, env):
+        return model_artifact_check(self.rig.policy, self.config, env=env)
+
+    def test_an_empty_environment_leaves_the_file_answer_intact(self):
+        self.assertTrue(self.check({}).ready)
+
+    def test_roflo_model_pointing_at_a_research_only_checkpoint_is_refused(self):
+        check = self.check({"ROFLO_MODEL": "qwen2.5:3b-instruct"})
+        self.assertFalse(check.ready)
+        self.assertIn("qwen2.5:3b-instruct", check.detail)
+
+    def test_roflo_model_cannot_launder_any_uncleared_tag(self):
+        for tag in ("qwen2.5:72b-instruct", "qwen2.5:14b-instruct-fp16",
+                    "qwen2.5", "llama3:8b"):
+            with self.subTest(tag=tag):
+                self.assertFalse(self.check({"ROFLO_MODEL": tag}).ready)
+
+    def test_an_override_naming_the_cleared_artifact_is_fine(self):
+        self.assertTrue(self.check({"ROFLO_MODEL": TAG}).ready)
+
+    def test_the_environment_wins_over_the_file_exactly_as_roflo_does(self):
+        kind, model = configured_model(
+            self.config, env={"ROFLO_BACKEND": "vllm", "ROFLO_MODEL": "other:1b"})
+        self.assertEqual((kind, model), ("vllm", "other:1b"))
+
+    def test_an_override_still_counts_when_the_file_is_unreadable(self):
+        """No file is not permission to run whatever the environment says."""
+        kind, model = configured_model(
+            "/nonexistent/roflo.toml", env={"ROFLO_MODEL": "qwen2.5:3b-instruct"})
+        self.assertEqual(model, "qwen2.5:3b-instruct")
+        self.assertFalse(model_artifact_check(
+            self.rig.policy, "/nonexistent/roflo.toml",
+            env={"ROFLO_MODEL": "qwen2.5:3b-instruct"}).ready)
+
+    def test_an_empty_override_does_not_blank_the_configured_model(self):
+        """An unset-looking variable must not turn a known model into unknown."""
+        self.assertEqual(configured_model(self.config, env={"ROFLO_MODEL": ""})[1],
+                         TAG)
+
+    def test_the_override_names_match_roflo(self):
+        """If roflo renames these, this test fails rather than the check silently
+        going blind."""
+        source = pathlib.Path("roflo/config.py").read_text()
+        for name in (ENV_BACKEND, ENV_MODEL):
+            self.assertIn(f'env.get("{name}")', source)

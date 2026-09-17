@@ -15,7 +15,9 @@ model output — and none of those is a coding problem.
 
 from __future__ import annotations
 
+import os
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from .errors import FailClosed
@@ -72,25 +74,40 @@ ARTIFACT_EVIDENCE = ("model", "tag", "digest", "license_id", "license_source",
                      "verified_on")
 
 
-def configured_model(config_path: str = "roflo.toml") -> tuple[str, str]:
-    """``(backend_kind, model_tag)`` the deployment is configured to run.
+#: The environment overrides the config file, so these are read second and win.
+#: Mirrors ``roflo.config._env_overrides``; if that list grows, so must this one.
+ENV_BACKEND, ENV_MODEL = "ROFLO_BACKEND", "ROFLO_MODEL"
 
-    Read from configuration rather than remembered, because configuration is what
-    the process will actually load. An unreadable file yields ``("", "")``:
-    unknown is not approved.
+
+def configured_model(config_path: str = "roflo.toml",
+                     env: Mapping[str, str] | None = None) -> tuple[str, str]:
+    """``(backend_kind, model_tag)`` the deployment will actually run.
+
+    Read from configuration rather than remembered, and read the way the runtime
+    reads it: roflo's precedence is *flags > env > file*, so a file-only answer is
+    the wrong answer. ``ROFLO_MODEL`` pointing at an uncleared checkpoint is
+    exactly the silent downgrade this exists to catch.
+
+    An unreadable file yields ``("", "")`` — unknown is not approved — but an
+    environment override still counts, because the process would still honour it.
     """
+    kind = model = ""
     try:
         with open(config_path, "rb") as handle:
             doc = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError):
-        return "", ""
+        doc = {}
     backend = doc.get("backend")
-    if not isinstance(backend, dict):
-        return "", ""
-    return str(backend.get("kind", "")), str(backend.get("model", ""))
+    if isinstance(backend, dict):
+        kind = str(backend.get("kind", ""))
+        model = str(backend.get("model", ""))
+
+    environ = os.environ if env is None else env
+    return environ.get(ENV_BACKEND) or kind, environ.get(ENV_MODEL) or model
 
 
-def model_artifact_check(policy, config_path: str = "roflo.toml") -> Check:
+def model_artifact_check(policy, config_path: str = "roflo.toml",
+                         env: Mapping[str, str] | None = None) -> Check:
     """Is the exact artifact the deployment will run cleared for paid work?
 
     Two facts must agree: Policy has cleared a specific artifact by digest, and
@@ -112,7 +129,7 @@ def model_artifact_check(policy, config_path: str = "roflo.toml") -> Check:
     if not DIGEST_RE.match(str(record["digest"])):
         return blocked(f"clearance carries no content digest ({record['digest']!r})")
 
-    _, configured = configured_model(config_path)
+    _, configured = configured_model(config_path, env)
     if not configured:
         return blocked("cannot read the configured production model")
     if configured != str(record["tag"]):
@@ -129,7 +146,8 @@ def model_artifact_check(policy, config_path: str = "roflo.toml") -> Check:
 
 def first_revenue_readiness(*, policy, ledger, capability, discovery,
                             owner_channel=None,
-                            config_path: str = "roflo.toml") -> Readiness:
+                            config_path: str = "roflo.toml",
+                            env: Mapping[str, str] | None = None) -> Readiness:
     """Report what is ready and what is not, from the authorities themselves."""
     report = Readiness()
     add = report.checks.append
@@ -185,7 +203,7 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               "OD-2: without a verification signal PAID is unreachable and "
               "profit cannot be computed", category=EXTERNAL_VERIFICATION))
 
-    add(model_artifact_check(policy, config_path))
+    add(model_artifact_check(policy, config_path, env))
 
     # --- posture ----------------------------------------------------------
     simulation = policy.get("egress", "simulation_only", default=True)

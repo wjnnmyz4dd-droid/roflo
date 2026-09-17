@@ -134,6 +134,12 @@ a registered owner identity, which is the owner's to supply. The exact call is i
 `docs/solvent-model-rights-evidence.md` §10. Nothing was written to the
 repository on the owner's behalf.
 
+**Re-verified 17 September 2026:** all digests unchanged, the packaged licence
+still hashes byte-identical to the publisher's, the family spread is unchanged.
+The re-run also found and fixed an enforcement hole — `ROFLO_MODEL` overrides
+`roflo.toml`, so a file-only check could report OD-3 cleared while the
+research-only 3B was actually loaded.
+
 **Full evidence chain, sources and stated limits:**
 `docs/solvent-model-rights-evidence.md`.
 
