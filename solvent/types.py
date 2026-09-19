@@ -124,12 +124,22 @@ class JobState(Enum):
     READY_FOR_DELIVERY = "READY_FOR_DELIVERY"
     AWAITING_PAYMENT = "AWAITING_PAYMENT"
     COMPLETE = "COMPLETE"
+    #: A delivered job the client has raised something about. Reached only from
+    #: COMPLETE or AWAITING_PAYMENT, and only through the feedback path, so a
+    #: completed job is reopenable without COMPLETE being editable.
+    REVISION_REQUESTED = "REVISION_REQUESTED"
     REJECTED = "REJECTED"
     FAILED = "FAILED"
 
     @property
     def is_terminal(self) -> bool:
-        return self in (JobState.COMPLETE, JobState.REJECTED, JobState.FAILED)
+        return self in (JobState.REJECTED, JobState.FAILED)
+
+    @property
+    def is_delivered(self) -> bool:
+        """Work has left Solvent. History from here on is append-only."""
+        return self in (JobState.COMPLETE, JobState.AWAITING_PAYMENT,
+                        JobState.REVISION_REQUESTED)
 
 
 class BlockedOn(Enum):
@@ -156,10 +166,62 @@ class RequirementSource(Enum):
     OWNER_CONFIRMED = "OWNER_CONFIRMED"
     CLIENT_CONFIRMED_STRUCTURED = "CLIENT_CONFIRMED_STRUCTURED"
     MODEL_EXTRACTED_UNCONFIRMED = "MODEL_EXTRACTED_UNCONFIRMED"
+    #: Solvent worked this one out because the job is not correct without it —
+    #: for example "the output must still parse as CSV". It is recorded as
+    #: derived so it can never be quoted back to a client as something they
+    #: asked for.
+    DERIVED = "DERIVED"
+    #: Imposed by Policy or safety, not by anyone's request. Untrusted content
+    #: can never reach this value: only the owner path writes it.
+    SYSTEM_SAFETY = "SYSTEM_SAFETY"
 
     @property
     def may_gate_commitment(self) -> bool:
         return self is not RequirementSource.MODEL_EXTRACTED_UNCONFIRMED
+
+    @property
+    def is_client_asserted(self) -> bool:
+        """Did the client actually ask for this? Derived work is not theirs."""
+        return self in (RequirementSource.CLIENT_CONFIRMED_STRUCTURED,
+                        RequirementSource.MODEL_EXTRACTED_UNCONFIRMED)
+
+
+class Criticality(Enum):
+    """Does delivery depend on this requirement?"""
+
+    MANDATORY = "MANDATORY"   # no delivery without a PASS
+    ADVISORY = "ADVISORY"     # recorded, reported, does not block
+
+    @property
+    def blocks_delivery(self) -> bool:
+        return self is Criticality.MANDATORY
+
+
+class CheckResult(Enum):
+    """The verdict for one requirement against one artifact.
+
+    Uncertainty is never collapsed into PASS. A check that could not run is
+    UNVERIFIABLE and a check that lacks a client decision is NEEDS_INFORMATION;
+    both block delivery exactly as a FAIL does.
+    """
+
+    PASS = "PASS"
+    FAIL = "FAIL"
+    UNVERIFIABLE = "UNVERIFIABLE"
+    NEEDS_INFORMATION = "NEEDS_INFORMATION"
+
+    @property
+    def satisfies(self) -> bool:
+        return self is CheckResult.PASS
+
+
+class RequirementStatus(Enum):
+    """Where a requirement is in its life. Committed requirements are frozen."""
+
+    DRAFT = "DRAFT"            # proposed, not yet part of the baseline
+    COMMITTED = "COMMITTED"    # in the baseline; cannot be edited or removed
+    AMENDED = "AMENDED"        # superseded by a later requirement, on the record
+    WITHDRAWN = "WITHDRAWN"    # removed through the amendment path, never silently
 
 
 class Conformance(Enum):
@@ -414,10 +476,52 @@ class CostLine:
 
 @dataclass(frozen=True, slots=True)
 class Requirement:
+    """One thing the finished work must be true of.
+
+    ``check`` names a deterministic verification method and ``params`` carries
+    its arguments. A requirement with no check is not unverifiable by accident —
+    it is refused at commitment, because a checklist item nobody can test is a
+    promise nobody can keep.
+    """
+
     id: str
     text: str
     source: RequirementSource
     confirmed_by: str = ""
+    #: The acceptance condition in words, for the client and the audit trail.
+    acceptance: str = ""
+    #: The registered check that decides it. See ``csvverify.CHECKS``.
+    check: str = ""
+    params: dict = field(default_factory=dict)
+    criticality: Criticality = Criticality.MANDATORY
+    status: RequirementStatus = RequirementStatus.DRAFT
+    #: Set when this requirement replaces an earlier one, never by editing it.
+    supersedes: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Artifact:
+    """A file, identified by what is in it rather than by where it sits.
+
+    The digest is computed from the bytes on disk by whoever registers it. A
+    caller-supplied digest is never trusted, because the whole point is to make
+    "the thing I checked" and "the thing I delivered" the same object.
+    """
+
+    id: str
+    job_id: str
+    role: str            # SOURCE | WORKING | DELIVERABLE
+    path: str
+    digest: str          # sha256 of the bytes
+    size: int
+    media_type: str
+    produced_by: str = ""
+    capability_version: str = ""
+    source_digest: str = ""   # what this was derived from, for SOURCE-preservation
+
+    @property
+    def short(self) -> str:
+        return self.digest[:16]
 
 
 @dataclass(frozen=True, slots=True)

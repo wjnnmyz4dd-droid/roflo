@@ -6,6 +6,7 @@ from solvent.capability import Assessment
 from solvent.errors import FailClosed
 from solvent.orchestrator import JobOrchestrator
 from solvent.types import (
+    Requirement, RequirementSource,
     BlockedOn, CapabilityVerdict, Conformance, ConsequenceTier, CostCategory, CostLine,
     GovernorVerdict, JobState, Jurisdiction, LocationSignals, OperatingMode,
     VerificationTier, money,
@@ -119,7 +120,32 @@ class Qualification(Base):
 
 
 class VerificationGate(Base):
+    def _attach_work(self, job_id):
+        """One committed requirement and one real CSV deliverable."""
+        import pathlib as _p, tempfile as _t
+        work = _p.Path(_t.mkdtemp())
+        (work / "source.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+        (work / "out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+        self.orch.add_requirement(job_id, Requirement(
+            id="R-1", text="the deliverable must open as CSV",
+            source=RequirementSource.SYSTEM_SAFETY, acceptance="parses",
+            check="parses_as_csv", params={}))
+        self.orch.commit_requirements(job_id=job_id, initiator=OWNER)
+        self.orch.register_artifact(job_id=job_id, role="SOURCE",
+                                    path=str(work / "source.csv"))
+        artifact = self.orch.register_artifact(
+            job_id=job_id, role="DELIVERABLE", path=str(work / "out.csv"),
+            produced_by="worker")
+        return artifact.digest
+
     def _to_verifying(self, dollars="600"):
+        """Drive a job to VERIFYING **with a real checklist and a real file**.
+
+        The delivery gate now asks whether every committed requirement passes for
+        the exact artifact about to go out, so a job with neither cannot reach
+        delivery at all. These tests are about tier sufficiency and
+        ledger-backed completion, so they need the rest to be real.
+        """
         job_id = self.make_job(dollars)
         self.orch.qualify(job_id=job_id, assessment=conforming(job_id),
                           estimate=self.estimate_for(job_id, dollars=dollars),
@@ -129,6 +155,7 @@ class VerificationGate(Base):
         grant = self.rig.governor.grant_budget(job_id=job_id, decision_id="d",
                                                authorized_cents=100_000)
         self.orch.begin_execution(job_id=job_id, grant_id=grant, initiator="x")
+        self._artifact_digest = self._attach_work(job_id)
         self.orch.submit_for_verification(job_id=job_id, initiator="x")
         return job_id
 
@@ -149,6 +176,7 @@ class VerificationGate(Base):
         job_id = self._to_verifying()
         self.assertIs(self.orch.job(job_id).consequence, ConsequenceTier.C_HIGH)
         self.rig.audit.record_verification(
+            requirement_id="R-1", artifact_digest=self._artifact_digest,
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC, method="schema",
             executor_identity="execution", verifier_identity="qc", verdict=True,
             raw_output="ok", consequence=ConsequenceTier.C_HIGH)
@@ -159,6 +187,7 @@ class VerificationGate(Base):
     def test_sufficient_evidence_allows_delivery(self):
         job_id = self._to_verifying()
         self.rig.audit.record_verification(
+            requirement_id="R-1", artifact_digest=self._artifact_digest,
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC,
             method="recalculated totals", executor_identity="execution",
             verifier_identity="qc", verdict=True, raw_output="ok",
@@ -169,6 +198,7 @@ class VerificationGate(Base):
     def test_completion_requires_externally_verified_payment(self):
         job_id = self._to_verifying()
         self.rig.audit.record_verification(
+            requirement_id="R-1", artifact_digest=self._artifact_digest,
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC, method="m",
             executor_identity="execution", verifier_identity="qc", verdict=True,
             raw_output="ok", consequence=self.orch.job(job_id).consequence)

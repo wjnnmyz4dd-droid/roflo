@@ -126,13 +126,40 @@ class AuditLog:
         self, *, subject_ref: str, tier: VerificationTier, method: str,
         executor_identity: str, verifier_identity: str, verdict: bool,
         raw_output: str, consequence: ConsequenceTier,
+        requirement_id: str = "", artifact_digest: str = "", artifact_id: str = "",
     ) -> str:
-        """Record verification evidence, refusing self-attestation where it matters.
+        """Record verification evidence, refusing self-attestation *and* hearsay.
 
-        At C_HIGH and above the component that benefits from claiming success may
-        not be the sole source of evidence for it. That rule is enforced here, at
-        write time, rather than trusted to reviewers.
+        Two separate controls live here, and they close different holes.
+
+        **Who may attest.** At C_HIGH and above the component that benefits from
+        claiming success may not be the sole source of evidence for it, and a
+        self-report is never verification above C_LOW. Enforced at write time.
+
+        **What was attested.** A verification that says only "it passed" cannot
+        be checked by anyone later, and cannot be invalidated when the artifact
+        changes underneath it. So evidence above T0 must name the requirement it
+        concerns and the digest of the artifact it inspected. Those two fields
+        are what let :meth:`Orchestrator.verification_satisfied` ask the only
+        question that matters before delivery: *does every committed requirement
+        have a pass for this exact file?*
+
+        The digest is not validated for truthfulness here — this records what a
+        verifier claims to have inspected. What makes it meaningful is that the
+        Orchestrator compares it against the digest it computed from the file it
+        is about to deliver, so a wrong digest fails the gate rather than passing
+        it.
         """
+        if tier is not VerificationTier.T0_SELF_REPORT:
+            if not requirement_id:
+                raise FailClosed(
+                    f"{tier.value} evidence must name the requirement it verifies; "
+                    "evidence that is not about anything cannot be checked")
+            if not artifact_digest:
+                raise FailClosed(
+                    f"{tier.value} evidence must name the artifact digest it "
+                    "inspected, or it cannot be invalidated when the artifact "
+                    "changes")
         if tier is VerificationTier.T0_SELF_REPORT and consequence is not ConsequenceTier.C_LOW:
             raise FailClosed(
                 f"T0 self-report is not verification for {consequence.value}"
@@ -148,19 +175,34 @@ class AuditLog:
         evidence_id = new_id("ver")
         self._db.execute(
             "INSERT INTO verification_evidence(id,ts,subject_ref,tier,method,"
-            "executor_identity,verifier_identity,verdict,raw_output,consequence) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "executor_identity,verifier_identity,verdict,raw_output,consequence,"
+            "requirement_id,artifact_digest,artifact_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (evidence_id, now(), subject_ref, tier.value, method, executor_identity,
              verifier_identity, "PASS" if verdict else "FAIL", raw_output,
-             consequence.value),
+             consequence.value, requirement_id, artifact_digest, artifact_id),
         )
         self._db.commit()
         self.record(
             event="verification.recorded", authority="audit", initiator=verifier_identity,
             why=f"verification of {subject_ref}", verification_ref=evidence_id,
             result="PASS" if verdict else "FAIL", tier=tier.value, method=method,
+            requirement=requirement_id, artifact=artifact_digest[:16],
         )
         return evidence_id
+
+    def passes_for_artifact(self, subject_ref: str, artifact_digest: str) -> dict:
+        """``{requirement_id: evidence_row}`` of PASSes for **this exact** artifact.
+
+        Scoped by digest on purpose. Evidence for a previous version of the file
+        is not evidence for this one, so a correction silently invalidates every
+        earlier pass rather than inheriting it.
+        """
+        rows = self._db.query(
+            "SELECT * FROM verification_evidence WHERE subject_ref = ? "
+            "AND artifact_digest = ? AND verdict = 'PASS' ORDER BY ts",
+            (subject_ref, artifact_digest))
+        return {r["requirement_id"]: dict(r) for r in rows if r["requirement_id"]}
 
     def evidence_for(self, subject_ref: str) -> list[dict]:
         return [dict(r) for r in self._db.query(

@@ -113,6 +113,12 @@ FIRST_REVENUE_PROFILE: dict[str, Any] = {
     "verification": {"mandatory_before_delivery": True},
 }
 
+#: How many times Solvent may fix its own work before it stops and asks. Three
+#: is a judgement, not a law: enough for a transient slip, few enough that a
+#: capability which genuinely cannot satisfy a requirement surfaces instead of
+#: grinding. Overridable at ``execution.max_correction_attempts``.
+DEFAULT_MAX_CORRECTIONS = 3
+
 
 class PolicyStore:
     """Owner-governed authority. Versioned, append-only, never self-modified."""

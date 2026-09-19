@@ -33,13 +33,26 @@ BUSY_TIMEOUT_S = 10.0
 MIGRATIONS = (
     ("action_requests", "phase", "TEXT NOT NULL DEFAULT 'SETTLED'"),
     ("action_requests", "request_id", "TEXT NOT NULL DEFAULT ''"),
+    ("requirements", "acceptance", "TEXT NOT NULL DEFAULT ''"),
+    ("requirements", "check_name", "TEXT NOT NULL DEFAULT ''"),
+    ("requirements", "params", "TEXT NOT NULL DEFAULT '{}'"),
+    ("requirements", "criticality", "TEXT NOT NULL DEFAULT 'MANDATORY'"),
+    ("requirements", "status", "TEXT NOT NULL DEFAULT 'DRAFT'"),
+    ("requirements", "supersedes", "TEXT NOT NULL DEFAULT ''"),
+    ("requirements", "committed_at", "TEXT"),
+    ("verification_evidence", "requirement_id", "TEXT NOT NULL DEFAULT ''"),
+    ("verification_evidence", "artifact_digest", "TEXT NOT NULL DEFAULT ''"),
+    ("verification_evidence", "artifact_id", "TEXT NOT NULL DEFAULT ''"),
 )
 
-#: Tables whose rows may never change once written.
+#: Tables whose rows may never change once written. ``artifacts`` and
+#: ``client_feedback`` join the list: an artifact record that could be edited
+#: would break the binding between what was checked and what was delivered, and
+#: rewriting a client's words is never a correction.
 APPEND_ONLY = (
     "audit_log", "verification_evidence", "ledger_entries",
     "governor_decisions", "action_requests", "price_estimates", "policy_versions",
-    "qualification_verdicts", "payment_events",
+    "qualification_verdicts", "payment_events", "artifacts",
 )
 
 #: Which authority owns which tables. The single source of this mapping.
@@ -54,6 +67,8 @@ TABLE_OWNER = {
     "payment_events": "ledger",
     "jobs": "orchestrator",
     "requirements": "orchestrator",
+    "artifacts": "orchestrator",
+    "client_feedback": "feedback",
     "capability_assessments": "capability",
     "price_estimates": "governor",
     "calibration_state": "governor",
@@ -85,7 +100,9 @@ CREATE TABLE IF NOT EXISTS verification_evidence (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, subject_ref TEXT NOT NULL,
   tier TEXT NOT NULL, method TEXT NOT NULL,
   executor_identity TEXT NOT NULL, verifier_identity TEXT NOT NULL,
-  verdict TEXT NOT NULL, raw_output TEXT NOT NULL, consequence TEXT NOT NULL
+  verdict TEXT NOT NULL, raw_output TEXT NOT NULL, consequence TEXT NOT NULL,
+  requirement_id TEXT NOT NULL DEFAULT '', artifact_digest TEXT NOT NULL DEFAULT '',
+  artifact_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS policy_versions (
   version INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
@@ -131,7 +148,26 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE TABLE IF NOT EXISTS requirements (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, text TEXT NOT NULL,
-  source TEXT NOT NULL, confirmed_by TEXT NOT NULL DEFAULT ''
+  source TEXT NOT NULL, confirmed_by TEXT NOT NULL DEFAULT '',
+  acceptance TEXT NOT NULL DEFAULT '', check_name TEXT NOT NULL DEFAULT '',
+  params TEXT NOT NULL DEFAULT '{}', criticality TEXT NOT NULL DEFAULT 'MANDATORY',
+  status TEXT NOT NULL DEFAULT 'DRAFT', supersedes TEXT NOT NULL DEFAULT '',
+  committed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL, role TEXT NOT NULL,
+  path TEXT NOT NULL, digest TEXT NOT NULL, size INTEGER NOT NULL,
+  media_type TEXT NOT NULL, produced_by TEXT NOT NULL DEFAULT '',
+  capability_version TEXT NOT NULL DEFAULT '',
+  source_digest TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS client_feedback (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL,
+  artifact_digest TEXT NOT NULL DEFAULT '', body TEXT NOT NULL,
+  classification TEXT NOT NULL, confidence TEXT NOT NULL DEFAULT '',
+  matched_requirement TEXT NOT NULL DEFAULT '', severity TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'OPEN', routed_to TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS capability_assessments (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, verdict TEXT NOT NULL,

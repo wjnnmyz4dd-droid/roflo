@@ -10,6 +10,7 @@ from solvent.errors import FailClosed
 from solvent.gate import ActionGate, approval
 from solvent.orchestrator import JobOrchestrator
 from solvent.types import (
+    Requirement, RequirementSource,
     ActionClass, CostCategory, GovernorVerdict, JobState, Jurisdiction,
     LocationSignals, OperatingMode, PaymentState, PrivacyClass, VerificationTier, money,
 )
@@ -95,7 +96,23 @@ class A3_UnbackedCompletion(Base):
         for target in (JobState.QUALIFYING, JobState.ACCEPTED, JobState.EXECUTING,
                        JobState.VERIFYING):
             self.orch._transition(job_id, target, why="setup", initiator="test")
+
+        # A genuinely deliverable job: one committed requirement and one real
+        # file, verified for that file's actual digest. This attack is about
+        # money, so everything upstream of the Ledger has to be honest.
+        import pathlib as _p, tempfile as _t
+        work = _p.Path(_t.mkdtemp())
+        (work / "out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+        self.orch.add_requirement(job_id, Requirement(
+            id="R-1", text="the deliverable must open as CSV",
+            source=RequirementSource.SYSTEM_SAFETY, acceptance="parses",
+            check="parses_as_csv", params={}))
+        self.orch.commit_requirements(job_id=job_id, initiator=OWNER)
+        artifact = self.orch.register_artifact(
+            job_id=job_id, role="DELIVERABLE", path=str(work / "out.csv"),
+            produced_by="worker")
         self.rig.audit.record_verification(
+            requirement_id="R-1", artifact_digest=artifact.digest,
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC, method="m",
             executor_identity="e", verifier_identity="v", verdict=True,
             raw_output="", consequence=self.orch.job(job_id).consequence)

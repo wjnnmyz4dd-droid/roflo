@@ -51,6 +51,7 @@ class VerificationRules(unittest.TestCase):
         """The component that benefits from claiming success cannot be its own witness."""
         with self.assertRaises(FailClosed):
             self.log.record_verification(
+            requirement_id="r-legacy", artifact_digest="d" * 64,
                 subject_ref="J1", tier=VerificationTier.T1_DETERMINISTIC,
                 method="ran tests", executor_identity="worker",
                 verifier_identity="worker", verdict=True, raw_output="ok",
@@ -59,6 +60,7 @@ class VerificationRules(unittest.TestCase):
     def test_self_attestation_allowed_for_low_consequence(self):
         """Bounded downside is why cheap work does not need an independent verifier."""
         evidence = self.log.record_verification(
+            requirement_id="r-legacy", artifact_digest="d" * 64,
             subject_ref="J2", tier=VerificationTier.T1_DETERMINISTIC, method="schema",
             executor_identity="worker", verifier_identity="worker", verdict=True,
             raw_output="valid", consequence=ConsequenceTier.C_LOW)
@@ -67,6 +69,7 @@ class VerificationRules(unittest.TestCase):
     def test_t0_self_report_is_never_verification_above_low(self):
         with self.assertRaises(FailClosed):
             self.log.record_verification(
+            requirement_id="r-legacy", artifact_digest="d" * 64,
                 subject_ref="J3", tier=VerificationTier.T0_SELF_REPORT,
                 method="agent said done", executor_identity="w", verifier_identity="v",
                 verdict=True, raw_output="done", consequence=ConsequenceTier.C_MED)
@@ -80,6 +83,7 @@ class VerificationRules(unittest.TestCase):
     def test_anonymous_verifier_refused(self):
         with self.assertRaises(FailClosed):
             self.log.record_verification(
+            requirement_id="r-legacy", artifact_digest="d" * 64,
                 subject_ref="J4", tier=VerificationTier.T1_DETERMINISTIC, method="m",
                 executor_identity="w", verifier_identity="", verdict=True,
                 raw_output="", consequence=ConsequenceTier.C_LOW)
@@ -87,6 +91,7 @@ class VerificationRules(unittest.TestCase):
     def test_best_tier_reports_highest_passing_evidence(self):
         for tier in (VerificationTier.T1_DETERMINISTIC, VerificationTier.T3_EXTERNAL_FACT):
             self.log.record_verification(
+            requirement_id="r-legacy", artifact_digest="d" * 64,
                 subject_ref="J5", tier=tier, method="m", executor_identity="w",
                 verifier_identity="v", verdict=True, raw_output="",
                 consequence=ConsequenceTier.C_LOW)

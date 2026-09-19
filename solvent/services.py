@@ -20,7 +20,9 @@ of such jobs is a service that never trades.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
+from enum import Enum
 
 #: Dimension -> (weight, higher_is_better). Weights favour provability over rate.
 DIMENSIONS: dict[str, tuple[float, bool]] = {
@@ -180,18 +182,128 @@ class ServiceDefinition:
 
     def conforms(self, *, requested_formats: list[str],
                  requested: list[str]) -> tuple[bool, str]:
-        """Does this request fall inside the service? Unknown is not conforming."""
+        """Does this request fall inside the service? Unknown is not conforming.
+
+        The previous implementation asked whether any barred *phrase* appeared as
+        a substring. Nine ordinary rephrasings walked past it in testing — "prepare
+        the filing for our taxes" was accepted while "tax filing" was refused —
+        because a denylist can only refuse what someone thought to list, and
+        clients do not phrase things the way a list expects.
+
+        So the default is inverted. A request is in scope only when it names work
+        this service actually performs; anything unrecognised is refused as
+        unrecognised rather than accepted by omission. Barred concepts still
+        refuse outright, now matched on whole words, but that is a second line
+        rather than the only one.
+        """
         unsupported = [f for f in requested_formats
                        if f.lower() not in self.supported_formats]
         if unsupported:
             return False, f"unsupported format(s): {', '.join(unsupported)}"
-        for ask in requested:
-            for barred in self.unsupported_requests:
-                if barred.lower() in ask.lower():
-                    return False, f"outside the service: {barred}"
         if not requested:
             return False, "no stated request to conform to"
+
+        unrecognised = []
+        for ask in requested:
+            verdict, why = classify_request(ask)
+            if verdict is ScopeVerdict.OUT_OF_SCOPE:
+                return False, f"outside the service: {why}"
+            if verdict is not ScopeVerdict.IN_SCOPE:
+                unrecognised.append(f"{ask!r}: {why}")
+        if unrecognised:
+            return False, ("not recognised as work this service performs — "
+                           + "; ".join(unrecognised))
         return True, "within the service definition"
+
+
+class ScopeVerdict(Enum):
+    """What a single client ask is, relative to this service."""
+
+    IN_SCOPE = "IN_SCOPE"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"       # names work this service refuses
+    UNRECOGNISED = "UNRECOGNISED"       # names nothing this service performs
+
+
+#: Concepts this service refuses, as whole-word alternatives. Matched on word
+#: boundaries so "taxes" and "tax filing" both hit while "syntax" does not. The
+#: label is what the client is told.
+_BARRED = [
+    ("tax work", r"\btax(es|ation)?\b"),
+    ("an audit opinion", r"\baudit(s|ing|or)?\b"),
+    ("legal work", r"\blegal(ly)?\b|\blawyer\b|\bcontract terms\b"),
+    ("financial advice", r"\badvice\b|\badvis(e|es|ing|ory)\b|\brecommend\b"),
+    ("a forecast", r"\bforecast(s|ing)?\b|\bproject(ion|ions|ed)?\b|"
+                   r"\bpredict(ion|ions)?\b|\bnext (year|quarter|month)\b"),
+    ("a valuation", r"\bvaluation\b|\bvalue the\b|\bworth\b|\bappraise\b"),
+    ("macro or scripting work",
+     r"\bmacro(s)?\b|\bvba\b|\bvisual basic\b|\bscript(s|ing)?\b"),
+    ("a business judgement",
+     r"\bstrategy\b|\bstrategic\b|\bshould we\b|\bwhich .{0,30}should\b|"
+     r"\bwhat .{0,25}mean\b|\bdecide\b|\bdrop\b"),
+]
+
+#: Work this service does perform. A request must match one of these to be in
+#: scope: recognition is the gate, not the absence of a barred word. Each entry
+#: needs a verb *and* an object, so "remove the client" does not read as
+#: "remove duplicates".
+_RECOGNISED = [
+    ("remove duplicate rows",
+     r"\b(remove|drop|delete|eliminate)\b.{0,40}\b(duplicate|dupe|repeat)\w*\b"
+     r"|\bde-?duplicat\w+\b|\bde-?dupe?\b"),
+    ("normalise dates",
+     r"\b(normalis|normaliz|standardis|standardiz|format|convert|fix|clean)\w*\b"
+     r".{0,40}\bdate\w*\b|\bdate\w*\b.{0,40}\b(iso|yyyy|consistent)\w*\b"),
+    ("normalise categorical values",
+     # Both orders: "normalise the region names" and "make the region names
+     # consistent" are the same ask, and a pattern that only reads one way
+     # refuses half of the clients who phrase it the other.
+     r"\b(normalis|normaliz|standardis|standardiz|map|tidy|consistent|fix)\w*\b"
+     r".{0,50}\b(region|categor|label|name|casing|case|spelling|value)\w*\b"
+     r"|\b(region|categor|label|name|casing|case|spelling)\w*\b.{0,30}"
+     r"\b(consistent|uniform|standardis\w+|normalis\w+|title case|"
+     r"upper ?case|lower ?case)\b"),
+    ("trim whitespace",
+     r"\b(trim|strip|remove)\b.{0,30}\b(whitespace|space|padding|blank)\w*\b"),
+    ("rename or standardise headers",
+     r"\b(rename|standardis|standardiz|fix|tidy|clean)\w*\b.{0,30}"
+     r"\b(header|column name|field name)\w*\b"),
+    ("validate required columns",
+     r"\b(check|validate|verify|confirm|ensure)\b.{0,40}\b(column|field|header)\w*\b"),
+    ("sort rows",
+     r"\b(sort|order|arrange)\b.{0,30}\b(row|record|by)\w*\b"),
+    ("reconcile totals or row counts",
+     r"\b(reconcile|totals?|subtotals?|sum|counts?)\b.{0,40}"
+     r"\b(row|record|total|column|match|source|reconcile|categor|group|"
+     r"region|by)\w*\b"),
+    ("preserve protected values",
+     r"\b(do not|don't|never|must not)\b.{0,30}\b(change|alter|modify|touch|edit)\b"
+     r"|\b(preserve|keep|retain|leave)\b.{0,30}"
+     r"\b(unchanged|intact|as-?is|original)\b"),
+    ("produce a summary of changes",
+     r"\b(summar\w+|report|note|list)\b.{0,40}\b(change|transformation|what)\w*\b"),
+]
+
+
+def classify_request(ask: str) -> tuple[ScopeVerdict, str]:
+    """What is this one client ask? Default deny.
+
+    Barred concepts are checked first, because a request that both cleans a file
+    and asks for tax advice is not half acceptable.
+    """
+    text = ask.strip()
+    if not text:
+        return ScopeVerdict.UNRECOGNISED, "empty request"
+    lowered = text.lower()
+
+    for label, pattern in _BARRED:
+        if re.search(pattern, lowered):
+            return ScopeVerdict.OUT_OF_SCOPE, label
+
+    matched = [label for label, pattern in _RECOGNISED
+               if re.search(pattern, lowered)]
+    if not matched:
+        return ScopeVerdict.UNRECOGNISED, "names no operation this service performs"
+    return ScopeVerdict.IN_SCOPE, ", ".join(matched)
 
 
 #: The recommended first service, as a contract. Nothing here sets a price.

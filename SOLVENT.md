@@ -81,6 +81,11 @@ components can decide the same thing. They are infrastructure, not the product.
 | **Ledger** | What money actually moved? |
 | **Audit Log** | What happened, and on whose authority? |
 
+`csvwork` is a worker and `csvverify` is a check library — neither is an
+authority. The verifier is the existing `record_verification` chokepoint, which
+gained substance rather than a sibling: evidence above T0 must name the
+requirement it concerns and the digest of the artifact it inspected.
+
 The always-on runtime (`solvent/runtime.py`) is deliberately **not** in that
 table. It starts the process, ticks tasks on a schedule and stops cleanly; it
 answers no business question. systemd owns process supervision, the Job
@@ -127,7 +132,8 @@ because a better opportunity is competing for the same capacity.
 | Owner-entered opportunity through the full pipeline | **Working** — the manual bridge |
 | Authenticated owner approval | **Working** — signed, scoped, single-use; needs a key provisioned |
 | First-Revenue Mode | **Available** — one source, one job, owner-set caps |
-| **Any client-work capability** | **None** — audited 19 Sep 2026; Solvent cannot open a file or run a model. See `docs/solvent-capability-audit.md` |
+| **CSV cleanup (service capability #1)** | **Working** — real artifacts, requirement-by-requirement verification, 7/7 false completions caught, 9/9 fixtures. See `docs/solvent-first-capability.md` |
+| Any other client-work capability | **None.** Each needs its own proof; the audit that found there were none is `docs/solvent-capability-audit.md` |
 | 24/7 operation on an always-on host | **Working** — `solvent run --always-on`; see `docs/solvent-always-on-deployment.md` |
 | Crash and reboot recovery | **Working** — an unsettled external action blocks its job rather than repeating it |
 | Manually sourced **real** job | **Blocked on OD-1, OD-2, OD-12** (OD-3 verified; owner records it) |

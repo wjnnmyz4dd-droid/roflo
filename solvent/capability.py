@@ -33,12 +33,88 @@ from .types import CapabilityVerdict, Conformance
 
 @dataclass(frozen=True, slots=True)
 class Capability:
-    """Something Solvent can actually do, and what it is proven on."""
+    """Something Solvent can actually do, and what it is proven on.
+
+    ``proven`` is a claim, and a claim needs evidence behind it. The fields below
+    are what turns "we can do CSV cleanup" into something a reader can check: the
+    exact code version it was proven at, what it accepts and produces, which
+    checks decide its output, and the count of fixtures that passed. A capability
+    proven at one version is not proven at the next — that is why ``version`` is
+    recorded rather than assumed.
+
+    None of this makes something proven. A model saying so, a worker declaring
+    itself able, a client insisting, Business Memory recalling a success, a high
+    price or a deadline — none of them may set ``proven``. Only evidence does,
+    and :func:`promotion_verdict` says what evidence is enough.
+    """
 
     name: str
     covers: frozenset[str]
     proven: bool = False
     privacy_ceiling: str = "CLIENT_CONFIDENTIAL"
+    #: The code version the evidence was gathered against.
+    version: str = ""
+    inputs: tuple[str, ...] = field(default_factory=tuple)
+    outputs: tuple[str, ...] = field(default_factory=tuple)
+    #: Registered checks that can decide this capability's output.
+    verifiable_by: tuple[str, ...] = field(default_factory=tuple)
+    #: Complexity levels demonstrated, e.g. ("L1", "L2", "L3").
+    proven_levels: tuple[str, ...] = field(default_factory=tuple)
+    #: Where the evidence lives, and how much of it there is.
+    evidence_ref: str = ""
+    fixtures_passed: int = 0
+    fixtures_total: int = 0
+    false_completions: int = 0
+    requires_tools: tuple[str, ...] = field(default_factory=tuple)
+    requires_network: bool = False
+    requires_owner: bool = False
+
+    @property
+    def evidence_summary(self) -> str:
+        return (f"{self.fixtures_passed}/{self.fixtures_total} fixtures, "
+                f"{self.false_completions} false completion(s), "
+                f"levels {', '.join(self.proven_levels) or 'none'}, "
+                f"at {self.version or 'an unrecorded version'}")
+
+
+#: What a capability must show before it may be trusted with real client work.
+#: Deliberately modest numbers with the reasoning attached rather than a
+#: confident-sounding percentage computed from a handful of runs.
+MIN_FIXTURES = 8          # enough that one lucky path cannot carry it
+MIN_LEVELS = 3            # simple, moderate and complex all demonstrated
+MAX_FALSE_COMPLETIONS = 0  # the one number that cannot be traded away
+
+
+def promotion_verdict(capability: "Capability") -> tuple[bool, str]:
+    """May this capability be marked proven? Evidence only.
+
+    A single successful fixture is not proof; neither is a high pass rate over
+    three runs. And no amount of passing offsets a false completion — shipping
+    wrong work while reporting success is the failure mode this whole pipeline
+    exists to prevent, so one of them resets the answer to no.
+    """
+    reasons = []
+    if capability.false_completions > MAX_FALSE_COMPLETIONS:
+        reasons.append(
+            f"{capability.false_completions} false completion(s): work shipped "
+            "while reporting success. Nothing else counts until that is zero")
+    if capability.fixtures_total < MIN_FIXTURES:
+        reasons.append(f"only {capability.fixtures_total} fixture(s); "
+                       f"{MIN_FIXTURES} is the floor")
+    if capability.fixtures_passed < capability.fixtures_total:
+        reasons.append(f"{capability.fixtures_total - capability.fixtures_passed} "
+                       "fixture(s) did not behave as expected")
+    if len(capability.proven_levels) < MIN_LEVELS:
+        reasons.append(f"only {len(capability.proven_levels)} complexity level(s) "
+                       f"demonstrated; {MIN_LEVELS} is the floor")
+    if not capability.verifiable_by:
+        reasons.append("no check can decide this capability's output, so a "
+                       "deliverable could never be verified")
+    if not capability.version:
+        reasons.append("no version recorded, so the evidence names no code")
+    if reasons:
+        return False, "; ".join(reasons)
+    return True, (f"evidence supports promotion: {capability.evidence_summary}")
 
 
 @dataclass(frozen=True, slots=True)

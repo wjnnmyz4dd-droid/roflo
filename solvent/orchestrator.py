@@ -26,8 +26,12 @@ every learning statistic.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
+
+from .csvverify import CHECKS
+from .csvwork import digest_of
 
 from .audit import AuditLog, new_id, now
 from .capability import Assessment
@@ -36,8 +40,9 @@ from .governor import Estimate, FinancialGovernor
 from .policy import PolicyStore
 from .store import Store
 from .types import (
-    BlockedOn, Cents, ConsequenceTier, GovernorVerdict, JobState, LocationSignals,
-    OperatingMode, Requirement, VerificationTier,
+    Artifact, BlockedOn, Cents, ConsequenceTier, Criticality, GovernorVerdict,
+    JobState, LocationSignals, OperatingMode, Requirement, RequirementSource,
+    RequirementStatus, VerificationTier,
 )
 
 #: The only legal moves. Anything absent here is not a transition, it is a bug.
@@ -61,14 +66,22 @@ TRANSITIONS: dict[JobState, frozenset[JobState]] = {
                                  JobState.ACCEPTED, JobState.EXECUTING,
                                  JobState.VERIFYING, JobState.READY_FOR_DELIVERY,
                                  JobState.AWAITING_PAYMENT, JobState.REJECTED,
-                                 JobState.FAILED}),
+                                 JobState.FAILED, JobState.REVISION_REQUESTED}),
     JobState.VERIFYING: frozenset({JobState.READY_FOR_DELIVERY, JobState.EXECUTING,
                                    JobState.BLOCKED, JobState.FAILED}),
     JobState.READY_FOR_DELIVERY: frozenset({JobState.AWAITING_PAYMENT,
                                             JobState.BLOCKED, JobState.FAILED}),
     JobState.AWAITING_PAYMENT: frozenset({JobState.COMPLETE, JobState.BLOCKED,
-                                          JobState.FAILED}),
-    JobState.COMPLETE: frozenset(),
+                                          JobState.FAILED,
+                                          JobState.REVISION_REQUESTED}),
+    # COMPLETE is no longer a dead end, but it is not editable either: the only
+    # way out is REVISION_REQUESTED, which the client-feedback path opens and
+    # which leaves every historical record exactly where it was.
+    JobState.COMPLETE: frozenset({JobState.REVISION_REQUESTED}),
+    # Either the job goes back to work, or the review concludes nothing is owed
+    # and it settles again. Both are explicit; neither rewrites the first pass.
+    JobState.REVISION_REQUESTED: frozenset({JobState.EXECUTING, JobState.COMPLETE,
+                                            JobState.BLOCKED, JobState.FAILED}),
     JobState.REJECTED: frozenset(),
     JobState.FAILED: frozenset(),
 }
@@ -83,7 +96,12 @@ TIMEOUTS_MINUTES: dict[JobState, int] = {
     JobState.BLOCKED: 120,
     JobState.VERIFYING: 60,
     JobState.READY_FOR_DELIVERY: 60,
-    JobState.AWAITING_PAYMENT: 20_160,  # 14 days
+    JobState.AWAITING_PAYMENT: 20_160,   # 14 days
+    # Not a stall: the window in which a delivered job may still be revised.
+    # After it, the job is settled and a complaint is new scope.
+    JobState.COMPLETE: 43_200,           # 30 days
+    # A client has raised something. Two days is how long it may sit unanswered.
+    JobState.REVISION_REQUESTED: 2_880,  # 48 hours
 }
 
 #: Verification a job must carry before it may be delivered or completed.
@@ -149,12 +167,197 @@ class JobOrchestrator:
         return job_id
 
     def add_requirement(self, job_id: str, requirement: Requirement) -> None:
+        """Add a requirement to the draft checklist.
+
+        A committed requirement cannot be overwritten through this path. That is
+        what makes the baseline a baseline: once execution starts against it, the
+        only way it changes is :meth:`amend_requirement`, on the record.
+        """
+        existing = self._db.query_one(
+            "SELECT status FROM requirements WHERE id = ?", (requirement.id,))
+        if existing and existing["status"] == RequirementStatus.COMMITTED.value:
+            raise FailClosed(
+                f"{requirement.id} is committed; use amend_requirement so the "
+                "change is visible rather than silent")
+        self._write_requirement(job_id, requirement)
+
+    def _write_requirement(self, job_id: str, requirement: Requirement,
+                           committed_at: str | None = None) -> None:
         self._db.execute(
-            "INSERT OR REPLACE INTO requirements(id,job_id,text,source,confirmed_by) "
-            "VALUES(?,?,?,?,?)",
+            "INSERT OR REPLACE INTO requirements(id,job_id,text,source,confirmed_by,"
+            "acceptance,check_name,params,criticality,status,supersedes,committed_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (requirement.id, job_id, requirement.text, requirement.source.value,
-             requirement.confirmed_by))
+             requirement.confirmed_by, requirement.acceptance, requirement.check,
+             json.dumps(requirement.params), requirement.criticality.value,
+             requirement.status.value, requirement.supersedes, committed_at))
         self._db.commit()
+
+    def commit_requirements(self, *, job_id: str, initiator: str) -> list[Requirement]:
+        """Freeze the checklist this job will be judged against.
+
+        Every mandatory requirement must name a registered check. A checklist
+        item nobody can test is not a requirement — it is a hope, and it would
+        pass the delivery gate by being unverifiable rather than by being met.
+
+        Returns the committed baseline.
+        """
+        drafts = [r for r in self.requirement_records(job_id)
+                  if r.status is RequirementStatus.DRAFT]
+        if not drafts:
+            raise FailClosed(f"{job_id} has no requirements to commit; a job with "
+                             "no checklist cannot be verified and must not start")
+
+        untestable = [r.id for r in drafts
+                      if r.criticality.blocks_delivery and r.check not in CHECKS]
+        if untestable:
+            raise FailClosed(
+                f"mandatory requirement(s) {untestable} name no registered check; "
+                "an untestable requirement would pass the gate by being "
+                "unverifiable rather than by being satisfied")
+
+        ungated = [r.id for r in drafts if not r.source.may_gate_commitment]
+        if ungated:
+            raise FailClosed(
+                f"requirement(s) {ungated} are model-extracted and unconfirmed; "
+                "they may not gate a commitment")
+
+        stamp = now()
+        committed = []
+        for draft in drafts:
+            frozen = replace(draft, status=RequirementStatus.COMMITTED)
+            self._write_requirement(job_id, frozen, committed_at=stamp)
+            committed.append(frozen)
+        self._audit.record(
+            event="requirements.committed", authority="orchestrator",
+            initiator=initiator, why="baseline frozen before execution",
+            job_id=job_id, decision="COMMITTED",
+            result=f"{len(committed)} requirement(s): "
+                   + ", ".join(sorted(r.id for r in committed)))
+        return committed
+
+    def amend_requirement(self, *, job_id: str, replacing: str,
+                          replacement: Requirement, owner_identity: str,
+                          why: str) -> Requirement:
+        """Change a committed requirement, visibly, on the owner's authority.
+
+        The original row is not edited. It is marked AMENDED and the replacement
+        records what it supersedes, so the history shows both what was agreed and
+        what it became.
+        """
+        if not self._policy.is_owner(owner_identity):
+            raise FailClosed(
+                f"amending a committed requirement is an owner act; "
+                f"{owner_identity!r} is not a registered owner")
+        current = {r.id: r for r in self.requirement_records(job_id)}
+        if replacing not in current:
+            raise FailClosed(f"{replacing} is not a requirement of {job_id}")
+        if replacement.id == replacing:
+            raise FailClosed("an amendment needs its own id; reusing the old one "
+                             "would overwrite the record it is meant to preserve")
+
+        self._write_requirement(
+            job_id, replace(current[replacing], status=RequirementStatus.AMENDED),
+            committed_at=now())
+        amended = replace(replacement, supersedes=replacing,
+                          status=RequirementStatus.COMMITTED)
+        self._write_requirement(job_id, amended, committed_at=now())
+        self._audit.record(
+            event="requirements.amended", authority="orchestrator",
+            initiator=owner_identity, why=why, job_id=job_id, decision="AMENDED",
+            input_ref=replacing, result=f"{replacing} -> {amended.id}")
+        return amended
+
+    def withdraw_requirement(self, *, job_id: str, requirement_id: str,
+                             owner_identity: str, why: str) -> None:
+        """Remove a committed requirement. Owner only, and never silently."""
+        if not self._policy.is_owner(owner_identity):
+            raise FailClosed(f"withdrawing a requirement is an owner act; "
+                             f"{owner_identity!r} is not a registered owner")
+        current = {r.id: r for r in self.requirement_records(job_id)}
+        if requirement_id not in current:
+            raise FailClosed(f"{requirement_id} is not a requirement of {job_id}")
+        self._write_requirement(
+            job_id, replace(current[requirement_id],
+                            status=RequirementStatus.WITHDRAWN),
+            committed_at=now())
+        self._audit.record(
+            event="requirements.withdrawn", authority="orchestrator",
+            initiator=owner_identity, why=why, job_id=job_id, decision="WITHDRAWN",
+            input_ref=requirement_id, result="removed from the baseline")
+
+    def requirement_records(self, job_id: str) -> list[Requirement]:
+        """The checklist as typed objects, in insertion order."""
+        out = []
+        for row in self._db.query(
+                "SELECT * FROM requirements WHERE job_id = ? ORDER BY rowid",
+                (job_id,)):
+            out.append(Requirement(
+                id=row["id"], text=row["text"],
+                source=RequirementSource(row["source"]),
+                confirmed_by=row["confirmed_by"], acceptance=row["acceptance"],
+                check=row["check_name"], params=json.loads(row["params"] or "{}"),
+                criticality=Criticality(row["criticality"]),
+                status=RequirementStatus(row["status"]),
+                supersedes=row["supersedes"]))
+        return out
+
+    def baseline(self, job_id: str) -> list[Requirement]:
+        """The committed requirements delivery will actually be judged against."""
+        return [r for r in self.requirement_records(job_id)
+                if r.status is RequirementStatus.COMMITTED]
+
+    # -------------------------------------------------------------- artifacts
+
+    def register_artifact(self, *, job_id: str, role: str, path: str,
+                          produced_by: str = "", capability_version: str = "",
+                          source_digest: str = "", media_type: str = "text/csv",
+                          initiator: str = "execution") -> Artifact:
+        """Record a file by its content, computing the digest here.
+
+        The digest is never taken from the caller. An artifact identity supplied
+        by whoever produced the artifact would let a worker name a file it did
+        not write, which is precisely the binding this exists to make real.
+        """
+        target = Path(path)
+        if not target.exists():
+            raise FailClosed(f"cannot register an artifact that does not exist: {path}")
+        digest = digest_of(target)
+        artifact = Artifact(
+            id=new_id("art"), job_id=job_id, role=role, path=str(target),
+            digest=digest, size=target.stat().st_size, media_type=media_type,
+            produced_by=produced_by, capability_version=capability_version,
+            source_digest=source_digest)
+        self._db.execute(
+            "INSERT INTO artifacts(id,ts,job_id,role,path,digest,size,media_type,"
+            "produced_by,capability_version,source_digest) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (artifact.id, now(), job_id, role, artifact.path, digest, artifact.size,
+             media_type, produced_by, capability_version, source_digest))
+        self._db.commit()
+        self._audit.record(
+            event="artifact.registered", authority="orchestrator", initiator=initiator,
+            why=f"{role} artifact", job_id=job_id, input_ref=artifact.id,
+            decision=role, result=f"{digest[:16]}… {artifact.size} bytes")
+        return artifact
+
+    def artifacts(self, job_id: str, role: str | None = None) -> list[Artifact]:
+        sql = "SELECT * FROM artifacts WHERE job_id = ?"
+        params: tuple = (job_id,)
+        if role:
+            sql += " AND role = ?"
+            params = (job_id, role)
+        return [Artifact(id=r["id"], job_id=r["job_id"], role=r["role"],
+                         path=r["path"], digest=r["digest"], size=r["size"],
+                         media_type=r["media_type"], produced_by=r["produced_by"],
+                         capability_version=r["capability_version"],
+                         source_digest=r["source_digest"])
+                for r in self._db.query(sql + " ORDER BY ts", params)]
+
+    def current_deliverable(self, job_id: str) -> Artifact | None:
+        """The newest deliverable. Earlier ones stay on the record."""
+        produced = self.artifacts(job_id, role="DELIVERABLE")
+        return produced[-1] if produced else None
 
     # ------------------------------------------------------------ transitions
 
@@ -307,15 +510,82 @@ class JobOrchestrator:
         return REQUIRED_TIER[self.job(job_id).consequence]
 
     def verification_satisfied(self, job_id: str) -> tuple[bool, str]:
-        """Does recorded evidence meet what this job's consequence demands?"""
+        """May this job be delivered?
+
+        The old version of this method asked only whether *somebody had attested
+        at a high enough tier*. That is how three client requirements could be
+        recorded, none met, none checked, and the job delivered anyway. It now
+        asks the question that actually protects the client:
+
+            does **every mandatory committed requirement** have a **PASS**
+            recorded for the **exact artifact about to be delivered**?
+
+        Scoping by digest is what makes a correction safe. A new artifact has a
+        new digest, so every pass earned by the previous version stops counting
+        the moment the file changes — there is no way to inherit a verification
+        across a correction.
+        """
         required = self.required_tier(job_id)
-        best = self._audit.best_tier(job_id)
-        if best is None:
-            return False, f"no verification evidence; {required.value} required"
-        if best.rank < required.rank:
-            return False, (f"best evidence is {best.value}, but {required.value} "
-                           "is required at this consequence tier")
-        return True, f"{best.value} satisfies {required.value}"
+        baseline = self.baseline(job_id)
+        if not baseline:
+            return False, ("no committed requirement baseline; there is nothing "
+                           "to have verified")
+
+        deliverable = self.current_deliverable(job_id)
+        if deliverable is None:
+            return False, "no deliverable artifact has been registered"
+
+        on_disk = Path(deliverable.path)
+        if not on_disk.exists():
+            return False, f"the registered deliverable is missing: {deliverable.path}"
+        actual = digest_of(on_disk)
+        if actual != deliverable.digest:
+            # The file changed after it was registered. Every pass was earned
+            # against different bytes.
+            return False, (f"the deliverable changed since it was registered "
+                           f"({deliverable.short}… on record, {actual[:16]}… on "
+                           "disk); its verifications no longer apply")
+
+        passes = self._audit.passes_for_artifact(job_id, deliverable.digest)
+        mandatory = [r for r in baseline if r.criticality.blocks_delivery]
+        missing = [r.id for r in mandatory if r.id not in passes]
+        if missing:
+            return False, (f"{len(missing)} of {len(mandatory)} mandatory "
+                           f"requirement(s) have no pass for {deliverable.short}…: "
+                           + ", ".join(sorted(missing)))
+
+        weak = sorted(r.id for r in mandatory
+                      if VerificationTier(passes[r.id]["tier"]).rank < required.rank)
+        if weak:
+            return False, (f"requirement(s) {weak} are verified below "
+                           f"{required.value}, which this consequence tier requires")
+
+        return True, (f"{len(mandatory)} mandatory requirement(s) pass at "
+                      f"{required.value} for artifact {deliverable.short}…")
+
+    def verification_report(self, job_id: str) -> list[dict]:
+        """Requirement-by-requirement status for the owner and the client.
+
+        Reads; decides nothing. A requirement with no evidence for the current
+        artifact reads as ``NO_EVIDENCE`` rather than as a failure, because those
+        are different situations and collapsing them hides which one happened.
+        """
+        deliverable = self.current_deliverable(job_id)
+        passes = (self._audit.passes_for_artifact(job_id, deliverable.digest)
+                  if deliverable else {})
+        out = []
+        for req in self.baseline(job_id):
+            row = passes.get(req.id)
+            out.append({
+                "requirement_id": req.id, "text": req.text,
+                "source": req.source.value, "criticality": req.criticality.value,
+                "check": req.check,
+                "status": "PASS" if row else "NO_EVIDENCE",
+                "tier": row["tier"] if row else "",
+                "evidence": row["raw_output"] if row else "",
+                "artifact": deliverable.short if deliverable else "",
+            })
+        return out
 
     def mark_verified(self, *, job_id: str, initiator: str) -> None:
         """Advance to delivery only when the evidence actually exists."""

@@ -159,9 +159,21 @@ class StateMachineInvariants(unittest.TestCase):
         self.assertEqual(stuck, set(), f"blocked with no way back: {stuck}")
 
     def test_terminal_states_have_no_exits(self):
-        for state in (JobState.COMPLETE, JobState.REJECTED, JobState.FAILED):
+        for state in JobState:
+            if not state.is_terminal:
+                continue
             with self.subTest(state=state):
                 self.assertEqual(TRANSITIONS[state], frozenset())
+
+    def test_complete_is_reopenable_only_for_a_revision(self):
+        """COMPLETE is no longer a dead end, but it is not a free-for-all.
+
+        A delivered job must be reachable again when a client raises something,
+        and the single exit keeps that from becoming a way to edit history.
+        """
+        self.assertFalse(JobState.COMPLETE.is_terminal)
+        self.assertEqual(TRANSITIONS[JobState.COMPLETE],
+                         frozenset({JobState.REVISION_REQUESTED}))
 
     def test_every_state_appears_in_the_transition_table(self):
         self.assertEqual(set(TRANSITIONS), set(JobState))
