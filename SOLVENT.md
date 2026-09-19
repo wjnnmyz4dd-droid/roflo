@@ -127,6 +127,7 @@ because a better opportunity is competing for the same capacity.
 | Owner-entered opportunity through the full pipeline | **Working** — the manual bridge |
 | Authenticated owner approval | **Working** — signed, scoped, single-use; needs a key provisioned |
 | First-Revenue Mode | **Available** — one source, one job, owner-set caps |
+| **Any client-work capability** | **None** — audited 19 Sep 2026; Solvent cannot open a file or run a model. See `docs/solvent-capability-audit.md` |
 | 24/7 operation on an always-on host | **Working** — `solvent run --always-on`; see `docs/solvent-always-on-deployment.md` |
 | Crash and reboot recovery | **Working** — an unsettled external action blocks its job rather than repeating it |
 | Manually sourced **real** job | **Blocked on OD-1, OD-2, OD-12** (OD-3 verified; owner records it) |
