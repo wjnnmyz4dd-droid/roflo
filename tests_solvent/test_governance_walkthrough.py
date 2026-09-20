@@ -17,6 +17,7 @@ import unittest
 
 from solvent import clientrelations as cr
 from solvent.errors import FailClosed
+from solvent.policy import PolicyStore
 from solvent.harness import OWNER, Solvent, resume_after_clarification, run_csv_job
 from solvent.types import BlockedOn, JobState, PaymentState, PrivacyClass
 
@@ -368,8 +369,9 @@ class DecisionsSurviveARestart(unittest.TestCase):
         self.assertEqual(restarted.ledger.real_revenue_cents(), 0)
 
     def test_a_restart_does_not_activate_the_rail(self):
-        self.assertEqual(self.restart().policy.payment_rail()["operational_status"],
-                         "APPROVED_BUT_NOT_ACTIVATED")
+        rail = self.restart().policy.payment_rail()
+        self.assertEqual(rail["operational_status"], PolicyStore.RAIL_SELECTED)
+        self.assertFalse(rail["money_can_move"])
 
     def test_the_audit_chain_survives(self):
         self.assertTrue(self.restart().audit.verify_chain()[0])

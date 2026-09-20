@@ -281,6 +281,33 @@ class PolicyStore:
 
     #: Contracting fields no component may invent. Absent means absent.
     CONTRACTING_FIELDS = ("legal_name", "address", "tax_reference", "email")
+
+    #: What each field is needed *for*. Reporting all four as one undifferentiated
+    #: list asks the owner for their tax reference before anyone has agreed to
+    #: pay them anything, which is both a worse experience and more personal data
+    #: held earlier than it needs to be. A purpose that is not being attempted
+    #: requires nothing.
+    CONTRACTING_PURPOSES = {
+        # Telling a client who they are dealing with.
+        "CLIENT_AGREEMENT": ("legal_name", "email"),
+        # A document that asks somebody for money.
+        "INVOICE": ("legal_name", "address", "email"),
+        # Connecting a payment rail, which is where a tax reference first
+        # genuinely applies.
+        "PAYMENT_RAIL": ("legal_name", "address", "email", "tax_reference"),
+    }
+
+    #: Fields Solvent records the *existence* of and never the value.
+    #:
+    #: A legal name and a postal address are needed verbatim, because Solvent
+    #: renders them onto the documents a client reads. A tax reference is not:
+    #: nothing here ever prints it. The only thing any code needs to know is
+    #: whether the owner has provisioned one with their payment rail, and that
+    #: is a yes or a no. Storing the number instead would put a tax identifier
+    #: into an append-only audit log that by construction cannot be redacted.
+    ATTESTED_FIELDS = ("tax_reference",)
+    #: What an attested field reads as once provisioned.
+    ATTESTED = "PROVISIONED"
     #: What an unprovisioned field reads as. Never a placeholder that could be
     #: mistaken for a value.
     PROVISIONING_REQUIRED = "OWNER_PROVISIONING_REQUIRED"
@@ -300,6 +327,10 @@ class PolicyStore:
         is the owner's answer to *what kind of party is this*; the identity
         fields are theirs to provide and nobody else's to guess, so an omitted
         one stays omitted rather than acquiring a plausible default.
+
+        Fields listed in :attr:`ATTESTED_FIELDS` are recorded as present and
+        their values discarded before anything is written, so passing one is
+        safe even though it should not be necessary.
         """
         if structure not in self.CONTRACTING_STRUCTURES:
             raise FailClosed(
@@ -309,6 +340,12 @@ class PolicyStore:
         if unknown:
             raise FailClosed(f"unknown contracting field(s): {unknown}")
         supplied = {k: str(v).strip() for k, v in fields.items() if str(v).strip()}
+        # An attested field never reaches the policy document, the audit log or
+        # anything derived from them. The owner's answer is "yes, I have one";
+        # the number itself belongs to them and to their payment provider.
+        for name in self.ATTESTED_FIELDS:
+            if name in supplied:
+                supplied[name] = self.ATTESTED
         version = self.amend({"governance": {
             "contracting": {"structure": structure, **supplied},
             # Kept in step for the readiness check, which has always read this.
@@ -350,11 +387,67 @@ class PolicyStore:
             # only honest self-description is "software acting for the owner".
             "is_separate_legal_entity": separate,
             "may_claim_entity_status": separate,
+            # Which purposes the recorded fields are sufficient for, and what
+            # each unmet one is still waiting on.
+            "blocked_purposes": {
+                purpose: [f for f in fields if f not in supplied]
+                for purpose, fields in sorted(self.CONTRACTING_PURPOSES.items())
+                if any(f not in supplied for f in fields)},
         }
 
-    #: Where a rail sits between "the owner picked it" and "money can move".
-    RAIL_APPROVED_NOT_ACTIVATED = "APPROVED_BUT_NOT_ACTIVATED"
-    RAIL_OPERATIONAL = "OPERATIONAL"
+    def contracting_shortfall(self, purpose: str) -> list[str]:
+        """Which fields this purpose still needs, in the order to ask for them.
+
+        The question is always "what is missing *for this*", never "what is
+        missing". A first trial that never issues an invoice does not need an
+        address, and asking for one anyway collects personal data on the chance
+        it might matter later.
+        """
+        if purpose not in self.CONTRACTING_PURPOSES:
+            raise FailClosed(
+                f"{purpose!r} is not a purpose contracting details are held "
+                f"for; one of {', '.join(sorted(self.CONTRACTING_PURPOSES))}")
+        party = self.contracting_party()
+        if not party["decided"]:
+            return list(self.CONTRACTING_PURPOSES[purpose])
+        return [f for f in self.CONTRACTING_PURPOSES[purpose] if not party.get(f)]
+
+    def may_contract_for(self, purpose: str) -> tuple[bool, str]:
+        """``(allowed, why not)`` for one purpose. Fails closed and says what
+        would fix it, naming fields rather than quoting values."""
+        missing = self.contracting_shortfall(purpose)
+        if missing:
+            return False, (f"{purpose} needs contracting detail the owner has "
+                           f"not provided: {', '.join(missing)}")
+        return True, f"{purpose} has every contracting detail it needs"
+
+    # Where a rail sits between "the owner picked it" and "money can move".
+    #
+    # Four states rather than two, because the two that were here conflated
+    # three different people's work. "Chosen" is a decision; "engineering
+    # ready" is Solvent's work and is finished; "configured" means the owner
+    # has provisioned credentials Solvent never sees; "live verified" means a
+    # real payment has actually been observed arriving. Only the last one makes
+    # a claim about the world, and only the owner can advance past the second.
+    RAIL_SELECTED = "SELECTED"
+    RAIL_ENGINEERING_READY = "ENGINEERING_READY"
+    RAIL_CONFIGURED = "CONFIGURED"
+    RAIL_LIVE_VERIFIED = "LIVE_VERIFIED"
+    RAIL_STATES = (RAIL_SELECTED, RAIL_ENGINEERING_READY, RAIL_CONFIGURED,
+                   RAIL_LIVE_VERIFIED)
+    #: What each state means, in the words the owner's packet uses.
+    RAIL_MEANINGS = {
+        RAIL_SELECTED: "the owner has chosen this rail; nothing is built against it",
+        RAIL_ENGINEERING_READY: "Solvent's side is complete and tested against "
+                                "fixtures; no credential exists",
+        RAIL_CONFIGURED: "the owner has provisioned credentials outside this "
+                         "repository; no real payment has been seen",
+        RAIL_LIVE_VERIFIED: "a real payment has been observed arriving through "
+                            "this rail and verified",
+    }
+    #: Retained so older records and readiness checks keep their meaning.
+    RAIL_APPROVED_NOT_ACTIVATED = RAIL_SELECTED
+    RAIL_OPERATIONAL = RAIL_LIVE_VERIFIED
 
     def approve_payment_rail(self, *, owner_identity: str, rail: str,
                              verification_signal: str, reason: str) -> int:
@@ -368,24 +461,83 @@ class PolicyStore:
         version = self.amend({"payment": {
             "approved_rail": rail.strip(),
             "verification_signal": verification_signal.strip(),
-            "operational_status": self.RAIL_APPROVED_NOT_ACTIVATED,
+            "operational_status": self.RAIL_SELECTED,
         }}, owner_identity, reason)
         self._audit.record(
             event="policy.payment_rail_approved", authority="policy",
             initiator=owner_identity, why=reason, decision=rail.strip(),
-            result=f"signal={verification_signal.strip()}; "
-                   f"{self.RAIL_APPROVED_NOT_ACTIVATED}")
+            result=f"signal={verification_signal.strip()}; {self.RAIL_SELECTED}")
+        return version
+
+    def advance_payment_rail(self, *, owner_identity: str, state: str,
+                             reason: str, evidence: str = "") -> int:
+        """Move the rail one step along the ladder. Owner only, forward only.
+
+        Each step is a different claim about the world and they are not
+        interchangeable. ENGINEERING_READY is Solvent reporting on its own work,
+        so it may be recorded from evidence in this repository. CONFIGURED and
+        LIVE_VERIFIED are claims about things Solvent cannot see — a credential
+        in somebody's secret store, a payment that actually arrived — so they
+        require evidence the owner supplies, and Solvent will not assert either
+        on its own behalf.
+
+        Skipping is refused rather than tolerated. A rail that jumped from
+        SELECTED to LIVE_VERIFIED would be recording that money had been seen
+        arriving through a rail nothing was built against.
+        """
+        if state not in self.RAIL_STATES:
+            raise FailClosed(
+                f"{state!r} is not a payment rail state; one of "
+                f"{', '.join(self.RAIL_STATES)}")
+        current = self.payment_rail()
+        if not current["decided"]:
+            raise FailClosed(
+                "no payment rail has been chosen, so there is nothing to "
+                "advance; record the rail first")
+        here = self.RAIL_STATES.index(current["operational_status"])
+        there = self.RAIL_STATES.index(state)
+        if there <= here:
+            raise FailClosed(
+                f"the rail is already {current['operational_status']}; this "
+                f"ladder only moves forward, and {state} is not ahead of it")
+        if there > here + 1:
+            raise FailClosed(
+                f"cannot go from {current['operational_status']} to {state}: "
+                f"{self.RAIL_STATES[here + 1]} has not been established, and "
+                f"skipping it would record a claim nobody has evidence for")
+        if state in (self.RAIL_CONFIGURED, self.RAIL_LIVE_VERIFIED) and \
+                not evidence.strip():
+            raise FailClosed(
+                f"{state} is a claim about something outside this repository — "
+                "a credential Solvent never sees, or a payment it cannot "
+                "conjure — so it needs the owner's evidence, not an assertion")
+        version = self.amend({"payment": {"operational_status": state}},
+                             owner_identity, reason)
+        self._audit.record(
+            event="policy.payment_rail_advanced", authority="policy",
+            initiator=owner_identity, why=reason, decision=state,
+            result=f"{current['operational_status']} -> {state}"
+                   + (f"; evidence: {evidence.strip()}" if evidence.strip() else ""))
         return version
 
     def payment_rail(self) -> dict:
         rail = self.get("payment", "approved_rail", default="")
+        status = self.get("payment", "operational_status",
+                          default=self.RAIL_SELECTED)
+        # Older records used the two-state vocabulary. Map rather than migrate:
+        # the recorded fact has not changed, only the words for it.
+        status = {"APPROVED_BUT_NOT_ACTIVATED": self.RAIL_SELECTED,
+                  "OPERATIONAL": self.RAIL_LIVE_VERIFIED}.get(status, status)
         return {
             "rail": rail,
             "verification_signal": self.get("payment", "verification_signal",
                                             default=""),
-            "operational_status": self.get(
-                "payment", "operational_status",
-                default=self.RAIL_APPROVED_NOT_ACTIVATED),
+            "operational_status": status,
+            "means": self.RAIL_MEANINGS.get(status, ""),
+            "money_can_move": status == self.RAIL_LIVE_VERIFIED,
+            "next_state": (self.RAIL_STATES[self.RAIL_STATES.index(status) + 1]
+                           if status in self.RAIL_STATES
+                           and status != self.RAIL_LIVE_VERIFIED else ""),
             "decided": bool(rail),
         }
 

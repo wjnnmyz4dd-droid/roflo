@@ -588,3 +588,220 @@ class OD3DecisionsDoNotActivateAnything(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ============================================================ OD-1, §11–§12
+class OD1OnlyTheDetailsTheWorkActuallyNeeds(unittest.TestCase):
+    """Asking for everything up front is not thoroughness.
+
+    A first trial that never issues an invoice does not need the owner's
+    address, and a tax reference belongs to connecting a payment rail, not to
+    telling a client who they are dealing with. Holding personal data earlier
+    than the work requires it is a cost with no benefit, and it turns a short
+    owner action into a long one.
+    """
+
+    def setUp(self):
+        self.s = Solvent()
+        self.s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure=self.s.policy.INDIVIDUAL,
+            reason="OD-1: the owner contracts personally")
+
+    def test_each_purpose_asks_only_for_what_it_needs(self):
+        self.assertEqual(self.s.policy.contracting_shortfall("CLIENT_AGREEMENT"),
+                         ["legal_name", "email"])
+        self.assertIn("tax_reference",
+                      self.s.policy.contracting_shortfall("PAYMENT_RAIL"))
+        self.assertNotIn("tax_reference",
+                         self.s.policy.contracting_shortfall("CLIENT_AGREEMENT"))
+
+    def test_supplying_what_one_purpose_needs_unblocks_only_that_purpose(self):
+        self.s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure=self.s.policy.INDIVIDUAL,
+            reason="OD-1: identity for the first trial",
+            legal_name="A. Owner", email="owner@example.invalid")
+        allowed, why = self.s.policy.may_contract_for("CLIENT_AGREEMENT")
+        self.assertTrue(allowed, why)
+        refused, why = self.s.policy.may_contract_for("PAYMENT_RAIL")
+        self.assertFalse(refused)
+        self.assertIn("address", why)
+        self.assertIn("tax_reference", why)
+
+    def test_a_purpose_nobody_defined_is_refused_rather_than_allowed(self):
+        with self.assertRaises(FailClosed):
+            self.s.policy.contracting_shortfall("WHATEVER")
+
+    def test_the_party_record_says_what_each_unmet_purpose_is_waiting_on(self):
+        blocked = self.s.policy.contracting_party()["blocked_purposes"]
+        self.assertEqual(sorted(blocked), ["CLIENT_AGREEMENT", "INVOICE",
+                                           "PAYMENT_RAIL"])
+        self.assertEqual(blocked["CLIENT_AGREEMENT"], ["legal_name", "email"])
+
+    def test_a_fully_provisioned_owner_blocks_nothing(self):
+        """Guards the tests above: a shortfall that never clears is a wall."""
+        self.s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure=self.s.policy.INDIVIDUAL,
+            reason="OD-1: fully provisioned", legal_name="A. Owner",
+            email="owner@example.invalid", address="1 Example Way",
+            tax_reference="TEST-ONLY-NOT-A-REAL-REFERENCE")
+        self.assertEqual(self.s.policy.contracting_party()["blocked_purposes"], {})
+        for purpose in self.s.policy.CONTRACTING_PURPOSES:
+            with self.subTest(purpose=purpose):
+                self.assertTrue(self.s.policy.may_contract_for(purpose)[0])
+
+    def test_the_refusal_names_fields_and_never_quotes_a_value(self):
+        self.s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure=self.s.policy.INDIVIDUAL,
+            reason="OD-1", legal_name="A. Owner")
+        _, why = self.s.policy.may_contract_for("PAYMENT_RAIL")
+        self.assertNotIn("A. Owner", why)
+
+    def test_the_audit_counts_the_details_that_arrived(self):
+        self.s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure=self.s.policy.INDIVIDUAL,
+            reason="OD-1: identity", legal_name="A. Owner",
+            email="owner@example.invalid")
+        text = repr([dict(e) for e in self.s.audit.events()])
+        self.assertIn("2 identity field(s) provisioned", text)
+
+    def test_a_tax_reference_is_recorded_as_present_and_never_as_a_number(self):
+        """A name and an address are rendered onto documents a client reads, so
+        Solvent holds them. Nothing prints a tax reference — the only fact any
+        code needs is that the owner has one. Storing the number would write a
+        tax identifier into an append-only log that cannot be redacted."""
+        identifier = "TEST-ONLY-1234567890-NOT-REAL"
+        self.s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure=self.s.policy.INDIVIDUAL,
+            reason="OD-1: identity", legal_name="A. Owner",
+            email="owner@example.invalid", address="1 Example Way",
+            tax_reference=identifier)
+
+        party = self.s.policy.contracting_party()
+        self.assertEqual(party["tax_reference"], self.s.policy.ATTESTED)
+        self.assertEqual(party["blocked_purposes"], {})
+
+        for place, text in (("policy document", repr(self.s.policy.doc())),
+                            ("audit log",
+                             repr([dict(e) for e in self.s.audit.events()])),
+                            ("party record", repr(party))):
+            with self.subTest(place=place):
+                self.assertNotIn(identifier, text)
+                self.assertNotIn("1234567890", text)
+
+    def test_the_name_and_address_are_kept_because_documents_need_them(self):
+        """Guards the test above: discarding everything would mean Solvent
+        could never tell a client who they are contracting with."""
+        self.s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure=self.s.policy.INDIVIDUAL,
+            reason="OD-1: identity", legal_name="A. Owner",
+            address="1 Example Way", email="owner@example.invalid")
+        party = self.s.policy.contracting_party()
+        self.assertEqual(party["legal_name"], "A. Owner")
+        self.assertEqual(party["address"], "1 Example Way")
+
+
+# ============================================================ OD-2, §13–§15
+class OD2TheRailHasFourStatesNotTwo(unittest.TestCase):
+    """"Chosen", "built", "configured" and "money has actually arrived" are
+    four different people's claims, and reporting them as one is how a rail
+    that nobody has ever received a payment through comes to be described as
+    working."""
+
+    def setUp(self):
+        self.s = decided(Solvent())
+
+    def advance(self, state, **kw):
+        return self.s.policy.advance_payment_rail(
+            owner_identity=OWNER, state=state, reason=f"OD-2: {state}", **kw)
+
+    def test_choosing_a_rail_leaves_it_at_selected(self):
+        rail = self.s.policy.payment_rail()
+        self.assertEqual(rail["operational_status"],
+                         self.s.policy.RAIL_SELECTED)
+        self.assertFalse(rail["money_can_move"])
+        self.assertEqual(rail["next_state"], self.s.policy.RAIL_ENGINEERING_READY)
+
+    def test_the_ladder_can_be_walked_one_step_at_a_time(self):
+        self.advance(self.s.policy.RAIL_ENGINEERING_READY)
+        self.advance(self.s.policy.RAIL_CONFIGURED,
+                     evidence="owner reports credentials set in the host "
+                              "secret store")
+        self.advance(self.s.policy.RAIL_LIVE_VERIFIED,
+                     evidence="owner observed a real payment arrive and "
+                              "confirmed the signed event")
+        rail = self.s.policy.payment_rail()
+        self.assertEqual(rail["operational_status"],
+                         self.s.policy.RAIL_LIVE_VERIFIED)
+        self.assertTrue(rail["money_can_move"])
+        self.assertEqual(rail["next_state"], "")
+
+    def test_a_step_cannot_be_skipped(self):
+        with self.assertRaises(FailClosed) as caught:
+            self.advance(self.s.policy.RAIL_LIVE_VERIFIED, evidence="trust me")
+        self.assertIn("ENGINEERING_READY", str(caught.exception))
+        self.assertEqual(self.s.policy.payment_rail()["operational_status"],
+                         self.s.policy.RAIL_SELECTED)
+
+    def test_the_ladder_does_not_go_backwards(self):
+        self.advance(self.s.policy.RAIL_ENGINEERING_READY)
+        with self.assertRaises(FailClosed):
+            self.advance(self.s.policy.RAIL_SELECTED)
+
+    def test_a_claim_about_the_outside_world_needs_the_owners_evidence(self):
+        """Solvent may report on its own engineering. It may not assert that a
+        credential exists somewhere it cannot see, or that a payment arrived."""
+        self.advance(self.s.policy.RAIL_ENGINEERING_READY)
+        with self.assertRaises(FailClosed) as caught:
+            self.advance(self.s.policy.RAIL_CONFIGURED)
+        self.assertIn("evidence", str(caught.exception))
+
+    def test_engineering_readiness_is_solvents_own_work_to_report(self):
+        """Guards the test above: requiring evidence for everything would mean
+        Solvent could not report on the one thing it does know."""
+        self.advance(self.s.policy.RAIL_ENGINEERING_READY)
+        self.assertEqual(self.s.policy.payment_rail()["operational_status"],
+                         self.s.policy.RAIL_ENGINEERING_READY)
+
+    def test_only_the_owner_may_advance_it(self):
+        for identity in ("payments", "execution", "capability", "relations"):
+            with self.subTest(identity=identity):
+                with self.assertRaises(FailClosed):
+                    self.s.policy.advance_payment_rail(
+                        owner_identity=identity,
+                        state=self.s.policy.RAIL_ENGINEERING_READY,
+                        reason="self-promotion")
+
+    def test_an_unchosen_rail_cannot_be_advanced(self):
+        fresh = Solvent()
+        with self.assertRaises(FailClosed) as caught:
+            fresh.policy.advance_payment_rail(
+                owner_identity=OWNER,
+                state=fresh.policy.RAIL_ENGINEERING_READY, reason="skip ahead")
+        self.assertIn("no payment rail has been chosen", str(caught.exception))
+
+    def test_an_invented_state_is_refused(self):
+        with self.assertRaises(FailClosed):
+            self.advance("WORKING")
+
+    def test_every_state_carries_a_meaning_in_plain_words(self):
+        for state in self.s.policy.RAIL_STATES:
+            with self.subTest(state=state):
+                self.assertTrue(self.s.policy.RAIL_MEANINGS[state])
+
+    def test_advancing_the_ladder_moves_no_money_and_writes_no_credential(self):
+        self.advance(self.s.policy.RAIL_ENGINEERING_READY)
+        self.advance(self.s.policy.RAIL_CONFIGURED, evidence="owner confirms")
+        self.assertEqual(self.s.ledger.real_revenue_cents(), 0)
+        doc = repr(self.s.policy.doc())
+        for word in ("sk_live", "sk_test", "whsec_", "secret_key"):
+            with self.subTest(word=word):
+                self.assertNotIn(word, doc)
+
+    def test_the_transitions_are_on_the_audit_record(self):
+        self.advance(self.s.policy.RAIL_ENGINEERING_READY)
+        events = [e for e in self.s.audit.events()
+                  if e["event"] == "policy.payment_rail_advanced"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[-1]["decision"],
+                         self.s.policy.RAIL_ENGINEERING_READY)
+        self.assertTrue(self.s.audit.verify_chain()[0])
