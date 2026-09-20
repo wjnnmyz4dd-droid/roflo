@@ -202,13 +202,22 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               "" if party["decided"]
               else "OD-1: does the owner contract personally or through an entity?",
               category=OWNER_CONFIG))
-    needed = party.get("provisioning_required", [])
-    add(Check("contracting identity provisioned", not needed,
+    # Reported per purpose rather than as one list. A trial that never issues
+    # an invoice does not need a postal address, and asking for everything up
+    # front turns a short owner action into a long one while holding personal
+    # data on the chance it might matter. The blocking question is the narrow
+    # one: can Solvent tell a client who they are contracting with?
+    needed = policy.contracting_shortfall("CLIENT_AGREEMENT")
+    later = sorted({f for purpose in ("INVOICE", "PAYMENT_RAIL")
+                    for f in policy.contracting_shortfall(purpose)}
+                   - set(needed))
+    add(Check("contracting identity for a client agreement", not needed,
               ("supplied" if not needed
                else f"{policy.PROVISIONING_REQUIRED}: {', '.join(needed)}"),
               "" if not needed else
-              ("OD-1 activation: the owner must supply "
-               f"{', '.join(needed)}; these are never inferred"),
+              ("OD-1 activation: to name the contracting party the owner must "
+               f"supply {', '.join(needed)}; these are never inferred"
+               + (f". Not needed yet: {', '.join(later)}" if later else "")),
               category=OWNER_CONFIG))
 
     # OD-2 is two facts as well: which rail, and whether it can actually move

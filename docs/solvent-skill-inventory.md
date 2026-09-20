@@ -24,7 +24,7 @@
 | Failed | 0 |
 | Blocked | 0 |
 | Untested | 0 |
-| **Owner-promoted** | **1** (`csv-cleanup/1.0`) |
+| **Owner-promoted** | **1** (`csv-cleanup/1.0`, eleven certified checks) |
 | Owner-not-promoted | 1 (`report-builder/1.0`) |
 | Proposed but not implemented | 7 |
 | Phantom / stale registry claims | 0 |
@@ -56,21 +56,22 @@ black-box scenarios in `tests_solvent/blackbox/`; promotion in
 
 ## 3. csv-cleanup/1.0 in detail
 
-### Exact proven scope — nine certified checks
+### Exact proven scope — eleven certified checks
 
 `drop_exact_duplicates` · `map_values` · `no_unauthorised_changes` ·
-`normalise_dates` · `parses_as_csv` · `preserve_columns` · `require_columns` ·
-`row_reconciliation` · `trim_whitespace`
+`normalise_dates` · `parses_as_csv` · `preserve_columns` · `rename_headers` ·
+`require_columns` · `row_reconciliation` · `sort_rows` · `trim_whitespace`
 
-### Implemented but **outside** the approval
+### What changed, and why it is still eleven and not thirteen
 
-`rename_headers` and `sort_rows` are implemented operations whose checks the
-certification battery never exercises. A job requiring either is **refused
-fail-closed** at `record_verification` — *"solvent.csvverify.run is not
-certified to decide 'sort_rows'"*.
+OD-12 promoted nine. `rename_headers` and `sort_rows` were implemented but
+their checks had never been shown wrong work, so a job requiring either was
+refused fail-closed. **OD-14** authorised promoting them on condition they meet
+the same standard. They do now — after three defects found in the attempt were
+fixed, all of them in checks that were *already* certified (see §5).
 
-They were deliberately left out of the promotion. Certifying them now would
-have widened what the owner approved *after* they approved it.
+Nothing else moved. A check with no certification behind it is still refused,
+and every operation outside this list is still outside it.
 
 ### Contracts
 
@@ -90,22 +91,35 @@ rule. Dates that disambiguate themselves (`25/12/2026`) proceed without asking.
 
 | | |
 |---|---|
-| Verifier | `solvent.csvverify.run` @ `sha256:22783ed6…` |
-| Certification | **CERTIFIED**, 386/386 trials, 0 false accepts, 0 false rejects |
-| Defect classes | 15 |
-| Development holdout | 272/272 |
-| Surprise (unseen seed) | 274/274 |
-| Black-box scenarios | 25/25 acceptable, **0 false completions** |
+| Verifier | `solvent.csvverify.run` @ `sha256:dd27d3bbf8f424e72dbfd11e418710cd` |
+| Certification | **CERTIFIED**, 526/526 trials, 0 false accepts, 0 false rejects |
+| CSV defect classes | 21 |
+| Development holdout | 524/524 |
+| Surprise (unseen seed) | 526/526 |
+| Five further unseen seeds | clean on all five |
+| Black-box scenarios | 34/34 acceptable, **0 false completions** |
 | Levels | L1, L2, L3, BOUNDARY, HOSTILE, TRAP, CLIENT, GAP |
+| Mutation testing of the new controls | 21 mutants, 21 killed |
+
+The fingerprint changed because three checks were hardened. That invalidates the
+previous certification by construction — which is the binding working, not a
+problem — and a fresh certification runs before any delivery.
 
 ### Known limitations
 
-1. `rename_headers` and `sort_rows` implemented but uncertified, so refused.
-2. An ambiguously written date blocks the job until the client answers.
-3. Source binding assumes at least one column survives untouched; a job
-   transforming every column would trip it.
-4. Certification covers modelled defect classes; two previously unmodelled ones
-   were found by deliberately inventing them.
+1. An ambiguously written date blocks the job until the client answers.
+2. Source binding assumes at least one column survives untouched; a job
+   transforming every column would trip it. Row-level binding needs **two**
+   such columns, and falls back to the weaker per-column comparison below that.
+3. Date-to-row binding needs a column whose values are unique and unchanged on
+   both sides. Without one, a date moved onto the wrong row is caught only when
+   the day it landed on is not a reading of some other row's date.
+4. Certification covers modelled defect classes. Five of the twenty-one were
+   added only because these two operations were certified, and three real
+   defects came with them — the list is a record of what has been thought of,
+   not a proof that nothing else exists.
+5. Sorting is textual and stable, by design. A client who means numeric order
+   will get `10` before `9`; nothing detects that they meant something else.
 
 ---
 
@@ -167,12 +181,14 @@ The capability is no longer the blocker. Five things are.
 |---|---|---|
 | **Owner decision** | OD-11 — approve a first work source. *A supervised trial with a hand-fed client arguably does not need automated discovery, but the readiness gate requires a permitted non-fixture source.* | owner |
 | **External setup** | OD-5 — provision `SOLVENT_OWNER_KEY`. No key, no approvals, so no external action. | owner |
-| **Legal / administrative** | OD-1 activation — legal name, address, tax reference, email. Never inferred. | owner |
-| **Payment** | OD-2 activation — Stripe credentials and webhook secret. Status `APPROVED_BUT_NOT_ACTIVATED`. | owner |
+| **Legal / administrative** | OD-1 activation — **legal name and email** to name the contracting party. Address is needed only to issue an invoice; a tax reference only to connect a payment rail, and it is recorded as present, never as a number. Never inferred. | owner |
+| **Payment** | OD-2 activation — Stripe credentials and webhook secret. Rail status `SELECTED`. | owner |
 | **Technical** | OD-3 — the configured model artifact is not the cleared one in a live instance. | owner records the clearance |
+| **Access** | OD-5 — no `SOLVENT_OWNER_KEY`, so every consequential approval fails closed. A key shorter than 32 bytes, a placeholder, or a value with no randomness in it is refused. | owner provisions it outside this repository |
+| **Work source** | OD-11 — no non-fixture source is registered and approved. The owner-entered manual source needs registering; it makes no external call. | owner |
 | **Communication** | Nothing preauthorises outbound client messages; every reply and clarification is drafted and relayed by a human. | owner (Policy) |
 | **Infrastructure** | None outstanding. | — |
-| **Optional** | Certify `rename_headers` and `sort_rows` to widen the scope. | owner |
 
-**Readiness now reports 7 of 13 checks ready, 5 blocking** — down from 6, because
-"a proven capability to sell" is satisfied for the first time.
+**Readiness reports 8 of 13 checks ready, 5 blocking**, with the contracting
+structure and the proven capability now satisfied. Supplying the owner's name
+and email clears a sixth.
