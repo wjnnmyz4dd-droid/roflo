@@ -401,3 +401,74 @@ class AProjectThatSpansTwoCapabilities(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheEvidenceForPromotingTheSecondCapability(unittest.TestCase):
+    """Does report-builder/1.0 have the record to be called proven?
+
+    The numbers here are **counted from an actual run**, never typed in. A
+    fixture count asserted by whoever wants the promotion is not evidence, and
+    the one number that cannot be traded away — false completions — is read off
+    the black-box judge rather than off Solvent's own report of itself.
+
+    Passing this does not promote anything. Registration is an owner act
+    requiring an owner identity, and no test may hold one.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from tests_solvent.blackbox.runner import run_scenario
+        from tests_solvent.blackbox.scenarios import report_scenarios
+
+        cls.scenarios = report_scenarios()
+        cls.results = [run_scenario(s) for s in cls.scenarios]
+
+    def measured(self) -> Capability:
+        from tests_solvent.blackbox.harness import Outcome
+
+        acceptable = [r for r in self.results if r.outcome.acceptable]
+        false_completions = [r for r in self.results
+                             if r.outcome is Outcome.FAIL_FALSE_COMPLETION]
+        levels = {s.level for s in self.scenarios} & {"L1", "L2", "L3"}
+        return Capability(
+            name="report-builder", covers=frozenset({"report_section"}),
+            version=reportverify.__dict__.get("VERSION", "report-builder/1.0"),
+            verifiable_by=tuple(sorted(reportverify.CHECKS)),
+            proven_levels=tuple(sorted(levels)),
+            fixtures_total=len(self.results),
+            fixtures_passed=len(acceptable),
+            false_completions=len(false_completions))
+
+    def test_no_scenario_ended_in_a_false_completion(self):
+        from tests_solvent.blackbox.harness import Outcome
+
+        false = [(r.scenario_id, r.detail) for r in self.results
+                 if r.outcome is Outcome.FAIL_FALSE_COMPLETION]
+        self.assertEqual(false, [], "promotion is blocked until this is empty")
+
+    def test_solvent_never_claimed_a_success_ground_truth_denies(self):
+        self.assertEqual([r.scenario_id for r in self.results if r.deceived], [])
+
+    def test_the_measured_evidence_clears_every_promotion_floor(self):
+        evidence = self.measured()
+        self.assertGreaterEqual(evidence.fixtures_total, MIN_FIXTURES)
+        self.assertGreaterEqual(len(evidence.proven_levels), MIN_LEVELS)
+        self.assertEqual(evidence.false_completions, MAX_FALSE_COMPLETIONS)
+        ok, why = promotion_verdict(evidence)
+        self.assertTrue(ok, why)
+
+    def test_promotion_still_requires_an_owner_and_no_test_may_hold_one(self):
+        """Evidence makes a capability promotable. It does not promote it."""
+        solvent = Solvent()
+        for identity in ("qc", "execution", "worker", "capability", "harness"):
+            with self.subTest(identity=identity):
+                with self.assertRaises(FailClosed):
+                    solvent.capability.register(self.measured(),
+                                                owner_identity=identity)
+
+    def test_the_capability_is_not_registered_as_proven_in_a_fresh_solvent(self):
+        """Nothing in this repository promotes it. That is the owner's call."""
+        solvent = Solvent()
+        proven = {c.name for c in solvent.capability.capabilities() if c.proven}
+        self.assertNotIn("report-builder", proven,
+                         "report-builder was promoted without an owner")
