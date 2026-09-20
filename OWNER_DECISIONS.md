@@ -13,7 +13,31 @@ allowlist), so none of the open decisions below can be tripped over accidentally
 
 ---
 
-## OD-1 — Which legal entity bears contractual responsibility? · **BLOCKING FOR REAL WORK**
+## OD-1 — Which legal entity bears contractual responsibility? · **ANSWERED — identity fields remain**
+
+**Decision (owner, this commit): the owner contracts under their own legal name.
+No LLC is being formed at this time.**
+
+Solvent has no legal identity of its own. It is software acting on the owner's
+behalf and must never present itself as a company, a partnership, a licensed
+professional or any other status the owner has not established. Recorded as
+`governance.contracting.structure = INDIVIDUAL` through
+`PolicyStore.record_contracting_structure`, which is owner-path only.
+
+**What the decision does not include.** The owner's legal name, address, tax
+reference and contact email are theirs to supply. They are not in this
+repository and nothing infers them: each reads as
+`OWNER_PROVISIONING_REQUIRED` until the owner records it, and
+`contracting_party_for_documents()` refuses to complete a document without them.
+Solvent generates no contract text today; that accessor exists so that if it
+ever does, the party comes from the owner's configuration and from nowhere else.
+
+**Decision made ≠ activation data complete.** Readiness now reports those as two
+checks, because conflating them is how an answered decision stays "unanswered"
+for want of data the decision never included.
+
+<details><summary>Original entry (superseded)</summary>
+
 
 **Question.** When Solvent accepts a job, which person or company is the
 contracting party?
@@ -42,9 +66,30 @@ separation before the first job.
 **Consequence.** Until answered, Solvent can prove the loop but cannot run a real
 one.
 
+</details>
+
 ---
 
-## OD-2 — Which payment rail? · **ENGINEERING_READY — owner configuration remains**
+## OD-2 — Which payment rail? · **ANSWERED — operational setup remains**
+
+**Decision (owner, this commit): Stripe is the approved initial payment rail.**
+
+Recorded as `payment.approved_rail = stripe` with
+`verification_signal = stripe_webhook_signed_event`, through
+`PolicyStore.approve_payment_rail`. Its operational state is
+`APPROVED_BUT_NOT_ACTIVATED`: choosing a rail creates no credential, no webhook
+secret and no allowlist entry, and readiness reports "chosen" and "operational"
+as separate checks.
+
+**What Stripe is not.** Not the Financial Governor, the Ledger, the Audit Log or
+the Policy Store. A signed event proves who sent it and nothing else: amount,
+currency, client, job, invoice, collection and payout are all checked separately,
+and a client saying "I paid" — with or without a confirmation number — moves no
+money. Collection is not payout; revenue counts what was collected, and a payout
+event never touches it.
+
+<details><summary>Original entry (superseded)</summary>
+
 
 **Stripe adapter implemented and tested** (`solvent/payments.py`), verified
 against Stripe's primary documentation: HMAC-SHA256 over `"{timestamp}.{raw_body}"`,
@@ -91,9 +136,32 @@ the Ledger records honestly and which must never feed autonomy evidence.
 
 </details>
 
+</details>
+
 ---
 
-## OD-3 — Model commercial rights · **RESOLVED — clearance ready for the owner to record**
+## OD-3 — Model commercial rights · **ANSWERED — hybrid policy, per-model clearance**
+
+**Direction (owner, this commit): a hybrid model policy.** Prefer appropriately
+licensed local or open-weight models for routine work; permit approved cloud
+providers where the work genuinely needs more capability, subject to commercial
+rights, cost, privacy and Policy.
+
+**Hybrid is not blanket authorisation.** Approval is per artifact and keyed on
+the content digest, with no family or prefix matching — within Qwen2.5 the 3B is
+research-only while the 7B and 14B are Apache-2.0, so "it's a Qwen model"
+answers nothing. `PolicyStore.approve_model_artifact` now records placement,
+provider, commercial-use status, a privacy ceiling, a declared cost and
+demonstrated capabilities alongside the existing licence evidence.
+
+Selection prefers local, falls back only to independently approved models, and
+refuses outright when none fits: an unapproved model is not a fallback. A
+licence is not a capability and a capability is not a licence. The declared cost
+is reported for the Financial Governor to rule on — model routing is not a
+second economics authority.
+
+<details><summary>Original entry (superseded)</summary>
+
 
 **Artifact, read from `roflo.toml` rather than remembered:** backend `ollama`,
 tag **`qwen2.5:14b-instruct`** — a **Q4_K_M GGUF quantisation**, model layer
@@ -161,6 +229,8 @@ model assistance.
 
 **Recommendation.** Clear the specific checkpoints in use and record each result
 in the Capability Registry, which is designed to hold that record.
+
+</details>
 
 </details>
 
@@ -447,9 +517,9 @@ record, not a new component.
 
 | ID | Decision | Blocks real work? | Blocks development? |
 | --- | --- | --- | --- |
-| OD-1 | Legal contracting entity | **Yes** | No |
-| OD-2 | Payment rail with verification | **Yes** | No |
-| OD-3 | Model commercial licence | Resolved — owner records the clearance | No |
+| OD-1 | Legal contracting entity | **Answered** — identity fields to provision | No |
+| OD-2 | Payment rail with verification | **Answered** — Stripe not yet activated | No |
+| OD-3 | Model commercial licence | **Answered** — hybrid, per-artifact clearance | No |
 | OD-4 | Network isolation at deploy | Production claim only | No |
 | **OD-5** | **Authenticated owner identity** | **Closed in code; needs a key provisioned** | No |
 | OD-6 | Repository licence | Third parties only | No |
