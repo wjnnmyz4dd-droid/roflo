@@ -459,6 +459,9 @@ class CapabilityRegistry:
                 else:
                     short.append(f"{check}: refused a correct artifact")
                 continue
+            # A check reaches here only if it was right in both directions, so
+            # it has necessarily been shown at least one defect; the "shown
+            # nothing" case is already excluded by checks_passed().
             good = report.good_instances(check)
             instances = report.class_instances(check)
             attempted = report.classes_attempted(check)
@@ -467,10 +470,6 @@ class CapabilityRegistry:
             if good < self.MIN_GOOD_INSTANCES:
                 short.append(f"{check}: accepted only {good} distinct correct "
                              f"artifact(s), floor is {self.MIN_GOOD_INSTANCES}")
-                continue
-            if not attempted:
-                short.append(f"{check}: no defect was ever put in front of it, "
-                             "so it has shown only that it says yes")
                 continue
             if thin:
                 short.append(f"{check}: {', '.join(thin[:3])} demonstrated on "

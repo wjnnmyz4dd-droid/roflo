@@ -62,6 +62,11 @@ class Trial:
     #: per defect class, so "it caught something" never reads as "it catches
     #: this kind of thing".
     defect_class: str = ""
+    #: A hash of the artifact this trial put in front of the verifier. Evidence
+    #: is counted by content, not by how many times a fixture was listed: ten
+    #: copies of one artifact under ten names are one piece of evidence, and
+    #: counting them as ten is how a battery reports volume it does not have.
+    content_digest: str = ""
     #: Why this case exists, for a human reading a failure report.
     note: str = ""
 
@@ -115,20 +120,26 @@ class TrialReport:
         evidence, not ten. Counting them as ten is how a battery reports
         volume it does not have.
         """
-        return len({r.trial.name for r in self.results
+        return len({r.trial.content_digest or r.trial.name
+                    for r in self.results
                     if r.trial.check == check and r.trial.expect == GOOD
                     and r.correct})
 
     def class_instances(self, check: str) -> dict:
-        """``{defect_class: instances_caught}`` for one check."""
-        counts: dict = {}
+        """``{defect_class: distinct_instances_caught}`` for one check.
+
+        Distinct by artifact content. Catching the same defective file five
+        times is catching it once.
+        """
+        seen: dict = {}
         for result in self.results:
             if (result.trial.check != check or result.trial.expect != BAD
                     or not result.correct):
                 continue
             name = result.trial.defect_class or "UNCLASSIFIED"
-            counts[name] = counts.get(name, 0) + 1
-        return counts
+            seen.setdefault(name, set()).add(
+                result.trial.content_digest or result.trial.name)
+        return {name: len(items) for name, items in seen.items()}
 
     def classes_attempted(self, check: str) -> set:
         return {r.trial.defect_class or "UNCLASSIFIED" for r in self.results
@@ -534,9 +545,13 @@ def run_generated(verify, *, capability: str, verifier_ref: str, seed: int,
             suffix = ".csv" if case.source_name.endswith(".csv") else ".md"
             output = workdir / f"{index}_deliverable{suffix}"
             output.write_text(case.output_text, encoding="utf-8")
-            trial = Trial(name=case.name, check=case.check, expect=case.expect,
-                          params=dict(case.params),
-                          defect_class=case.defect_class, note=case.note)
+            trial = Trial(
+                name=case.name, check=case.check, expect=case.expect,
+                params=dict(case.params), defect_class=case.defect_class,
+                content_digest=hashlib.sha256(
+                    (case.source_text + "\x00" + case.output_text).encode()
+                ).hexdigest()[:24],
+                note=case.note)
             try:
                 outcome = verify(case.check, source=str(source),
                                  output=str(output), params=dict(case.params))
