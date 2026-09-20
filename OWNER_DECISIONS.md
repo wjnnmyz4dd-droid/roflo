@@ -447,7 +447,30 @@ around, so that finding rests on secondary reporting.
 
 ---
 
-## OD-12 — Which service does Solvent sell first? · **ANSWERED — owner approval remains**
+## OD-12 — Which service does Solvent sell first? · **ANSWERED AND PROMOTED**
+
+**Decision (owner): approve `csv-cleanup/1.0` as a proven capability, limited
+strictly to the scope actually proven.** Recorded through the existing
+capability registry; registrations are durable and append-only.
+
+**Scope of the approval — nine certified checks:** `drop_exact_duplicates`,
+`map_values`, `no_unauthorised_changes`, `normalise_dates`, `parses_as_csv`,
+`preserve_columns`, `require_columns`, `row_reconciliation`, `trim_whitespace`.
+
+**Explicitly outside it.** `rename_headers` and `sort_rows` are implemented but
+their checks are not certified, so a job requiring either is refused
+fail-closed. Also outside: XLSX, PDF, report generation, analysis, any later
+version, and unattended operation. CSV approval is CSV approval.
+
+**Evidence relied upon**, re-verified against the current implementation
+fingerprint: verifier CERTIFIED 386/386 with zero false accepts or rejects
+across 15 defect classes, clean on both the surprise and development holdout
+seeds, and 25/25 black-box scenarios with zero false completions.
+
+See `docs/solvent-skill-inventory.md` for the authoritative inventory.
+
+<details><summary>Original entry (superseded)</summary>
+
 
 **Recommendation: spreadsheet / CSV cleanup with computed totals**, from a
 deterministic sixteen-dimension scorecard (`solvent/services.py`) that weights
@@ -492,6 +515,8 @@ sell" as blocking, and it is right to.
 
 </details>
 
+</details>
+
 ---
 
 ## OD-13 — Should Solvent check that a work source actually pays? · **NEW, NOT BLOCKING**
@@ -528,7 +553,7 @@ record, not a new component.
 | OD-9 | Marketplace terms | P1b only | No |
 | OD-10 | Client-stated jurisdiction | No (documented risk) | No |
 | OD-11 | First work source | Automated discovery only | No |
-| **OD-12** | **First sellable capability** | **Yes** | No |
+| **OD-12** | **First sellable capability** | **Answered — csv-cleanup/1.0 promoted** | No |
 | OD-13 | Source payment-reality check | No (hardening) | No |
 
 **Three decisions stand between a working architecture and a first real job:
