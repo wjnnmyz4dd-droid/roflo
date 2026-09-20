@@ -295,6 +295,41 @@ class EvidenceIsBoundToTheArtifactAtTheDeliveryGate(unittest.TestCase):
         self.assertEqual(for_other, {},
                          "evidence was returned for an artifact that earned none")
 
+    def test_a_correction_does_not_inherit_the_previous_attempts_passes(self):
+        """The hole a mutation probe found: passes read by job, not by artifact.
+
+        Attempt one earns passes. Attempt two replaces the deliverable and earns
+        none. Reading every pass recorded against the *job* would clear attempt
+        two on attempt one's evidence — a correction inheriting the verification
+        of the thing it was correcting, which is precisely backwards.
+        """
+        import pathlib as _p
+
+        first = self.s.orchestrator.current_deliverable(self.job_id)
+        passes_for_first = self.s.audit.passes_for_artifact(self.job_id,
+                                                            first.digest)
+        self.assertTrue(passes_for_first, "attempt one earned no evidence")
+
+        # A genuinely different artifact, registered as the new deliverable.
+        replacement = _p.Path(first.path).with_name("deliverable.attempt2.csv")
+        replacement.write_text(
+            "Order ID,Customer,Order Date,Region,Units,Total\n"
+            "2001,Replacement,2026-02-01,North,1,10.00\n", encoding="utf-8")
+        second = self.s.orchestrator.register_artifact(
+            job_id=self.job_id, role="DELIVERABLE", path=str(replacement),
+            produced_by="worker", capability_version="csv-cleanup/1.0",
+            initiator="execution", media_type="text/csv")
+
+        self.assertNotEqual(second.digest, first.digest)
+        self.assertEqual(
+            self.s.audit.passes_for_artifact(self.job_id, second.digest), {},
+            "the new artifact somehow already has evidence")
+
+        ok, why = self.s.orchestrator.verification_satisfied(self.job_id)
+        self.assertFalse(
+            ok, "a replacement artifact was cleared on the previous one's passes")
+        self.assertIn("no pass", why)
+
     def test_every_recorded_pass_names_the_artifact_it_inspected(self):
         rows = self.s.store.raw_readonly(
             "SELECT * FROM verification_evidence WHERE subject_ref = ?",
