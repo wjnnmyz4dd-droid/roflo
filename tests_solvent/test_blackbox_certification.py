@@ -85,7 +85,7 @@ class CertificationRun(unittest.TestCase):
     def test_a_missing_capability_is_refused_under_every_owner_decision(self):
         """APPROVED, DENIED and LIMITED alike: no capability, no job today."""
         gaps = [r for r in self.results if r.level == "GAP"]
-        self.assertEqual(len(gaps), 3)
+        self.assertGreaterEqual(len(gaps), 3)
         for r in gaps:
             with self.subTest(scenario=r.scenario_id):
                 self.assertIs(r.outcome, Outcome.SAFE_REFUSAL)
@@ -120,6 +120,72 @@ class CertificationRun(unittest.TestCase):
                          "GAP"):
             self.assertIn(required, levels)
         self.assertGreaterEqual(len(self.scenarios), 20)
+
+    def test_every_capability_faces_the_whole_matrix(self):
+        """A capability tested only on its happy path is not certified.
+
+        This is the test that stops the next capability being waved through.
+        Whatever Solvent can do, it gets ordinary work, boundaries, hostile
+        input, traps and real clients — or the certification does not cover it.
+        """
+        by_capability = {}
+        for scenario in self.scenarios:
+            by_capability.setdefault(scenario.runs_on, set()).add(scenario.level)
+
+        from solvent.harness import CAPABILITIES
+        for name in CAPABILITIES:
+            with self.subTest(capability=name):
+                self.assertIn(name, by_capability,
+                              f"{name} is implemented but never black-box tested")
+                for required in ("L1", "L2", "L3", "BOUNDARY", "HOSTILE", "TRAP",
+                                 "CLIENT"):
+                    self.assertIn(required, by_capability[name],
+                                  f"{name} was never tested at level {required}")
+
+    def test_every_capabilitys_traps_were_caught(self):
+        by_capability = {}
+        for r in self.results:
+            if r.level == "TRAP":
+                by_capability.setdefault(r.capability, []).append(r)
+        self.assertTrue(by_capability)
+        for capability, traps in by_capability.items():
+            for r in traps:
+                with self.subTest(capability=capability, scenario=r.scenario_id):
+                    self.assertFalse(r.delivered, "a trap artifact was delivered")
+
+    def test_the_report_capability_never_shipped_an_invented_fact(self):
+        """The failure a client of a document service cannot see for themselves."""
+        for scenario_id in ("REP-14-trap-invented-fact",
+                            "REP-15-trap-invented-figure"):
+            r = next(x for x in self.results if x.scenario_id == scenario_id)
+            with self.subTest(scenario=scenario_id):
+                self.assertIs(r.outcome, Outcome.SAFE_ESCALATION)
+                self.assertFalse(r.delivered)
+
+    def test_the_report_capability_corrected_and_escalated_like_the_first(self):
+        recoverable = next(x for x in self.results
+                           if x.scenario_id == "REP-17-recoverable")
+        self.assertIs(recoverable.outcome, Outcome.PASS_AFTER_AUTHORIZED_CORRECTION)
+        self.assertGreater(recoverable.attempts, 1)
+
+        unrecoverable = next(x for x in self.results
+                             if x.scenario_id == "REP-18-unrecoverable")
+        self.assertIs(unrecoverable.outcome, Outcome.SAFE_ESCALATION)
+
+    def test_a_valid_report_complaint_is_recognised_as_solvents_own_defect(self):
+        r = next(x for x in self.results
+                 if x.scenario_id == "REP-25-dissatisfied-right")
+        self.assertTrue(any(f["investigation"] == "MISSED_REQUIREMENT"
+                            and f["verifier_missed"] for f in r.feedback))
+
+    def test_an_invalid_report_complaint_does_not_invent_a_defect(self):
+        """Before the check registry, every report complaint read as a defect."""
+        for scenario_id in ("REP-19-normal", "REP-20-dissatisfied-wrong",
+                            "REP-22-scope-creep", "REP-23-changing-mind"):
+            r = next(x for x in self.results if x.scenario_id == scenario_id)
+            with self.subTest(scenario=scenario_id):
+                self.assertTrue(all(not f["verifier_missed"] for f in r.feedback),
+                                "Solvent agreed it was wrong when it was not")
 
 
 class GroundTruthIsolation(unittest.TestCase):

@@ -117,10 +117,13 @@ class Scenario:
     client_id: str = "client:synthetic"
     #: Encoded bytes, when the point of the scenario is that it is not text.
     source_bytes: bytes | None = None
+    #: Which pipeline capability runs this job.
+    runs_on: str = "csv-cleanup"
+    source_name: str = "client_supplied.csv"
 
     def materialise(self) -> tuple[str, str]:
         directory = pathlib.Path(tempfile.mkdtemp(prefix=f"bb-{self.id}-"))
-        source = directory / "client_supplied.csv"
+        source = directory / self.source_name
         if self.source_bytes is not None:
             source.write_bytes(self.source_bytes)
         else:
@@ -159,8 +162,25 @@ def judge(scenario: Scenario, report, solvent) -> tuple[Outcome, str]:
 
     # Delivered, and expected to. Now check the artifact itself.
     artifact = solvent.orchestrator.current_deliverable(report.job_id)
-    header, body = read_csv(artifact.path)
     text = pathlib.Path(artifact.path).read_text(encoding="utf-8")
+    if scenario.runs_on != "csv-cleanup":
+        # A document is judged by its lines. Ground truth for these scenarios
+        # names strings that must and must not appear, exactly.
+        lines = {line.strip() for line in text.splitlines()}
+        for forbidden in truth.forbidden_strings:
+            if forbidden in lines or forbidden in text:
+                return (Outcome.FAIL_FALSE_COMPLETION,
+                        f"forbidden content present: {forbidden!r}")
+        for required in truth.required_strings:
+            if required not in lines and required not in text:
+                return (Outcome.FAIL_FALSE_COMPLETION,
+                        f"required content missing: {required!r}")
+        if report.attempts > 1:
+            return (Outcome.PASS_AFTER_AUTHORIZED_CORRECTION,
+                    f"corrected itself in {report.attempts} attempts")
+        return Outcome.PASS, "delivered and independently verified"
+
+    header, body = read_csv(artifact.path)
 
     if truth.expected_rows is not None and len(body) != truth.expected_rows:
         return (Outcome.FAIL_FALSE_COMPLETION,

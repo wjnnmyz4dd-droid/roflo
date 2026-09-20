@@ -194,7 +194,8 @@ class JobOrchestrator:
              requirement.status.value, requirement.supersedes, committed_at))
         self._db.commit()
 
-    def commit_requirements(self, *, job_id: str, initiator: str) -> list[Requirement]:
+    def commit_requirements(self, *, job_id: str, initiator: str,
+                            known_checks=None) -> list[Requirement]:
         """Freeze the checklist this job will be judged against.
 
         Every mandatory requirement must name a registered check. A checklist
@@ -209,8 +210,12 @@ class JobOrchestrator:
             raise FailClosed(f"{job_id} has no requirements to commit; a job with "
                              "no checklist cannot be verified and must not start")
 
+        # Which checks exist is a property of the capability running this job,
+        # which the caller knows and the Orchestrator should not. It owns the
+        # *rule* — a mandatory requirement must be testable — not the catalogue.
+        checks = CHECKS if known_checks is None else known_checks
         untestable = [r.id for r in drafts
-                      if r.criticality.blocks_delivery and r.check not in CHECKS]
+                      if r.criticality.blocks_delivery and r.check not in checks]
         if untestable:
             raise FailClosed(
                 f"mandatory requirement(s) {untestable} name no registered check; "

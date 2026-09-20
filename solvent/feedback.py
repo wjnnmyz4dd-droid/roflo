@@ -238,7 +238,7 @@ class ClientFeedback:
           committed checklist, so it is scope, not a defect
         * nothing can be recomputed → the owner looks
         """
-        from . import csvverify
+        from .checks import runner_for
 
         row = self._db.query_one("SELECT * FROM client_feedback WHERE id = ?",
                                  (feedback_id,))
@@ -251,10 +251,30 @@ class ClientFeedback:
             return Investigation(feedback_id, Classification.AMBIGUOUS,
                                  detail="no artifact or no baseline to re-check")
 
+        # Re-check with the library that belongs to the capability which
+        # actually produced this artifact, read off the artifact itself. Running
+        # a report through the CSV checks returns UNVERIFIABLE for every
+        # requirement, which reads exactly like "we shipped something broken".
+        run = runner_for(artifact.capability_version)
+        if run is None:
+            # No library can read this work, so there is no finding to make.
+            # "Cannot recompute" is not "defective" and not "fine": a human
+            # looks, which is the third outcome this method documents.
+            detail = ("nothing here can re-check work produced by "
+                      f"{artifact.capability_version or 'an unrecorded capability'}, "
+                      "so whether the complaint is valid is unknown")
+            self._audit.record(
+                event="feedback.investigated", authority="feedback",
+                initiator=verifier, why="no check library for this capability",
+                job_id=job_id, input_ref=feedback_id,
+                decision=Classification.AMBIGUOUS, result=detail)
+            return Investigation(feedback_id, Classification.AMBIGUOUS,
+                                 detail=detail)
+
         failing = []
         for req in baseline:
-            outcome = csvverify.run(req.check, source=source,
-                                    output=artifact.path, params=req.params)
+            outcome = run(req.check, source=source,
+                          output=artifact.path, params=req.params)
             if not outcome.passed:
                 failing.append(f"{req.id}: {outcome.result.value} — {outcome.detail}")
 

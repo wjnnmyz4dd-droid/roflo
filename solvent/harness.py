@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .audit import AuditLog
 from .capability import Capability, CapabilityRegistry
+from .checks import checks_for
 from .content import RequirementSet, confirm, extract_requirements, quarantine
 from .feedback import ClientFeedback
 from .errors import FailClosed
@@ -41,7 +42,7 @@ from .policy import DEFAULT_MAX_CORRECTIONS, PolicyStore
 from .pricing import PricingReference
 from .projection import project
 from .store import Store
-from . import csvverify, csvwork
+from . import csvverify, csvwork, reportverify, reportwork
 from .policy import DEFAULT_MAX_CORRECTIONS
 from .types import (
     ActionClass, BlockedOn, ConsequenceTier, Criticality, CostCategory, CostLine, GovernorVerdict, JobState,
@@ -607,11 +608,142 @@ def run_manual_opportunity(*, title: str, client_ref: str, quote_dollars: str,
 # the order is the point: nothing is delivered that has not been recomputed from
 # the artifact about to leave.
 
-def _unregistered_checks(requirements: list) -> list[str]:
-    """Mandatory requirements naming a check that does not exist."""
+def _unregistered_checks(requirements: list,
+                         capability: str = "csv-cleanup") -> list[str]:
+    """Mandatory requirements naming a check this capability does not have."""
+    known = checks_for(capability)
     return sorted({r.check for r in requirements
                    if r.criticality.blocks_delivery and r.check
-                   and r.check not in csvverify.CHECKS})
+                   and r.check not in known})
+
+
+@dataclass(frozen=True)
+class ServiceCapability:
+    """What the pipeline needs to know to run one capability.
+
+    Everything else — the checklist, the artifact binding, the Guardian, the
+    correction loop, the delivery gate — is identical across capabilities and
+    must stay that way. A second pipeline would be a second place where "may
+    this be delivered?" is answered, which is exactly the duplication the
+    architecture forbids.
+    """
+
+    version: str
+    #: ``(source, destination, requirements) -> report with .refused``
+    execute: object
+    #: ``(check_name, source=, output=, params=) -> outcome with .passed``
+    verify: object
+    #: Extra requirements this capability adds for itself, given the source.
+    #:
+    #: Deliberately has **no default**. This is the capability's own safety
+    #: net — the requirements a client would never think to ask for, like "no
+    #: figure that nobody supplied". It used to default to ``None``, so a new
+    #: capability that simply forgot to wire it ran with no self-protection at
+    #: all and said nothing about it. A defective document builder was caught
+    #: delivering an invented total for exactly that reason. Omission now fails
+    #: at construction; deriving nothing is still allowed, but it has to be
+    #: said out loud with :func:`nothing_derived`.
+    derive: object
+    #: ``(requirements) -> (steps, refusals)``, or None when planning is implicit
+    plan: object = None
+    extension: str = "csv"
+
+
+def nothing_derived(source: str, requirements: list) -> list:
+    """A capability that adds no requirements of its own, stated explicitly.
+
+    Legitimate for work whose committed checklist already covers every way it
+    can be wrong. Writing it out is the point: "this capability needs no safety
+    net" should be a sentence someone wrote, not a field someone forgot.
+    """
+    return []
+
+
+def _csv_derived(source: str, requirements: list) -> list:
+    """Every cleanup job carries "nothing else changed"."""
+    header = _csv_header(source)
+    if not header or any(r.check == "no_unauthorised_changes" for r in requirements):
+        return []
+    return [Requirement(
+        id="R-NOCHANGE",
+        text="No column may change except those the agreed work requires.",
+        source=RequirementSource.DERIVED,
+        acceptance="Every unauthorised column is value-for-value identical to "
+                   "the source, allowing for removed duplicates",
+        check="no_unauthorised_changes",
+        params={"authorised_columns":
+                csvwork.authorised_columns(requirements, header)})]
+
+
+def _report_derived(source: str, requirements: list) -> list:
+    """Every report carries "no figure that the client did not supply".
+
+    The one failure a client cannot see for themselves. It is DERIVED, so it can
+    never be quoted back to them as something they asked for.
+    """
+    derived = []
+    if not any(r.check == "report_no_invented_facts" for r in requirements):
+        derived.append(Requirement(
+            id="R-NOINVENT",
+            text="Every figure in the report must come from the supplied data.",
+            source=RequirementSource.DERIVED,
+            acceptance="Each number in the document traces to the source or to a "
+                       "total computed from it",
+            check="report_no_invented_facts", params={}))
+
+    # Every fact the client put in a section must come back out unchanged. The
+    # trap battery shipped a report whose client name had been extended from
+    # "Acme Corp" to "Acme Corporation" because no requirement covered the facts
+    # the client had themselves asked for. Numbers were protected and words
+    # were not, which is the wrong half: a client checks the figures and trusts
+    # the prose.
+    fields = sorted({f for r in requirements
+                     if r.check == "report_section"
+                     and (r.params or {}).get("kind") == "facts"
+                     for f in (r.params or {}).get("fields", [])})
+    if fields and not any(r.check == "report_facts_rendered" for r in requirements):
+        derived.append(Requirement(
+            id="R-VERBATIM",
+            text="Facts the client supplied must appear exactly as supplied.",
+            source=RequirementSource.DERIVED,
+            acceptance="Each rendered fact matches the source value on its own "
+                       "line, and an absent one is marked NOT SUPPLIED",
+            check="report_facts_rendered", params={"fields": fields}))
+
+    # And every fact the client asked for and did not supply must still be
+    # named as absent in the delivered document. A "missing" section is the one
+    # section whose entire content is an absence, and nothing was checking it:
+    # `report_section` verifies only that the document opens, and the
+    # invented-facts check reads numbers, so a blank filled in with a plausible
+    # *name* passed both. That is the same error as R-VERBATIM one section over
+    # — figures protected, words trusted — and it is the worst place for it,
+    # because a disclosed gap is precisely what a client relies on to know what
+    # the report does not cover.
+    disclosed = sorted({f for r in requirements
+                        if r.check == "report_section"
+                        and (r.params or {}).get("kind") in ("missing", "facts")
+                        for f in (r.params or {}).get("fields", [])})
+    if disclosed and not any(r.check == "report_missing_disclosed"
+                             for r in requirements):
+        derived.append(Requirement(
+            id="R-DISCLOSED",
+            text="A fact that was not supplied must be shown as not supplied.",
+            source=RequirementSource.DERIVED,
+            acceptance="Each field absent from the source is named as absent in "
+                       "the document, and no absence is filled in",
+            check="report_missing_disclosed", params={"fields": disclosed}))
+    return derived
+
+
+CAPABILITIES = {
+    "csv-cleanup": ServiceCapability(
+        version=csvwork.VERSION, execute=csvwork.execute, verify=csvverify.run,
+        plan=csvwork.plan, derive=_csv_derived, extension="csv"),
+    "report-builder": ServiceCapability(
+        version=reportwork.VERSION, execute=reportwork.build,
+        verify=reportverify.run, plan=None, derive=_report_derived,
+        extension="md"),
+}
 
 
 def _csv_header(path: str) -> list[str]:
@@ -669,7 +801,8 @@ class ServiceReport:
 
 def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
                             attempt: int, verifier: str = "qc",
-                            executor: str = "worker") -> VerificationRound:
+                            executor: str = "worker",
+                            capability: str = "csv-cleanup") -> VerificationRound:
     """Recompute every committed requirement against the current deliverable.
 
     The verifier reads the two files. It is never told what the worker believes
@@ -689,8 +822,8 @@ def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
             continue
         if req.criticality.blocks_delivery:
             round_.mandatory.add(req.id)
-        outcome = csvverify.run(req.check, source=source, output=artifact.path,
-                                params=req.params)
+        outcome = CAPABILITIES[capability].verify(
+            req.check, source=source, output=artifact.path, params=req.params)
         round_.results[req.id] = outcome
         s.audit.record_verification(
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC,
@@ -709,6 +842,7 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
                 quoted_cents: int = 18_000, state: str = "NC",
                 path: str = ":memory:", solvent: "Solvent | None" = None,
                 configure_fixture_policy: bool = True,
+                capability: str = "csv-cleanup",
                 sabotage=None) -> ServiceReport:
     """Take one CSV job from requirements to a verified, gated deliverable.
 
@@ -742,21 +876,15 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
     # can never be quoted back to a client as something they asked for, and it
     # protects the columns nobody wrote a requirement about — which are exactly
     # the ones an overreaching worker would alter unnoticed.
-    header = _csv_header(source)
-    if header and not any(r.check == "no_unauthorised_changes" for r in requirements):
-        s.orchestrator.add_requirement(job_id, Requirement(
-            id="R-NOCHANGE",
-            text="No column may change except those the agreed work requires.",
-            source=RequirementSource.DERIVED,
-            acceptance="Every unauthorised column is value-for-value identical "
-                       "to the source, allowing for removed duplicates",
-            check="no_unauthorised_changes",
-            params={"authorised_columns":
-                    csvwork.authorised_columns(requirements, header)}))
+    spec = CAPABILITIES[capability]
+    if spec.derive is not None:
+        for derived in spec.derive(source, requirements):
+            s.orchestrator.add_requirement(job_id, derived)
 
     try:
-        report.committed = s.orchestrator.commit_requirements(job_id=job_id,
-                                                              initiator=OWNER)
+        report.committed = s.orchestrator.commit_requirements(
+            job_id=job_id, initiator=OWNER,
+            known_checks=checks_for(capability))
     except FailClosed as refusal:
         # A mandatory requirement naming no registered check is a capability
         # gap. The job is still refused — proposing is not permission — but the
@@ -764,7 +892,7 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
         # opaque error every time. Filed here, in the composition root, because
         # the Orchestrator owns job state and the registry owns what Solvent
         # can do; neither should have to know about the other.
-        for missing in _unregistered_checks(requirements):
+        for missing in _unregistered_checks(requirements, capability):
             decided = s.capability.development_decision(missing)[0]
             if not decided and not s.capability.proposals(missing):
                 s.capability.propose(
@@ -778,7 +906,7 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
 
     # A plan that cannot be made is a refusal, not an attempt. Say so before
     # touching anything.
-    _, refusals = csvwork.plan(report.committed)
+    refusals = spec.plan(report.committed)[1] if spec.plan else []
     if refusals:
         report.refusals = refusals
         s.orchestrator._transition(job_id, JobState.QUALIFYING, why="planning",
@@ -800,9 +928,9 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for attempt in range(1, limit + 1):
-        destination = out_dir / f"cleaned.attempt{attempt}.csv"
-        work = csvwork.execute(source=source, destination=destination,
-                               requirements=report.committed)
+        destination = out_dir / f"deliverable.attempt{attempt}.{spec.extension}"
+        work = spec.execute(source=source, destination=destination,
+                            requirements=report.committed)
         report.work_summary = work.summary()
         if work.refused:
             report.refusals = work.refused
@@ -818,15 +946,16 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
 
         artifact = s.orchestrator.register_artifact(
             job_id=job_id, role="DELIVERABLE", path=str(destination),
-            produced_by="worker", capability_version=csvwork.VERSION,
-            source_digest=src.digest, initiator="execution")
+            produced_by="worker", capability_version=spec.version,
+            source_digest=src.digest, initiator="execution",
+            media_type="text/csv" if spec.extension == "csv" else "text/markdown")
         report.artifacts.append(artifact)
 
         if s.orchestrator.job(job_id).state is JobState.EXECUTING:
             s.orchestrator.submit_for_verification(job_id=job_id,
                                                    initiator="execution")
         round_ = verify_against_baseline(s, job_id=job_id, source=source,
-                                         attempt=attempt)
+                                         attempt=attempt, capability=capability)
         report.rounds.append(round_)
         if round_.passed:
             break
