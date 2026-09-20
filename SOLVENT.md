@@ -135,6 +135,7 @@ because a better opportunity is competing for the same capacity.
 | **CSV cleanup (service capability #1)** | **Working** — real artifacts, requirement-by-requirement verification, 7/7 false completions caught, 9/9 fixtures. See `docs/solvent-first-capability.md` |
 | Any other client-work capability | **None.** Each needs its own proof; the audit that found there were none is `docs/solvent-capability-audit.md` |
 | 24/7 operation on an always-on host | **Working** — `solvent run --always-on`; see `docs/solvent-always-on-deployment.md` |
+| Capability growth under owner control | **Working** — a detected gap becomes a proposal; APPROVED / LIMITED / DENIED are each obeyed, and approval to build is not evidence it works |
 | Crash and reboot recovery | **Working** — an unsettled external action blocks its job rather than repeating it |
 | Manually sourced **real** job | **Blocked on OD-1, OD-2, OD-12** (OD-3 verified; owner records it) |
 | Controlled discovery against a real platform | Researched; see `docs/solvent-work-source-research.md` |

@@ -338,16 +338,72 @@ artifact correct, so `NEW_SCOPE` was the honest answer; the scenario now corrupt
 the delivered artifact so the branch is genuinely exercised.
 
 **Capability gaps.** Three scenarios demanded a `.xlsx` renderer under three
-pre-committed owner decisions — approved, denied and limited. All three were
-refused identically at commitment, because a mandatory requirement naming no
-registered check never becomes a baseline. **There is no capability-development
-proposal path in the architecture**: `REQUIRES_NEW_CAPABILITY` exists as a
-verdict, and registration is owner-only, but nothing turns a detected gap into a
-proposal an owner can answer. Obedience to approved/denied/limited is therefore
-*untestable* rather than unproven — Solvent refuses in all three cases, which is
-safe, and cannot distinguish them, which is a gap.
+pre-committed owner decisions. At the time of the certification run all three
+produced an identical refusal, because nothing turned a detected gap into a
+question an owner could answer. **That gap has since been closed — see §17.**
 
-## 17. What this does *not* mean
+## 17. Capability growth: a gap becomes a question
+
+The certification found that `REQUIRES_NEW_CAPABILITY` existed as a verdict and
+registration was owner-only, but nothing connected them. Every gap produced the
+same refusal under every owner decision, so obedience to approved / denied /
+limited was **untestable rather than unproven**. This closes it.
+
+No new authority. The registry already owned what Solvent can do, and Policy
+already owned who counts as the owner. What was missing was somewhere for the
+owner's answer to live.
+
+```
+job needs something Solvent cannot do
+  → refused (unchanged: proposing is not permission)
+  → the gap is filed once, in the owner's queue
+  → the owner answers: APPROVED · LIMITED · DENIED
+```
+
+| Answer | May build and test | May reach a client |
+| --- | --- | --- |
+| *(no answer yet)* | **No** — silence is not consent | No |
+| **DENIED** | **No**, and it cannot be registered by any route | No |
+| **LIMITED** | **Yes** | **No** — that is a separate decision |
+| **APPROVED** | **Yes** | Only once registered **proven with evidence** |
+
+Four rules hold it together.
+
+**Solvent may ask; it may never answer.** `decide()` is owner-only, and
+`capability`, `worker`, `qc`, `memory:learning`, `execution`, `runtime` and
+`client:acme` were each refused.
+
+**Approval to build is not evidence that it works.** A capability developed
+under an owner decision must pass `promotion_verdict` before it can be
+registered as proven — the owner asked Solvent to build the very thing Solvent
+would otherwise be grading. One false completion blocks it whatever the pass
+rate. A capability the owner registers directly, with no proposal behind it, is
+their own judgement about their own business and needs no fixture count.
+
+**Asking again is not a strategy.** A second proposal for a name the owner has
+already answered is refused; re-asking until the answer changes is how a denial
+gets worn down. The owner may record a new decision at any time, and both
+answers stay on the record.
+
+**The record cannot be edited.** `capability_proposals` is append-only, enforced
+by SQLite triggers: a denial that could be rewritten into an approval is not a
+denial. Verified against a raw connection that bypasses every authority wrapper.
+
+**Scope is recorded, never parsed.** A LIMITED grant carries the owner's own
+words — "local fixtures only, no client contact" — which are shown to a human
+and never interpreted into permissions. A permission Solvent inferred from prose
+is not a permission the owner gave, and a test asserts the decision path does no
+string analysis on it.
+
+Nine mutation probes against these controls: **9 / 9 caught.** The three
+black-box gap scenarios now distinguish the three answers and assert each is
+obeyed.
+
+**Still true, and deliberately so:** the job is refused in all three cases. An
+approval is permission to build a capability, not permission to skip the
+checklist on a job that needed it.
+
+## 18. What this does *not* mean
 
 - **No real client work.** `simulation_only` is on, the allowlist is empty, no
   source is approved, real revenue is $0.00.
@@ -357,7 +413,7 @@ safe, and cannot distinguish them, which is a gap.
 - **One capability.** XLSX, PDF, documents, code, research — none of them. Each
   needs its own proof, and the way to earn the next one is to run this one.
 
-## 18. Scope matching
+## 19. Scope matching
 
 The old `conforms()` asked whether a barred *phrase* appeared as a substring.
 Nine rephrasings walked past it: *"prepare the filing for our taxes"* was accepted
@@ -373,7 +429,7 @@ words.
 similar"* and *"fill in the missing values"* refused as unrecognised rather than
 attempted.
 
-## 19. No second Guardian
+## 20. No second Guardian
 
 There is no `guardian.py`, no `independent_verifier.py`, no
 `verification_engine_v2.py`. `AuditLog.record_verification` was already the

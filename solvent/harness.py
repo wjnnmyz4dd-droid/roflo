@@ -24,6 +24,7 @@ from .audit import AuditLog
 from .capability import Capability, CapabilityRegistry
 from .content import RequirementSet, confirm, extract_requirements, quarantine
 from .feedback import ClientFeedback
+from .errors import FailClosed
 from .discovery import (
     Compliance, Discovery, FixtureSource, ManualSource, Readiness,
 )
@@ -606,6 +607,13 @@ def run_manual_opportunity(*, title: str, client_ref: str, quote_dollars: str,
 # the order is the point: nothing is delivered that has not been recomputed from
 # the artifact about to leave.
 
+def _unregistered_checks(requirements: list) -> list[str]:
+    """Mandatory requirements naming a check that does not exist."""
+    return sorted({r.check for r in requirements
+                   if r.criticality.blocks_delivery and r.check
+                   and r.check not in csvverify.CHECKS})
+
+
 def _csv_header(path: str) -> list[str]:
     """The source's column names, or [] if it will not parse. Never guesses."""
     import csv as _csv
@@ -746,8 +754,24 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
             params={"authorised_columns":
                     csvwork.authorised_columns(requirements, header)}))
 
-    report.committed = s.orchestrator.commit_requirements(job_id=job_id,
-                                                          initiator=OWNER)
+    try:
+        report.committed = s.orchestrator.commit_requirements(job_id=job_id,
+                                                              initiator=OWNER)
+    except FailClosed as refusal:
+        # A mandatory requirement naming no registered check is a capability
+        # gap. The job is still refused — proposing is not permission — but the
+        # gap now reaches the owner's queue instead of producing the same
+        # opaque error every time. Filed here, in the composition root, because
+        # the Orchestrator owns job state and the registry owns what Solvent
+        # can do; neither should have to know about the other.
+        for missing in _unregistered_checks(requirements):
+            decided = s.capability.development_decision(missing)[0]
+            if not decided and not s.capability.proposals(missing):
+                s.capability.propose(
+                    name=missing, covers=frozenset({missing}), job_id=job_id,
+                    why=f"job {job_id} required {missing!r}, which no registered "
+                        "capability performs")
+        raise refusal
 
     src = s.orchestrator.register_artifact(
         job_id=job_id, role="SOURCE", path=source, initiator=OWNER)

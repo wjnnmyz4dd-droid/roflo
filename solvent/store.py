@@ -53,6 +53,9 @@ APPEND_ONLY = (
     "audit_log", "verification_evidence", "ledger_entries",
     "governor_decisions", "action_requests", "price_estimates", "policy_versions",
     "qualification_verdicts", "payment_events", "artifacts",
+    # A proposal and the owner's answer to it are history. Editing either would
+    # let a denial become an approval with nothing to show for the change.
+    "capability_proposals",
 )
 
 #: Which authority owns which tables. The single source of this mapping.
@@ -70,6 +73,7 @@ TABLE_OWNER = {
     "artifacts": "orchestrator",
     "client_feedback": "feedback",
     "capability_assessments": "capability",
+    "capability_proposals": "capability",
     "price_estimates": "governor",
     "calibration_state": "governor",
     "governor_decisions": "governor",
@@ -173,6 +177,13 @@ CREATE TABLE IF NOT EXISTS client_feedback (
   matched_requirement TEXT NOT NULL DEFAULT '', severity TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'OPEN', routed_to TEXT NOT NULL DEFAULT '',
   reason TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS capability_proposals (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL,
+  decision TEXT NOT NULL DEFAULT '', covers TEXT NOT NULL DEFAULT '',
+  why TEXT NOT NULL DEFAULT '', requested_by TEXT NOT NULL DEFAULT '',
+  decided_by TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '',
+  job_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS capability_assessments (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, verdict TEXT NOT NULL,

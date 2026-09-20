@@ -7,7 +7,9 @@ from dataclasses import dataclass, field
 from solvent.errors import FailClosed
 from solvent.harness import OWNER, Solvent, run_csv_job
 
-from .harness import ClientType, Outcome, Scenario, judge, remember_source
+from .harness import (
+    ClientType, Outcome, Scenario, TEST_ONLY, judge, remember_source,
+)
 
 
 @dataclass
@@ -44,9 +46,12 @@ def run_scenario(scenario: Scenario, *, solvent: Solvent | None = None) -> Resul
         expected = scenario.truth.refusal_contains
         ok = (not scenario.truth.should_deliver
               and (not expected or expected in str(refusal)))
-        return Result(scenario.id, scenario.level, scenario.client.kind.value,
-                      Outcome.SAFE_REFUSAL if ok else Outcome.FAIL_OTHER,
-                      str(refusal)[:140])
+        result = Result(scenario.id, scenario.level, scenario.client.kind.value,
+                        Outcome.SAFE_REFUSAL if ok else Outcome.FAIL_OTHER,
+                        str(refusal)[:140])
+        if scenario.owner.capability_development:
+            _play_owner_on_a_gap(s, scenario, result)
+        return result
 
     outcome, detail = judge(scenario, report, s)
     result = Result(scenario.id, scenario.level, scenario.client.kind.value,
@@ -75,6 +80,51 @@ def _corrupt_delivered(s: Solvent, report) -> None:
         rows = [row for row in _csv.reader(handle) if row]
     with open(path, "w", newline="", encoding="utf-8") as handle:
         _csv.writer(handle).writerows(rows + [rows[1][:]])
+
+
+def _play_owner_on_a_gap(s: Solvent, scenario: Scenario, result: Result) -> None:
+    """Replay the pre-committed owner decision and check it is obeyed.
+
+    The decision was frozen in the scenario before the run. The harness records
+    it through Solvent's own owner path — it cannot grant anything Policy would
+    not grant, and a test asserts that separately.
+    """
+    from solvent.capability import Capability
+
+    queue = [p["name"] for p in s.capability.awaiting_owner()]
+    if not queue:
+        result.notes.append("the capability gap never reached the owner's queue")
+        result.outcome = Outcome.FAIL_CAPABILITY_OVERCLAIM
+        return
+    name = queue[0]
+    decision = scenario.owner.capability_development
+    s.capability.decide(name=name, decision=decision, owner_identity=OWNER,
+                        why=f"pre-committed test decision ({TEST_ONLY})",
+                        scope="fixtures only" if decision == "LIMITED" else "")
+
+    may_develop = s.capability.may_develop(name)[0]
+    may_deploy = s.capability.may_deploy(name)[0]
+    result.notes.append(f"{decision}: develop={may_develop} deploy={may_deploy}")
+
+    expected_develop = decision in ("APPROVED", "LIMITED")
+    if may_develop != expected_develop:
+        result.outcome = Outcome.FAIL_GOVERNANCE
+        result.notes.append(f"{decision} should give develop={expected_develop}")
+    if may_deploy:
+        # Nothing is deployable here: APPROVED still needs evidence, and
+        # LIMITED needs a separate decision.
+        result.outcome = Outcome.FAIL_GOVERNANCE
+        result.notes.append(f"{decision} allowed deployment with no evidence")
+
+    # Denied means nothing gets built, by any route.
+    if decision == "DENIED":
+        try:
+            s.capability.register(Capability(name=name, covers=frozenset({name})),
+                                  owner_identity=OWNER)
+            result.outcome = Outcome.FAIL_GOVERNANCE
+            result.notes.append("a denied capability was registered anyway")
+        except FailClosed:
+            pass
 
 
 def _play_client(s: Solvent, report, scenario: Scenario, source: str,

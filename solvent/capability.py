@@ -149,11 +149,173 @@ class CapabilityRegistry:
             raise FailClosed(
                 f"capabilities are owner-registered (got {owner_identity!r}); "
                 "Solvent may propose growth, never authorise it")
+
+        decision, _ = self.development_decision(capability.name)
+        if decision == self.DENIED:
+            raise FailClosed(
+                f"the owner denied development of {capability.name!r}; "
+                "registering it anyway would make the denial meaningless. "
+                "Record a new decision first if the answer has changed")
+
+        # A capability the owner asked Solvent to build must earn PROVEN with
+        # evidence. Approval to try is not approval to say it worked — and the
+        # thing being approved is exactly the thing Solvent would be grading.
+        # A capability the owner registers with no proposal behind it is their
+        # own judgement about their own business, and needs no fixture count.
+        if capability.proven and decision:
+            good, reason = promotion_verdict(capability)
+            if not good:
+                raise FailClosed(
+                    f"{capability.name} was developed under an owner decision, so "
+                    f"calling it proven needs evidence: {reason}")
+
         self._capabilities[capability.name] = capability
         self._audit.record(
             event="capability.registered", authority="capability",
             initiator=owner_identity, why=f"register {capability.name}",
             decision=capability.name, proven=capability.proven)
+
+    # ------------------------------------------------------- growth proposals
+    #
+    # Solvent detects that a job needs something it cannot do, and says so. The
+    # owner answers. Neither half is new authority: the registry already owns
+    # what Solvent can do, and Policy already owns who counts as the owner. What
+    # was missing was a way for a detected gap to become a question, so every
+    # gap produced the same refusal and the owner's answer had nowhere to live.
+
+    #: The three answers an owner can give, and what each permits.
+    APPROVED = "APPROVED"   # build it, test it, and when proven, deploy it
+    LIMITED = "LIMITED"     # build it and test it; deploying it is a separate yes
+    DENIED = "DENIED"       # build nothing
+
+    DECISIONS = (APPROVED, LIMITED, DENIED)
+
+    def propose(self, *, name: str, covers: frozenset, why: str,
+                requested_by: str = "capability", job_id: str = "") -> str:
+        """Record that a job needed something Solvent cannot do.
+
+        **Solvent may call this.** Proposing is not deciding: the record is a
+        question, and until an owner answers it nothing may be built. A second
+        proposal for a name the owner has already answered is refused, because
+        re-asking until the answer changes is how a denial gets worn down.
+        """
+        decision, _ = self.development_decision(name)
+        if decision:
+            raise FailClosed(
+                f"{name!r} already has an owner decision ({decision}); "
+                "re-proposing it would be asking again until the answer changes. "
+                "The owner may record a new decision directly")
+
+        proposal_id = new_id("prop")
+        self._db.execute(
+            "INSERT INTO capability_proposals(id,ts,name,kind,covers,why,"
+            "requested_by,job_id) VALUES(?,?,?,?,?,?,?,?)",
+            (proposal_id, now(), name, "PROPOSED", ",".join(sorted(covers)), why,
+             requested_by, job_id))
+        self._db.commit()
+        self._audit.record(
+            event="capability.proposed", authority="capability",
+            initiator=requested_by, why=why, job_id=job_id or None,
+            input_ref=proposal_id, decision="PROPOSED",
+            result=f"{name} would cover {', '.join(sorted(covers))}; "
+                   "awaiting an owner decision")
+        return proposal_id
+
+    def decide(self, *, name: str, decision: str, owner_identity: str,
+               why: str, scope: str = "") -> str:
+        """The owner answers a proposal. **Owner path only.**
+
+        ``scope`` is free text for the owner to bound a LIMITED grant — it is
+        recorded and shown, never parsed into permissions, because a permission
+        Solvent inferred from prose is not a permission the owner gave.
+        """
+        if not (self._policy.is_owner(owner_identity) if self._policy
+                else owner_identity.startswith("owner:")):
+            raise FailClosed(
+                f"only a registered owner decides capability growth "
+                f"(got {owner_identity!r}); Solvent may ask, never answer")
+        if decision not in self.DECISIONS:
+            raise FailClosed(
+                f"{decision!r} is not an answer; expected one of "
+                f"{', '.join(self.DECISIONS)}")
+        if not self._proposals_for(name):
+            raise FailClosed(f"there is no proposal for {name!r} to decide")
+
+        decision_id = new_id("dec")
+        self._db.execute(
+            "INSERT INTO capability_proposals(id,ts,name,kind,decision,why,"
+            "decided_by,scope) VALUES(?,?,?,?,?,?,?,?)",
+            (decision_id, now(), name, "DECIDED", decision, why, owner_identity,
+             scope))
+        self._db.commit()
+        self._audit.record(
+            event="capability.decided", authority="capability",
+            initiator=owner_identity, why=why, input_ref=decision_id,
+            decision=decision,
+            result=f"{name}: {decision}" + (f" (scope: {scope})" if scope else ""))
+        return decision_id
+
+    def development_decision(self, name: str) -> tuple[str, str]:
+        """``(decision, scope)`` — the owner's latest answer, or ``("", "")``."""
+        rows = [r for r in self._proposals_for(name) if r["kind"] == "DECIDED"]
+        if not rows:
+            return "", ""
+        latest = rows[-1]
+        return latest["decision"], latest["scope"]
+
+    def may_develop(self, name: str) -> tuple[bool, str]:
+        """May Solvent build and test this? Silence is not consent."""
+        decision, scope = self.development_decision(name)
+        if not decision:
+            if self._proposals_for(name):
+                return False, f"{name} is proposed and awaiting an owner decision"
+            return False, f"{name} has not been proposed"
+        if decision == self.DENIED:
+            return False, f"the owner denied development of {name}"
+        return True, (f"{decision}" + (f" within scope: {scope}" if scope else ""))
+
+    def may_deploy(self, name: str) -> tuple[bool, str]:
+        """May its output reach a client?
+
+        This is the distinction LIMITED exists to make. Permission to *build*
+        something is not permission to *use* it on a client, and a capability
+        that conflates them turns a cautious owner's "try it and show me" into
+        a deployment they never agreed to.
+        """
+        decision, scope = self.development_decision(name)
+        if decision == self.LIMITED:
+            return False, (f"{name} is approved for development and testing only"
+                           + (f" ({scope})" if scope else "")
+                           + "; deploying it needs a separate owner decision")
+        permitted, why = self.may_develop(name)
+        if not permitted:
+            return False, why
+        capability = self._capabilities.get(name)
+        if capability is None or not capability.proven:
+            return False, (f"{name} is approved but not yet registered as proven; "
+                           "approval to build is not evidence that it works")
+        return True, f"{name} is approved and proven"
+
+    def proposals(self, name: str | None = None) -> list[dict]:
+        rows = self._proposals_for(name) if name else [
+            dict(r) for r in self._db.query(
+                "SELECT * FROM capability_proposals ORDER BY ts")]
+        return rows
+
+    def awaiting_owner(self) -> list[dict]:
+        """Proposals nobody has answered. The owner's queue."""
+        out = []
+        for row in self.proposals():
+            if row["kind"] != "PROPOSED":
+                continue
+            if not self.development_decision(row["name"])[0]:
+                out.append(row)
+        return out
+
+    def _proposals_for(self, name: str) -> list[dict]:
+        return [dict(r) for r in self._db.query(
+            "SELECT * FROM capability_proposals WHERE name = ? ORDER BY ts",
+            (name,))]
 
     def capabilities(self) -> list[Capability]:
         return list(self._capabilities.values())
@@ -175,6 +337,18 @@ class CapabilityRegistry:
             event="capability.assessed", authority="capability", initiator=assessor,
             why=note, job_id=job_id, input_ref=assessment.id,
             decision=f"{verdict.value}/{conformance.value}", gaps=list(gaps))
+
+        # A gap that only ever produces a refusal teaches the owner nothing. If
+        # the job needs something Solvent cannot do, that becomes a question in
+        # the owner's queue — once. The job is still refused: proposing is not
+        # permission, and nothing here changes this assessment's verdict.
+        if verdict is CapabilityVerdict.REQUIRES_NEW_CAPABILITY:
+            for gap in gaps:
+                if self.development_decision(gap)[0] or self._proposals_for(gap):
+                    continue
+                self.propose(name=gap, covers=frozenset({gap}), job_id=job_id,
+                             why=f"job {job_id} needed {gap!r}, which no "
+                                 "registered capability covers")
         return assessment
 
     def _judge(self, requirements: RequirementSet, needs: list[str]):

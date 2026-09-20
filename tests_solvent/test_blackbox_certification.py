@@ -83,13 +83,36 @@ class CertificationRun(unittest.TestCase):
                                   ("OWNER", "REQUALIFY", "REMEDIATION", "NONE"))
 
     def test_a_missing_capability_is_refused_under_every_owner_decision(self):
-        """APPROVED, DENIED and LIMITED alike: no capability, no job."""
+        """APPROVED, DENIED and LIMITED alike: no capability, no job today."""
         gaps = [r for r in self.results if r.level == "GAP"]
         self.assertEqual(len(gaps), 3)
         for r in gaps:
             with self.subTest(scenario=r.scenario_id):
                 self.assertIs(r.outcome, Outcome.SAFE_REFUSAL)
                 self.assertFalse(r.delivered)
+
+    def test_the_three_owner_decisions_are_distinguishable_and_obeyed(self):
+        """The gap the last certification could not test.
+
+        Every gap used to produce an identical refusal whatever the owner said,
+        because there was no proposal path for an answer to attach to. Now the
+        answer decides what may be built — and none of the three lets anything
+        be deployed without evidence.
+        """
+        byid = {r.scenario_id: r for r in self.results}
+        expected = {"GAP-01-approved": "APPROVED: develop=True deploy=False",
+                    "GAP-02-denied": "DENIED: develop=False deploy=False",
+                    "GAP-03-limited": "LIMITED: develop=True deploy=False"}
+        for scenario_id, note in expected.items():
+            with self.subTest(scenario=scenario_id):
+                self.assertIn(note, byid[scenario_id].notes)
+
+    def test_a_capability_gap_reaches_the_owners_queue(self):
+        """A refusal nobody can act on teaches the owner nothing."""
+        for r in (x for x in self.results if x.level == "GAP"):
+            with self.subTest(scenario=r.scenario_id):
+                self.assertNotIn(
+                    "the capability gap never reached the owner's queue", r.notes)
 
     def test_the_scenario_mix_is_broad_enough_to_mean_something(self):
         levels = Counter(s.level for s in self.scenarios)
