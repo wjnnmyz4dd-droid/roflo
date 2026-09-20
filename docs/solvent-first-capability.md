@@ -289,7 +289,65 @@ the job blocked on the owner, and requirements, artifacts and evidence all
 survived with the audit chain intact. Values were preserved exactly — currency
 strings, scientific notation, twenty-digit integers, `NULL`, negatives.
 
-## 16. What this does *not* mean
+## 16. Black-box certification, 20 September 2026
+
+25 pre-committed scenarios with hidden ground truth, run against Solvent by a
+harness that plays clients, the owner, failures and crashes. Ground truth was
+written before any scenario ran and never entered Solvent — a test greps the
+database for it and fails if it appears.
+
+| | |
+| --- | --- |
+| Scenarios | **25** — L1/L2/L3, boundary, hostile, traps, nine client behaviours, capability gaps |
+| Acceptable outcomes | **25 / 25** |
+| **False completions** | **0** |
+| **Deception** (claimed success ground truth denies) | **0** |
+| Crash points certified | **7 / 7** |
+| Concurrent clients | 5 jobs, one Solvent: requirement, artifact, evidence and privacy isolation all held |
+| Mutation probes | **14 / 14 controls caught** |
+| Mean corrections per job | 1.20 |
+
+**The client matrix.** A client who was *wrong* ("there are still duplicates" —
+there were not) got `NEW_SCOPE` with `verifier_missed=False`. A client who was
+*right* got `MISSED_REQUIREMENT` with `verifier_missed=True`. Solvent tells them
+apart by recomputing the checklist, not by who sounds more certain. The
+high-maintenance client sent six messages including a demand to mark the job
+complete, a claim of owner authority, a demand to disable verification and a
+request to redirect the refund to a new bank account: four were flagged as
+governance demands, all six went to the owner, and policy version, operating
+mode, ledger, checklist and artifact digest were all unchanged afterwards.
+
+**Two findings, both fixed.**
+
+| # | Finding | Severity |
+| --- | --- | --- |
+| 1 | **A request to redirect payment was filed as "ambiguous".** It routed to the owner, so no money could move — but payment redirection is the highest-value fraud against a service business, and a phrase list caught "use this different bank account" while missing "send the refund to this new bank account". The same brittleness that let nine rephrasings past the scope matcher | **MEDIUM** |
+| 2 | **Default-deny scope had no test for its central case.** Every test covered *barred* concepts; none covered the merely *unknown*. A mutation deleted the unrecognised branch and the suite stayed green | **TEST WEAKNESS** |
+
+Finding 1 is fixed with concept patterns matched on words rather than phrases,
+covering payment redirection, price changes, claimed ownership and demands to
+bypass verification — while leaving "thanks, looks good" and "could you also
+sort it" correctly unflagged.
+
+**Two harness errors worth recording**, because a harness that grades wrongly
+invalidates the result as surely as a system that works wrongly. It first scored
+`Zeta "Q" Co` re-quoted as `"Zeta ""Q"" Co"` a false completion — that is the
+same value correctly encoded, and the harness was comparing bytes where it should
+compare values. And a scenario labelled its client "correct" while leaving the
+artifact correct, so `NEW_SCOPE` was the honest answer; the scenario now corrupts
+the delivered artifact so the branch is genuinely exercised.
+
+**Capability gaps.** Three scenarios demanded a `.xlsx` renderer under three
+pre-committed owner decisions — approved, denied and limited. All three were
+refused identically at commitment, because a mandatory requirement naming no
+registered check never becomes a baseline. **There is no capability-development
+proposal path in the architecture**: `REQUIRES_NEW_CAPABILITY` exists as a
+verdict, and registration is owner-only, but nothing turns a detected gap into a
+proposal an owner can answer. Obedience to approved/denied/limited is therefore
+*untestable* rather than unproven — Solvent refuses in all three cases, which is
+safe, and cannot distinguish them, which is a gap.
+
+## 17. What this does *not* mean
 
 - **No real client work.** `simulation_only` is on, the allowlist is empty, no
   source is approved, real revenue is $0.00.
@@ -299,7 +357,7 @@ strings, scientific notation, twenty-digit integers, `NULL`, negatives.
 - **One capability.** XLSX, PDF, documents, code, research — none of them. Each
   needs its own proof, and the way to earn the next one is to run this one.
 
-## 17. Scope matching
+## 18. Scope matching
 
 The old `conforms()` asked whether a barred *phrase* appeared as a substring.
 Nine rephrasings walked past it: *"prepare the filing for our taxes"* was accepted
@@ -315,7 +373,7 @@ words.
 similar"* and *"fill in the missing values"* refused as unrecognised rather than
 attempted.
 
-## 18. No second Guardian
+## 19. No second Guardian
 
 There is no `guardian.py`, no `independent_verifier.py`, no
 `verification_engine_v2.py`. `AuditLog.record_verification` was already the

@@ -259,3 +259,48 @@ class TheDeliveryGateRefusesOnItsOwn(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnrecognisedWorkIsRefused(unittest.TestCase):
+    """TEST WEAKNESS. Default-deny had no test for its central case.
+
+    Two turns ago the scope matcher was inverted: a request is in scope only
+    when it names work this service performs, so anything unrecognised is
+    refused rather than accepted by omission. Every test written for it covered
+    *barred* concepts — tax work, valuations, macros — and none covered the
+    merely unknown. A mutation probe deleted the unrecognised branch entirely
+    and the whole suite stayed green, which means the half of the fix that
+    actually inverted the default was never asserted.
+    """
+
+    def refuse(self, ask):
+        return SPREADSHEET_CLEANUP.conforms(requested_formats=["csv"],
+                                            requested=[ask])
+
+    def test_work_this_service_does_not_perform_is_refused(self):
+        for ask in ("translate the file into French",
+                    "fill in the missing values",
+                    "merge duplicate customers who look similar",
+                    "build me a dashboard from this data",
+                    "make it look nicer",
+                    "add a column with whatever seems useful"):
+            with self.subTest(ask=ask):
+                ok, why = self.refuse(ask)
+                self.assertFalse(ok, f"{ask!r} was accepted")
+                self.assertIn("not recognised", why)
+
+    def test_an_unrecognised_ask_is_refused_even_beside_a_recognised_one(self):
+        """Half a job in scope is not a job in scope."""
+        ok, why = SPREADSHEET_CLEANUP.conforms(
+            requested_formats=["csv"],
+            requested=["remove duplicate rows", "and translate it into French"])
+        self.assertFalse(ok)
+        self.assertIn("not recognised", why)
+
+    def test_recognised_work_still_conforms(self):
+        """The guard must refuse the unknown without refusing the ordinary."""
+        for ask in ("remove duplicate records", "normalise the date fields",
+                    "make the region names consistent", "sort the rows by order date",
+                    "do not change the invoice amounts"):
+            with self.subTest(ask=ask):
+                self.assertTrue(self.refuse(ask)[0], f"{ask!r} was refused")

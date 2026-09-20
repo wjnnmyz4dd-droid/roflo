@@ -87,10 +87,33 @@ ROUTING = {
 #: obeyed; an unrecognised one is AMBIGUOUS, which also goes to the owner.
 _GOVERNANCE_DEMANDS = (
     "ignore the original requirement", "ignore your requirement",
-    "mark the job complete", "mark it complete", "disable your verification",
-    "skip verification", "i am the owner", "your policy says you must",
-    "change the price", "set the price to zero", "use this different bank",
-    "use a different bank account", "new bank details", "send payment to",
+    "ignore the requirements", "mark the job complete", "mark it complete",
+    "disable your verification", "skip verification", "turn off verification",
+    "i am the owner", "your policy says you must", "the guardian approved",
+)
+
+#: Concept patterns, matched on words rather than exact phrases. A phrase list
+#: only catches what someone thought to list, and clients do not phrase things
+#: the way a list expects — the same brittleness that let nine rephrasings walk
+#: past the scope matcher. Payment redirection gets its own pattern because it
+#: is the highest-value fraud against a service business, and a message trying
+#: to move where the money goes must never be filed as "we did not understand
+#: this" alongside "thanks, looks good".
+_GOVERNANCE_PATTERNS = (
+    ("a request to redirect payment",
+     r"\b(send|pay|transfer|deposit|wire|route)\b.{0,40}\b(account|bank|iban|"
+     r"routing|card|wallet|paypal)\b"
+     r"|\b(new|different|updated|another|change\w*|alternate)\b.{0,20}"
+     r"\b(bank|account|payment|iban|routing)\b.{0,20}\b(detail|number|info)?"),
+    ("a demand to change the price",
+     r"\b(change|set|reduce|lower|drop|waive)\b.{0,25}\b(price|fee|rate|cost|"
+     r"invoice|charge)\b|\bprice\b.{0,15}\b(to zero|to 0|free)\b"),
+    ("a claim of owner authority",
+     r"\b(i am|i'm|this is)\b.{0,20}\b(the )?(owner|admin|administrator)\b"
+     r"|\bapprove (it|this) yourself\b|\bauthorise (it|this) yourself\b"),
+    ("a demand to bypass verification",
+     r"\b(skip|bypass|disable|turn off|ignore|override)\b.{0,30}"
+     r"\b(verif\w+|check\w*|guardian|gate|requirement)\w*\b"),
 )
 
 
@@ -181,6 +204,11 @@ class ClientFeedback:
                         f"the message asks Solvent to change its own rules "
                         f"({phrase!r}); a client cannot do that, so it goes to "
                         "the owner", "MATCHED")
+        for label, pattern in _GOVERNANCE_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.GOVERNANCE_DEMAND,
+                        f"the message contains {label}; a client cannot decide "
+                        "that, so it goes to the owner", "MATCHED")
         if proposed:
             if proposed not in ROUTING:
                 return (Classification.AMBIGUOUS,
