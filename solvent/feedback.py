@@ -228,7 +228,15 @@ class ClientFeedback:
         reading of a client email is not authority to act on it.
         """
         job = self._orch.job(job_id)
-        if not job.state.is_delivered:
+        # A job waiting on the client is the one state where their message is
+        # expected rather than an interruption — Solvent asked them a question
+        # and stopped. Refusing it meant a client whose job was blocked pending
+        # their own answer could not ask who they were contracting with, which
+        # is precisely when they would. The guard still holds everywhere else:
+        # client text must not become an input to work that is running.
+        awaiting_client = (job.state is JobState.BLOCKED
+                           and job.blocked_on is BlockedOn.CLIENT)
+        if not job.state.is_delivered and not awaiting_client:
             raise FailClosed(
                 f"{job_id} is {job.state.value}; feedback is about delivered work, "
                 "and treating it as an input to work in progress would let a "
