@@ -377,3 +377,171 @@ class DecisionsSurviveARestart(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PaymentAndModelDecisionsSurviveACrash(unittest.TestCase):
+    """§27, for the paths a restart could actually corrupt.
+
+    Owner-decision persistence is covered above. These are the harder cases:
+    a rail that re-delivers an event across a restart, a refusal that must
+    stay refused, a model choice that must not drift, and a revoked verifier
+    that must not come back. Each is a place where "the process died and
+    started again" could otherwise become "it happened twice" or "it was
+    allowed after all".
+    """
+
+    SECRET = "whsec_test_secret"
+
+    def setUp(self):
+        from solvent.types import money
+
+        self.db = str(pathlib.Path(tempfile.mkdtemp()) / "solvent.db")
+        self.s = decided(Solvent(self.db))
+        self.s.ledger.open_payment(job_id="J1", amount_cents=money("450"),
+                                   rail="stripe", currency="usd")
+
+    def restart(self) -> Solvent:
+        self.s.store.close()
+        self.s = Solvent(self.db)
+        return self.s
+
+    def event(self, **kwargs):
+        from solvent.payments import StripeRail
+        from tests_solvent.test_payments import body, headers
+
+        raw = body(**kwargs)
+        return StripeRail().verify_event(raw, headers(raw), self.SECRET)
+
+    def apply(self, solvent=None, **kwargs):
+        return (solvent or self.s).ledger.apply_payment_event(self.event(**kwargs))
+
+    # --- payment ---------------------------------------------------------
+    def test_a_re_delivered_event_is_not_applied_twice_after_a_restart(self):
+        """The case that would silently double a client's payment."""
+        self.assertIn("applied", self.apply())
+        collected = self.s.ledger.collected_for("J1")
+
+        restarted = self.restart()
+        outcome = self.apply(restarted)
+        self.assertIn("duplicate", outcome)
+        self.assertEqual(restarted.ledger.collected_for("J1"), collected)
+        self.assertEqual(restarted.ledger.real_revenue_cents(), collected)
+
+    def test_collected_revenue_is_the_same_number_after_a_restart(self):
+        self.apply()
+        before = self.s.ledger.real_revenue_cents()
+        self.assertEqual(self.restart().ledger.real_revenue_cents(), before)
+
+    def test_a_refused_event_stays_refused_after_a_restart(self):
+        """A refusal is a decision, not a transient failure to retry past."""
+        self.assertIn("refused", self.apply(event_id="e-other", job="J_OTHER"))
+        restarted = self.restart()
+        self.assertIn("duplicate", self.apply(restarted, event_id="e-other",
+                                              job="J_OTHER"))
+        self.assertEqual(restarted.ledger.collected_for("J1"), 0)
+
+    def test_a_crash_before_any_event_leaves_nothing_paid(self):
+        """No event, no money — a restart must not invent a settled payment."""
+        restarted = self.restart()
+        self.assertEqual(restarted.ledger.real_revenue_cents(), 0)
+        self.assertEqual(restarted.ledger.collected_for("J1"), 0)
+        for row in restarted.store.raw_readonly("SELECT state FROM payments"):
+            with self.subTest(state=row["state"]):
+                self.assertFalse(PaymentState(row["state"]).is_collected)
+
+    def test_test_mode_money_is_still_not_revenue_after_a_restart(self):
+        self.apply(livemode=False)
+        self.assertEqual(self.restart().ledger.real_revenue_cents(), 0)
+
+    def test_every_event_is_still_on_the_record_after_a_restart(self):
+        self.apply()
+        self.apply(event_id="e-other", job="J_OTHER")
+        rows = self.restart().store.raw_readonly(
+            "SELECT event_id, outcome FROM payment_events")
+        self.assertEqual(len(rows), 2)
+
+    def test_the_rail_stays_unactivated_across_a_restart_that_saw_money(self):
+        """Applying an event does not quietly promote the rail's status."""
+        self.apply()
+        self.assertEqual(self.restart().policy.payment_rail()["operational_status"],
+                         self.s.policy.RAIL_APPROVED_NOT_ACTIVATED)
+
+    # --- model selection --------------------------------------------------
+    def test_model_selection_gives_the_same_answer_after_a_restart(self):
+        before = self.s.policy.select_model(
+            need_capability="summarise",
+            privacy=PrivacyClass.CLIENT_CONFIDENTIAL.value,
+            prefer=self.s.policy.LOCAL)["tag"]
+        after = self.restart().policy.select_model(
+            need_capability="summarise",
+            privacy=PrivacyClass.CLIENT_CONFIDENTIAL.value,
+            prefer=self.s.policy.LOCAL)["tag"]
+        self.assertEqual(before, after)
+        self.assertEqual(after, "local/cleared-14b")
+
+    def test_a_restart_does_not_substitute_an_unapproved_model(self):
+        restarted = self.restart()
+        chosen = restarted.policy.select_model(need_capability="protein_folding")
+        self.assertEqual(chosen["tag"], "")
+        self.assertIsNone(restarted.policy.model_approval("whatever/is-handy"))
+
+    def test_the_research_model_is_still_refused_after_a_restart(self):
+        restarted = self.restart()
+        chosen = restarted.policy.select_model(
+            need_capability="summarise",
+            exclude=("local/cleared-14b", "vendor/big-1"))
+        self.assertEqual(chosen["tag"], "")
+        self.assertIn("commercial use",
+                      chosen["refusals"]["local/research-3b"])
+
+    def test_the_privacy_ceiling_survives_a_restart(self):
+        chosen = self.restart().policy.select_model(
+            need_capability="legal_drafting",
+            privacy=PrivacyClass.CLIENT_CONFIDENTIAL.value)
+        self.assertEqual(chosen["tag"], "")
+
+    # --- verifier ---------------------------------------------------------
+    def test_a_revoked_verifier_is_still_revoked_after_a_restart(self):
+        from solvent.harness import ensure_verifier_certified, verifier_ref
+        from solvent.harness import CAPABILITIES
+
+        ensure_verifier_certified(self.s, "csv-cleanup")
+        ref = verifier_ref(CAPABILITIES["csv-cleanup"])
+        version = CAPABILITIES["csv-cleanup"].version
+        self.s.capability.revoke_verifier(
+            verifier_ref=ref, capability_version=version,
+            why="demonstrated false PASS", decided_by="qc")
+
+        restarted = self.restart()
+        self.assertEqual(restarted.capability.verifier_state(ref, version),
+                         "REVOKED")
+        self.assertEqual(
+            ensure_verifier_certified(restarted, "csv-cleanup")["state"],
+            "REVOKED")
+
+    def test_a_job_after_the_restart_cannot_use_the_revoked_verifier(self):
+        from solvent.harness import ensure_verifier_certified, verifier_ref
+        from solvent.harness import CAPABILITIES
+
+        ensure_verifier_certified(self.s, "csv-cleanup")
+        self.s.capability.revoke_verifier(
+            verifier_ref=verifier_ref(CAPABILITIES["csv-cleanup"]),
+            capability_version=CAPABILITIES["csv-cleanup"].version,
+            why="demonstrated false PASS", decided_by="qc")
+        restarted = self.restart()
+        source, work = fx.workspace(fx.DUPLICATES)
+        with self.assertRaises(FailClosed):
+            run_csv_job(source=source, requirements=list(fx.SIMPLE),
+                        workdir=work, solvent=restarted)
+
+    # --- posture ----------------------------------------------------------
+    def test_no_consequential_intent_was_duplicated(self):
+        self.apply()
+        restarted = self.restart()
+        self.assertEqual(
+            restarted.store.raw_readonly("SELECT * FROM action_requests"), [])
+
+    def test_the_audit_chain_survives_all_of_it(self):
+        self.apply()
+        self.apply(event_id="e-other", job="J_OTHER")
+        self.assertTrue(self.restart().audit.verify_chain()[0])
