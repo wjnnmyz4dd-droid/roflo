@@ -143,6 +143,7 @@ class AuditLog:
         raw_output: str, consequence: ConsequenceTier,
         requirement_id: str = "", artifact_digest: str = "", artifact_id: str = "",
         verifier_ref: str = "", capability_version: str = "", check: str = "",
+        verifier_fingerprint: str = "",
     ) -> str:
         """Record verification evidence, refusing self-attestation *and* hearsay.
 
@@ -220,7 +221,7 @@ class AuditLog:
                     "evidence above T0 is refused rather than recorded untrusted")
             allowed, why = self._verifier_trust.may_authorize_delivery(
                 verifier_ref=verifier_ref, capability_version=capability_version,
-                check=check)
+                check=check, fingerprint=verifier_fingerprint)
             if not allowed:
                 raise FailClosed(f"refusing to record verification evidence: {why}")
             verifier_state = self._verifier_trust.verifier_state(

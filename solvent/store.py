@@ -207,7 +207,9 @@ CREATE TABLE IF NOT EXISTS verifier_certifications (
   state TEXT NOT NULL, certified_checks TEXT NOT NULL DEFAULT '',
   trials_total INTEGER NOT NULL DEFAULT 0, trials_correct INTEGER NOT NULL DEFAULT 0,
   false_accepts INTEGER NOT NULL DEFAULT 0, false_rejects INTEGER NOT NULL DEFAULT 0,
-  why TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT ''
+  why TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT '',
+  fingerprint TEXT NOT NULL DEFAULT '', seed INTEGER NOT NULL DEFAULT 0,
+  stream TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS capability_assessments (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, verdict TEXT NOT NULL,

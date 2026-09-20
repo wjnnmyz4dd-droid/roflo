@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import csv
 import json
+import hashlib
+import inspect
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -56,6 +58,10 @@ class Trial:
     check: str
     expect: str            # GOOD or BAD
     params: dict = field(default_factory=dict)
+    #: Which defect this case carries, or "CORRECT". Certification is recorded
+    #: per defect class, so "it caught something" never reads as "it catches
+    #: this kind of thing".
+    defect_class: str = ""
     #: Why this case exists, for a human reading a failure report.
     note: str = ""
 
@@ -93,9 +99,47 @@ class TrialReport:
         return [r for r in self.results
                 if r.trial.expect == GOOD and r.verdict != "ACCEPT"]
 
+    #: The seed this battery came from, so a failure can be replayed exactly.
+    seed: int = 0
+    #: Which stream: development, certification or surprise.
+    stream: str = "development"
+
     @property
     def checks_exercised(self) -> set:
         return {r.trial.check for r in self.results}
+
+    def good_instances(self, check: str) -> int:
+        """Distinct correct artifacts this check accepted.
+
+        Distinct by content: ten copies of one fixture are one piece of
+        evidence, not ten. Counting them as ten is how a battery reports
+        volume it does not have.
+        """
+        return len({r.trial.name for r in self.results
+                    if r.trial.check == check and r.trial.expect == GOOD
+                    and r.correct})
+
+    def class_instances(self, check: str) -> dict:
+        """``{defect_class: instances_caught}`` for one check."""
+        counts: dict = {}
+        for result in self.results:
+            if (result.trial.check != check or result.trial.expect != BAD
+                    or not result.correct):
+                continue
+            name = result.trial.defect_class or "UNCLASSIFIED"
+            counts[name] = counts.get(name, 0) + 1
+        return counts
+
+    def classes_attempted(self, check: str) -> set:
+        return {r.trial.defect_class or "UNCLASSIFIED" for r in self.results
+                if r.trial.check == check and r.trial.expect == BAD}
+
+    def classes_missed(self, check: str) -> set:
+        """Defect classes this check was shown and did not catch every time."""
+        missed = {r.trial.defect_class or "UNCLASSIFIED" for r in self.results
+                  if r.trial.check == check and r.trial.expect == BAD
+                  and not r.correct}
+        return missed
 
     def checks_passed(self) -> set:
         """Checks the verifier got entirely right, in **both** directions.
@@ -412,4 +456,103 @@ def run_trials(verify, *, capability: str, verifier_ref: str) -> TrialReport:
                 trial, "ACCEPT" if passed else "REJECT", detail))
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+    return report
+
+
+def implementation_fingerprint(verify) -> str:
+    """A hash of the verifier's actual source, not of what it is called.
+
+    Certification is evidence about a particular piece of code. A name is not
+    that code: rename the function, edit the body, and a certification earned by
+    the old implementation would otherwise transfer to the new one silently.
+    So the fingerprint is taken from the source text, and a certification whose
+    fingerprint no longer matches is treated as being about something else —
+    because it is.
+
+    Falls back to the qualified name when source is unavailable (a C function, a
+    stripped install). That fallback is weaker and is recorded as such rather
+    than pretended to be a fingerprint.
+    """
+    name = getattr(verify, "__qualname__", None) or repr(verify)
+    parts = [getattr(verify, "__module__", ""), name]
+    got_source = False
+    for target in (inspect.getmodule(verify), verify):
+        if target is None:
+            continue
+        try:
+            parts.append(inspect.getsource(target))
+            got_source = True
+        except (OSError, TypeError):
+            continue
+    if not got_source:
+        return f"unfingerprinted:{parts[0]}.{name}"
+    # The module's source *and* the callable's own — the module because a check
+    # this function dispatches to can be weakened without touching the
+    # dispatcher, the callable because two lambdas in one module would otherwise
+    # be indistinguishable, which silently made them share a measurement.
+    blob = "\n--\n".join(parts)
+    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
+
+
+#: Measurements are pure: the same code against the same seed gives the same
+#: answer every time. Caching them is caching arithmetic, not sharing state —
+#: every Solvent still records its own certification decision from the result.
+_MEASURED: dict = {}
+
+
+def run_generated(verify, *, capability: str, verifier_ref: str, seed: int,
+                  cases: int = 14, stream: str = "certification") -> TrialReport:
+    """Put a verifier through a generated battery it has never seen.
+
+    Same contract as :func:`run_trials` — one check name, two paths, the check's
+    parameters, and no indication of what the answer should be — but the cases
+    are generated from ``seed`` rather than drawn from a fixed list. That is the
+    whole difference between measuring competence and measuring familiarity:
+    four verifiers that hardcoded the fixed fixtures earned full certification,
+    including one that decided a total was correct whenever it was not 999.99.
+    """
+    from . import certgen
+
+    key = (capability, verifier_ref, implementation_fingerprint(verify),
+           seed, cases, stream)
+    cached = _MEASURED.get(key)
+    if cached is not None:
+        return TrialReport(capability=capability, verifier_ref=verifier_ref,
+                           results=list(cached.results), seed=seed, stream=stream)
+
+    report = TrialReport(capability=capability, verifier_ref=verifier_ref,
+                         seed=seed, stream=stream)
+    generated = certgen.generate(capability, seed=seed, cases=cases)
+    if not generated:
+        return report
+
+    workdir = Path(tempfile.mkdtemp(prefix="vgen-"))
+    try:
+        for index, case in enumerate(generated):
+            source = workdir / f"{index}_{case.source_name}"
+            source.write_text(case.source_text, encoding="utf-8")
+            suffix = ".csv" if case.source_name.endswith(".csv") else ".md"
+            output = workdir / f"{index}_deliverable{suffix}"
+            output.write_text(case.output_text, encoding="utf-8")
+            trial = Trial(name=case.name, check=case.check, expect=case.expect,
+                          params=dict(case.params),
+                          defect_class=case.defect_class, note=case.note)
+            try:
+                outcome = verify(case.check, source=str(source),
+                                 output=str(output), params=dict(case.params))
+            except Exception as exc:  # noqa: BLE001 - a crash is not an answer
+                report.results.append(TrialResult(
+                    trial, "ERROR", f"{type(exc).__name__}: {exc}"))
+                continue
+            passed = getattr(outcome, "passed", None)
+            if passed is None:
+                report.results.append(TrialResult(
+                    trial, "ERROR", "verifier returned no usable outcome"))
+                continue
+            report.results.append(TrialResult(
+                trial, "ACCEPT" if passed else "REJECT",
+                str(getattr(outcome, "detail", ""))[:120]))
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+    _MEASURED[key] = report
     return report

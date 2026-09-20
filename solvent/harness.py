@@ -826,25 +826,77 @@ def verifier_ref(spec: "ServiceCapability") -> str:
     return f"{module}.{name}" if module else str(name)
 
 
-def ensure_verifier_certified(s: "Solvent", capability: str) -> dict:
-    """Put this capability's verifier through its battery, once, before use.
+#: How many generated cases a certification battery draws. Each case yields one
+#: correct artifact per check plus one instance of every defect class that
+#: applies to it, so this is roughly 400 trials per capability — enough for the
+#: evidence floor to be met by a real verifier and missed by a lucky one.
+CERTIFICATION_CASES = 14
 
-    Certification is recorded, so this is a no-op on every later job. A verifier
-    that fails is recorded as failed and the audit log will refuse its evidence
-    — which refuses the job, correctly. Nothing here decides to ship anything;
-    it produces measurements and hands them to the registry.
+
+def ensure_verifier_certified(s: "Solvent", capability: str) -> dict:
+    """Put this capability's verifier through a generated battery before use.
+
+    Re-run when the implementation changes. A certification names the code it
+    was earned by, so an edited verifier is a different subject and starts
+    again — otherwise a check could be weakened after certification and keep the
+    trust the stronger version earned.
+
+    Nothing here decides to ship anything: it produces measurements and hands
+    them to the registry, which judges them against the evidence floor.
     """
-    from . import verifiercert
+    from . import certgen, verifiercert
 
     spec = CAPABILITIES[capability]
     ref = verifier_ref(spec)
+    fingerprint = verifiercert.implementation_fingerprint(spec.verify)
     existing = s.capability.verifier_certification(ref, spec.version)
     if existing is not None:
-        return existing
-    report = verifiercert.run_trials(spec.verify, capability=capability,
-                                     verifier_ref=ref)
+        if existing["state"] == s.capability.REVOKED:
+            # Revocation followed a demonstrated false PASS. Re-running the
+            # battery here would quietly overturn it — the next job would hand
+            # the verifier its certification back, which is precisely the
+            # "patch it and carry on as though nothing happened" this exists to
+            # prevent. Re-earning it is a deliberate act, not a side effect.
+            return existing
+        if existing["fingerprint"] == fingerprint:
+            return existing
+    report = verifiercert.run_generated(
+        spec.verify, capability=capability, verifier_ref=ref,
+        seed=certgen.CERTIFICATION_SEED, cases=CERTIFICATION_CASES,
+        stream="certification")
     return s.capability.certify_verifier(
-        verifier_ref=ref, capability_version=spec.version, report=report)
+        verifier_ref=ref, capability_version=spec.version, report=report,
+        fingerprint=fingerprint)
+
+
+def surprise_audit(s: "Solvent", capability: str, *, cases: int = 10) -> dict:
+    """Ambush a certified verifier with cases from a seed it has never seen.
+
+    Certification says a verifier was right about the evidence it was shown.
+    This asks whether it is still right about evidence it was not. A verifier
+    that fails here has its certification withdrawn on the spot — the point is
+    not to discover a weakness and quietly patch around it while the old
+    certification stands.
+    """
+    from . import certgen, verifiercert
+
+    spec = CAPABILITIES[capability]
+    ref = verifier_ref(spec)
+    report = verifiercert.run_generated(
+        spec.verify, capability=capability, verifier_ref=ref,
+        seed=certgen.SURPRISE_SEED, cases=cases, stream="surprise")
+    wrong = [r for r in report.results if not r.correct]
+    if not wrong:
+        return {"passed": True, "summary": report.summary,
+                "state": s.capability.verifier_state(ref, spec.version)}
+    record = s.capability.revoke_verifier(
+        verifier_ref=ref, capability_version=spec.version, decided_by="capability",
+        why=(f"surprise battery (seed {certgen.SURPRISE_SEED}): "
+             f"{len(report.false_accepts)} false accept(s), "
+             f"{len(report.false_rejects)} false reject(s) — e.g. "
+             + ", ".join(sorted({r.trial.defect_class for r in wrong})[:4])))
+    return {"passed": False, "summary": report.summary, "state": record["state"],
+            "wrong": [(r.trial.check, r.trial.defect_class) for r in wrong[:6]]}
 
 
 def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
@@ -857,9 +909,12 @@ def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
     it did, and it records evidence naming both the requirement and the exact
     artifact digest — so this round's passes die with this round's artifact.
     """
+    from . import verifiercert as _vc
+
     ensure_verifier_certified(s, capability)
     spec = CAPABILITIES[capability]
     ref = verifier_ref(spec)
+    fingerprint = _vc.implementation_fingerprint(spec.verify)
     artifact = s.orchestrator.current_deliverable(job_id)
     if artifact is None:
         raise FailClosed("nothing to verify: no deliverable has been registered")
@@ -885,7 +940,8 @@ def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
                        f"| computed={outcome.computed}",
             consequence=job.consequence, requirement_id=req.id,
             artifact_digest=artifact.digest, artifact_id=artifact.id,
-            verifier_ref=ref, capability_version=spec.version, check=req.check)
+            verifier_ref=ref, capability_version=spec.version, check=req.check,
+            verifier_fingerprint=fingerprint)
     return round_
 
 

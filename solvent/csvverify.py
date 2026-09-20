@@ -66,6 +66,45 @@ def _key(row: list[str]) -> tuple:
 
 # --------------------------------------------------------------------- checks
 
+def _accounted_columns(src_header, src_distinct, out_header, out_body) -> list[str]:
+    """Columns whose output values are exactly the source's, counted as a multiset.
+
+    This is how a check with no knowledge of the agreed transformations can
+    still tell "this file came from that source" from "this file came from
+    somewhere else". A cleanup leaves some columns untouched — an identifier, a
+    quantity, an amount — and for those the output's values are precisely the
+    source's distinct-row values, down to the counts. A different job's file,
+    however well-formed, matches on none of them.
+
+    Counted as a multiset rather than a set on purpose: two unrelated files both
+    using the four compass regions share that column's *set* of values, and a
+    set comparison would call them the same data.
+    """
+    from collections import Counter
+
+    accounted = []
+    for name in out_header:
+        if name not in src_header:
+            continue
+        si, oi = src_header.index(name), out_header.index(name)
+        src_values = Counter(r[si] for r in src_distinct if si < len(r))
+        out_values = Counter(r[oi] for r in out_body if oi < len(r))
+        if src_values and src_values == out_values:
+            accounted.append(name)
+    return accounted
+
+
+def _distinct_rows(body: list) -> list:
+    seen, out = set(), []
+    for row in body:
+        key = _key(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
 def check_require_columns(source, output, params) -> CheckOutcome:
     header, _, problem = _read(output)
     if problem:
@@ -104,12 +143,91 @@ def check_drop_exact_duplicates(source, output, params) -> CheckOutcome:
             CheckResult.FAIL,
             f"{len(out_body)} rows out but {len(src_unique)} distinct rows in: "
             "deduplication removed more than duplicates", computed)
+
+    # Counting alone let another job's file through whenever the two happened to
+    # have the same number of distinct rows. A count is not an identity.
+    accounted = _accounted_columns(_read(source)[0], _distinct_rows(src_body),
+                                   _read(output)[0], out_body)
+    computed["accounted_columns"] = accounted
+    if not accounted:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            "the row counts line up but no column's values match the source's; "
+            "this deliverable does not appear to be made from this source",
+            computed)
     return CheckOutcome(CheckResult.PASS,
-                        f"no duplicates remain; {len(src_unique)} distinct rows kept",
+                        f"no duplicates remain; {len(src_unique)} distinct rows "
+                        f"kept, matching the source on {len(accounted)} column(s)",
                         computed)
 
 
+#: How a supplied date might be written. Each pattern yields the days it could
+#: mean — several, when the notation is genuinely ambiguous.
+_MONTHS = {m: i for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun",
+     "jul", "aug", "sep", "oct", "nov", "dec"), start=1)}
+
+
+def _readings(value: str) -> set[str]:
+    """Every day a supplied date could denote, as ISO strings.
+
+    ``05/10/2026`` is genuinely two days: 10 May and 5 October. Both are
+    returned, because the check must not invent a convention the client never
+    stated. ``2026-05-10`` returns exactly one, which is what makes a
+    transposed output detectable.
+    """
+    value = value.strip()
+    if not value:
+        return set()
+    out: set[str] = set()
+
+    if _ISO.match(value):
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+            out.add(value)
+        except ValueError:
+            pass
+        return out
+
+    parts = re.split(r"[/\-.]", value)
+    if len(parts) == 3:
+        a, b, c = (p.strip() for p in parts)
+        if c.isdigit() and len(c) == 4 and a.isdigit() and b.isdigit():
+            for day, month in ((b, a), (a, b)):      # MM/DD and DD/MM
+                try:
+                    out.add(datetime(int(c), int(month), int(day))
+                            .strftime("%Y-%m-%d"))
+                except ValueError:
+                    pass
+        if c.isdigit() and len(c) == 4 and a.isdigit() and b[:3].lower() in _MONTHS:
+            try:
+                out.add(datetime(int(c), _MONTHS[b[:3].lower()], int(a))
+                        .strftime("%Y-%m-%d"))
+            except ValueError:
+                pass
+        if a.isdigit() and len(a) == 4 and b.isdigit() and c.isdigit():
+            try:
+                out.add(datetime(int(a), int(b), int(c)).strftime("%Y-%m-%d"))
+            except ValueError:
+                pass
+    return out
+
+
 def check_normalise_dates(source, output, params) -> CheckOutcome:
+    """The dates are ISO **and** they are still the days the client supplied.
+
+    This check used to verify the format alone. Generated certification caught
+    it accepting ``2026-05-10`` rewritten as ``2026-10-05`` — a perfectly
+    well-formed ISO date, a different day, and a client's order dated five
+    months wrong. "Is it shaped like a date" and "is it the right date" are
+    different questions, and only the second one protects anybody.
+
+    The day check is deliberately permissive where the source is ambiguous: a
+    value like ``05/10/2026`` could be either day, so either reading is
+    accepted. A value that matches *no* reading of any supplied date is
+    refused. That direction is the safe one — it never rejects correct work, and
+    it catches every transposition of a date the client wrote unambiguously.
+    """
     header, body, problem = _read(output)
     if problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, problem)
@@ -117,11 +235,21 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
     if not columns:
         return CheckOutcome(CheckResult.NEEDS_INFORMATION,
                             "no columns named, so there is nothing to check")
-    bad = []
+
+    source_header, source_body, source_problem = _read(source)
+    bad, unsupported = [], []
     for name in columns:
         if name not in header:
             return CheckOutcome(CheckResult.FAIL, f"column {name!r} is absent")
         i = header.index(name)
+
+        supplied: set[str] = set()
+        if not source_problem and name in source_header:
+            si = source_header.index(name)
+            for row in source_body:
+                if si < len(row):
+                    supplied |= _readings(row[si])
+
         for n, row in enumerate(body, start=2):
             if i >= len(row):
                 continue
@@ -135,11 +263,25 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
                 datetime.strptime(value, "%Y-%m-%d")
             except ValueError:
                 bad.append(f"row {n}: {value!r} is not a real date")
-    computed = {"columns": columns, "non_iso": len(bad), "examples": bad[:5]}
+                continue
+            if supplied and value not in supplied:
+                unsupported.append(f"row {n}: {value!r} is not any day the "
+                                   "source supplied")
+
+    computed = {"columns": columns, "non_iso": len(bad),
+                "unsupported": len(unsupported),
+                "examples": (bad + unsupported)[:5]}
     if bad:
         return CheckOutcome(CheckResult.FAIL,
                             f"{len(bad)} value(s) are not YYYY-MM-DD", computed)
-    return CheckOutcome(CheckResult.PASS, "every dated value is ISO", computed)
+    if unsupported:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            f"{len(unsupported)} date(s) are well-formed but denote a day the "
+            "source never supplied", computed)
+    return CheckOutcome(CheckResult.PASS,
+                        "every dated value is ISO and denotes a supplied day",
+                        computed)
 
 
 def check_preserve_columns(source, output, params) -> CheckOutcome:
@@ -282,17 +424,12 @@ def check_row_reconciliation(source, output, params) -> CheckOutcome:
     This is the check that catches the quiet failure: a row that was neither a
     duplicate nor anything the client asked to remove, simply gone.
     """
-    _, src_body, p1 = _read(source)
-    _, out_body, p2 = _read(output)
+    src_header, src_body, p1 = _read(source)
+    out_header, out_body, p2 = _read(output)
     if p1 or p2:
         return CheckOutcome(CheckResult.UNVERIFIABLE, p1 or p2)
-    seen, distinct = set(), 0
-    for row in src_body:
-        k = _key(row)
-        if k in seen:
-            continue
-        seen.add(k)
-        distinct += 1
+    distinct_rows = _distinct_rows(src_body)
+    distinct = len(distinct_rows)
     expected = distinct if params.get("duplicates_removed", True) else len(src_body)
     computed = {"source_rows": len(src_body), "distinct_source_rows": distinct,
                 "output_rows": len(out_body), "expected_rows": expected}
@@ -300,7 +437,19 @@ def check_row_reconciliation(source, output, params) -> CheckOutcome:
         return CheckOutcome(
             CheckResult.FAIL,
             f"expected {expected} rows, found {len(out_body)}", computed)
-    return CheckOutcome(CheckResult.PASS, f"{expected} rows reconcile", computed)
+
+    # "The right number of rows" said nothing about *whose* rows. Another job's
+    # deliverable reconciled perfectly whenever the counts happened to agree.
+    accounted = _accounted_columns(src_header, distinct_rows, out_header, out_body)
+    computed["accounted_columns"] = accounted
+    if not accounted:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            f"{len(out_body)} rows is the right number, but no column's values "
+            "match the source's; these are not this source's rows", computed)
+    return CheckOutcome(CheckResult.PASS,
+                        f"{expected} rows reconcile, matching the source on "
+                        f"{len(accounted)} column(s)", computed)
 
 
 def check_no_unauthorised_changes(source, output, params) -> CheckOutcome:

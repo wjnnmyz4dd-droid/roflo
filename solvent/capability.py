@@ -328,6 +328,36 @@ class CapabilityRegistry:
     # deliverable may ship — that remains the verification/delivery controls'
     # job. This only answers: *may this verifier's word count?*
 
+    # ---- the evidence floor ------------------------------------------------
+    #
+    # Derived, not chosen to make a test pass. The question these numbers answer
+    # is "how much evidence before trusting this verifier for this check?", and
+    # the reasoning is:
+    #
+    # Four verifiers were built that hardcoded the old fixed battery — one
+    # decided a total was correct whenever it was not 999.99 — and all four
+    # earned full certification. They worked because the battery was a small,
+    # fixed, public set: a verifier only had to recognise *those* artifacts.
+    #
+    # So the floor is set by what it takes to defeat that strategy. Each bad
+    # case is generated with the defect at a position and value the generator
+    # chose, so recognising one instance is worth nothing; a verifier must catch
+    # MIN_INSTANCES_PER_DEFECT distinct instances of a class before it is
+    # credited with detecting that class. Five is the point at which hardcoding
+    # stops being cheaper than implementing the check, given a value space of
+    # thousands of amounts, dates and names.
+    #
+    # MIN_GOOD_INSTANCES guards the other direction. A verifier that rejects
+    # everything catches every defect; ten materially different correct
+    # artifacts — different row counts, values, orderings and encodings — is
+    # what separates a working check from a stuck one.
+    #
+    # And ALL of a check's defect classes must be covered. A check credited for
+    # the classes it happened to catch, while silently missing one it was shown,
+    # is the "lucky" outcome under a different name.
+    MIN_INSTANCES_PER_DEFECT = 5
+    MIN_GOOD_INSTANCES = 10
+
     #: A verifier that has not been put through its capability's battery.
     UNTESTED = "UNTESTED"
     #: Every trial correct: it accepted correct work and rejected wrong work.
@@ -340,7 +370,8 @@ class CapabilityRegistry:
     REVOKED = "REVOKED"
 
     def certify_verifier(self, *, verifier_ref: str, capability_version: str,
-                         report, decided_by: str = "capability") -> dict:
+                         report, decided_by: str = "capability",
+                         fingerprint: str = "") -> dict:
         """Record what a verifier did against hidden ground truth, and judge it.
 
         ``report`` is a :class:`solvent.verifiercert.TrialReport` — measurements
@@ -360,13 +391,17 @@ class CapabilityRegistry:
         results = list(getattr(report, "results", []))
         false_accepts = list(report.false_accepts)
         false_rejects = list(report.false_rejects)
-        passed = sorted(report.checks_passed()) if results else []
+        passed, short = self._checks_meeting_the_floor(report)
 
         if not results:
             state = self.FAILED
             why = (f"no trials exist for {capability_version!r}, so this verifier "
                    "has demonstrated nothing; an untested verifier is not a "
                    "trusted one")
+        elif not passed and short:
+            state = self.FAILED
+            why = ("no check has enough evidence to be trusted: "
+                   + "; ".join(short[:3]))
         elif not passed:
             state = self.FAILED
             why = (f"every check was wrong on at least one trial: "
@@ -385,6 +420,11 @@ class CapabilityRegistry:
             state = self.CERTIFIED_WITH_LIMITS
             why = (f"wrong in both directions; trusted only on {len(passed)} "
                    f"check(s) it got right: {report.summary}")
+        elif short:
+            state = self.CERTIFIED_WITH_LIMITS
+            why = (f"correct on every trial it was given, but "
+                   f"{len(short)} check(s) lack the evidence floor and are not "
+                   f"certified: {'; '.join(short[:2])}")
         else:
             state = self.CERTIFIED
             why = f"correct on every trial: {report.summary}"
@@ -392,7 +432,89 @@ class CapabilityRegistry:
         return self._record_certification(
             verifier_ref=verifier_ref, capability_version=capability_version,
             state=state, certified_checks=passed, report=report, why=why,
-            decided_by=decided_by)
+            decided_by=decided_by, fingerprint=fingerprint)
+
+    def _checks_meeting_the_floor(self, report) -> tuple[list, list]:
+        """``(certified_checks, reasons_for_the_rest)``.
+
+        A check is certified only when it was right on every trial it was given
+        **and** the evidence behind that is enough to mean something: enough
+        distinct correct artifacts accepted, every defect class it was shown
+        caught, and enough distinct instances of each class. Being right about a
+        small battery is what the old design already measured.
+        """
+        results = list(getattr(report, "results", []))
+        if not results:
+            return [], []
+        flawless = report.checks_passed()
+        certified, short = [], []
+        for check in sorted(report.checks_exercised):
+            if check not in flawless:
+                missed = report.classes_missed(check)
+                if missed:
+                    short.append(f"{check}: got {', '.join(sorted(missed))} wrong")
+                elif not report.classes_attempted(check):
+                    short.append(f"{check}: no defect was ever put in front of "
+                                 "it, so it has shown only that it says yes")
+                else:
+                    short.append(f"{check}: refused a correct artifact")
+                continue
+            good = report.good_instances(check)
+            instances = report.class_instances(check)
+            attempted = report.classes_attempted(check)
+            thin = sorted(name for name in attempted
+                          if instances.get(name, 0) < self.MIN_INSTANCES_PER_DEFECT)
+            if good < self.MIN_GOOD_INSTANCES:
+                short.append(f"{check}: accepted only {good} distinct correct "
+                             f"artifact(s), floor is {self.MIN_GOOD_INSTANCES}")
+                continue
+            if not attempted:
+                short.append(f"{check}: no defect was ever put in front of it, "
+                             "so it has shown only that it says yes")
+                continue
+            if thin:
+                short.append(f"{check}: {', '.join(thin[:3])} demonstrated on "
+                             f"fewer than {self.MIN_INSTANCES_PER_DEFECT} "
+                             "distinct instances")
+                continue
+            certified.append(check)
+        return certified, short
+
+    def recertify_after_revocation(self, *, verifier_ref: str,
+                                   capability_version: str, report,
+                                   fingerprint: str, owner_identity: str,
+                                   why: str) -> dict:
+        """Let a revoked verifier earn trust again — deliberately, by an owner.
+
+        Revocation records that this verifier passed something it should have
+        failed. Coming back from that needs three things: a person who can
+        answer for the decision, a reason, and fresh evidence that clears the
+        same floor as any other certification. The revocation itself stays on
+        the record; this adds to the history rather than editing it.
+        """
+        registered = (self._policy.is_owner(owner_identity) if self._policy
+                      else owner_identity.startswith("owner:"))
+        if not registered:
+            raise FailClosed(
+                f"re-certifying a revoked verifier is an owner act (got "
+                f"{owner_identity!r}); Solvent may re-run the battery, never "
+                "decide that the result clears a revocation")
+        if not why:
+            raise FailClosed("re-certification requires a reason on the record")
+        current = self.verifier_certification(verifier_ref, capability_version)
+        if current is None or current["state"] != self.REVOKED:
+            raise FailClosed(
+                f"{verifier_ref} is not revoked for {capability_version}; there "
+                "is nothing to re-certify")
+        record = self.certify_verifier(
+            verifier_ref=verifier_ref, capability_version=capability_version,
+            report=report, decided_by=owner_identity, fingerprint=fingerprint)
+        self._audit.record(
+            event="verifier.recertified", authority="capability",
+            initiator=owner_identity,
+            why=why[:300], decision=record["state"],
+            result=f"was REVOKED: {current['why'][:160]}")
+        return record
 
     def revoke_verifier(self, *, verifier_ref: str, capability_version: str,
                         why: str, decided_by: str) -> dict:
@@ -408,10 +530,11 @@ class CapabilityRegistry:
         return self._record_certification(
             verifier_ref=verifier_ref, capability_version=capability_version,
             state=self.REVOKED, certified_checks=[], report=None, why=why,
-            decided_by=decided_by)
+            decided_by=decided_by, fingerprint="")
 
     def _record_certification(self, *, verifier_ref, capability_version, state,
-                              certified_checks, report, why, decided_by) -> dict:
+                              certified_checks, report, why, decided_by,
+                              fingerprint="") -> dict:
         row = {
             "id": new_id("vcert"), "ts": now(), "verifier_ref": verifier_ref,
             "capability_version": capability_version, "state": state,
@@ -422,15 +545,19 @@ class CapabilityRegistry:
             "false_accepts": len(report.false_accepts) if report else 0,
             "false_rejects": len(report.false_rejects) if report else 0,
             "why": why[:600], "decided_by": decided_by,
+            "fingerprint": fingerprint,
+            "seed": int(getattr(report, "seed", 0) or 0),
+            "stream": str(getattr(report, "stream", "") or ""),
         }
         self._db.execute(
             "INSERT INTO verifier_certifications(id,ts,verifier_ref,"
             "capability_version,state,certified_checks,trials_total,"
-            "trials_correct,false_accepts,false_rejects,why,decided_by) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "trials_correct,false_accepts,false_rejects,why,decided_by,"
+            "fingerprint,seed,stream) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (row["id"], row["ts"], verifier_ref, capability_version, state,
              row["certified_checks"], row["trials_total"], row["trials_correct"],
-             row["false_accepts"], row["false_rejects"], row["why"], decided_by))
+             row["false_accepts"], row["false_rejects"], row["why"], decided_by,
+             row["fingerprint"], row["seed"], row["stream"]))
         self._db.commit()
         self._audit.record(
             event="verifier.certification", authority="capability",
@@ -470,7 +597,7 @@ class CapabilityRegistry:
 
     def may_authorize_delivery(self, *, verifier_ref: str,
                                capability_version: str,
-                               check: str) -> tuple[bool, str]:
+                               check: str, fingerprint: str = "") -> tuple[bool, str]:
         """May this verifier's PASS for this check count towards delivery?
 
         Scoped to the exact ``(verifier_ref, capability_version, check)``. A
@@ -487,6 +614,20 @@ class CapabilityRegistry:
             return False, (f"{verifier_ref} has never been tested against "
                            f"{capability_version}; an untested verifier's PASS is "
                            "an opinion, not evidence")
+        # Certification is evidence about a particular piece of code. If the
+        # code has changed, the evidence is about something else — a rename or
+        # an edited body must not inherit trust the old implementation earned.
+        recorded = record["fingerprint"]
+        if fingerprint and recorded and fingerprint != recorded:
+            return False, (f"{verifier_ref} was certified as {recorded}, but the "
+                           f"implementation now fingerprints as {fingerprint}; "
+                           "that certification is about different code and must "
+                           "be re-earned")
+        if fingerprint and not recorded:
+            return False, (f"{verifier_ref} has a certification that records no "
+                           "implementation fingerprint, so there is no way to "
+                           "tell whether it is about this code")
+
         state = record["state"]
         if state == self.FAILED:
             return False, (f"{verifier_ref} failed certification for "

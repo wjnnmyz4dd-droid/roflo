@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unittest
 
-from solvent import verifiercert as vc
+from solvent import certgen, verifiercert as vc
 from solvent.audit import AuditLog
 from solvent.capability import CapabilityRegistry
 from solvent.errors import FailClosed
@@ -38,8 +38,10 @@ class TheRefusalNamesWhyTheVerifierIsNotTrusted(unittest.TestCase):
 
     def setUp(self):
         self.s = Solvent()
-        report = vc.run_trials(lambda c, **k: outcome(True),
-                               capability="csv-cleanup", verifier_ref="approve-all")
+        report = vc.run_generated(lambda c, **k: outcome(True),
+                                  capability="csv-cleanup",
+                                  verifier_ref="approve-all",
+                                  seed=certgen.CERTIFICATION_SEED, cases=14)
         self.s.capability.certify_verifier(
             verifier_ref="approve-all", capability_version="bad/1.0", report=report)
 
@@ -66,6 +68,17 @@ class TheRefusalNamesWhyTheVerifierIsNotTrusted(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertIn("revoked", why)
 
+    def test_a_real_verifier_clears_the_evidence_floor(self):
+        """Guards every test above: a floor nothing can clear proves nothing."""
+        from solvent import csvverify
+
+        report = vc.run_generated(csvverify.run, capability="csv-cleanup",
+                                  verifier_ref="real",
+                                  seed=certgen.CERTIFICATION_SEED, cases=14)
+        certified, short = self.s.capability._checks_meeting_the_floor(report)
+        self.assertEqual(short, [])
+        self.assertGreaterEqual(len(certified), 9)
+
 
 class APartiallyWrongVerifierIsTrustedOnlyWhereItWasRight(unittest.TestCase):
     """The interesting middle: competent at some checks, wrong at others.
@@ -85,8 +98,9 @@ class APartiallyWrongVerifierIsTrustedOnlyWhereItWasRight(unittest.TestCase):
                 return outcome(True)
             return csvverify.run(check, source=source, output=output, params=params)
 
-        self.report = vc.run_trials(partial, capability="csv-cleanup",
-                                    verifier_ref="partial")
+        self.report = vc.run_generated(partial, capability="csv-cleanup",
+                                       verifier_ref="partial",
+                                       seed=certgen.CERTIFICATION_SEED, cases=14)
         self.record = self.s.capability.certify_verifier(
             verifier_ref="partial", capability_version="partial/1.0",
             report=self.report)
@@ -120,8 +134,9 @@ class APartiallyWrongVerifierIsTrustedOnlyWhereItWasRight(unittest.TestCase):
                 return outcome(False)         # refuses correct work
             return csvverify.run(check, source=source, output=output, params=params)
 
-        report = vc.run_trials(erratic, capability="csv-cleanup",
-                               verifier_ref="erratic")
+        report = vc.run_generated(erratic, capability="csv-cleanup",
+                                  verifier_ref="erratic",
+                                  seed=certgen.CERTIFICATION_SEED, cases=14)
         record = self.s.capability.certify_verifier(
             verifier_ref="erratic", capability_version="erratic/1.0", report=report)
         self.assertEqual(record["state"], "CERTIFIED_WITH_LIMITS")
@@ -244,11 +259,13 @@ class TheAuditChokepointRefusesWhatItCannotVouchFor(unittest.TestCase):
 
         policy = PolicyStore(self.store, self.audit, owner_identity=OWNER)
         registry = CapabilityRegistry(self.store, self.audit, policy)
-        report = vc.run_trials(csvverify.run, capability="csv-cleanup",
-                               verifier_ref="solvent.csvverify.run")
-        registry.certify_verifier(verifier_ref="solvent.csvverify.run",
-                                  capability_version="csv-cleanup/1.0",
-                                  report=report)
+        report = vc.run_generated(csvverify.run, capability="csv-cleanup",
+                                  verifier_ref="solvent.csvverify.run",
+                                  seed=certgen.CERTIFICATION_SEED, cases=14)
+        registry.certify_verifier(
+            verifier_ref="solvent.csvverify.run",
+            capability_version="csv-cleanup/1.0", report=report,
+            fingerprint=vc.implementation_fingerprint(csvverify.run))
         self.audit.trust_verifiers_via(registry)
 
 

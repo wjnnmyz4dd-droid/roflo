@@ -342,7 +342,43 @@ def check_rows_tabulated(source, output, params) -> CheckOutcome:
         return CheckOutcome(CheckResult.FAIL,
                             f"{len(rows)} source row(s), {data_rows} tabulated",
                             computed)
-    return CheckOutcome(CheckResult.PASS, f"{len(rows)} row(s) tabulated", computed)
+
+    # Counting was all this check used to do, and a count is not an identity:
+    # another job's report with the same number of lines passed. Generated
+    # certification caught it on a cross-job artifact, which is the shape of the
+    # worst version of this — a real, correct, well-formed report belonging to
+    # somebody else. So the values have to be here too.
+    # Compared column by column, and only for the columns the table actually
+    # carries. A client may legitimately ask for two of six columns, so
+    # demanding every supplied value appear would refuse correct work — an
+    # earlier version of this fix did exactly that. What must hold is that the
+    # columns which *are* tabulated carry this source's values, counted as a
+    # multiset so a reordering passes and a substitution does not.
+    from collections import Counter
+
+    columns = [c.strip() for c in body[0].strip().strip("|").split("|")]
+    table = [[c.strip() for c in line.strip().strip("|").split("|")]
+             for line in body[1:]]
+    mismatched = []
+    for position, name in enumerate(columns):
+        if not any(name in row for row in rows):
+            continue
+        supplied = Counter(str(row.get(name, "")).strip() for row in rows)
+        rendered = Counter(row[position].strip() for row in table
+                           if position < len(row))
+        if supplied != rendered:
+            only_supplied = sorted((supplied - rendered).elements())[:3]
+            mismatched.append(f"{name}: {only_supplied} missing from the table")
+    computed["mismatched_columns"] = mismatched[:4]
+    if mismatched:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            f"the table has {data_rows} rows but {len(mismatched)} column(s) do "
+            f"not carry this source's values ({'; '.join(mismatched[:2])})",
+            computed)
+    return CheckOutcome(CheckResult.PASS,
+                        f"{len(rows)} row(s) tabulated with the supplied values",
+                        computed)
 
 
 def check_missing_disclosed(source, output, params) -> CheckOutcome:

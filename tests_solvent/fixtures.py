@@ -72,15 +72,17 @@ CERTIFIED_CHECK = "parses_as_csv"
 
 def _certify_csv_verifier(store, audit, policy):
     """Earn the CSV verifier's certification against the real battery."""
-    from solvent import csvverify, verifiercert
+    from solvent import certgen, csvverify, verifiercert
     from solvent.capability import CapabilityRegistry
 
     registry = CapabilityRegistry(store, audit, policy)
-    report = verifiercert.run_trials(csvverify.run, capability="csv-cleanup",
-                                     verifier_ref=CERTIFIED_VERIFIER)
-    record = registry.certify_verifier(verifier_ref=CERTIFIED_VERIFIER,
-                                       capability_version=CERTIFIED_CAPABILITY,
-                                       report=report)
+    report = verifiercert.run_generated(
+        csvverify.run, capability="csv-cleanup", verifier_ref=CERTIFIED_VERIFIER,
+        seed=certgen.CERTIFICATION_SEED, cases=14, stream="certification")
+    record = registry.certify_verifier(
+        verifier_ref=CERTIFIED_VERIFIER, capability_version=CERTIFIED_CAPABILITY,
+        report=report,
+        fingerprint=verifiercert.implementation_fingerprint(csvverify.run))
     assert record["state"] == "CERTIFIED", record["why"]
     return registry
 
