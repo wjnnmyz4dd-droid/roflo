@@ -74,6 +74,7 @@ TABLE_OWNER = {
     "payment_events": "ledger",
     "jobs": "orchestrator",
     "requirements": "orchestrator",
+    "job_clarifications": "orchestrator",
     "artifacts": "orchestrator",
     "client_feedback": "feedback",
     "client_responses": "relations",
@@ -169,6 +170,16 @@ CREATE TABLE IF NOT EXISTS requirements (
   status TEXT NOT NULL DEFAULT 'DRAFT', supersedes TEXT NOT NULL DEFAULT '',
   committed_at TEXT,
   PRIMARY KEY (job_id, id)
+);
+CREATE TABLE IF NOT EXISTS job_clarifications (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL,
+  client_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL,
+  subject TEXT NOT NULL DEFAULT '', observed TEXT NOT NULL DEFAULT '',
+  interpretations TEXT NOT NULL DEFAULT '', requirement_id TEXT NOT NULL DEFAULT '',
+  resolved_by TEXT NOT NULL DEFAULT '', question TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'OPEN', answer TEXT NOT NULL DEFAULT '',
+  answered_by TEXT NOT NULL DEFAULT '', answered_at TEXT NOT NULL DEFAULT '',
+  supersedes TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL, role TEXT NOT NULL,

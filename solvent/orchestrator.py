@@ -313,6 +313,166 @@ class JobOrchestrator:
         return [r for r in self.requirement_records(job_id)
                 if r.status is RequirementStatus.COMMITTED]
 
+    # ---------------------------------------------------------- clarifications
+    #
+    # Some inputs have more than one legitimate reading and no amount of
+    # checking settles which the client meant. The Orchestrator owns the record
+    # of that question because it already owns job state and the committed
+    # checklist, and the answer becomes an ordinary confirmed requirement —
+    # which is how an agreed fact about a job is already represented. Nothing
+    # new decides anything: detection is a pure function, asking belongs to
+    # Client Relations, and the answer gates work through the checklist it was
+    # always going to gate it through.
+
+    def record_ambiguity(self, *, job_id: str, ambiguity,
+                         initiator: str = "execution") -> dict:
+        """File an open question about this job. Idempotent per (job, kind, subject).
+
+        Re-detecting the same ambiguity on a later attempt must not produce a
+        second question, or a client who has not answered accumulates one
+        message per run.
+        """
+        existing = self._db.query_one(
+            "SELECT * FROM job_clarifications WHERE job_id = ? AND kind = ? "
+            "AND subject = ? AND status != 'SUPERSEDED' ORDER BY ts DESC",
+            (job_id, ambiguity.kind, ambiguity.subject))
+        if existing is not None:
+            return dict(existing)
+
+        job = self.job(job_id)
+        record = {
+            "id": new_id("clar"), "ts": now(), "job_id": job_id,
+            "client_id": job.client_id, "kind": ambiguity.kind,
+            "subject": ambiguity.subject,
+            "observed": " | ".join(str(o) for o in ambiguity.observed)[:600],
+            "interpretations": " | ".join(ambiguity.interpretations)[:600],
+            "requirement_id": ambiguity.requirement_id,
+            "resolved_by": ambiguity.resolved_by, "question": ambiguity.question,
+            "status": "OPEN", "answer": "", "answered_by": "", "answered_at": "",
+            "supersedes": "",
+        }
+        self._db.execute(
+            "INSERT INTO job_clarifications(id,ts,job_id,client_id,kind,subject,"
+            "observed,interpretations,requirement_id,resolved_by,question,status,"
+            "answer,answered_by,answered_at,supersedes) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            tuple(record[k] for k in (
+                "id", "ts", "job_id", "client_id", "kind", "subject", "observed",
+                "interpretations", "requirement_id", "resolved_by", "question",
+                "status", "answer", "answered_by", "answered_at", "supersedes")))
+        self._db.commit()
+        self._audit.record(
+            event="job.ambiguity_recorded", authority="orchestrator",
+            initiator=initiator, job_id=job_id, input_ref=record["id"],
+            why=f"{ambiguity.kind} in {ambiguity.subject}",
+            decision="NEEDS_CLIENT_CLARIFICATION",
+            result=record["interpretations"][:200])
+        return record
+
+    def clarifications(self, job_id: str, *, status: str = "") -> list[dict]:
+        sql = "SELECT * FROM job_clarifications WHERE job_id = ?"
+        params: tuple = (job_id,)
+        if status:
+            sql += " AND status = ?"
+            params = (job_id, status)
+        return [dict(r) for r in self._db.query(sql + " ORDER BY ts, rowid", params)]
+
+    def open_clarifications(self, job_id: str) -> list[dict]:
+        return self.clarifications(job_id, status="OPEN")
+
+    def answer_clarification(self, *, clarification_id: str, answer: str,
+                             answered_by: str, initiator: str = "relations") -> dict:
+        """Record the client's answer. The question and the answer both persist.
+
+        A second, different answer to a question already answered does not
+        overwrite the first: the earlier record is marked SUPERSEDED and stays
+        readable, and the new one names what it replaced. A client changing
+        their mind is a fact about the job, and losing the first answer would
+        lose the reason the first attempt was made.
+        """
+        row = self._db.query_one(
+            "SELECT * FROM job_clarifications WHERE id = ?", (clarification_id,))
+        if row is None:
+            raise FailClosed(f"no clarification {clarification_id!r}")
+        if not answer:
+            raise FailClosed("an empty answer resolves nothing")
+        if not answered_by:
+            raise FailClosed("a clarification answer must name who gave it")
+
+        if row["status"] == "ANSWERED":
+            if row["answer"] == answer:
+                return dict(row)
+            self._db.execute(
+                "UPDATE job_clarifications SET status = 'SUPERSEDED' WHERE id = ?",
+                (clarification_id,))
+            replacement = new_id("clar")
+            self._db.execute(
+                "INSERT INTO job_clarifications(id,ts,job_id,client_id,kind,"
+                "subject,observed,interpretations,requirement_id,resolved_by,"
+                "question,status,answer,answered_by,answered_at,supersedes) "
+                "SELECT ?,?,job_id,client_id,kind,subject,observed,"
+                "interpretations,requirement_id,resolved_by,question,'ANSWERED',"
+                "?,?,?,? FROM job_clarifications WHERE id = ?",
+                (replacement, now(), answer, answered_by, now(),
+                 clarification_id, clarification_id))
+            self._db.commit()
+            self._audit.record(
+                event="job.clarification_superseded", authority="orchestrator",
+                initiator=initiator, job_id=row["job_id"],
+                input_ref=replacement,
+                why=f"the client gave a different answer to {row['kind']}",
+                decision="SUPERSEDED",
+                result=f"was {row['answer']!r}, now {answer!r}")
+            return dict(self._db.query_one(
+                "SELECT * FROM job_clarifications WHERE id = ?", (replacement,)))
+
+        self._db.execute(
+            "UPDATE job_clarifications SET status = 'ANSWERED', answer = ?, "
+            "answered_by = ?, answered_at = ? WHERE id = ?",
+            (answer, answered_by, now(), clarification_id))
+        self._db.commit()
+        self._audit.record(
+            event="job.clarification_answered", authority="orchestrator",
+            initiator=initiator, job_id=row["job_id"], input_ref=clarification_id,
+            why=f"{row['kind']} resolved by the client", decision="ANSWERED",
+            result=answer[:200])
+        return dict(self._db.query_one(
+            "SELECT * FROM job_clarifications WHERE id = ?", (clarification_id,)))
+
+    def clarified_semantics(self, job_id: str) -> dict:
+        """``{parameter: answer}`` from this job's answered clarifications only.
+
+        Scoped to one job at every read. That is what stops one client's answer
+        becoming a global rule: there is no query here that could return another
+        job's answer, so "everyone means MM/DD/YYYY" is not a state this can
+        reach.
+        """
+        out = {}
+        for row in self.clarifications(job_id, status="ANSWERED"):
+            if row["resolved_by"]:
+                out[row["resolved_by"]] = row["answer"]
+        return out
+
+    def effective_baseline(self, job_id: str) -> list[Requirement]:
+        """The committed checklist with this job's clarified semantics folded in.
+
+        The single source both the worker and the checks read. They cannot
+        diverge on what a clarified date format means because they are not each
+        deciding — they are handed the same list. The stored requirements are
+        untouched: the original wording stays exactly as the client gave it.
+        """
+        import dataclasses
+
+        semantics = self.clarified_semantics(job_id)
+        if not semantics:
+            return self.baseline(job_id)
+        folded = []
+        for requirement in self.baseline(job_id):
+            params = dict(requirement.params or {})
+            params.update(semantics)
+            folded.append(dataclasses.replace(requirement, params=params))
+        return folded
+
     # -------------------------------------------------------------- artifacts
 
     def register_artifact(self, *, job_id: str, role: str, path: str,

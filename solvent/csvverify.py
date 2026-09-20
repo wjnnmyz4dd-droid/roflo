@@ -168,13 +168,20 @@ _MONTHS = {m: i for i, m in enumerate(
      "jul", "aug", "sep", "oct", "nov", "dec"), start=1)}
 
 
-def _readings(value: str) -> set[str]:
+def _readings(value: str, declared: str = "") -> set[str]:
     """Every day a supplied date could denote, as ISO strings.
 
     ``05/10/2026`` is genuinely two days: 10 May and 5 October. Both are
     returned, because the check must not invent a convention the client never
     stated. ``2026-05-10`` returns exactly one, which is what makes a
     transposed output detectable.
+
+    ``declared`` is the convention the client confirmed for this job, and it
+    narrows the reading to one. Computed here rather than imported from the
+    worker — these checks never depend on the code they are checking — but from
+    the *same* declaration, which is what stops the two of them resolving the
+    same date differently. Where they must agree is on what the client said, not
+    on how to work it out.
     """
     value = value.strip()
     if not value:
@@ -193,7 +200,12 @@ def _readings(value: str) -> set[str]:
     if len(parts) == 3:
         a, b, c = (p.strip() for p in parts)
         if c.isdigit() and len(c) == 4 and a.isdigit() and b.isdigit():
-            for day, month in ((b, a), (a, b)):      # MM/DD and DD/MM
+            orders = [(b, a), (a, b)]                # MM/DD and DD/MM
+            if declared == "MM/DD/YYYY":
+                orders = [(b, a)]
+            elif declared == "DD/MM/YYYY":
+                orders = [(a, b)]
+            for day, month in orders:
                 try:
                     out.add(datetime(int(c), int(month), int(day))
                             .strftime("%Y-%m-%d"))
@@ -236,6 +248,7 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
         return CheckOutcome(CheckResult.NEEDS_INFORMATION,
                             "no columns named, so there is nothing to check")
 
+    declared = params.get("date_format", "")
     source_header, source_body, source_problem = _read(source)
     bad, unsupported = [], []
     for name in columns:
@@ -248,7 +261,7 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
             si = source_header.index(name)
             for row in source_body:
                 if si < len(row):
-                    supplied |= _readings(row[si])
+                    supplied |= _readings(row[si], declared)
 
         for n, row in enumerate(body, start=2):
             if i >= len(row):
@@ -269,7 +282,7 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
                                    "source supplied")
 
     computed = {"columns": columns, "non_iso": len(bad),
-                "unsupported": len(unsupported),
+                "unsupported": len(unsupported), "date_format": declared,
                 "examples": (bad + unsupported)[:5]}
     if bad:
         return CheckOutcome(CheckResult.FAIL,

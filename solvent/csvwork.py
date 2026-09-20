@@ -57,9 +57,18 @@ OPERATIONS = frozenset({
 VERIFY_ONLY = frozenset({"row_reconciliation", "parses_as_csv",
                          "no_unauthorised_changes"})
 
-#: Date formats accepted when normalising. Deliberately short and unambiguous:
-#: a format list that guesses between D/M/Y and M/D/Y silently corrupts dates.
-DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%d-%b-%Y", "%d %b %Y", "%Y/%m/%d")
+#: Date formats that mean exactly one day whoever reads them. A year-first date
+#: and a date with a month name cannot be read two ways, so they need no
+#: declaration from anybody.
+UNAMBIGUOUS_DATE_FORMATS = ("%Y-%m-%d", "%d-%b-%Y", "%d %b %Y", "%Y/%m/%d",
+                            "%d %B %Y", "%b %d, %Y")
+
+#: Kept for callers that still name it. This list used to contain ``%m/%d/%Y``
+#: and not ``%d/%m/%Y``, with a comment warning that guessing between them
+#: corrupts dates — which is precisely what including one and not the other
+#: does. ``05/10/2026`` became 10 May on no evidence at all. A slashed date is
+#: now parsed only against a format the client declared for the job.
+DATE_FORMATS = UNAMBIGUOUS_DATE_FORMATS
 
 _WS = re.compile(r"\s+")
 
@@ -326,13 +335,20 @@ def _apply(step: Step, header: list[str], body: list[list[str]],
                 raw = row[i].strip()
                 if not raw:
                     continue
-                iso = _to_iso(raw)
+                iso = _to_iso(raw, params.get("date_format", ""))
                 if iso is None:
-                    # An unparseable date is an exception, not a guess and not a
-                    # deletion. The row survives and the client is told.
-                    report.exceptions.append(
-                        f"row {n}, column {name!r}: {raw!r} matches none of the "
-                        f"accepted date formats; left unchanged")
+                    # An unparseable or ambiguous date is an exception, not a
+                    # guess and not a deletion. The row survives and the client
+                    # is told which it was.
+                    if _SLASHED_DATE.match(raw):
+                        report.exceptions.append(
+                            f"row {n}, column {name!r}: {raw!r} could be read "
+                            "either day-first or month-first and the job records "
+                            "no declared convention; left unchanged")
+                    else:
+                        report.exceptions.append(
+                            f"row {n}, column {name!r}: {raw!r} matches none of "
+                            f"the accepted date formats; left unchanged")
                     continue
                 if iso != row[i]:
                     row[i] = iso
@@ -417,14 +433,44 @@ def _not_plausibly_csv(rows: list[list[str]]) -> str:
     return ""
 
 
-def _to_iso(raw: str) -> str | None:
-    """Parse a date, or return None. Never guesses between ambiguous formats."""
-    for fmt in DATE_FORMATS:
+_SLASHED_DATE = re.compile(r"^\s*(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})\s*$")
+
+
+def _to_iso(raw: str, declared: str = "") -> str | None:
+    """Parse a date, or return None. Never guesses between ambiguous formats.
+
+    ``declared`` is the convention the client confirmed for this job, and it is
+    the only thing that makes ``05/10/2026`` mean a particular day. Without it,
+    a slashed date whose first two components are both twelve or under is
+    refused rather than resolved — the client is asked instead. A slashed date
+    where one component exceeds twelve resolves itself and needs no declaration.
+    """
+    for fmt in UNAMBIGUOUS_DATE_FORMATS:
         try:
             parsed = datetime.strptime(raw, fmt)
         except ValueError:
             continue
         return date(parsed.year, parsed.month, parsed.day).isoformat()
+
+    match = _SLASHED_DATE.match(raw)
+    if match is None:
+        return None
+    first, second, year = (int(g) for g in match.groups())
+    if declared == "MM/DD/YYYY":
+        order = [(first, second)]
+    elif declared == "DD/MM/YYYY":
+        order = [(second, first)]
+    elif first > 12 and second <= 12:
+        order = [(second, first)]          # only one reading is a real date
+    elif second > 12 and first <= 12:
+        order = [(first, second)]
+    else:
+        return None                         # genuinely two days; do not choose
+    for month, day in order:
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            return None
     return None
 
 

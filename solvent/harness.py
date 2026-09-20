@@ -21,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 from .audit import AuditLog
+from . import ambiguity as ambiguity_module
 from .capability import Capability, CapabilityRegistry
 from .checks import checks_for
 from .content import RequirementSet, confirm, extract_requirements, quarantine
@@ -869,6 +870,33 @@ def ensure_verifier_certified(s: "Solvent", capability: str) -> dict:
         fingerprint=fingerprint)
 
 
+def resume_after_clarification(s: "Solvent", *, job_id: str, source: str,
+                               workdir: str, capability: str = "csv-cleanup",
+                               sabotage=None) -> "ServiceReport":
+    """Carry on with a job that was waiting on the client, once they have answered.
+
+    Uses the Orchestrator's existing unblock path, which returns the job to the
+    state it was in when it stopped. The clarified semantics are not passed in
+    here — they are already on the job, and ``effective_baseline`` is what both
+    the worker and the checks read. Nothing about resumption decides what the
+    answer meant.
+
+    A job with an unanswered question is not resumed. That is the whole point:
+    the client not having replied is not a reason to proceed with a guess.
+    """
+    still_open = s.orchestrator.open_clarifications(job_id)
+    if still_open:
+        raise FailClosed(
+            f"{job_id} is waiting on {len(still_open)} unanswered question(s); "
+            "resuming would mean answering them on the client's behalf")
+    job = s.orchestrator.job(job_id)
+    if job.state is JobState.BLOCKED:
+        s.orchestrator.unblock(job_id=job_id, initiator="execution",
+                               why="the client answered every open question")
+    return _execute_job(s, job_id=job_id, source=source, workdir=workdir,
+                        capability=capability, sabotage=sabotage)
+
+
 def surprise_audit(s: "Solvent", capability: str, *, cases: int = 10) -> dict:
     """Ambush a certified verifier with cases from a seed it has never seen.
 
@@ -921,7 +949,10 @@ def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
     job = s.orchestrator.job(job_id)
     round_ = VerificationRound(attempt=attempt, artifact_digest=artifact.digest)
 
-    for req in s.orchestrator.baseline(job_id):
+    # The same list the worker was handed: clarified semantics folded in once,
+    # by the Orchestrator, for both. Neither side resolves an ambiguity on its
+    # own, because neither side is asked to.
+    for req in s.orchestrator.effective_baseline(job_id):
         if not req.check:
             # Advisory and untestable. Recorded at commitment, reported to the
             # owner, and deliberately not given evidence it cannot earn.
@@ -1012,6 +1043,50 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
     src = s.orchestrator.register_artifact(
         job_id=job_id, role="SOURCE", path=source, initiator=OWNER)
 
+    # Before any work: is anything here capable of meaning two things? An
+    # ambiguity that would change the client's result is not a defect to verify
+    # around and not a coin to flip — it is a question, and the job waits on the
+    # client rather than inventing an answer. Detection happens after the
+    # checklist is committed because a committed clarification is what resolves
+    # it: a client who has already declared their date convention is asked
+    # nothing.
+    report.committed = s.orchestrator.effective_baseline(job_id)
+    for ambiguity in ambiguity_module.detect(capability, source, report.committed):
+        s.orchestrator.record_ambiguity(job_id=job_id, ambiguity=ambiguity)
+    unresolved = s.orchestrator.open_clarifications(job_id)
+    if unresolved:
+        s.orchestrator._transition(job_id, JobState.QUALIFYING, why="clarification",
+                                   initiator="execution")
+        s.orchestrator.block(
+            job_id=job_id, blocked_on=BlockedOn.CLIENT, initiator="execution",
+            why=("; ".join(c["question"] for c in unresolved))[:400])
+        report.refusals = [c["question"] for c in unresolved]
+        report.escalated = ("awaiting client clarification: "
+                            + "; ".join(c["question"] for c in unresolved))
+        report.final_state = s.orchestrator.job(job_id).state.value
+        return report
+
+    return _execute_job(s, job_id=job_id, source=source, workdir=workdir,
+                        capability=capability, sabotage=sabotage, report=report)
+
+
+def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
+                 capability: str = "csv-cleanup", sabotage=None,
+                 report: "ServiceReport | None" = None) -> "ServiceReport":
+    """Plan, produce, verify, gate. Shared by a first attempt and a resumption.
+
+    Extracted so that a job which waited on the client and a job which never had
+    to wait run the *same* code. Two execution paths would be two places where
+    "may this be delivered?" is answered, and a clarified job taking the second
+    one is exactly how a clarification would end up bypassing a control.
+    """
+    spec = CAPABILITIES[capability]
+    if report is None:
+        report = ServiceReport()
+        report.job_id = job_id
+        report.committed = s.orchestrator.effective_baseline(job_id)
+    src = next((a for a in s.orchestrator.artifacts(job_id, role="SOURCE")), None)
+
     # A plan that cannot be made is a refusal, not an attempt. Say so before
     # touching anything.
     refusals = spec.plan(report.committed)[1] if spec.plan else []
@@ -1027,6 +1102,12 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
         return report
 
     for target in (JobState.QUALIFYING, JobState.ACCEPTED, JobState.EXECUTING):
+        # A resumed job is already partway along this path — it stopped here to
+        # ask the client something. Re-entering the state it is already in is
+        # not a transition, so skip it rather than widen the state machine to
+        # permit self-loops.
+        if s.orchestrator.job(job_id).state is target:
+            continue
         s.orchestrator._transition(job_id, target, why="service pipeline",
                                    initiator="execution")
 

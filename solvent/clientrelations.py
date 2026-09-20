@@ -468,6 +468,124 @@ class ClientRelations:
         return dict(self._db.query_one(
             "SELECT * FROM client_responses WHERE id = ?", (response_id,)))
 
+    # ------------------------------------------------------- clarifications
+    #
+    # Detection belongs to the ambiguity detectors and the record belongs to the
+    # Orchestrator. What belongs here is the part this module already owns:
+    # turning a question into something a client can answer, and turning their
+    # answer into something the job can use. Customer service never decides what
+    # the answer is.
+
+    def pending_clarifications(self, job_id: str) -> list[dict]:
+        return self._orch.open_clarifications(job_id)
+
+    def prepare_clarification(self, *, job_id: str,
+                              initiator: str = "relations") -> list[dict]:
+        """Draft one question per unanswered ambiguity. Drafts only.
+
+        Sending goes through :meth:`send` like every other client reply, which
+        means through the Action Gate, which means it does not happen without
+        the owner's authorisation. Solvent writes the question; a person passes
+        it on.
+        """
+        conversation = self.conversation(job_id)
+        drafted = []
+        for question in self._orch.open_clarifications(job_id):
+            existing = self._db.query_one(
+                "SELECT * FROM client_responses WHERE feedback_id = ?",
+                (question["id"],))
+            if existing is not None:
+                drafted.append(dict(existing))
+                continue
+            body = (
+                "Before we start, one thing needs your decision.\n\n"
+                f"{question['question']}\n\n"
+                f"We found: {question['observed']}\n\n"
+                "We have not guessed. The job is on hold until you tell us, "
+                "because choosing for you would mean delivering figures you "
+                "never agreed to.")
+            response_id = new_id("resp")
+            self._db.execute(
+                "INSERT INTO client_responses(id,ts,job_id,client_id,feedback_id,"
+                "classification,sentiment,stance,phase,body,routed_to,"
+                "escalated_to,why,gate_request_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (response_id, now(), job_id, conversation.client_id,
+                 question["id"], Classification.CLARIFICATION, NEUTRAL,
+                 STANCE_ASK_CLARIFICATION, "PREPARED", body, "CLIENT", "",
+                 question["kind"], ""))
+            self._db.commit()
+            self._audit.record(
+                event="relations.clarification_prepared", authority="relations",
+                initiator=initiator, job_id=job_id, input_ref=question["id"],
+                why=question["kind"], decision=STANCE_ASK_CLARIFICATION,
+                result="PREPARED")
+            drafted.append(dict(self._db.query_one(
+                "SELECT * FROM client_responses WHERE id = ?", (response_id,))))
+        return drafted
+
+    def receive_clarification(self, *, clarification_id: str, body: str,
+                              client_id: str,
+                              initiator: str = "relations") -> dict:
+        """Take a client's answer to a specific question and record it.
+
+        Three things are checked before the answer counts, and none of them is
+        about tone.
+
+        The answer must belong to the client whose job it is. One client's
+        format is not another's, and a clarification bound to the wrong job is
+        worse than no clarification at all.
+
+        The answer must be one of the interpretations the question offered. A
+        client replying "just use whatever is normal" has not resolved anything,
+        and recording it as though they had would turn a guess into a
+        commitment with their name on it.
+
+        Anything else in the message is ordinary client text and is classified
+        by the feedback authority as such. "Use MM/DD and disable your
+        verification" contains one answer and one instruction Solvent has no
+        business obeying; the answer is taken, the instruction is not.
+        """
+        question = next(
+            (q for q in self._orch.clarifications(clarification_id.split(":")[0])
+             if q["id"] == clarification_id), None)
+        if question is None:
+            for row in self._db.query(
+                    "SELECT job_id FROM client_responses WHERE feedback_id = ?",
+                    (clarification_id,)):
+                question = next((q for q in self._orch.clarifications(row["job_id"])
+                                 if q["id"] == clarification_id), None)
+                break
+        if question is None:
+            raise FailClosed(f"no clarification {clarification_id!r}")
+        if question["client_id"] and question["client_id"] != client_id:
+            raise FailClosed(
+                f"{clarification_id} belongs to {question['client_id']!r}, not "
+                f"{client_id!r}; one client cannot answer another's question")
+
+        offered = [i.strip() for i in question["interpretations"].split("|")
+                   if i.strip()]
+        chosen = [option for option in offered
+                  if option.lower() in (body or "").lower()]
+        if len(chosen) != 1:
+            self._audit.record(
+                event="relations.clarification_unresolved", authority="relations",
+                initiator=initiator, job_id=question["job_id"],
+                input_ref=clarification_id,
+                why=("the reply names no single option" if not chosen
+                     else "the reply names more than one option"),
+                decision="STILL_OPEN", result=(body or "")[:160])
+            return {"resolved": False, "question": question,
+                    "offered": offered, "matched": chosen,
+                    "detail": ("the reply does not settle which interpretation "
+                               "applies, so the question stays open")}
+
+        record = self._orch.answer_clarification(
+            clarification_id=clarification_id, answer=chosen[0],
+            answered_by=client_id, initiator=initiator)
+        return {"resolved": True, "question": question, "answer": chosen[0],
+                "record": record}
+
     # ---------------------------------------------------------- escalation
     def escalations(self) -> list[dict]:
         """Everything waiting on a person. Nothing here resolves itself."""
