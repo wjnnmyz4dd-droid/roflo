@@ -68,8 +68,22 @@ class NotASecondGovernor(unittest.TestCase):
 class ServiceContract(unittest.TestCase):
     def test_an_in_scope_request_conforms(self):
         ok, _ = SPREADSHEET_CLEANUP.conforms(
-            requested_formats=["xlsx"], requested=["clean and total by category"])
+            requested_formats=["csv"], requested=["clean and total by category"])
         self.assertTrue(ok)
+
+    def test_the_contract_advertises_only_formats_the_capability_can_read(self):
+        """Advertising a format is promising work.
+
+        The contract listed xlsx and tsv while csv-cleanup/1.0 reads CSV only.
+        An audit fed it a real .xlsx: the job conformed, executed, passed every
+        check and delivered binary garbage, because the checks compare source to
+        output and both were the same garbage.
+        """
+        self.assertEqual(SPREADSHEET_CLEANUP.supported_formats, ("csv",))
+        ok, why = SPREADSHEET_CLEANUP.conforms(
+            requested_formats=["xlsx"], requested=["remove duplicate rows"])
+        self.assertFalse(ok)
+        self.assertIn("unsupported format", why)
 
     def test_an_unsupported_format_is_refused(self):
         ok, why = SPREADSHEET_CLEANUP.conforms(

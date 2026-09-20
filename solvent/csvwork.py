@@ -212,7 +212,31 @@ def execute(*, source: str | Path, destination: str | Path, requirements: list,
         report.refused.append("source is empty; there is nothing to clean")
         return report
 
-    header, body = rows[0], rows[1:]
+    problem = _not_plausibly_csv(rows)
+    if problem:
+        # A .xlsx is a zip, and a zip header happens to decode as UTF-8, so
+        # "it decoded" is not "it is a CSV". Without this, a binary file was
+        # read as one enormous text row, transformed, verified against itself
+        # and delivered — every check passed because they compare the source to
+        # the output and both were the same garbage. Refusing here is the only
+        # place that can tell, because by the time an artifact exists the
+        # evidence of what it should have been is gone.
+        report.refused.append(f"source is not a CSV file: {problem}")
+        return report
+
+    # csv.reader yields [] for a blank line, and a file that ends with a
+    # newline is the normal shape. Treating that as a data row made it survive
+    # deduplication, appear in the output as a blank line, and then fail the
+    # "parses" check as a ragged row — three wasted correction attempts for a
+    # file that was never malformed. A zero-field row carries no data, so it is
+    # not a record. A row of the right width whose values happen to be empty
+    # IS a record and is left alone.
+    header = rows[0]
+    body = [row for row in rows[1:] if row]
+    blank_lines = len(rows) - 1 - len(body)
+    if blank_lines:
+        report.exceptions.append(
+            f"{blank_lines} blank line(s) in the source were not treated as rows")
     report.rows_in = len(body)
 
     # Duplicate headers make every column reference ambiguous. Refuse rather
@@ -361,6 +385,36 @@ def _apply(step: Step, header: list[str], body: list[list[str]],
         return header, body, f"sorted by {', '.join(params['columns'])}", ""
 
     raise FailClosed(f"unreachable: unplanned operation {op!r}")
+
+
+#: Control characters that never appear in a text CSV. Tab, newline and
+#: carriage return are excluded because they legitimately can.
+_BINARY = frozenset(chr(c) for c in range(32)) - {"\t", "\n", "\r"}
+
+
+def _not_plausibly_csv(rows: list[list[str]]) -> str:
+    """Does this look like a CSV at all? Returns a reason, or "" if it does.
+
+    Deliberately conservative: it rejects things no text CSV contains rather
+    than trying to recognise every valid one. A file that passes here may still
+    be wrong; a file that fails here is certainly not a spreadsheet export.
+    """
+    header = rows[0]
+    if not header or not any(cell.strip() for cell in header):
+        return "the first row has no column names"
+    for row in rows[:20]:
+        for cell in row:
+            found = _BINARY.intersection(cell)
+            if found:
+                names = ", ".join(f"0x{ord(c):02x}" for c in sorted(found))
+                return (f"it contains binary control bytes ({names}); a real "
+                        "spreadsheet file is not a CSV and must be exported first")
+    if len(header) == 1 and len(rows) > 1 and all(len(r) == 1 for r in rows[:20]):
+        # One column everywhere is legal but is also what a binary blob or a
+        # wrong delimiter looks like. Say so rather than proceed silently.
+        return ("every row has exactly one field; if this is tab- or "
+                "semicolon-separated it must be converted to comma-separated first")
+    return ""
 
 
 def _to_iso(raw: str) -> str | None:

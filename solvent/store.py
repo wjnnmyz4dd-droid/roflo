@@ -147,12 +147,17 @@ CREATE TABLE IF NOT EXISTS jobs (
   resume_state TEXT, grant_id TEXT, job_class TEXT NOT NULL DEFAULT 'general'
 );
 CREATE TABLE IF NOT EXISTS requirements (
-  id TEXT PRIMARY KEY, job_id TEXT NOT NULL, text TEXT NOT NULL,
+  -- The key is (job_id, id), not id. A requirement id like "R-001" is a name
+  -- within one job, and two clients using the same checklist template is the
+  -- normal case for a repeatable service. With a global primary key and
+  -- INSERT OR REPLACE, the second job silently took over the first job's row.
+  id TEXT NOT NULL, job_id TEXT NOT NULL, text TEXT NOT NULL,
   source TEXT NOT NULL, confirmed_by TEXT NOT NULL DEFAULT '',
   acceptance TEXT NOT NULL DEFAULT '', check_name TEXT NOT NULL DEFAULT '',
   params TEXT NOT NULL DEFAULT '{}', criticality TEXT NOT NULL DEFAULT 'MANDATORY',
   status TEXT NOT NULL DEFAULT 'DRAFT', supersedes TEXT NOT NULL DEFAULT '',
-  committed_at TEXT
+  committed_at TEXT,
+  PRIMARY KEY (job_id, id)
 );
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL, role TEXT NOT NULL,
@@ -326,6 +331,45 @@ class Store:
         self._migrate()
         self._conn.commit()
 
+    def _rebuild_requirements_key(self) -> None:
+        """Re-key ``requirements`` on (job_id, id) if it still has the old PK.
+
+        SQLite cannot alter a primary key, so this is the standard rebuild:
+        create, copy, drop, rename — inside the transaction the caller commits.
+        Every row is copied unchanged, and the table is not append-only, so
+        nothing immutable is rewritten. A database already on the new shape is
+        left alone.
+        """
+        info = list(self._conn.execute("PRAGMA table_info(requirements)"))
+        if not info:
+            return
+        key_columns = {r["name"] for r in info if r["pk"]}
+        if key_columns == {"job_id", "id"}:
+            return
+        columns = [r["name"] for r in info]
+        needed = ("id", "job_id", "text", "source", "confirmed_by", "acceptance",
+                  "check_name", "params", "criticality", "status", "supersedes",
+                  "committed_at")
+        if not set(needed) <= set(columns):
+            return          # an older shape still missing columns; ADD COLUMN first
+        names = ", ".join(needed)
+        self._conn.executescript(f"""
+            CREATE TABLE requirements_rekeyed (
+              id TEXT NOT NULL, job_id TEXT NOT NULL, text TEXT NOT NULL,
+              source TEXT NOT NULL, confirmed_by TEXT NOT NULL DEFAULT '',
+              acceptance TEXT NOT NULL DEFAULT '', check_name TEXT NOT NULL DEFAULT '',
+              params TEXT NOT NULL DEFAULT '{{}}',
+              criticality TEXT NOT NULL DEFAULT 'MANDATORY',
+              status TEXT NOT NULL DEFAULT 'DRAFT',
+              supersedes TEXT NOT NULL DEFAULT '', committed_at TEXT,
+              PRIMARY KEY (job_id, id)
+            );
+            INSERT INTO requirements_rekeyed({names})
+              SELECT {names} FROM requirements;
+            DROP TABLE requirements;
+            ALTER TABLE requirements_rekeyed RENAME TO requirements;
+        """)
+
     def _migrate(self) -> None:
         """Add columns a newer Solvent needs to a database an older one created.
 
@@ -339,6 +383,7 @@ class Store:
                         self._conn.execute(f"PRAGMA table_info({table})")}
             if existing and column not in existing:
                 self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
+        self._rebuild_requirements_key()
 
     def for_authority(self, authority: str) -> AuthorityConnection:
         if authority not in set(TABLE_OWNER.values()):

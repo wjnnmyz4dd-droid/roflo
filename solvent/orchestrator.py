@@ -174,7 +174,8 @@ class JobOrchestrator:
         only way it changes is :meth:`amend_requirement`, on the record.
         """
         existing = self._db.query_one(
-            "SELECT status FROM requirements WHERE id = ?", (requirement.id,))
+            "SELECT status FROM requirements WHERE job_id = ? AND id = ?",
+            (job_id, requirement.id))
         if existing and existing["status"] == RequirementStatus.COMMITTED.value:
             raise FailClosed(
                 f"{requirement.id} is committed; use amend_requirement so the "

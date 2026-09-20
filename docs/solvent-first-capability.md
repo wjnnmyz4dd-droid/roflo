@@ -249,7 +249,47 @@ Business Memory recalling a success, not a high price, not a deadline.
 Shipping wrong work while reporting success is the failure this whole pipeline
 exists to prevent, so no amount of passing offsets it.
 
-## 15. What this does *not* mean
+## 15. External adversarial audit, 20 September 2026
+
+An audit pass attacked this capability from outside its own test suite. Three
+defects and one test gap were found and fixed; the findings are recorded here
+because each one shipped in the version this document originally described.
+
+| # | Finding | Severity |
+| --- | --- | --- |
+| 1 | **A binary file was accepted, "cleaned", verified and delivered.** A `.xlsx` is a zip, and a zip header decodes as UTF-8 — so "it decoded" is not "it is a CSV". It was read as one enormous text row and passed every check, because the checks compare source to output and both were the same garbage. The contract also advertised `xlsx` and `tsv`, which no implementation supports | **CRITICAL** |
+| 2 | **Requirement ids were a global namespace.** Two clients using the same checklist template collided on the primary key, and `INSERT OR REPLACE` silently transferred client A's committed requirement to client B's job. A requirement vanishing from a committed baseline is the original audit finding arriving by a different door | **CRITICAL** |
+| 3 | **A trailing blank line made a file unprocessable.** `csv.reader` yields `[]` for a blank line, and a file ending in a newline is the normal shape. It survived deduplication, appeared in the output, then failed as a ragged row — burning all three correction attempts on a file that was never malformed | **HIGH** |
+| 4 | **The delivery gate's own refusal was untested.** A mutation probe removed it entirely and the suite stayed green: every `record_delivery` test used an already-verified job, so the last enforcement point before work leaves Solvent asserted nothing | **TEST WEAKNESS** |
+
+**Fixes, each in the component that owns the responsibility.** The worker now
+refuses a source that is not plausibly a CSV, and says why — a binary blob, a
+file with no column names, a tab-separated file that should be converted first.
+The contract advertises only `csv`. `requirements` is re-keyed on `(job_id, id)`,
+with a rebuild migration that preserves legacy rows. A blank line is not a row,
+stated independently in the worker and in the checks so the checks keep their
+independence.
+
+**Mutation probes.** Thirteen controls were deliberately broken one at a time to
+see whether the suite noticed: inverted check verdicts, skipped requirement
+coverage, disabled digest comparison, `executor == verifier`, removed correction
+limit, removed delivery gate, omitted evidence fields, editable committed
+requirements, untestable requirements admitted, a skipped plan step, and the
+derived no-change requirement removed. **Twelve of thirteen were caught; the
+thirteenth is finding 4 above, and is now caught too.**
+
+**What held.** Artifact binding survived TOCTOU modification, truncation,
+appending, newline rewriting, symlink substitution and cross-job reuse. Authority
+confusion failed on every attempt — worker, client, verifier, Business Memory,
+runtime and feedback were each refused by Policy. Prompt injection through client
+data changed nothing: injected text was carried through as data, policy version,
+operating mode, ledger and requirements all unchanged. Crash recovery held with
+the capability attached: a process killed mid-delivery left an unsettled action,
+the job blocked on the owner, and requirements, artifacts and evidence all
+survived with the audit chain intact. Values were preserved exactly — currency
+strings, scientific notation, twenty-digit integers, `NULL`, negatives.
+
+## 16. What this does *not* mean
 
 - **No real client work.** `simulation_only` is on, the allowlist is empty, no
   source is approved, real revenue is $0.00.
@@ -259,7 +299,7 @@ exists to prevent, so no amount of passing offsets it.
 - **One capability.** XLSX, PDF, documents, code, research — none of them. Each
   needs its own proof, and the way to earn the next one is to run this one.
 
-## 16. Scope matching
+## 17. Scope matching
 
 The old `conforms()` asked whether a barred *phrase* appeared as a substring.
 Nine rephrasings walked past it: *"prepare the filing for our taxes"* was accepted
@@ -275,7 +315,7 @@ words.
 similar"* and *"fill in the missing values"* refused as unrecognised rather than
 attempted.
 
-## 17. No second Guardian
+## 18. No second Guardian
 
 There is no `guardian.py`, no `independent_verifier.py`, no
 `verification_engine_v2.py`. `AuditLog.record_verification` was already the

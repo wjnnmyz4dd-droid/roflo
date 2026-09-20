@@ -323,7 +323,12 @@ SPREADSHEET_CLEANUP = ServiceDefinition(
         "the client states the columns and totals wanted, in writing",
         "the input file is supplied before work begins",
         "row count and money columns can be reconciled against the input"),
-    supported_formats=("csv", "xlsx", "tsv"),
+    # Only what csv-cleanup/1.0 can actually read. The contract previously
+    # advertised xlsx and tsv, which no implementation supports: an audit fed it
+    # a real .xlsx and the job conformed, executed and delivered binary garbage.
+    # Advertising a format is promising work, and a promise the capability
+    # cannot keep is the same defect as a verifier that does not verify.
+    supported_formats=("csv",),
     unsupported_requests=(
         "financial advice", "tax filing", "audit opinion", "legal review",
         "forecast", "valuation", "macro", "vba"),

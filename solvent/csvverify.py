@@ -54,7 +54,10 @@ def _read(path: str | Path) -> tuple[list[str], list[list[str]], str]:
         return [], [], f"artifact does not parse as CSV: {exc}"
     if not rows:
         return [], [], "artifact is empty"
-    return rows[0], rows[1:], ""
+    # A blank line is not a row. Stated here independently rather than imported
+    # from the worker: the checks must never depend on the worker's code, and
+    # this rule is one line either way.
+    return rows[0], [row for row in rows[1:] if row], ""
 
 
 def _key(row: list[str]) -> tuple:
