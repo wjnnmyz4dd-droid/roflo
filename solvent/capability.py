@@ -358,9 +358,22 @@ class CapabilityRegistry:
     MIN_INSTANCES_PER_DEFECT = 5
     MIN_GOOD_INSTANCES = 10
 
+    # What these states do and do not claim.
+    #
+    # CERTIFIED means: against this capability's generated battery, for these
+    # checks, over this input domain, this implementation accepted every correct
+    # artifact and rejected every defective one, with enough distinct instances
+    # of each **known** defect class to clear the floor.
+    #
+    # It does not mean the verifier is correct. It cannot: a defect class nobody
+    # modelled is not in the battery, and inventing two such classes after the
+    # battery was written found two real gaps that every check had passed. The
+    # honest reading is "met the stated evidence requirements", and the stated
+    # requirements are the limit of the claim.
+
     #: A verifier that has not been put through its capability's battery.
     UNTESTED = "UNTESTED"
-    #: Every trial correct: it accepted correct work and rejected wrong work.
+    #: Every trial correct, over enough distinct evidence to mean something.
     CERTIFIED = "CERTIFIED"
     #: Correct on some checks and not others. Trusted only on the ones it passed.
     CERTIFIED_WITH_LIMITS = "CERTIFIED_WITH_LIMITS"

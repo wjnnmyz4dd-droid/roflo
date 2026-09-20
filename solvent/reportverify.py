@@ -282,7 +282,30 @@ def check_facts_rendered(source, output, params) -> CheckOutcome:
             continue
         if f"- {name}: {value}" not in _lines(text):
             wrong.append(name)
-    computed = {"fields": fields, "wrong": wrong, "unlabelled_absent": absent}
+
+    # A fact may appear once. Found by deliberately inventing a defect class
+    # after the battery was written, to see what an unmodelled failure would
+    # do: a document carrying both "- client: Acme Ltd" and "- client:
+    # Somebody Else Ltd" satisfied every check, because the correct line really
+    # was present. The client's own report then named two different clients.
+    contradicted = []
+    for name in fields:
+        # Counted from the raw lines, not from _lines(): that returns a set, so
+        # two identical statements of a fact collapsed into one and the count
+        # was always at most the number of distinct values.
+        rendered = [line.strip().split(": ", 1)[1] for line in text.splitlines()
+                    if line.strip().startswith(f"- {name}: ")]
+        if len(set(rendered)) > 1:
+            contradicted.append(f"{name} is given as {sorted(set(rendered))[:3]}")
+        elif len(rendered) > 1:
+            contradicted.append(f"{name} is stated {len(rendered)} times")
+    computed = {"fields": fields, "wrong": wrong, "unlabelled_absent": absent,
+                "contradicted": contradicted}
+    if contradicted:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            f"the document states a fact more than once: {contradicted[:2]}",
+            computed)
     if wrong:
         return CheckOutcome(CheckResult.FAIL,
                             f"fact(s) missing or altered: {wrong}", computed)

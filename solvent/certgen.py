@@ -447,7 +447,25 @@ def _unauthorised_transformation(case, rng):
     return _rebuild(lines)
 
 
+def _columns_reordered(case, rng):
+    """Somebody's spreadsheet rearranged without being asked.
+
+    The other class found by inventing defects after the battery existed. Every
+    check compared columns by name, so a shuffled file matched perfectly.
+    """
+    lines = _csv_lines(case.good_output)
+    header = _split(lines[0])
+    if len(header) < 2:
+        return None
+    order = list(range(len(header)))
+    a, b = rng.sample(order, 2)
+    order[a], order[b] = order[b], order[a]
+    return _rebuild([_join([_split(line)[i] for i in order]) for line in lines])
+
+
 CSV_DEFECTS = (
+    Defect("COLUMNS_REORDERED", "no_unauthorised_changes", _columns_reordered,
+           note="rearranged without a requirement asking for it"),
     Defect("ROW_LOSS", "row_reconciliation", _row_loss),
     Defect("ROW_ADDITION", "drop_exact_duplicates", _row_addition),
     Defect("PROTECTED_VALUE_CHANGE", "preserve_columns", _protected_value_changed),
@@ -651,7 +669,38 @@ def _no_headings(case, rng):
     return (body + "\n") if body else None
 
 
+def _duplicated_fact(case, rng):
+    """The same fact stated twice, with two different values.
+
+    Added after the main battery was written, deliberately, to find out what an
+    unmodelled defect would do. Nothing caught it: the correct line really was
+    present, so every check passed while the document named two different
+    clients. The class exists now because that question was asked.
+    """
+    lines = _lines_of(case.good_output)
+    field_name = rng.choice(_present_fields(case))
+    index = _fact_line(lines, field_name)
+    if index is None:
+        return None
+    lines.insert(index + 1, f"- {field_name}: {_company(rng)}")
+    return "\n".join(lines) + "\n"
+
+
+def _restated_fact(case, rng):
+    """The same fact stated twice, identically."""
+    lines = _lines_of(case.good_output)
+    field_name = rng.choice(_present_fields(case))
+    index = _fact_line(lines, field_name)
+    if index is None:
+        return None
+    lines.insert(index + 1, lines[index])
+    return "\n".join(lines) + "\n"
+
+
 REPORT_DEFECTS = (
+    Defect("DUPLICATED_FACT", "report_facts_rendered", _duplicated_fact,
+           note="two different values for one fact"),
+    Defect("RESTATED_FACT", "report_facts_rendered", _restated_fact),
     Defect("EMPTY_DOCUMENT", "report_opens", _emptied_document),
     Defect("NO_SECTIONS", "report_opens", _no_headings,
            note="readable text that is not a report"),

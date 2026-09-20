@@ -484,6 +484,22 @@ def check_no_unauthorised_changes(source, output, params) -> CheckOutcome:
     if p1 or p2:
         return CheckOutcome(CheckResult.UNVERIFIABLE, p1 or p2)
 
+    # Column order is part of what the client handed over. Every other test here
+    # compares columns *by name*, so a file whose columns had been shuffled
+    # matched perfectly — found by inventing a defect class after the battery
+    # was written. Rearranging somebody's spreadsheet is a small thing to do
+    # without being asked, and "we did not ask for that" is the whole subject of
+    # this check.
+    if not params.get("column_order_may_change"):
+        shared_src = [c for c in src_header if c in out_header]
+        shared_out = [c for c in out_header if c in src_header]
+        if shared_src != shared_out:
+            return CheckOutcome(
+                CheckResult.FAIL,
+                f"the columns were reordered without a requirement authorising "
+                f"it: {shared_src[:4]} became {shared_out[:4]}",
+                {"source_order": shared_src, "output_order": shared_out})
+
     # {column: mode}. A column authorised only for whitespace is still protected
     # against every other kind of edit.
     authorised = dict(params.get("authorised_columns") or {})

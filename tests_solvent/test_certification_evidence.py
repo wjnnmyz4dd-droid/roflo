@@ -12,6 +12,7 @@ verifiers are kept as permanent adversaries rather than deleted once fixed.
 
 from __future__ import annotations
 
+import json
 import random
 import unittest
 from pathlib import Path
@@ -785,3 +786,128 @@ class CountingIsNotIdentity(unittest.TestCase):
                                    output=str(foreign), params={})
         self.assertIs(outcome.result, CheckResult.FAIL)
         self.assertIn("do not carry this source's values", outcome.detail)
+
+
+class TheHarnessItselfIsAttacked(unittest.TestCase):
+    """Evidence accounting must not be fooled by cosmetic diversity.
+
+    A battery that can be padded is a battery that will be, the first time
+    somebody needs a number to come out higher.
+    """
+
+    def setUp(self):
+        self.s = Solvent()
+
+    def report_with(self, trials):
+        report = vc.TrialReport(capability="attack", verifier_ref="attacker")
+        report.results = list(trials)
+        return report
+
+    def good(self, index, digest=None, check="c"):
+        return vc.TrialResult(
+            vc.Trial(name=f"good-{index}", check=check, expect=vc.GOOD,
+                     defect_class="CORRECT",
+                     content_digest=digest or f"g{index}"), "ACCEPT")
+
+    def bad(self, index, digest=None, check="c", cls="SOME_DEFECT"):
+        return vc.TrialResult(
+            vc.Trial(name=f"bad-{index}", check=check, expect=vc.BAD,
+                     defect_class=cls, content_digest=digest or f"b{index}"),
+            "REJECT")
+
+    def test_one_fixture_under_many_names_is_one_piece_of_evidence(self):
+        trials = [self.good(i, digest="same") for i in range(40)]
+        trials += [self.bad(i, digest="same-bad") for i in range(40)]
+        report = self.report_with(trials)
+        self.assertEqual(report.good_instances("c"), 1)
+        self.assertEqual(report.class_instances("c"), {"SOME_DEFECT": 1})
+        self.assertEqual(self.s.capability._checks_meeting_the_floor(report)[0], [])
+
+    def test_many_defect_classes_do_not_substitute_for_instances(self):
+        """Twelve classes with one instance each is not evidence of any of them."""
+        trials = [self.good(i) for i in range(20)]
+        trials += [self.bad(i, cls=f"CLASS_{i}") for i in range(12)]
+        report = self.report_with(trials)
+        certified, short = self.s.capability._checks_meeting_the_floor(report)
+        self.assertEqual(certified, [])
+        self.assertIn("fewer than", " ".join(short))
+
+    def test_a_skipped_case_is_not_counted_as_caught(self):
+        """A mutation that did not apply must not read as a defect detected."""
+        trials = [self.good(i) for i in range(12)]
+        trials += [self.bad(i) for i in range(6)]
+        # One "bad" trial the verifier accepted: an unapplied mutation looks
+        # exactly like this, and it must not be silently forgiven.
+        trials.append(vc.TrialResult(
+            vc.Trial(name="bad-unapplied", check="c", expect=vc.BAD,
+                     defect_class="SOME_DEFECT", content_digest="bx"), "ACCEPT"))
+        report = self.report_with(trials)
+        self.assertEqual(self.s.capability._checks_meeting_the_floor(report)[0], [])
+        self.assertIn("SOME_DEFECT", report.classes_missed("c"))
+
+    def test_a_generator_that_produced_no_defect_is_skipped_not_faked(self):
+        """certgen drops a case that cannot carry a defect rather than inventing one."""
+        trials = certgen.generate("csv-cleanup",
+                                  seed=certgen.CERTIFICATION_SEED, cases=CASES)
+        for trial in trials:
+            with self.subTest(trial=trial.name):
+                if trial.expect == certgen.BAD:
+                    self.assertNotEqual(trial.output_text, "")
+
+    def test_no_generated_bad_case_equals_its_own_correct_artifact(self):
+        """A 'defect' identical to the correct output is not a defect."""
+        for capability in ("csv-cleanup", "report-builder"):
+            trials = certgen.generate(capability,
+                                      seed=certgen.CERTIFICATION_SEED, cases=CASES)
+            good = {(t.source_text, t.output_text) for t in trials
+                    if t.expect == certgen.GOOD}
+            with self.subTest(capability=capability):
+                for trial in trials:
+                    if trial.expect != certgen.BAD or trial.defect_class == "CROSS_JOB":
+                        continue
+                    self.assertNotIn((trial.source_text, trial.output_text), good,
+                                     f"{trial.name} is not actually defective")
+
+    def test_the_verifier_is_told_nothing_about_the_expected_answer(self):
+        """It receives two paths and the check's parameters. Nothing else."""
+        seen = []
+
+        def nosy(check, *, source, output, params):
+            seen.append({"check": check, "source": source, "output": output,
+                         "params": dict(params)})
+            return outcome(True)
+
+        vc.run_generated(nosy, capability="csv-cleanup", verifier_ref="nosy",
+                         seed=certgen.CERTIFICATION_SEED, cases=2)
+        blob = json.dumps(seen)
+        for leak in ("GOOD", "BAD", "expect", "defect_class", "ROW_LOSS",
+                     "CORRECT", "certification"):
+            with self.subTest(leak=leak):
+                self.assertNotIn(leak, blob)
+
+    def test_the_seed_is_not_discoverable_from_the_paths(self):
+        seen = []
+
+        def nosy(check, *, source, output, params):
+            seen.append(source + "|" + output)
+            return outcome(True)
+
+        vc.run_generated(nosy, capability="csv-cleanup", verifier_ref="nosy2",
+                         seed=certgen.CERTIFICATION_SEED, cases=2)
+        blob = "\n".join(seen)
+        self.assertNotIn(str(certgen.CERTIFICATION_SEED), blob)
+
+    def test_holdout_and_development_do_not_quietly_share_a_seed(self):
+        seeds = {certgen.DEVELOPMENT_SEED, certgen.CERTIFICATION_SEED,
+                 certgen.SURPRISE_SEED}
+        self.assertEqual(len(seeds), 3)
+
+    def test_every_defect_class_in_the_battery_names_a_real_check(self):
+        """A class assigned to a check nobody runs is evidence of nothing."""
+        from solvent import checks
+
+        for capability, defects in certgen.DEFECTS.items():
+            known = set(checks.checks_for(capability))
+            for defect in defects:
+                with self.subTest(capability=capability, defect=defect.name):
+                    self.assertIn(defect.check, known)
