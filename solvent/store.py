@@ -60,6 +60,10 @@ APPEND_ONLY = (
     # history. A verifier that failed must stay failed on the record even after
     # it is fixed and re-certified, or a revocation could be edited away.
     "verifier_certifications",
+    # An owner registering a capability is a decision, and a later change is a
+    # new decision. Editing the row would make "we always knew it was proven"
+    # indistinguishable from "we changed our minds".
+    "registered_capabilities",
 )
 
 #: Which authority owns which tables. The single source of this mapping.
@@ -80,6 +84,7 @@ TABLE_OWNER = {
     "client_responses": "relations",
     "capability_assessments": "capability",
     "capability_proposals": "capability",
+    "registered_capabilities": "capability",
     "verifier_certifications": "capability",
     "price_estimates": "governor",
     "calibration_state": "governor",
@@ -211,6 +216,20 @@ CREATE TABLE IF NOT EXISTS capability_proposals (
   why TEXT NOT NULL DEFAULT '', requested_by TEXT NOT NULL DEFAULT '',
   decided_by TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '',
   job_id TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS registered_capabilities (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, name TEXT NOT NULL,
+  version TEXT NOT NULL DEFAULT '', covers TEXT NOT NULL DEFAULT '',
+  proven INTEGER NOT NULL DEFAULT 0, privacy_ceiling TEXT NOT NULL DEFAULT '',
+  inputs TEXT NOT NULL DEFAULT '', outputs TEXT NOT NULL DEFAULT '',
+  verifiable_by TEXT NOT NULL DEFAULT '', proven_levels TEXT NOT NULL DEFAULT '',
+  evidence_ref TEXT NOT NULL DEFAULT '',
+  fixtures_passed INTEGER NOT NULL DEFAULT 0,
+  fixtures_total INTEGER NOT NULL DEFAULT 0,
+  false_completions INTEGER NOT NULL DEFAULT 0,
+  requires_tools TEXT NOT NULL DEFAULT '', requires_network INTEGER NOT NULL DEFAULT 0,
+  requires_owner INTEGER NOT NULL DEFAULT 0,
+  registered_by TEXT NOT NULL DEFAULT '', why TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS verifier_certifications (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL,

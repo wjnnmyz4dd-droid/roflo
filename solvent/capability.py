@@ -139,7 +139,7 @@ class CapabilityRegistry:
         self._db = store.for_authority("capability")
         self._audit = audit
         self._policy = policy
-        self._capabilities: dict[str, Capability] = {}
+        self._capabilities: dict[str, Capability] = self._load_registered()
 
     def register(self, capability: Capability, *, owner_identity: str) -> None:
         """Add a capability. Owner path only — Solvent cannot extend itself."""
@@ -170,10 +170,15 @@ class CapabilityRegistry:
                     f"calling it proven needs evidence: {reason}")
 
         self._capabilities[capability.name] = capability
+        self._persist_registration(capability, owner_identity=owner_identity,
+                                   why=f"register {capability.name}")
         self._audit.record(
             event="capability.registered", authority="capability",
             initiator=owner_identity, why=f"register {capability.name}",
-            decision=capability.name, proven=capability.proven)
+            decision=capability.name, proven=capability.proven,
+            version=capability.version,
+            scope=", ".join(sorted(capability.covers)),
+            evidence=capability.evidence_summary)
 
     # ------------------------------------------------------- growth proposals
     #
@@ -316,6 +321,71 @@ class CapabilityRegistry:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM capability_proposals WHERE name = ? ORDER BY ts",
             (name,))]
+
+    # ------------------------------------------------- durable registration
+    #
+    # A registration used to live in a dictionary, so an owner's decision that
+    # a capability was proven lasted until the process restarted. Solvent would
+    # then wake up unable to do the thing its owner had approved it to do, and
+    # Qualification would refuse the work — silently, because nothing was wrong
+    # except that the answer had been forgotten. The decision is durable now,
+    # and append-only: a later change is a new row, so "we always knew it was
+    # proven" stays distinguishable from "we changed our minds".
+
+    def _persist_registration(self, capability: Capability, *,
+                              owner_identity: str, why: str) -> None:
+        self._db.execute(
+            "INSERT INTO registered_capabilities(id,ts,name,version,covers,"
+            "proven,privacy_ceiling,inputs,outputs,verifiable_by,proven_levels,"
+            "evidence_ref,fixtures_passed,fixtures_total,false_completions,"
+            "requires_tools,requires_network,requires_owner,registered_by,why) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (new_id("cap"), now(), capability.name, capability.version,
+             ",".join(sorted(capability.covers)), int(capability.proven),
+             capability.privacy_ceiling, ",".join(capability.inputs),
+             ",".join(capability.outputs), ",".join(capability.verifiable_by),
+             ",".join(capability.proven_levels), capability.evidence_ref,
+             capability.fixtures_passed, capability.fixtures_total,
+             capability.false_completions, ",".join(capability.requires_tools),
+             int(capability.requires_network), int(capability.requires_owner),
+             owner_identity, why[:400]))
+        self._db.commit()
+
+    def _load_registered(self) -> dict:
+        """Rebuild the registry from its records. Latest row per name wins."""
+        def split(value):
+            return tuple(v for v in (value or "").split(",") if v)
+
+        out: dict[str, Capability] = {}
+        for row in self._db.query(
+                "SELECT * FROM registered_capabilities ORDER BY ts, rowid"):
+            out[row["name"]] = Capability(
+                name=row["name"], covers=frozenset(split(row["covers"])),
+                proven=bool(row["proven"]),
+                privacy_ceiling=row["privacy_ceiling"] or "CLIENT_CONFIDENTIAL",
+                version=row["version"], inputs=split(row["inputs"]),
+                outputs=split(row["outputs"]),
+                verifiable_by=split(row["verifiable_by"]),
+                proven_levels=split(row["proven_levels"]),
+                evidence_ref=row["evidence_ref"],
+                fixtures_passed=int(row["fixtures_passed"]),
+                fixtures_total=int(row["fixtures_total"]),
+                false_completions=int(row["false_completions"]),
+                requires_tools=split(row["requires_tools"]),
+                requires_network=bool(row["requires_network"]),
+                requires_owner=bool(row["requires_owner"]))
+        return out
+
+    def registration_history(self, name: str = "") -> list[dict]:
+        """Every registration record, oldest first. Nothing is ever edited."""
+        if name:
+            rows = self._db.query(
+                "SELECT * FROM registered_capabilities WHERE name = ? "
+                "ORDER BY ts, rowid", (name,))
+        else:
+            rows = self._db.query(
+                "SELECT * FROM registered_capabilities ORDER BY ts, rowid")
+        return [dict(r) for r in rows]
 
     def capabilities(self) -> list[Capability]:
         return list(self._capabilities.values())
