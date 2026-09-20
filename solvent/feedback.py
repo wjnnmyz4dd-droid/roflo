@@ -61,6 +61,17 @@ class Classification:
     ACCEPTED = "ACCEPTED"
     AMBIGUOUS = "AMBIGUOUS"
 
+    # Added for client relations. Only kinds that were genuinely absent: a
+    # question is not a complaint, a refund is not a billing error, and abuse
+    # needs recording as abuse rather than as an unreadable complaint. The
+    # categories that already existed are reused rather than renamed —
+    # ACCEPTED is positive feedback, DEFECT is a defect report, and
+    # UNSAFE_REQUEST is a prohibited request. Two names for one concept is how
+    # routing tables drift apart.
+    GENERAL_QUESTION = "GENERAL_QUESTION"
+    REFUND_REQUEST = "REFUND_REQUEST"
+    HOSTILE_OR_ABUSIVE = "HOSTILE_OR_ABUSIVE"
+
 
 #: Who deals with each kind. Nothing routes to "the worker decides".
 ROUTING = {
@@ -78,6 +89,11 @@ ROUTING = {
     Classification.UNSAFE_REQUEST: "OWNER",
     Classification.ACCEPTED: "NONE",
     Classification.AMBIGUOUS: "OWNER",
+    Classification.GENERAL_QUESTION: "OWNER",
+    # A refund is money, and money is never the client's to decide or
+    # Solvent's to grant. It routes to the only party who can.
+    Classification.REFUND_REQUEST: "OWNER",
+    Classification.HOSTILE_OR_ABUSIVE: "OWNER",
 }
 
 #: Phrases that ask Solvent to change its own governance. These are not matched
@@ -114,6 +130,57 @@ _GOVERNANCE_PATTERNS = (
     ("a demand to bypass verification",
      r"\b(skip|bypass|disable|turn off|ignore|override)\b.{0,30}"
      r"\b(verif\w+|check\w*|guardian|gate|requirement)\w*\b"),
+)
+
+
+#: A dispute is already in someone else's process — a bank, a card issuer, a
+#: marketplace. It is checked before a refund request because it is the stronger
+#: fact: once a chargeback exists, what Solvent thinks about the refund is no
+#: longer the only thing happening, and a person needs to know today.
+_DISPUTE_PATTERNS = (
+    r"\bdisput\w*\b", r"\bcharge ?back\b", r"\bcontest\w*\b.{0,20}\bcharge\b",
+    r"\b(my|the) bank\b", r"\bcard (issuer|company)\b",
+    r"\b(paypal|stripe) (dispute|claim)\b", r"\bopen(ed)? a claim\b",
+)
+
+#: Messages that ask for money back. Separated from PAYMENT_ISSUE ("you charged
+#: me twice") because they need different people: a billing error is a fact to
+#: check, a refund is a decision to make, and only the owner makes it.
+_REFUND_PATTERNS = (
+    r"\brefund\b", r"\bmoney back\b", r"\breimburse\b",
+    r"\b(cancel|reverse)\b.{0,20}\b(charge|payment|invoice)\b",
+    r"\bcharge ?back\b",
+)
+
+#: Abuse, recorded as abuse. A hostile message may still contain a valid
+#: complaint, so this classification never closes anything — it routes to a
+#: person and the investigation runs regardless of tone.
+_HOSTILE_PATTERNS = (
+    r"\b(idiot|incompetent|useless|garbage|pathetic|clowns?)\b",
+    r"\b(sue|lawyer|legal action|court)\b",
+    r"\b(scam|fraud|thieves|stealing)\b",
+    r"\b(one[- ]star|1[- ]star|bad review|negative review|destroy your)\b",
+)
+
+#: A question, not a complaint. Conservative on purpose: anything that also
+#: asks for work is not merely a question.
+_QUESTION_PATTERNS = (
+    r"^\s*(what|when|where|how|why|who|which|can you|could you|do you|does|"
+    r"is it|are you|will you)\b.*\?",
+    r"\bjust checking\b", r"\bany update\b", r"\bstatus\b.*\?",
+)
+
+#: Unambiguous approval with nothing asked for. Praise plus a request is a
+#: request; a client saying "perfect, and could you also…" has not accepted.
+_POSITIVE_PATTERNS = (
+    r"\b(perfect|excellent|great work|looks good|exactly what|thank you|"
+    r"thanks|brilliant|spot on|much appreciated)\b",
+)
+
+#: Words that make a message a request whatever else it contains.
+_ASKS_FOR_SOMETHING = (
+    r"\b(could you|can you|please|would you|also|additionally|but |however |"
+    r"except|one more|another|change|add|remove|redo|fix|update|resend)\b",
 )
 
 
@@ -209,6 +276,45 @@ class ClientFeedback:
                 return (Classification.GOVERNANCE_DEMAND,
                         f"the message contains {label}; a client cannot decide "
                         "that, so it goes to the owner", "MATCHED")
+        # Recognition below never decides anything consequential: every branch
+        # routes to a person or to NONE, and none of them touches the
+        # checklist, the artifact or the money. Recognising a message as
+        # positive does not make the work correct, and recognising one as
+        # hostile does not make its complaint invalid — the investigation runs
+        # on evidence either way. This exists so that a client asking a
+        # question is not filed identically to a client alleging fraud.
+        asks = any(re.search(p, lowered) for p in _ASKS_FOR_SOMETHING)
+
+        for pattern in _DISPUTE_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.DISPUTE,
+                        "the message describes a payment dispute already raised "
+                        "elsewhere; that is the owner's to answer and it is "
+                        "time-sensitive", "MATCHED")
+        for pattern in _REFUND_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.REFUND_REQUEST,
+                        "the message asks for money back; only the owner "
+                        "decides that, so it goes to them", "MATCHED")
+        for pattern in _HOSTILE_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.HOSTILE_OR_ABUSIVE,
+                        "the message is hostile or threatening; it is recorded "
+                        "as such and still investigated on its merits",
+                        "MATCHED")
+        if not asks:
+            for pattern in _POSITIVE_PATTERNS:
+                if re.search(pattern, lowered):
+                    return (Classification.ACCEPTED,
+                            "the client expressed satisfaction and asked for "
+                            "nothing; this records how they feel and changes "
+                            "no verification record", "MATCHED")
+            for pattern in _QUESTION_PATTERNS:
+                if re.search(pattern, lowered):
+                    return (Classification.GENERAL_QUESTION,
+                            "the message asks something rather than reporting a "
+                            "problem", "MATCHED")
+
         if proposed:
             if proposed not in ROUTING:
                 return (Classification.AMBIGUOUS,

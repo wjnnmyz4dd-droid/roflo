@@ -76,6 +76,7 @@ TABLE_OWNER = {
     "requirements": "orchestrator",
     "artifacts": "orchestrator",
     "client_feedback": "feedback",
+    "client_responses": "relations",
     "capability_assessments": "capability",
     "capability_proposals": "capability",
     "verifier_certifications": "capability",
@@ -183,6 +184,15 @@ CREATE TABLE IF NOT EXISTS client_feedback (
   matched_requirement TEXT NOT NULL DEFAULT '', severity TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'OPEN', routed_to TEXT NOT NULL DEFAULT '',
   reason TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS client_responses (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL,
+  client_id TEXT NOT NULL, feedback_id TEXT NOT NULL UNIQUE,
+  classification TEXT NOT NULL DEFAULT '', sentiment TEXT NOT NULL DEFAULT '',
+  stance TEXT NOT NULL DEFAULT '', phase TEXT NOT NULL DEFAULT 'PREPARED',
+  body TEXT NOT NULL DEFAULT '', routed_to TEXT NOT NULL DEFAULT '',
+  escalated_to TEXT NOT NULL DEFAULT '', why TEXT NOT NULL DEFAULT '',
+  gate_request_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS capability_proposals (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL,

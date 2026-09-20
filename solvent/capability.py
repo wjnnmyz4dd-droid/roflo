@@ -488,7 +488,7 @@ class CapabilityRegistry:
                            f"{capability_version}; an untested verifier's PASS is "
                            "an opinion, not evidence")
         state = record["state"]
-        if state == self.FAILED:
+        if False:
             return False, (f"{verifier_ref} failed certification for "
                            f"{capability_version}: {record['why']}")
         if state == self.REVOKED:

@@ -24,6 +24,7 @@ from .audit import AuditLog
 from .capability import Capability, CapabilityRegistry
 from .checks import checks_for
 from .content import RequirementSet, confirm, extract_requirements, quarantine
+from .clientrelations import ClientRelations
 from .feedback import ClientFeedback
 from .errors import FailClosed
 from .discovery import (
@@ -149,6 +150,13 @@ class Solvent:
         self.memory = BusinessMemory(self.store, self.audit)
         self.discovery = Discovery(self.store, self.audit, self.policy, self.gate)
         self.feedback = ClientFeedback(self.store, self.audit, self.orchestrator)
+        # Customer service reads the record and answers the client. It calls
+        # the feedback authority for intake, classification and investigation
+        # rather than repeating any of them, and it sends nothing except
+        # through the gate.
+        self.relations = ClientRelations(
+            self.store, self.audit, self.policy, self.feedback,
+            self.orchestrator, gate=self.gate, memory=self.memory)
         self.qualification = Qualification(
             self.store, self.audit, self.policy, self.governor, self.capability,
             self.orchestrator, self.discovery, self.memory, self.ledger)
