@@ -1,9 +1,27 @@
-"""OD-12: the owner approves csv-cleanup/1.0, and only what was proven.
+"""OD-12 and OD-14: the owner approves csv-cleanup/1.0, and only what was proven.
 
-The decision is the owner's. What these tests establish is that Solvent
-records it at the boundary of the evidence rather than at the boundary of the
-sentence — approval for CSV cleanup is not approval for spreadsheets, for a
-later version, or for the two operations whose checks were never certified.
+The decision is the owner's. What these tests establish is that Solvent records
+it at the boundary of the evidence rather than at the boundary of the sentence —
+approval for CSV cleanup is not approval for spreadsheets, or for a later
+version.
+
+OD-12 promoted nine checks. ``rename_headers`` and ``sort_rows`` were held back:
+both operations were implemented, neither had ever been shown to a verifier as
+*wrong* work, and the registry refused them. OD-14 authorised their promotion on
+one condition — that they pass the same standard as the other nine, and stay out
+if they did not. They passed, after three defects found in the attempt were
+fixed:
+
+* a renamed column shares no name between source and deliverable, so it was
+  invisible to every comparison made by name;
+* authorising a rename authorised full change to that column's *values*;
+* every check compared one column at a time, so a file with every value present
+  and every value on the wrong row — what sorting a column instead of sorting
+  the rows produces — was accepted by the entire capability.
+
+None of those were found by asking whether the operations worked. They were
+found by building deliverables that were wrong in ways nothing had been asked
+about yet.
 """
 
 from __future__ import annotations
@@ -21,18 +39,21 @@ from solvent.types import Criticality, Requirement, RequirementSource as RS
 
 from tests_solvent import fixtures_csv as fx
 
-#: The nine checks `solvent.csvverify.run` is certified to decide. This is the
-#: evidence boundary, and therefore the approval boundary. `rename_headers` and
-#: `sort_rows` are implemented operations whose checks the certification
-#: battery never exercises, so they are deliberately absent.
+#: The eleven checks `solvent.csvverify.run` is certified to decide. This is the
+#: evidence boundary, and therefore the approval boundary. It is a list of
+#: *checks*, not of operations: an operation belongs here only once a verifier
+#: has been shown work that was wrong in that way and caught it, enough times,
+#: on artifacts it had never seen.
 CERTIFIED_SCOPE = (
     "drop_exact_duplicates", "map_values", "no_unauthorised_changes",
-    "normalise_dates", "parses_as_csv", "preserve_columns", "require_columns",
-    "row_reconciliation", "trim_whitespace",
+    "normalise_dates", "parses_as_csv", "preserve_columns", "rename_headers",
+    "require_columns", "row_reconciliation", "sort_rows", "trim_whitespace",
 )
-UNCERTIFIED_OPERATIONS = ("rename_headers", "sort_rows")
+#: Operations promoted under OD-14, recorded separately so the boundary that
+#: moved is named rather than absorbed.
+OD14_OPERATIONS = ("rename_headers", "sort_rows")
 
-#: Measured, not asserted: 25 black-box scenarios, 0 false completions, levels
+#: Measured, not asserted: 34 black-box scenarios, 0 false completions, levels
 #: L1/L2/L3 plus boundary, hostile, trap, client and gap.
 CSV_EVIDENCE = Capability(
     name="csv-cleanup", covers=frozenset(CERTIFIED_SCOPE), proven=True,
@@ -40,9 +61,11 @@ CSV_EVIDENCE = Capability(
     inputs=("text/csv",), outputs=("text/csv",),
     verifiable_by=CERTIFIED_SCOPE,
     proven_levels=("L1", "L2", "L3"),
-    evidence_ref="docs/solvent-certification-hardening.md; "
-                 "tests_solvent/test_blackbox_certification.py",
-    fixtures_passed=25, fixtures_total=25, false_completions=0)
+    evidence_ref="docs/solvent-controlled-trial-activation.md; "
+                 "docs/solvent-certification-hardening.md; "
+                 "tests_solvent/test_blackbox_certification.py; "
+                 "tests_solvent/test_csv_rename_and_sort.py",
+    fixtures_passed=34, fixtures_total=34, false_completions=0)
 
 
 def promoted(solvent: Solvent) -> Solvent:
@@ -82,10 +105,25 @@ class TheEvidenceSupportsThePromotion(unittest.TestCase):
         certified = {c for c in record["certified_checks"].split(",") if c}
         self.assertEqual(set(CSV_EVIDENCE.covers), certified)
 
-    def test_the_uncertified_operations_are_outside_the_scope(self):
-        for operation in UNCERTIFIED_OPERATIONS:
+    def test_the_operations_promoted_under_od14_are_certified_not_asserted(self):
+        """The owner authorised these *conditionally*. What put them in scope is
+        the battery, not the sentence — so the registry, not this file, is
+        asked."""
+        record = ensure_verifier_certified(self.s, "csv-cleanup")
+        certified = {c for c in record["certified_checks"].split(",") if c}
+        for operation in OD14_OPERATIONS:
             with self.subTest(operation=operation):
-                self.assertNotIn(operation, CSV_EVIDENCE.covers)
+                self.assertIn(operation, certified)
+                self.assertIn(operation, CSV_EVIDENCE.covers)
+
+    def test_nothing_reached_the_scope_without_meeting_the_floor(self):
+        """Certification is per check and the floor is per check. A scope wider
+        than the floor allows is the failure this whole mechanism exists to
+        prevent."""
+        record = ensure_verifier_certified(self.s, "csv-cleanup")
+        certified = {c for c in record["certified_checks"].split(",") if c}
+        self.assertEqual(set(CSV_EVIDENCE.covers), certified)
+        self.assertEqual(record["state"], "CERTIFIED")
 
     def test_zero_false_completions_is_part_of_the_record(self):
         self.assertEqual(CSV_EVIDENCE.false_completions, 0)
@@ -109,7 +147,7 @@ class TheOwnerDecisionIsRecorded(unittest.TestCase):
 
     def test_the_evidence_is_recorded_with_it(self):
         entry = next(c for c in self.s.capability.capabilities())
-        self.assertIn("25/25", entry.evidence_summary)
+        self.assertIn("34/34", entry.evidence_summary)
         self.assertIn("0 false completion", entry.evidence_summary)
         self.assertTrue(entry.evidence_ref)
 
@@ -193,7 +231,7 @@ class ThePromotionSurvivesARestart(unittest.TestCase):
 
     def test_the_evidence_binding_persists(self):
         entry = next(c for c in self.restart().capability.capabilities())
-        self.assertEqual(entry.fixtures_total, 25)
+        self.assertEqual(entry.fixtures_total, 34)
         self.assertEqual(entry.false_completions, 0)
         self.assertTrue(entry.evidence_ref)
 
@@ -242,23 +280,36 @@ class ApprovalDoesNotCrossBoundaries(unittest.TestCase):
     def test_profitability_analysis_is_not_covered(self):
         self.assertFalse(self.covers("analyse_profitability"))
 
-    def test_the_two_uncertified_csv_operations_are_not_covered(self):
-        for operation in UNCERTIFIED_OPERATIONS:
-            with self.subTest(operation=operation):
-                self.assertFalse(self.covers(operation))
+    def test_an_operation_promoted_under_od14_now_runs_end_to_end(self):
+        """The boundary moved because the evidence moved. Before OD-14 this job
+        failed closed; the test that it did is directly below, against an
+        operation that still has no certification."""
+        source, work = fx.workspace(fx.DUPLICATES)
+        report = run_csv_job(
+            source=source, workdir=work, solvent=self.s, client_id="c",
+            title="sort", requirements=[
+                req("R-SORT", "Sort by customer.", "sort_rows",
+                    {"columns": ["Customer"]}),
+                req("R-ROWS", "No row lost.", "row_reconciliation",
+                    {"duplicates_removed": False}, source=RS.DERIVED),
+                req("R-OPEN", "Opens.", "parses_as_csv", {},
+                    source=RS.SYSTEM_SAFETY)])
+        self.assertTrue(report.delivered, report.escalated)
 
-    def test_an_uncertified_operation_is_refused_by_the_pipeline(self):
-        """Not merely out of scope on paper — the job actually fails closed."""
+    def test_an_uncertified_check_is_still_refused_by_the_pipeline(self):
+        """Guards the test above: the promotion widened the scope by exactly
+        two checks, not by removing the gate. A check with no certification
+        behind it still fails closed, whatever the requirement says."""
         source, work = fx.workspace(fx.DUPLICATES)
         with self.assertRaises(FailClosed) as caught:
             run_csv_job(source=source, workdir=work, solvent=self.s,
-                        client_id="c", title="sort",
+                        client_id="c", title="totals",
                         requirements=[
-                            req("R-SORT", "Sort by customer.", "sort_rows",
-                                {"columns": ["Customer"]}),
+                            req("R-CALC", "Recalculate every Total.",
+                                "recompute_totals", {"column": "Total"}),
                             req("R-OPEN", "Opens.", "parses_as_csv", {},
                                 source=RS.SYSTEM_SAFETY)])
-        self.assertIn("not certified to decide", str(caught.exception))
+        self.assertIn("no registered check", str(caught.exception))
 
     def test_work_inside_the_scope_still_runs(self):
         """Guards the test above: a capability that refuses everything is useless."""

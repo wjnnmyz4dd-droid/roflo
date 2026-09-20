@@ -686,7 +686,14 @@ def _csv_derived(source: str, requirements: list) -> list:
                    "the source, allowing for removed duplicates",
         check="no_unauthorised_changes",
         params={"authorised_columns":
-                csvwork.authorised_columns(requirements, header)})]
+                csvwork.authorised_columns(requirements, header),
+                "renamed_columns": csvwork.renamed_columns(requirements),
+                # Whether the deliverable is supposed to still contain the
+                # source's duplicates. Taken from the plan, because this check
+                # compares every protected column against the rows the job was
+                # asked to keep.
+                "duplicates_removed": any(
+                    r.check == "drop_exact_duplicates" for r in requirements)})]
 
 
 def _report_derived(source: str, requirements: list) -> list:

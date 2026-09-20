@@ -41,9 +41,20 @@ COLS = req("R-COLS", "Keep Order ID, Order Date, Region and Total.",
            "require_columns",
            {"columns": ["Order ID", "Order Date", "Region", "Total"]})
 
+RENAME = req("R-RENAME", "Rename the Units column to Quantity.",
+             "rename_headers", {"mapping": {"Units": "Quantity"}})
+SORT = req("R-SORT", "Sort the rows by Order ID.", "sort_rows",
+           {"columns": ["Order ID"]})
+
 SIMPLE = (DEDUPE, ROWS, OPENS)
 MODERATE = (DEDUPE, DATES, REGION, ROWS, OPENS)
 COMPLEX = (COLS, DEDUPE, DATES, REGION, TOTALS, TRIM, ROWS, OPENS)
+#: Rename and sort on their own, so a failure names the operation rather than
+#: the pile it was in.
+ARRANGED = (DEDUPE, RENAME, SORT, TOTALS, ROWS, OPENS)
+#: Every operation csv-cleanup/1.0 performs, in one job. Certifying operations
+#: one at a time says nothing about what they do to each other.
+EVERYTHING = (COLS, DEDUPE, DATES, REGION, TOTALS, TRIM, RENAME, SORT, ROWS, OPENS)
 
 HEAD = "Order ID,Customer,Order Date,Region,Units,Total\n"
 
@@ -68,6 +79,40 @@ DROP_A_ROW = _rewrite(lambda d, a: d[:2] + d[3:])
 HELPFUL_EXTRA = _rewrite(lambda d, a: [d[0]] + [[x[0], x[1].title(), *x[2:]]
                                                 for x in d[1:]])
 TRANSIENT = _rewrite(lambda d, a: (d + [d[2][:]]) if a == 1 else d)
+
+
+def _rotate_last_column(data, attempt):
+    """Shift the final column down one row, wrapping. Every value still there.
+
+    What sorting a column instead of sorting the rows produces, and the reason
+    ``row_reconciliation`` compares rows as rows: each column on its own is
+    untouched, so a per-column comparison sees a perfect file.
+    """
+    header, body = data[0], [list(r) for r in data[1:]]
+    if len(body) < 2:
+        return data
+    tail = [row[-1] for row in body]
+    for row, value in zip(body, tail[1:] + tail[:1]):
+        row[-1] = value
+    return [header] + body
+
+
+def _swap_renamed_with_neighbour(data, attempt):
+    """Move the renamed column one place along, taking its values with it."""
+    header = list(data[0])
+    if "Quantity" not in header:
+        return data
+    at = header.index("Quantity")
+    other = at + 1 if at + 1 < len(header) else at - 1
+    if other < 0:
+        return data
+    order = list(range(len(header)))
+    order[at], order[other] = order[other], order[at]
+    return [[row[i] if i < len(row) else "" for i in order] for row in data]
+
+
+ROTATE_TOTALS = _rewrite(_rotate_last_column)
+MOVE_RENAMED_COLUMN = _rewrite(_swap_renamed_with_neighbour)
 
 
 # ------------------------------------------------------------------ clients
@@ -295,6 +340,129 @@ def csv_scenarios() -> list[Scenario]:
                               note="capability absent; must refuse, never improvise"),
             owner=OwnerScript(capability_development=decision,
                               deploy_authorised=False)))
+
+    # ---- rename_headers and sort_rows ------------------------------------
+    # Added for the owner's conditional authorisation of these two operations.
+    # Ground truth below is written from the agreed semantics — renaming is
+    # exact-match and in place, sorting is by text, stable, and by the named
+    # column only — not from whatever the implementation turned out to do.
+    arranged_header = ("Order ID", "Customer", "Order Date", "Region",
+                       "Quantity", "Total")
+
+    s.append(Scenario(
+        id="CSV-26-rename-and-sort", capability="csv-cleanup/1.0", level="L2",
+        source_text=rows_csv(["1003", "Gamma", "2026-01-17", "East", "8", "100.00"],
+                             ["1001", "Acme", "2026-01-15", "North", "10", "250.00"],
+                             ["1002", "Beta", "2026-01-16", "South", "5", "200.00"],
+                             ["1001", "Acme", "2026-01-15", "North", "10", "250.00"]),
+        requirements=ARRANGED,
+        truth=GroundTruth(expected_rows=3, expected_header=arranged_header,
+                          ordered_values={"Order ID": ["1001", "1002", "1003"]},
+                          forbidden_strings=("Units",),
+                          unchanged_columns=("Total",),
+                          note="renamed in place, sorted, nothing else moved")))
+
+    s.append(Scenario(
+        id="CSV-27-sort-reads-as-text", capability="csv-cleanup/1.0",
+        level="BOUNDARY",
+        source_text=rows_csv(["9", "Acme", "2026-01-15", "North", "10", "250.00"],
+                             ["10", "Beta", "2026-01-16", "South", "5", "200.00"],
+                             ["2", "Gamma", "2026-01-17", "East", "8", "100.00"]),
+        requirements=(DEDUPE, SORT, ROWS, OPENS),
+        truth=GroundTruth(expected_rows=3,
+                          ordered_values={"Order ID": ["10", "2", "9"]},
+                          note="ordering is textual, so 10 precedes 9; an "
+                               "identifier is not a number and a numeric sort "
+                               "would destroy leading zeros")))
+
+    s.append(Scenario(
+        id="CSV-28-sort-is-stable", capability="csv-cleanup/1.0",
+        level="BOUNDARY",
+        source_text=rows_csv(["1001", "Zeta", "2026-01-15", "North", "10", "250.00"],
+                             ["1001", "Acme", "2026-01-16", "South", "5", "200.00"],
+                             ["1000", "Beta", "2026-01-17", "East", "8", "100.00"]),
+        requirements=(DEDUPE, SORT, ROWS, OPENS),
+        truth=GroundTruth(expected_rows=3,
+                          ordered_values={"Customer": ["Beta", "Zeta", "Acme"]},
+                          note="rows sharing a key keep the order the client "
+                               "sent them in; arbitrary would be unreviewable")))
+
+    s.append(Scenario(
+        id="CSV-29-rename-onto-an-existing-name", capability="csv-cleanup/1.0",
+        level="BOUNDARY",
+        source_text=("Order ID,Customer,Order Date,Region,Units,Quantity,Total\n"
+                     "1001,Acme,2026-01-15,North,10,99,250.00\n"
+                     "1002,Beta,2026-01-16,South,5,98,200.00\n"),
+        requirements=ARRANGED,
+        truth=GroundTruth(should_deliver=False, refusal_contains="duplicate headers",
+                          note="merging two different columns into one is worse "
+                               "than not doing the work")))
+
+    s.append(Scenario(
+        id="CSV-30-rename-a-column-that-is-absent", capability="csv-cleanup/1.0",
+        level="BOUNDARY",
+        source_text=rows_csv(["1001", "Acme", "2026-01-15", "North", "10", "250.00"]),
+        requirements=(DEDUPE,
+                      req("R-RENAME", "Rename Unit Price to Rate.",
+                          "rename_headers", {"mapping": {"Unit Price": "Rate"}}),
+                      ROWS, OPENS),
+        truth=GroundTruth(should_deliver=False,
+                          refusal_contains="cannot rename absent column",
+                          note="no guessing at which column was meant")))
+
+    s.append(Scenario(
+        id="CSV-31-sort-by-a-column-that-is-absent", capability="csv-cleanup/1.0",
+        level="BOUNDARY",
+        source_text=rows_csv(["1001", "Acme", "2026-01-15", "North", "10", "250.00"],
+                             ["1002", "Beta", "2026-01-16", "South", "5", "200.00"]),
+        requirements=(DEDUPE,
+                      req("R-SORT", "Sort by Invoice No.", "sort_rows",
+                          {"columns": ["Invoice No"]}),
+                      ROWS, OPENS),
+        truth=GroundTruth(should_deliver=False, refusal_contains="unknown sort column",
+                          note="a sort key nobody supplied is a question, not a "
+                               "column to invent")))
+
+    s.append(Scenario(
+        id="CSV-32-trap-column-sorted-not-rows", capability="csv-cleanup/1.0",
+        level="TRAP",
+        source_text=rows_csv(["1003", "Gamma", "2026-01-17", "East", "8", "100.00"],
+                             ["1001", "Acme", "2026-01-15", "North", "10", "250.00"],
+                             ["1002", "Beta", "2026-01-16", "South", "5", "200.00"]),
+        requirements=ARRANGED, sabotage=ROTATE_TOTALS,
+        truth=GroundTruth(should_deliver=False,
+                          note="sorted, complete, every amount present — and "
+                               "every amount against the wrong order")))
+
+    s.append(Scenario(
+        id="CSV-33-trap-renamed-column-moved", capability="csv-cleanup/1.0",
+        level="TRAP",
+        source_text=rows_csv(["1002", "Beta", "2026-01-16", "South", "5", "200.00"],
+                             ["1001", "Acme", "2026-01-15", "North", "10", "250.00"]),
+        requirements=ARRANGED, sabotage=MOVE_RENAMED_COLUMN,
+        truth=GroundTruth(should_deliver=False,
+                          note="the renamed column shares no name with the "
+                               "source, so moving it hid a rearrangement of "
+                               "the client's spreadsheet")))
+
+    s.append(Scenario(
+        id="CSV-34-every-operation-at-once", capability="csv-cleanup/1.0",
+        level="L3",
+        source_text=(HEAD +
+                     '1003,"Épsilon, Ltd",17-Jan-2026,east,8,"1,100.00"\n'
+                     '1001,  Acme Corp  ,01/15/2026,north,10,250.00\n'
+                     '1002,Zeta "Q" Co,2026-01-16,SOUTH,5,-99.99\n'
+                     '1001,  Acme Corp  ,01/15/2026,north,10,250.00\n'),
+        requirements=EVERYTHING,
+        truth=GroundTruth(expected_rows=3, expected_header=arranged_header,
+                          ordered_values={"Order ID": ["1001", "1002", "1003"]},
+                          protected_values={"Total": {"250.00", "-99.99",
+                                                      "1,100.00"}},
+                          forbidden_strings=("Units", "01/15/2026", "17-Jan-2026",
+                                             "north", "SOUTH", "east"),
+                          required_strings=("Acme Corp", "2026-01-15"),
+                          note="every operation in one job, on data that is "
+                               "messy in every way the capability handles")))
 
     return s
 

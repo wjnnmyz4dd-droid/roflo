@@ -180,10 +180,14 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               category=OWNER_CONFIG))
 
     authenticated = bool(owner_channel and owner_channel.available)
+    # Distinguish "no key" from "a key that must not be used". Both fail
+    # closed, but only one of them is a mistake somebody has already made, and
+    # reporting them identically is how a provisioned placeholder survives.
+    refusal = getattr(owner_channel, "key_refusal", "") if owner_channel else ""
     add(Check("authenticated owner approval", authenticated,
               "Owner Channel active: signed, scoped, single-use, expiring"
-              if authenticated else
-              "no owner signing key configured (SOLVENT_OWNER_KEY)",
+              if authenticated else (refusal or
+              "no owner signing key configured (SOLVENT_OWNER_KEY)"),
               "" if authenticated else
               "OD-5: provision an owner signing key before real execution",
               category=OWNER_CONFIG))

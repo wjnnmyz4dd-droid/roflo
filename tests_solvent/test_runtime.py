@@ -306,7 +306,10 @@ class StatePersistsAcrossRestarts(unittest.TestCase):
     def test_a_consumed_owner_approval_stays_consumed(self):
         """Restarting must not hand the owner's single-use approval back."""
         import os
-        os.environ["SOLVENT_OWNER_KEY"] = "a" * 64
+
+        from tests_solvent.fixtures import TEST_ONLY_OWNER_KEY
+
+        os.environ["SOLVENT_OWNER_KEY"] = TEST_ONLY_OWNER_KEY.decode()
         try:
             first = Solvent(self.db)
             approval = first.owner.issue(

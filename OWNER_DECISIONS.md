@@ -457,9 +457,10 @@ capability registry; registrations are durable and append-only.
 `map_values`, `no_unauthorised_changes`, `normalise_dates`, `parses_as_csv`,
 `preserve_columns`, `require_columns`, `row_reconciliation`, `trim_whitespace`.
 
-**Explicitly outside it.** `rename_headers` and `sort_rows` are implemented but
-their checks are not certified, so a job requiring either is refused
-fail-closed. Also outside: XLSX, PDF, report generation, analysis, any later
+**Explicitly outside it.** `rename_headers` and `sort_rows` were implemented but
+their checks were not certified, so a job requiring either was refused
+fail-closed. **Superseded by OD-14**, which certified and promoted both. Also
+outside, and still outside: XLSX, PDF, report generation, analysis, any later
 version, and unattended operation. CSV approval is CSV approval.
 
 **Evidence relied upon**, re-verified against the current implementation
@@ -519,6 +520,65 @@ sell" as blocking, and it is right to.
 
 ---
 
+## OD-14 — Promote `rename_headers` and `sort_rows`? · **ANSWERED — CONDITION MET**
+
+**Decision (owner): add both to the promoted `csv-cleanup/1.0` scope if and only
+if they pass the same technical evidence standard as the other nine; keep them
+out and report why if they do not.** They passed. The promoted scope is now
+**eleven** certified checks — the nine from OD-12 plus `rename_headers` and
+`sort_rows`.
+
+**They did not pass as they stood.** Certifying them meant building deliverables
+that were wrong in ways nothing had been asked about yet, and three defects
+surfaced. All three were in *already-certified* checks, exposed by the two new
+operations rather than caused by them:
+
+1. **A renamed column was invisible to every comparison made by name.** It
+   shares no name between source and deliverable, so swapping it with the column
+   beside it moved one of the client's other columns and
+   `no_unauthorised_changes` — the check whose whole subject is "nothing else
+   changed" — accepted it. Nine instances passed in one certification run. The
+   plan's rename mapping is now an input to that check, and a source column
+   absent from the deliverable under its agreed name is a failure.
+2. **Authorising a rename authorised rewriting the column.** `rename_headers`
+   granted `full` change to the column's *values*, so a deliverable could rename
+   the header and replace everything beneath it. Renaming is now its own,
+   narrower authorisation: the name may change, the values may not.
+3. **Every check compared one column at a time.** A deliverable with every value
+   present and every value on the wrong row — which is what sorting a column
+   instead of sorting the rows produces — was accepted by the entire capability.
+   `row_reconciliation` now compares rows as rows, projected onto the columns
+   the job was not asked to change.
+
+A fourth, found in the same pass, was a false *rejection*: protected columns were
+compared against the source's distinct rows unconditionally, so a job nobody
+asked to deduplicate was accused of altering data it had not touched.
+
+**Evidence relied upon.** Verifier CERTIFIED on the generated battery — 526
+trials in the certification stream, zero false accepts and zero false rejects,
+across 18 CSV defect classes including five built specifically for these two
+operations; clean on the development and surprise holdout seeds and on five
+further seeds the battery had never used. Every check meets the evidence floor
+(≥5 distinct defect instances per class, ≥10 distinct correct artifacts, no
+missed class). 34/34 black-box scenarios with zero false completions, nine of
+them new: ordering as text, stable ordering among equal keys, empty and
+multi-column keys, embedded newlines, CRLF, a byte-order mark, non-ASCII header
+names, a rename onto an existing name, a rename and a sort key that name absent
+columns, and two traps — a column sorted instead of the rows, and the renamed
+column moved. 21 mutants of the new controls, 21 killed.
+
+**The version was held at `csv-cleanup/1.0`** on the owner's explicit
+instruction. Note that the verifier implementation changed materially, so the
+previous certification is invalid by fingerprint and a fresh one is required
+before any delivery — that binding, not the version string, is what protects the
+approval. There is no rule in the codebase requiring a version bump when scope
+widens; if the owner wants one, it is a decision to record, not a fact to
+discover.
+
+**Still outside the scope.** Everything OD-12 excluded.
+
+---
+
 ## OD-13 — Should Solvent check that a work source actually pays? · **NEW, NOT BLOCKING**
 
 **Question.** Before committing labour to a source, should Solvent require
@@ -555,6 +615,7 @@ record, not a new component.
 | OD-11 | First work source | Automated discovery only | No |
 | **OD-12** | **First sellable capability** | **Answered — csv-cleanup/1.0 promoted** | No |
 | OD-13 | Source payment-reality check | No (hardening) | No |
+| OD-14 | Promote rename_headers and sort_rows | **Answered** — condition met, both promoted | No |
 
 **Three decisions stand between a working architecture and a first real job:
 OD-1, OD-2 and OD-12** — OD-3 is verified and needs only to be recorded. None is an engineering problem. Run

@@ -8,7 +8,7 @@ from solvent.harness import Solvent, run_manual_opportunity
 from solvent.owner import OwnerChannel
 from solvent.readiness import first_revenue_readiness
 from solvent.types import PaymentState, money
-from tests_solvent.fixtures import OWNER, Rig
+from tests_solvent.fixtures import OWNER, Rig, TEST_ONLY_OWNER_KEY
 
 
 class FirstRevenueProfile(unittest.TestCase):
@@ -131,7 +131,8 @@ class ReadinessProjection(unittest.TestCase):
 
     def test_an_owner_key_clears_the_authentication_check(self):
         channel = OwnerChannel(self.solvent.store, self.solvent.audit,
-                               self.solvent.policy, key=b"k")
+                               self.solvent.policy,
+                               key=TEST_ONLY_OWNER_KEY)
         checks = {c.name: c.ready for c in self.report(channel).checks}
         self.assertTrue(checks["authenticated owner approval"])
 

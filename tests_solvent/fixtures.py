@@ -108,3 +108,12 @@ def certified_evidence_fields(check: str = CERTIFIED_CHECK) -> dict:
     """The three fields ``record_verification`` now requires above T0."""
     return {"verifier_ref": CERTIFIED_VERIFIER,
             "capability_version": CERTIFIED_CAPABILITY, "check": check}
+
+
+#: Signing keys for the suite. Long enough to satisfy the channel's own floor,
+#: and labelled so that anything which ever leaks one into a log, a database or
+#: a report is unmistakably a fixture rather than the owner's. Solvent's real
+#: key is never generated, read or written by these tests: it lives in the
+#: host's secret store and reaches the process as SOLVENT_OWNER_KEY.
+TEST_ONLY_OWNER_KEY = b"TEST-ONLY-not-a-real-owner-key-0123456789abcdef"
+TEST_ONLY_ATTACKER_KEY = b"TEST-ONLY-an-attackers-key-fedcba9876543210-xyz"

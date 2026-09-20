@@ -151,7 +151,8 @@ def startup_checks(solvent, *, mode: Mode = Mode.LOCAL) -> Startup:
     has_key = solvent.owner.available
     add(Check("owner channel", has_key,
               "signing key present" if has_key
-              else "no SOLVENT_OWNER_KEY: consequential approvals fail closed"))
+              else f"{solvent.owner.key_refusal}: consequential approvals "
+                   "fail closed"))
 
     unsettled = solvent.gate.unsettled()
     add(Check("unsettled external actions", not unsettled,

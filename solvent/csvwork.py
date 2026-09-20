@@ -486,24 +486,60 @@ def authorised_columns(requirements: list, header: list[str]) -> dict:
     column whose only permission is "trim" is still protected against every other
     edit, which is the protection the client actually agreed to.
 
-    Modes: ``"full"`` (the transformation itself is separately verified) and
-    ``"whitespace"`` (only padding may differ).
+    Modes, narrowest first: ``"rename"`` (the column's *name* may change and
+    nothing else), ``"whitespace"`` (only padding may differ) and ``"full"``
+    (the transformation itself is separately verified). Where two requirements
+    touch the same column the broader one wins, so authorisation is the union
+    of what was agreed rather than whichever requirement came last.
+
+    Renaming is deliberately not "full". It changes a header, not a value, and
+    granting it full authority over the column's contents opened a hole found
+    while certifying ``rename_headers``: a deliverable that renamed the header
+    and replaced every value underneath it with another column's passed the one
+    check whose whole subject is "nothing else changed".
     """
+    breadth = {"rename": 0, "whitespace": 1, "full": 2}
+
     allowed: dict[str, str] = {}
+
+    def grant(column: str, mode: str) -> None:
+        current = allowed.get(column)
+        if current is None or breadth[mode] > breadth[current]:
+            allowed[column] = mode
+
     for req in requirements:
         op, params = req.check, req.params
         if op == "normalise_dates":
             for column in params.get("columns") or []:
-                allowed[column] = "full"
+                grant(column, "full")
         elif op == "map_values" and params.get("column"):
-            allowed[params["column"]] = "full"
+            grant(params["column"], "full")
         elif op == "rename_headers":
             mapping = params.get("mapping") or {}
             for column in set(mapping) | set(mapping.values()):
-                allowed[column] = "full"
+                grant(column, "rename")
         elif op == "trim_whitespace":
             # No column list means every column, which is a broad thing to
             # authorise — but it is still only whitespace.
             for column in params.get("columns") or header:
-                allowed.setdefault(column, "whitespace")
+                grant(column, "whitespace")
     return allowed
+
+
+def renamed_columns(requirements: list) -> dict:
+    """``{old: new}`` for every rename the plan authorised.
+
+    Separate from :func:`authorised_columns` because it answers a different
+    question. That one says how a column's *values* may change; this one says
+    which output column *is* which source column. A check that compares columns
+    by name loses sight of a renamed column entirely — it appears in neither
+    header under a shared name — so the column can be moved, or vanish, with
+    nothing noticing. The mapping comes from the plan, never from the
+    deliverable: an output that renames something the plan did not authorise
+    must look exactly like what it is, a column that disappeared.
+    """
+    mapping: dict[str, str] = {}
+    for req in requirements:
+        if req.check == "rename_headers":
+            mapping.update(req.params.get("mapping") or {})
+    return mapping

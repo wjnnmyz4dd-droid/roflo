@@ -94,6 +94,46 @@ def _accounted_columns(src_header, src_distinct, out_header, out_body) -> list[s
     return accounted
 
 
+def _row_key_column(src_header, src_distinct, out_header, out_body,
+                    exclude=()) -> str:
+    """A column that names the same row in both files, or ``""``.
+
+    A check that compares one column's values as a *set* cannot tell a value
+    moved onto the wrong row from a value that was always there. Certification
+    caught exactly that: a date transposed on the row the client wrote
+    unambiguously landed on a day that a *different* row's ambiguous date could
+    also have meant, so the set of days was unchanged and the check passed. The
+    deliverable was still wrong — that client's order was dated two months out.
+
+    Sorting makes this more than a curiosity. A worker that reorders one column
+    independently of the rest produces precisely this: every value still
+    present, every value on the wrong row.
+
+    A column qualifies only when its values are unique on both sides and the
+    two sets are equal, which forces the pairing: nothing else could have
+    produced those values. When no column qualifies the caller falls back to
+    the weaker comparison rather than guessing at a pairing.
+    """
+    for name in out_header:
+        if name in exclude or name not in src_header:
+            continue
+        si, oi = src_header.index(name), out_header.index(name)
+        src_values = [r[si] for r in src_distinct if si < len(r)]
+        out_values = [r[oi] for r in out_body if oi < len(r)]
+        if not src_values or len(src_values) != len(src_distinct):
+            continue
+        if len(out_values) != len(out_body):
+            continue
+        if len(set(src_values)) != len(src_values):
+            continue
+        if len(set(out_values)) != len(out_values):
+            continue
+        if set(src_values) != set(out_values):
+            continue
+        return name
+    return ""
+
+
 def _distinct_rows(body: list) -> list:
     seen, out = set(), []
     for row in body:
@@ -250,15 +290,30 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
 
     declared = params.get("date_format", "")
     source_header, source_body, source_problem = _read(source)
+
+    # Prefer comparing each date with the day *its own row* supplied. Falling
+    # back to the set of all supplied days is weaker on purpose rather than by
+    # oversight: with no column that identifies a row, no pairing is knowable,
+    # and inventing one would reject correct work.
+    key = ""
+    by_key: dict[str, list[str]] = {}
+    if not source_problem and source_body:
+        key = _row_key_column(source_header, _distinct_rows(source_body),
+                              header, body, exclude=set(columns))
+    if key:
+        ks, ko = source_header.index(key), header.index(key)
+        by_key = {row[ks]: row for row in source_body if ks < len(row)}
+
     bad, unsupported = [], []
     for name in columns:
         if name not in header:
             return CheckOutcome(CheckResult.FAIL, f"column {name!r} is absent")
         i = header.index(name)
 
+        si = source_header.index(name) if (
+            not source_problem and name in source_header) else -1
         supplied: set[str] = set()
-        if not source_problem and name in source_header:
-            si = source_header.index(name)
+        if si >= 0:
             for row in source_body:
                 if si < len(row):
                     supplied |= _readings(row[si], declared)
@@ -277,13 +332,21 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
             except ValueError:
                 bad.append(f"row {n}: {value!r} is not a real date")
                 continue
+            source_row = by_key.get(row[ko]) if key and ko < len(row) else None
+            if source_row is not None and si >= 0 and si < len(source_row):
+                allowed = _readings(source_row[si], declared)
+                if allowed and value not in allowed:
+                    unsupported.append(
+                        f"row {n}: {value!r} is not a day the source gave for "
+                        f"{key} {row[ko]!r}")
+                continue
             if supplied and value not in supplied:
                 unsupported.append(f"row {n}: {value!r} is not any day the "
                                    "source supplied")
 
     computed = {"columns": columns, "non_iso": len(bad),
                 "unsupported": len(unsupported), "date_format": declared,
-                "examples": (bad + unsupported)[:5]}
+                "row_key": key, "examples": (bad + unsupported)[:5]}
     if bad:
         return CheckOutcome(CheckResult.FAIL,
                             f"{len(bad)} value(s) are not YYYY-MM-DD", computed)
@@ -443,7 +506,11 @@ def check_row_reconciliation(source, output, params) -> CheckOutcome:
         return CheckOutcome(CheckResult.UNVERIFIABLE, p1 or p2)
     distinct_rows = _distinct_rows(src_body)
     distinct = len(distinct_rows)
-    expected = distinct if params.get("duplicates_removed", True) else len(src_body)
+    dedup = params.get("duplicates_removed", True)
+    # Compare against the rows the deliverable is supposed to contain: the
+    # distinct ones when duplicates were removed, all of them when they were not.
+    basis = distinct_rows if dedup else src_body
+    expected = distinct if dedup else len(src_body)
     computed = {"source_rows": len(src_body), "distinct_source_rows": distinct,
                 "output_rows": len(out_body), "expected_rows": expected}
     if len(out_body) != expected:
@@ -453,13 +520,48 @@ def check_row_reconciliation(source, output, params) -> CheckOutcome:
 
     # "The right number of rows" said nothing about *whose* rows. Another job's
     # deliverable reconciled perfectly whenever the counts happened to agree.
-    accounted = _accounted_columns(src_header, distinct_rows, out_header, out_body)
+    accounted = _accounted_columns(src_header, basis, out_header, out_body)
     computed["accounted_columns"] = accounted
     if not accounted:
         return CheckOutcome(
             CheckResult.FAIL,
             f"{len(out_body)} rows is the right number, but no column's values "
             "match the source's; these are not this source's rows", computed)
+
+    # And "every value is present" said nothing about *which row* it is on.
+    # Each column above was compared on its own, so a deliverable that reordered
+    # one column and left the others where they were matched every one of them:
+    # every value still in the file, every value against the wrong record. That
+    # is not an exotic failure — it is what sorting a column instead of sorting
+    # the rows produces, and it was accepted by every check in the capability
+    # until sort_rows was certified. The client would have received Beta LLC's
+    # order under Acme Corp's order number.
+    #
+    # Rows are therefore compared as rows, projected onto the columns that did
+    # not change. The columns the job was asked to transform are excluded by
+    # construction, so this says nothing about work that was requested.
+    if len(accounted) >= 2:
+        from collections import Counter
+
+        si = [src_header.index(c) for c in accounted]
+        oi = [out_header.index(c) for c in accounted]
+
+        def project(row, indices):
+            return tuple(row[i] if i < len(row) else "" for i in indices)
+
+        want = Counter(project(r, si) for r in basis)
+        got = Counter(project(r, oi) for r in out_body)
+        if want != got:
+            invented = sorted(got - want)
+            computed["unpaired_rows"] = len(invented)
+            computed["unpaired_examples"] = [list(r) for r in invented[:3]]
+            return CheckOutcome(
+                CheckResult.FAIL,
+                f"every value is accounted for but {len(invented)} row(s) are "
+                f"not: {accounted[:4]} are combined in ways no source row "
+                f"combines them (e.g. {[list(r) for r in invented[:2]]})",
+                computed)
+
     return CheckOutcome(CheckResult.PASS,
                         f"{expected} rows reconcile, matching the source on "
                         f"{len(accounted)} column(s)", computed)
@@ -484,6 +586,31 @@ def check_no_unauthorised_changes(source, output, params) -> CheckOutcome:
     if p1 or p2:
         return CheckOutcome(CheckResult.UNVERIFIABLE, p1 or p2)
 
+    # {column: mode}. A column authorised only for whitespace — or only for a
+    # change of name — is still protected against every other kind of edit.
+    authorised = dict(params.get("authorised_columns") or {})
+    # {old: new} for the renames the plan authorised, so a renamed column is
+    # still an anchor here rather than a blind spot. Every comparison below is
+    # by name, and a renamed column shares no name between the two headers —
+    # which let an output swap the renamed column with the one beside it, moving
+    # one of the client's columns, and pass. Found by certifying rename_headers
+    # against the generated battery: nine of this check's own defect instances
+    # were accepted once a rename was in the plan.
+    renamed = dict(params.get("renamed_columns") or {})
+    expected_header = [renamed.get(c, c) for c in src_header]
+
+    # A column the client handed over and did not get back. Renaming a column
+    # the plan did not authorise looks exactly like this, which is right: under
+    # its agreed name, the column is gone.
+    gone = [c for c, e in zip(src_header, expected_header) if e not in out_header]
+    if gone:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            f"column(s) the client supplied are not in the deliverable and no "
+            f"requirement authorised removing or renaming them: {gone[:4]}",
+            {"missing_columns": gone, "renamed": renamed,
+             "output_columns": out_header})
+
     # Column order is part of what the client handed over. Every other test here
     # compares columns *by name*, so a file whose columns had been shuffled
     # matched perfectly — found by inventing a defect class after the battery
@@ -491,8 +618,8 @@ def check_no_unauthorised_changes(source, output, params) -> CheckOutcome:
     # without being asked, and "we did not ask for that" is the whole subject of
     # this check.
     if not params.get("column_order_may_change"):
-        shared_src = [c for c in src_header if c in out_header]
-        shared_out = [c for c in out_header if c in src_header]
+        shared_src = [c for c in expected_header if c in out_header]
+        shared_out = [c for c in out_header if c in expected_header]
         if shared_src != shared_out:
             return CheckOutcome(
                 CheckResult.FAIL,
@@ -500,27 +627,34 @@ def check_no_unauthorised_changes(source, output, params) -> CheckOutcome:
                 f"it: {shared_src[:4]} became {shared_out[:4]}",
                 {"source_order": shared_src, "output_order": shared_out})
 
-    # {column: mode}. A column authorised only for whitespace is still protected
-    # against every other kind of edit.
-    authorised = dict(params.get("authorised_columns") or {})
     protected = [c for c in src_header
-                 if c in out_header and authorised.get(c) != "full"]
+                 if renamed.get(c, c) in out_header and authorised.get(c) != "full"]
     if not protected:
         return CheckOutcome(CheckResult.PASS,
                             "every column was authorised for change",
                             {"authorised": authorised})
 
-    seen, distinct = set(), []
-    for row in src_body:
-        k = _key(row)
-        if k in seen:
-            continue
-        seen.add(k)
-        distinct.append(row)
+    # Which source rows the deliverable is supposed to contain. Comparing
+    # against the distinct rows unconditionally was a false *rejection*: a job
+    # nobody asked to deduplicate keeps its duplicates, and every protected
+    # column then had more values in the output than in the comparison — so
+    # correct work was reported as an unauthorised change, with a detail line
+    # naming no altered value because none had been altered.
+    if params.get("duplicates_removed", True):
+        seen, distinct = set(), []
+        for row in src_body:
+            k = _key(row)
+            if k in seen:
+                continue
+            seen.add(k)
+            distinct.append(row)
+    else:
+        distinct = list(src_body)
 
     changed, computed = [], {"protected": protected, "authorised": authorised}
     for name in protected:
-        si, oi = src_header.index(name), out_header.index(name)
+        si = src_header.index(name)
+        oi = out_header.index(renamed.get(name, name))
         # A whitespace-authorised column is compared with padding removed, so a
         # trim passes and anything else does not.
         norm = ((lambda v: v.strip()) if authorised.get(name) == "whitespace"

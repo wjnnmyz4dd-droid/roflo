@@ -46,6 +46,49 @@ from .types import ActionClass, Cents, fmt
 #: Environment variable holding the owner's signing key.
 KEY_ENV = "SOLVENT_OWNER_KEY"
 
+#: The shortest key this channel will accept, in bytes.
+#:
+#: A signing key is the whole of the authentication. A short one is not a weaker
+#: version of this scheme, it is a different scheme: 32 bytes of randomness
+#: cannot be guessed, a passphrase someone typed can be, and both satisfy "the
+#: variable is set". Refusing here rather than at first use means the failure is
+#: a provisioning error that nobody has to notice, instead of a signature scheme
+#: that appears to work.
+MIN_KEY_BYTES = 32
+
+#: Keys that are obviously a placeholder rather than a secret. Not a security
+#: control — anything that gets past MIN_KEY_BYTES is long enough to matter —
+#: but a copied-and-pasted example is a realistic provisioning mistake and it
+#: should fail loudly at the point it was made.
+_PLACEHOLDERS = frozenset({
+    "<owner_key>", "owner_key", "changeme", "change-me", "secret", "password",
+    "solvent_owner_key", "your-key-here", "todo", "xxx", "test",
+})
+
+
+def key_problem(key: bytes | None) -> str:
+    """Why this key must not be used, or ``""``. Never quotes the key itself."""
+    if not key:
+        return f"no owner signing key: {KEY_ENV} is unset or empty"
+    if len(key) < MIN_KEY_BYTES:
+        return (f"the owner signing key is {len(key)} bytes; {MIN_KEY_BYTES} is "
+                f"the minimum. Generate one with "
+                f"`python3 -c \"import secrets; print(secrets.token_hex(32))\"` "
+                f"and set {KEY_ENV} from your secret store")
+    text = key.decode("utf-8", "replace").strip().strip("\"'").lower()
+    if text in _PLACEHOLDERS:
+        return (f"{KEY_ENV} is set to a placeholder rather than a secret; "
+                "an example value is not a key")
+    if len(set(key)) < 4:
+        return (f"{KEY_ENV} has almost no variety in it and is not a random "
+                "key; generate one rather than typing one")
+    for width in range(1, 9):
+        if len(key) > width and key == key[:width] * (len(key) // width) + \
+                key[:len(key) % width]:
+            return (f"{KEY_ENV} is a short value repeated to reach the length "
+                    "limit; its strength is the part that repeats")
+    return ""
+
 
 @dataclass(frozen=True, slots=True)
 class SignedApproval:
@@ -77,7 +120,13 @@ class OwnerChannel:
         self._db = store.for_authority("owner")
         self._audit = audit
         self._policy = policy
-        self._key = key if key is not None else _key_from_environment()
+        raw = key if key is not None else _key_from_environment()
+        #: Why the configured key is unusable, or "". Kept rather than raised at
+        #: construction: a Solvent that will not start because a credential is
+        #: missing cannot tell the owner what it needs. It starts, refuses every
+        #: approval, and says which variable to set.
+        self.key_refusal = key_problem(raw)
+        self._key = None if self.key_refusal else raw
 
     @property
     def available(self) -> bool:
@@ -85,10 +134,17 @@ class OwnerChannel:
         return bool(self._key)
 
     def key_id(self) -> str:
-        """A non-secret fingerprint, so audit records say which key was used."""
+        """A non-secret fingerprint, so audit records say which key was used.
+
+        Derived through HMAC under a fixed public label rather than by hashing
+        the key directly. A bare truncated hash of a secret is a target: anyone
+        holding an audit row could test candidate keys against it offline. This
+        fingerprint cannot be tested against anything without the key.
+        """
         if not self._key:
             return ""
-        return hashlib.sha256(self._key).hexdigest()[:12]
+        return hmac.new(self._key, b"solvent/key-id/v1",
+                        hashlib.sha256).hexdigest()[:12]
 
     # ---------------------------------------------------------------- issuing
 
@@ -103,8 +159,8 @@ class OwnerChannel:
         """
         if not self.available:
             raise FailClosed(
-                f"no owner key: set {KEY_ENV} before issuing approvals. "
-                "An unauthenticated system must not be able to approve spending")
+                f"{self.key_refusal}. Set {KEY_ENV} before issuing approvals: "
+                "an unauthenticated system must not be able to approve spending")
         if not self._policy.is_owner(owner_identity):
             raise FailClosed(
                 f"{owner_identity!r} is not a registered owner identity")
@@ -196,6 +252,26 @@ class OwnerChannel:
 def _key_from_environment() -> bytes | None:
     raw = os.environ.get(KEY_ENV, "")
     return raw.encode() if raw else None
+
+
+def provisioning_instructions() -> str:
+    """What the owner has to do, with nothing secret in it.
+
+    Returned as text so the owner's action packet and the readiness report say
+    the same thing, and so neither of them has to contain a key to explain one.
+    """
+    return (
+        f"1. Generate a key on your own machine:\n"
+        f"     python3 -c \"import secrets; print(secrets.token_hex(32))\"\n"
+        f"2. Store it in your host's secret manager. Do not paste it into a "
+        f"file in this repository, a commit message, a chat window or a "
+        f"support ticket.\n"
+        f"3. Expose it to the Solvent process as {KEY_ENV}, outside the worker "
+        f"namespace.\n"
+        f"4. Rotate it by setting a new value; approvals already issued under "
+        f"the old key stop verifying, which is the intended effect.\n"
+        f"Solvent never generates, stores or displays this key. With no key it "
+        f"runs and refuses every consequential approval.")
 
 
 def _fields(approval: SignedApproval) -> dict:

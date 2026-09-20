@@ -117,8 +117,8 @@ def _quote(value: str) -> str:
     return value
 
 
-def _rows_to_csv(rows) -> str:
-    lines = [CSV_HEADER]
+def _rows_to_csv(rows, header=None) -> str:
+    lines = [",".join(_quote(h) for h in header) if header else CSV_HEADER]
     lines += [",".join(_quote(str(cell)) for cell in row) for row in rows]
     return "\n".join(lines) + "\n"
 
@@ -132,7 +132,7 @@ def csv_case(rng: random.Random) -> Case:
     asking the worker what it produced.
     """
     count = rng.randrange(3, 26)
-    clean, supplied, unambiguous_rows = [], [], []
+    clean, supplied, unambiguous_ids = [], [], set()
     used_ids = set()
     for _ in range(count):
         while True:
@@ -147,7 +147,7 @@ def csv_case(rng: random.Random) -> Case:
         total = _amount(rng)
         clean.append([order_id, customer, iso, region, units, total])
         if unambiguous:
-            unambiguous_rows.append(len(clean) - 1)
+            unambiguous_ids.add(order_id)
         supplied.append([order_id,
                          f"  {customer}  " if rng.random() < 0.4 else customer,
                          as_supplied,
@@ -160,12 +160,33 @@ def csv_case(rng: random.Random) -> Case:
         dirty.append(list(rng.choice(supplied)))
     rng.shuffle(dirty)
 
+    # The correct output carries the two operations the owner asked to have
+    # certified, applied in the order the plan fixes: rename before anything
+    # refers to the new names, sort last. "Units" is renamed because no other
+    # requirement names it, so the rename cannot collide with another check's
+    # column. Sorting is by Order ID, which is unique and fixed-width, so the
+    # ordering is total and lexicographic ordering is the numeric one — there
+    # is no hidden ambiguity for the battery to depend on.
+    renamed_from, renamed_to = "Units", rng.choice(
+        ("Quantity", "Qty", "Unit Count", "Volume"))
+    clean_header = [renamed_to if h == renamed_from else h
+                    for h in CSV_HEADER.split(",")]
+    ordered = sorted(clean, key=lambda row: str(row[0]))
+    # Indices into the *delivered* rows, not the invented ones. Sorting moved
+    # them, and a defect builder that transposes "row 3" must transpose the
+    # row that is third in the file the verifier sees — otherwise it transposes
+    # a date the client wrote ambiguously and asserts a truth nobody has.
+    unambiguous_rows = [i for i, row in enumerate(ordered)
+                        if row[0] in unambiguous_ids]
+
     mapping = {r.lower(): r for r in _REGIONS}
     return Case(
         source_name="client_supplied.csv",
         source_text=_rows_to_csv(dirty),
-        good_output=_rows_to_csv(clean),
+        good_output=_rows_to_csv(ordered, header=clean_header),
         params={
+            "rename_headers": {"mapping": {renamed_from: renamed_to}},
+            "sort_rows": {"columns": ["Order ID"]},
             "drop_exact_duplicates": {},
             "row_reconciliation": {"duplicates_removed": True},
             "preserve_columns": {"columns": ["Total"]},
@@ -178,10 +199,15 @@ def csv_case(rng: random.Random) -> Case:
             "parses_as_csv": {},
             "no_unauthorised_changes": {
                 "authorised_columns": {"Order Date": "full", "Region": "full",
-                                       "Customer": "whitespace"}},
+                                       "Customer": "whitespace",
+                                       renamed_from: "rename",
+                                       renamed_to: "rename"},
+                "renamed_columns": {renamed_from: renamed_to}},
         },
-        truth={"clean_rows": clean, "duplicates": duplicates,
-               "unambiguous_rows": unambiguous_rows})
+        truth={"clean_rows": ordered, "duplicates": duplicates,
+               "unambiguous_rows": unambiguous_rows,
+               "renamed_from": renamed_from, "renamed_to": renamed_to,
+               "sort_columns": ["Order ID"]})
 
 
 def report_case(rng: random.Random) -> Case:
@@ -463,9 +489,181 @@ def _columns_reordered(case, rng):
     return _rebuild([_join([_split(line)[i] for i in order]) for line in lines])
 
 
+def _rename_not_applied(case, rng):
+    """The header is exactly as the client wrote it: the rename did not happen."""
+    old, new = case.truth.get("renamed_from"), case.truth.get("renamed_to")
+    lines = _csv_lines(case.good_output)
+    header = _split(lines[0])
+    if not old or not new or new not in header:
+        return None
+    header[header.index(new)] = old
+    lines[0] = _join(header)
+    return _rebuild(lines)
+
+
+def _rename_wrong_name(case, rng):
+    """Renamed — to a name the client did not ask for.
+
+    The failure that looks most like success: the old name is gone, the header
+    reads well, and only the agreed mapping says it is wrong. A check that only
+    confirmed the old name had disappeared would accept this.
+    """
+    old, new = case.truth.get("renamed_from"), case.truth.get("renamed_to")
+    lines = _csv_lines(case.good_output)
+    header = _split(lines[0])
+    if not old or not new or new not in header:
+        return None
+    alternatives = [n for n in ("Quantity", "Qty", "Unit Count", "Volume",
+                                "Item Count", "Number of Units")
+                    if n != new and n not in header]
+    if not alternatives:
+        return None
+    header[header.index(new)] = rng.choice(alternatives)
+    lines[0] = _join(header)
+    return _rebuild(lines)
+
+
+def _unrequested_rename(case, rng):
+    """A second column renamed, which no requirement asked for.
+
+    Belongs to ``no_unauthorised_changes`` rather than to ``rename_headers``:
+    the requested rename was performed correctly, so the rename check is
+    satisfied and right to be. What went wrong is that something *else* changed.
+    Before renames were certified this was invisible — a column absent from the
+    output under its agreed name simply dropped out of every name-based
+    comparison.
+    """
+    new = case.truth.get("renamed_to")
+    lines = _csv_lines(case.good_output)
+    header = _split(lines[0])
+    victims = [i for i, name in enumerate(header)
+               if name != new and name != "Order ID"]
+    if not victims:
+        return None
+    at = rng.choice(victims)
+    header[at] = header[at].replace(" ", "") + "_v2"
+    lines[0] = _join(header)
+    return _rebuild(lines)
+
+
+def _renamed_column_moved(case, rng):
+    """The renamed column swapped with the one beside it.
+
+    Found while certifying ``rename_headers``. A renamed column shares no name
+    between source and deliverable, so it was invisible to every comparison
+    made by name — and swapping it with its neighbour moved one of the client's
+    *other* columns while leaving the projection of shared names untouched.
+    Nine instances were accepted. The class stays in the battery so the fix
+    cannot quietly come undone.
+    """
+    new = case.truth.get("renamed_to")
+    lines = _csv_lines(case.good_output)
+    header = _split(lines[0])
+    if not new or new not in header:
+        return None
+    at = header.index(new)
+    other = at + 1 if at + 1 < len(header) else at - 1
+    if other < 0:
+        return None
+    order = list(range(len(header)))
+    order[at], order[other] = order[other], order[at]
+    return _rebuild([_join([_split(line)[i] for i in order]) for line in lines])
+
+
+def _sort_column_index(case, lines):
+    columns = case.truth.get("sort_columns") or []
+    header = _split(lines[0])
+    if len(columns) != 1 or columns[0] not in header:
+        return None
+    return header.index(columns[0])
+
+
+def _rows_unsorted(case, rng):
+    """Sorted everywhere except one adjacent pair.
+
+    A near-miss on purpose. "Is this file sorted?" answered by glancing at the
+    first rows, or by trusting that the worker called sort, accepts this.
+    """
+    lines = _csv_lines(case.good_output)
+    if _sort_column_index(case, lines) is None or len(lines) < 4:
+        return None
+    body = lines[1:]
+    at = rng.randrange(0, len(body) - 1)
+    body[at], body[at + 1] = body[at + 1], body[at]
+    if body == lines[1:]:
+        return None
+    return _rebuild([lines[0]] + body)
+
+
+def _sorted_by_wrong_column(case, rng):
+    """Ordered, tidily, by a column the client did not name."""
+    lines = _csv_lines(case.good_output)
+    index = _sort_column_index(case, lines)
+    if index is None or len(lines) < 4:
+        return None
+    header = _split(lines[0])
+    others = [i for i in range(len(header)) if i != index]
+    rng.shuffle(others)
+    for other in others:
+        body = sorted(lines[1:], key=lambda line: str(_split(line)[other]))
+        if body != lines[1:]:
+            return _rebuild([lines[0]] + body)
+    return None
+
+
+def _sort_reversed(case, rng):
+    """Descending where the requirement says ascending."""
+    lines = _csv_lines(case.good_output)
+    if _sort_column_index(case, lines) is None or len(lines) < 4:
+        return None
+    body = list(reversed(lines[1:]))
+    if body == lines[1:]:
+        return None
+    return _rebuild([lines[0]] + body)
+
+
+def _row_values_rotated(case, rng):
+    """One column shifted onto the neighbouring rows: every value present, every
+    value against the wrong record.
+
+    What sorting a column instead of sorting the rows produces. ``Total`` is
+    used rather than the sort key, so the deliverable still reads as correctly
+    ordered — the defect is invisible to a check that looks at each column on
+    its own, which was every check in the capability until this class was added.
+    """
+    lines = _csv_lines(case.good_output)
+    if len(lines) < 4:
+        return None
+    header = _split(lines[0])
+    if "Total" not in header:
+        return None
+    at = header.index("Total")
+    rows = [_split(line) for line in lines[1:]]
+    values = [row[at] for row in rows]
+    shifted = values[1:] + values[:1]
+    if shifted == values:
+        return None
+    for row, value in zip(rows, shifted):
+        row[at] = value
+    return _rebuild([lines[0]] + [_join(row) for row in rows])
+
+
 CSV_DEFECTS = (
+    Defect("ROW_VALUES_ROTATED", "row_reconciliation", _row_values_rotated,
+           note="every value present, every value on the wrong row"),
     Defect("COLUMNS_REORDERED", "no_unauthorised_changes", _columns_reordered,
            note="rearranged without a requirement asking for it"),
+    Defect("RENAMED_COLUMN_MOVED", "no_unauthorised_changes", _renamed_column_moved,
+           note="the renamed column swapped with its neighbour"),
+    Defect("UNREQUESTED_RENAME", "no_unauthorised_changes", _unrequested_rename,
+           note="a column renamed that no requirement named"),
+    Defect("RENAME_NOT_APPLIED", "rename_headers", _rename_not_applied),
+    Defect("RENAME_WRONG_NAME", "rename_headers", _rename_wrong_name,
+           note="old name gone, new name not the agreed one"),
+    Defect("ROWS_UNSORTED", "sort_rows", _rows_unsorted,
+           note="one adjacent pair out of order"),
+    Defect("SORTED_BY_WRONG_COLUMN", "sort_rows", _sorted_by_wrong_column),
+    Defect("SORT_REVERSED", "sort_rows", _sort_reversed),
     Defect("ROW_LOSS", "row_reconciliation", _row_loss),
     Defect("ROW_ADDITION", "drop_exact_duplicates", _row_addition),
     Defect("PROTECTED_VALUE_CHANGE", "preserve_columns", _protected_value_changed),
