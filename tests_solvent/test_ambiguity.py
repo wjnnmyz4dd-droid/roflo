@@ -291,6 +291,47 @@ class TheAnswerDecidesTheWork(unittest.TestCase):
         return next(a.path for a in
                     solvent.orchestrator.artifacts(report.job_id, role="SOURCE"))
 
+    def test_the_pipeline_verifier_rejects_the_other_reading(self):
+        """§25, through the pipeline rather than by calling the check directly.
+
+        A mutation probe showed this: pointing verification at the unclarified
+        checklist changed nothing, because without a declared convention the
+        check accepts *either* reading — so a worker that used the wrong one
+        sails through. Only a verifier holding the same declaration can tell.
+        The artifact is rewritten to the interpretation the client did not
+        choose, and the pipeline has to refuse it.
+        """
+        solvent = Solvent()
+        source, work = workspace(AMBIGUOUS)
+        report = run_csv_job(source=source, requirements=STANDARD, workdir=work,
+                             solvent=solvent, client_id="client:z", title="z")
+        question = solvent.orchestrator.open_clarifications(report.job_id)[0]
+        solvent.orchestrator.answer_clarification(
+            clarification_id=question["id"], answer="DD/MM/YYYY",
+            answered_by="client:z")
+
+        def use_the_other_reading(path, attempt):
+            text = pathlib.Path(path).read_text(encoding="utf-8")
+            pathlib.Path(path).write_text(
+                text.replace("2026-10-05", "2026-05-10")
+                    .replace("2026-04-03", "2026-03-04"), encoding="utf-8")
+
+        from solvent.harness import _execute_job
+
+        solvent.orchestrator.unblock(job_id=report.job_id, initiator="test",
+                                     why="answered")
+        resumed = _execute_job(solvent, job_id=report.job_id, source=source,
+                               workdir=work, capability="csv-cleanup",
+                               sabotage=use_the_other_reading)
+        self.assertFalse(resumed.delivered,
+                         "the verifier accepted a reading the client rejected")
+        self.assertIn("R-DATES", resumed.escalated)
+
+    def test_the_pipeline_accepts_the_reading_the_client_chose(self):
+        """Guards the test above: a verifier that refuses both proves nothing."""
+        solvent, report = self.run_with("DD/MM/YYYY", "client:y")
+        self.assertTrue(report.delivered, report.escalated)
+
     def test_the_original_requirement_wording_is_untouched(self):
         solvent, report = self.run_with("DD/MM/YYYY")
         stored = {r.id: r.text for r in solvent.orchestrator.baseline(report.job_id)}
