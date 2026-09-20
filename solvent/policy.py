@@ -270,10 +270,138 @@ class PolicyStore:
             financial_authorization=f"job cap {max_job_spend_cents} cents")
         return version
 
+    # ------------------------------------------------- recorded owner decisions
+    #
+    # OD-1, OD-2 and OD-3 are answers only the owner can give, and they live
+    # here because Policy already owns *what is permitted*. None of them creates
+    # a new authority and none of them activates anything: recording that Stripe
+    # is the chosen rail is not the same as Stripe working, and recording that
+    # the owner contracts as an individual is not the same as knowing their
+    # legal name.
+
+    #: Contracting fields no component may invent. Absent means absent.
+    CONTRACTING_FIELDS = ("legal_name", "address", "tax_reference", "email")
+    #: What an unprovisioned field reads as. Never a placeholder that could be
+    #: mistaken for a value.
+    PROVISIONING_REQUIRED = "OWNER_PROVISIONING_REQUIRED"
+
+    INDIVIDUAL = "INDIVIDUAL"
+    LLC = "LLC"
+    CORPORATION = "CORPORATION"
+    PARTNERSHIP = "PARTNERSHIP"
+    CONTRACTING_STRUCTURES = (INDIVIDUAL, LLC, CORPORATION, PARTNERSHIP)
+
+    def record_contracting_structure(self, *, owner_identity: str, structure: str,
+                                     reason: str, **fields: str) -> int:
+        """Record how the owner contracts. Structure now; identity when supplied.
+
+        The decision and the data are separate facts and conflating them is how
+        a system ends up inventing a company name to fill a field. ``structure``
+        is the owner's answer to *what kind of party is this*; the identity
+        fields are theirs to provide and nobody else's to guess, so an omitted
+        one stays omitted rather than acquiring a plausible default.
+        """
+        if structure not in self.CONTRACTING_STRUCTURES:
+            raise FailClosed(
+                f"{structure!r} is not a contracting structure this records; "
+                f"one of {', '.join(self.CONTRACTING_STRUCTURES)}")
+        unknown = sorted(set(fields) - set(self.CONTRACTING_FIELDS))
+        if unknown:
+            raise FailClosed(f"unknown contracting field(s): {unknown}")
+        supplied = {k: str(v).strip() for k, v in fields.items() if str(v).strip()}
+        version = self.amend({"governance": {
+            "contracting": {"structure": structure, **supplied},
+            # Kept in step for the readiness check, which has always read this.
+            "legal_entity": structure,
+        }}, owner_identity, reason)
+        self._audit.record(
+            event="policy.contracting_recorded", authority="policy",
+            initiator=owner_identity, why=reason, decision=structure,
+            result=f"{len(supplied)} identity field(s) provisioned")
+        return version
+
+    def contracting_party(self) -> dict:
+        """How Solvent may describe who it acts for. Never a guess.
+
+        Returns the recorded structure, whatever identity fields the owner has
+        actually supplied, and an explicit list of the ones they have not. A
+        caller that needs a legal name and finds it in ``provisioning_required``
+        has to stop — that is the point. There is no code path here that
+        produces a name nobody provided.
+        """
+        record = self.get("governance", "contracting", default=None)
+        if not isinstance(record, dict) or not record.get("structure"):
+            return {"decided": False, "structure": "",
+                    "provisioning_required": list(self.CONTRACTING_FIELDS),
+                    "is_separate_legal_entity": False,
+                    "may_claim_entity_status": False}
+        structure = str(record["structure"])
+        supplied = {f: str(record.get(f, "")).strip()
+                    for f in self.CONTRACTING_FIELDS
+                    if str(record.get(f, "")).strip()}
+        separate = structure != self.INDIVIDUAL
+        return {
+            "decided": True,
+            "structure": structure,
+            **supplied,
+            "provisioning_required": [f for f in self.CONTRACTING_FIELDS
+                                      if f not in supplied],
+            # An individual is not a company, and Solvent is not a person. The
+            # only honest self-description is "software acting for the owner".
+            "is_separate_legal_entity": separate,
+            "may_claim_entity_status": separate,
+        }
+
+    #: Where a rail sits between "the owner picked it" and "money can move".
+    RAIL_APPROVED_NOT_ACTIVATED = "APPROVED_BUT_NOT_ACTIVATED"
+    RAIL_OPERATIONAL = "OPERATIONAL"
+
+    def approve_payment_rail(self, *, owner_identity: str, rail: str,
+                             verification_signal: str, reason: str) -> int:
+        """Record the chosen rail. Choosing is not configuring, and neither is
+        activating: this writes no credential, no webhook secret and no
+        destination, and nothing here makes an external effect possible."""
+        if not rail.strip() or not verification_signal.strip():
+            raise FailClosed(
+                "a rail without a verification signal cannot establish that "
+                "money arrived, so PAID would be unreachable")
+        version = self.amend({"payment": {
+            "approved_rail": rail.strip(),
+            "verification_signal": verification_signal.strip(),
+            "operational_status": self.RAIL_APPROVED_NOT_ACTIVATED,
+        }}, owner_identity, reason)
+        self._audit.record(
+            event="policy.payment_rail_approved", authority="policy",
+            initiator=owner_identity, why=reason, decision=rail.strip(),
+            result=f"signal={verification_signal.strip()}; "
+                   f"{self.RAIL_APPROVED_NOT_ACTIVATED}")
+        return version
+
+    def payment_rail(self) -> dict:
+        rail = self.get("payment", "approved_rail", default="")
+        return {
+            "rail": rail,
+            "verification_signal": self.get("payment", "verification_signal",
+                                            default=""),
+            "operational_status": self.get(
+                "payment", "operational_status",
+                default=self.RAIL_APPROVED_NOT_ACTIVATED),
+            "decided": bool(rail),
+        }
+
+    LOCAL = "LOCAL"
+    CLOUD = "CLOUD"
+
     def approve_model_artifact(self, *, owner_identity: str, model: str, tag: str,
                                digest: str, license_id: str, license_source: str,
                                verified_on: str, reason: str,
-                               restrictions: str = "none") -> int:
+                               restrictions: str = "none",
+                               placement: str = "LOCAL", provider: str = "",
+                               commercial_use: bool = True,
+                               max_privacy: str = "INTERNAL",
+                               cost_per_1k_tokens_cents: int = 0,
+                               capabilities: tuple = (),
+                               production: bool = True) -> int:
         """Record that one **exact** model artifact is cleared for paid client work.
 
         Clearance attaches to an artifact, never to a family. Within Qwen2.5, for
@@ -300,14 +428,124 @@ class PolicyStore:
                 f"{digest!r} is not a content digest. Clearance attaches to the "
                 "exact weights, not to a name a tag can be repointed at")
 
-        version = self.amend({"governance": {
-            "approved_model_artifact": {**fields, "restrictions": restrictions},
-        }}, owner_identity, reason)
+        record = {**fields, "restrictions": restrictions,
+                  "provider": provider or ("ollama" if placement == self.LOCAL
+                                           else ""),
+                  "placement": placement,
+                  "commercial_use": bool(commercial_use),
+                  "max_privacy": max_privacy,
+                  "cost_per_1k_tokens_cents": int(cost_per_1k_tokens_cents),
+                  "capabilities": sorted(capabilities or ())}
+        if placement not in (self.LOCAL, self.CLOUD):
+            raise FailClosed(
+                f"{placement!r} is neither {self.LOCAL} nor {self.CLOUD}; where "
+                "a model runs decides what data may reach it")
+        if placement == self.CLOUD and not record["provider"]:
+            raise FailClosed(
+                "a cloud model must name its provider: approval attaches to who "
+                "runs the weights, not only to which weights they are")
+
+        registry = dict(self.get("governance", "approved_models", default={}) or {})
+        registry[tag] = record
+        patch = {"governance": {"approved_models": registry}}
+        if production:
+            # The one artifact the deployment is configured to run. Readiness
+            # compares this against the live configuration, so it stays a single
+            # value even though approval is now a list.
+            patch["governance"]["approved_model_artifact"] = record
+        version = self.amend(patch, owner_identity, reason)
         self._audit.record(
             event="policy.model_artifact_approved", authority="policy",
             initiator=owner_identity, why=reason, decision="MODEL_CLEARED",
-            result=f"{tag} @ {digest} under {license_id}", input_ref=license_source)
+            result=f"{tag} @ {digest} under {license_id} "
+                   f"({placement}, commercial={bool(commercial_use)})",
+            input_ref=license_source)
         return version
+
+    def approved_models(self) -> dict:
+        """Every artifact the owner has cleared, keyed by tag."""
+        registry = self.get("governance", "approved_models", default={})
+        return dict(registry) if isinstance(registry, dict) else {}
+
+    def model_approval(self, tag: str) -> dict | None:
+        """One model's clearance, or ``None``. A family name is not a tag.
+
+        Deliberately an exact-key lookup with no prefix or family matching.
+        Within Qwen2.5 the 3B is research-only while the 7B and 14B are
+        Apache-2.0, so "it's a Qwen model" answers nothing, and a lookup that
+        was willing to guess would answer it wrongly.
+        """
+        return self.approved_models().get(tag)
+
+    def select_model(self, *, need_capability: str = "", privacy: str = "",
+                     max_cost_per_1k_cents: int | None = None,
+                     prefer: str = "", exclude: tuple = ()) -> dict:
+        """Which cleared model fits this need — or why none does.
+
+        Returns ``{"tag": ..., "approval": {...}}`` on success and
+        ``{"tag": "", "refusals": {tag: reason}}`` otherwise. It approves
+        nothing: every candidate here was already cleared by the owner, and the
+        cost it reports is the *declared* cost for the Financial Governor to
+        rule on. Model routing is not a second economics authority, so this
+        returns a number and does not spend it.
+
+        Hybrid means local where it fits and approved cloud where it does not.
+        It does not mean any local model, and it does not mean any cloud model:
+        an unapproved artifact is not a fallback, it is an unapproved artifact.
+        """
+        from .types import PrivacyClass
+
+        # Ordered by sensitivity: a model cleared for INTERNAL may not be shown
+        # CLIENT_CONFIDENTIAL, and an unrecognised class sorts above everything
+        # so it cannot slip under a ceiling by being unknown.
+        order = {PrivacyClass.PUBLIC.value: 0, PrivacyClass.INTERNAL.value: 1,
+                 PrivacyClass.CLIENT_CONFIDENTIAL.value: 2,
+                 PrivacyClass.RESTRICTED.value: 3}
+        refusals: dict[str, str] = {}
+        candidates = []
+        for tag, approval in sorted(self.approved_models().items()):
+            if tag in exclude:
+                refusals[tag] = "excluded by the caller (already tried or failed)"
+                continue
+            if not approval.get("commercial_use"):
+                refusals[tag] = ("commercial use is not established for this "
+                                 "artifact")
+                continue
+            if need_capability and need_capability not in (
+                    approval.get("capabilities") or ()):
+                refusals[tag] = (f"not demonstrated capable of "
+                                 f"{need_capability!r}; a licence is not a skill")
+                continue
+            if privacy:
+                ceiling = approval.get("max_privacy", PrivacyClass.PUBLIC.value)
+                if order.get(privacy, 99) > order.get(ceiling, -1):
+                    refusals[tag] = (f"may not receive {privacy} data "
+                                     f"(ceiling {ceiling})")
+                    continue
+            cost = int(approval.get("cost_per_1k_tokens_cents", 0))
+            if max_cost_per_1k_cents is not None and cost > max_cost_per_1k_cents:
+                refusals[tag] = (f"declared cost {cost} exceeds the "
+                                 f"{max_cost_per_1k_cents} the caller allowed")
+                continue
+            candidates.append((tag, approval, cost))
+
+        if not candidates:
+            return {"tag": "", "approval": None, "refusals": refusals,
+                    "why": ("no cleared model satisfies this need; an unapproved "
+                            "model is not a fallback")}
+
+        def rank(item):
+            tag, approval, cost = item
+            placement = approval.get("placement")
+            preferred = 0 if (prefer and placement == prefer) else 1
+            return (preferred, cost, tag)
+
+        tag, approval, cost = sorted(candidates, key=rank)[0]
+        return {"tag": tag, "approval": approval, "refusals": refusals,
+                "declared_cost_per_1k_cents": cost,
+                "why": (f"{tag} is cleared for commercial use, "
+                        f"{approval.get('placement')}, and fits the stated need; "
+                        "the Financial Governor still rules on the spend")}
 
     def permission_for(self, action_class: ActionClass) -> PermissionLevel:
         """Unknown class fails closed to owner approval, never to autonomy."""

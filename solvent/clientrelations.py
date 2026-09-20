@@ -244,6 +244,13 @@ class ClientRelations:
         handled.sentiment = self.sentiment(body)
         self._decide_escalation(conversation, handled)
         handled.stance, handled.body = self._prepare(conversation, handled)
+        # Who the client is contracting with is a fact, not a concession, so it
+        # is answered whatever else the message was classified as. Attaching it
+        # only to one classification meant a client asking "can you send me your
+        # company registration number?" — which reads as a request, not a
+        # question — got everything except the answer.
+        if self._asks_who_we_are(conversation):
+            handled.body += "\n\n" + self.describe_contracting_party()
         handled.response_id = self._store_response(conversation, handled)
         self._audit.record(
             event="relations.handled", authority="relations", initiator=initiator,
@@ -365,6 +372,21 @@ class ClientRelations:
         return STANCE_HOLD, (
             f"{opening}\n\nI've logged this and someone will follow up.")
 
+    #: A client asking who they are contracting with. Answered from the record.
+    _IDENTITY_QUESTION = re.compile(
+        r"\b(llc|l\.l\.c|inc\b|incorporat\w*|corporation|"
+        r"compan(y|ies)\s+(name|number|registration|details|address)|"
+        r"legal (name|entity|status)|registered (name|address|company|number)|"
+        r"business (name|number|address)|trading name|"
+        r"who (am i|are we) contracting|company registration|"
+        r"vat|tax (id|number|reference)|ein\b|abn\b|"
+        r"licen[cs]ed\s+(\w+\s+)?(firm|practice|accountant|accounting|"
+        r"professional|entity))")
+
+    def _asks_who_we_are(self, conversation: Conversation) -> bool:
+        latest = conversation.messages[-1]["body"] if conversation.messages else ""
+        return bool(self._IDENTITY_QUESTION.search((latest or "").lower()))
+
     def _agreed_summary(self, conversation: Conversation) -> str:
         """What was actually agreed, from the requirements table.
 
@@ -467,6 +489,75 @@ class ClientRelations:
             result="SENT")
         return dict(self._db.query_one(
             "SELECT * FROM client_responses WHERE id = ?", (response_id,)))
+
+    # ------------------------------------------------- who Solvent acts for
+    #
+    # OD-1: the owner contracts personally. Solvent has no legal identity of its
+    # own and must never imply one. The temptation is not malice — it is that
+    # "our company" is the natural register for business correspondence, and a
+    # client asking "what's your LLC name?" creates a blank that wants filling.
+    # It does not get filled here.
+
+    #: Phrases a reply may never contain, because each asserts a legal status
+    #: nobody established. Checked by test against every reply this module can
+    #: produce, so a future template cannot quietly reintroduce one.
+    FORBIDDEN_SELF_DESCRIPTIONS = (
+        "llc", "l.l.c", "inc.", "incorporated", "corporation", "our company",
+        "the company", "our firm", "our legal department", "licensed",
+        "certified public", "we are a registered", "ltd", "limited company",
+        "our partners", "our team of",
+    )
+
+    def describe_contracting_party(self) -> str:
+        """How Solvent may honestly describe who it acts for.
+
+        Three cases, and none of them invents anything. If the owner has
+        supplied a legal name, it is used. If they have recorded that they
+        contract personally but not yet supplied the name, that is said plainly.
+        If nothing is recorded, the answer is that it is not recorded — which
+        is worse for the conversation and true, and those are the terms.
+        """
+        party = self._policy.contracting_party()
+        if not party["decided"]:
+            return ("The contracting party for this work has not been recorded "
+                    "yet. I can't tell you who it is, and I'm not going to "
+                    "guess. I've asked the account owner to confirm it.")
+        name = party.get("legal_name", "")
+        if party["structure"] == "INDIVIDUAL":
+            if name:
+                return (f"Work is contracted with {name} personally, as an "
+                        "individual — there is no company. I'm software acting "
+                        "on their behalf.")
+            return ("Work is contracted with the owner personally, as an "
+                    "individual rather than through a company, so there is no "
+                    "company name to give you. The owner will confirm their "
+                    "details on the paperwork — I'm software acting on their "
+                    "behalf and I don't invent those.")
+        if name:
+            return (f"Work is contracted with {name}. I'm software acting on "
+                    "their behalf.")
+        return ("The contracting party's registered details have not been "
+                "recorded here yet, so I can't state them. The account owner "
+                "will confirm them.")
+
+    def contracting_party_for_documents(self) -> dict:
+        """The party a proposal or contract must name, or why it cannot be named.
+
+        Solvent does not generate contracts today. This exists so that if it
+        ever does, the party comes from the owner's recorded configuration and
+        from nowhere else — not from a model, not from the client's suggestion,
+        not from the job text, not from Business Memory. A document that cannot
+        be completed stays incomplete.
+        """
+        party = self._policy.contracting_party()
+        missing = party.get("provisioning_required", [])
+        return {
+            "may_generate": party["decided"] and not missing,
+            "structure": party.get("structure", ""),
+            "legal_name": party.get("legal_name", ""),
+            "blocked_on": ([f"{self._policy.PROVISIONING_REQUIRED}: "
+                            + ", ".join(missing)] if missing else []),
+        }
 
     # ------------------------------------------------------- clarifications
     #

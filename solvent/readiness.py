@@ -189,19 +189,40 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               category=OWNER_CONFIG))
 
     # --- things only the owner can decide --------------------------------
-    entity = policy.get("governance", "legal_entity", default="")
-    add(Check("legal contracting entity", bool(entity),
-              entity or "not recorded",
-              "" if entity else "OD-1: who legally accepts the work and invoices?",
+    # OD-1 is two facts, and reporting them as one is how a decision stays
+    # "unanswered" for want of data the decision never included. The structure
+    # is the owner's answer; the identity fields are theirs to supply.
+    party = policy.contracting_party()
+    add(Check("contracting structure decided", party["decided"],
+              party["structure"] or "not recorded",
+              "" if party["decided"]
+              else "OD-1: does the owner contract personally or through an entity?",
+              category=OWNER_CONFIG))
+    needed = party.get("provisioning_required", [])
+    add(Check("contracting identity provisioned", not needed,
+              ("supplied" if not needed
+               else f"{policy.PROVISIONING_REQUIRED}: {', '.join(needed)}"),
+              "" if not needed else
+              ("OD-1 activation: the owner must supply "
+               f"{', '.join(needed)}; these are never inferred"),
               category=OWNER_CONFIG))
 
-    rail = policy.get("payment", "approved_rail", default="")
-    signal = policy.get("payment", "verification_signal", default="")
+    # OD-2 is two facts as well: which rail, and whether it can actually move
+    # money. Choosing Stripe does not create a webhook secret.
+    rail_record = policy.payment_rail()
+    rail, signal = rail_record["rail"], rail_record["verification_signal"]
     add(Check("payment rail with a verification signal", bool(rail and signal),
               f"rail={rail or 'none'}, signal={signal or 'none'}",
               "" if rail and signal else
               "OD-2: without a verification signal PAID is unreachable and "
               "profit cannot be computed", category=EXTERNAL_VERIFICATION))
+    operational = rail_record["operational_status"] == policy.RAIL_OPERATIONAL
+    add(Check("payment rail operational", operational,
+              rail_record["operational_status"],
+              "" if operational else
+              "OD-2 activation: the chosen rail has no credentials or webhook "
+              "secret, so no payment can be verified yet",
+              category=EXTERNAL_VERIFICATION))
 
     add(model_artifact_check(policy, config_path, env))
 
