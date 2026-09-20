@@ -10,6 +10,8 @@ from solvent.errors import FailClosed
 from solvent.store import Store
 from solvent.types import ConsequenceTier, VerificationTier
 
+from tests_solvent import fixtures as fx
+
 
 class Chain(unittest.TestCase):
     def setUp(self):
@@ -45,7 +47,11 @@ class Chain(unittest.TestCase):
 
 class VerificationRules(unittest.TestCase):
     def setUp(self):
-        self.log = AuditLog(Store())
+        # A genuinely certified verifier, earned against the real battery. These
+        # tests are about the controls *underneath* the certification gate, so
+        # they have to get past it — with real evidence, not a permissive stub.
+        self.log, self.store = fx.certified_audit()
+        self.certified = fx.certified_evidence_fields()
 
     def test_self_attestation_refused_for_high_consequence(self):
         """The component that benefits from claiming success cannot be its own witness."""
@@ -55,7 +61,7 @@ class VerificationRules(unittest.TestCase):
                 subject_ref="J1", tier=VerificationTier.T1_DETERMINISTIC,
                 method="ran tests", executor_identity="worker",
                 verifier_identity="worker", verdict=True, raw_output="ok",
-                consequence=ConsequenceTier.C_HIGH)
+                consequence=ConsequenceTier.C_HIGH, **self.certified)
 
     def test_self_attestation_allowed_for_low_consequence(self):
         """Bounded downside is why cheap work does not need an independent verifier."""
@@ -63,7 +69,7 @@ class VerificationRules(unittest.TestCase):
             requirement_id="r-legacy", artifact_digest="d" * 64,
             subject_ref="J2", tier=VerificationTier.T1_DETERMINISTIC, method="schema",
             executor_identity="worker", verifier_identity="worker", verdict=True,
-            raw_output="valid", consequence=ConsequenceTier.C_LOW)
+            raw_output="valid", consequence=ConsequenceTier.C_LOW, **self.certified)
         self.assertTrue(evidence)
 
     def test_t0_self_report_is_never_verification_above_low(self):
@@ -86,7 +92,7 @@ class VerificationRules(unittest.TestCase):
             requirement_id="r-legacy", artifact_digest="d" * 64,
                 subject_ref="J4", tier=VerificationTier.T1_DETERMINISTIC, method="m",
                 executor_identity="w", verifier_identity="", verdict=True,
-                raw_output="", consequence=ConsequenceTier.C_LOW)
+                raw_output="", consequence=ConsequenceTier.C_LOW, **self.certified)
 
     def test_best_tier_reports_highest_passing_evidence(self):
         for tier in (VerificationTier.T1_DETERMINISTIC, VerificationTier.T3_EXTERNAL_FACT):
@@ -94,7 +100,7 @@ class VerificationRules(unittest.TestCase):
             requirement_id="r-legacy", artifact_digest="d" * 64,
                 subject_ref="J5", tier=tier, method="m", executor_identity="w",
                 verifier_identity="v", verdict=True, raw_output="",
-                consequence=ConsequenceTier.C_LOW)
+                consequence=ConsequenceTier.C_LOW, **self.certified)
         self.assertIs(self.log.best_tier("J5"), VerificationTier.T3_EXTERNAL_FACT)
 
 

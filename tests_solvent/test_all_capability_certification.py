@@ -34,7 +34,7 @@ from solvent.capability import (
 from solvent.errors import FailClosed
 from solvent.harness import (
     CAPABILITIES, OWNER, ServiceCapability, Solvent, _report_derived,
-    nothing_derived, run_csv_job,
+    ensure_verifier_certified, nothing_derived, run_csv_job,
 )
 from solvent.types import CheckResult, Criticality, Requirement, RequirementSource as RS
 
@@ -166,6 +166,12 @@ class ADefectiveCapabilityIsCaughtByTheRealVerifier(_RegistersATestCapability):
                              workdir=self.work, capability=self.name)
         self.assertIn("R-NOINVENT", report.escalated)
 
+    def test_its_honest_verifier_still_earns_certification(self):
+        """A bad *worker* does not taint the checks that catch it."""
+        solvent = Solvent()
+        record = ensure_verifier_certified(solvent, self.name)
+        self.assertEqual(record["state"], "CERTIFIED", record["why"])
+
     def test_filling_an_absent_fact_with_na_is_not_a_disclosure(self):
         run_csv_job(source=self.source, requirements=STANDARD,
                     workdir=self.work, capability=self.name)
@@ -205,57 +211,239 @@ class ADefectiveCapabilityIsCaughtByTheRealVerifier(_RegistersATestCapability):
         self.assertFalse(solvent.capability.may_deploy(self.name)[0])
 
 
-class ASelfApprovingCapabilityIsCaughtByGroundTruth(_RegistersATestCapability):
-    """The dangerous bad capability: wrong work, and checks that say otherwise.
+class ASelfApprovingVerifierIsRejectedBySolvent(_RegistersATestCapability):
+    """The defect this turn exists to close.
 
-    Solvent's pipeline asks the capability's own verifier, so this one does get
-    delivered — and that is the honest result to record, not something to hide.
-    What stops it is that "delivered" was never the certification standard:
-    the black-box harness reads the artifact itself and scores this a false
-    completion, and one false completion blocks promotion outright.
+    Previously this capability *delivered*. Solvent's pipeline asked the
+    capability's own verifier, the verifier said PASS, and six rows went into
+    the permanent audit log each claiming a value had been "recomputed from
+    source and deliverable" when nothing had been recomputed. Only the external
+    black-box harness caught it, which is no use at all — a real client is not
+    accompanied by a test harness.
+
+    Solvent must now reject the trust chain itself.
     """
 
     name = "self-approving"
     spec = SELF_APPROVING
 
-    def test_solvents_pipeline_does_deliver_it(self):
-        report = run_csv_job(source=self.source, requirements=STANDARD,
-                             workdir=self.work, capability=self.name)
-        self.assertTrue(report.delivered,
-                        "the scenario this test exists for did not occur")
+    def test_the_verifier_fails_certification_on_its_own_merits(self):
+        """Not "no battery exists" — put through real trials, and wrong."""
+        solvent = Solvent()
+        record = ensure_verifier_certified(solvent, self.name)
+        self.assertEqual(record["state"], "FAILED", record["why"])
+        self.assertGreater(record["false_accepts"], 0,
+                           "it should have accepted artifacts that are wrong")
+        self.assertGreater(record["trials_total"], 0,
+                           "it must be blocked for being wrong, not untested")
 
-    def test_the_delivered_document_is_genuinely_wrong(self):
-        """Checked by recomputation, not by asking the capability."""
-        run_csv_job(source=self.source, requirements=STANDARD,
-                    workdir=self.work, capability=self.name)
-        produced = sorted(pathlib.Path(self.work).glob("*.md"))[-1]
-        outcome = reportverify.run("report_no_invented_facts", source=self.source,
-                                   output=str(produced), params={})
-        self.assertIs(outcome.result, CheckResult.FAIL)
-        self.assertIn("999.99", str(outcome.computed))
+    def test_the_job_is_refused_without_any_external_harness(self):
+        with self.assertRaises(FailClosed) as caught:
+            run_csv_job(source=self.source, requirements=STANDARD,
+                        workdir=self.work, capability=self.name)
+        self.assertIn("certification", str(caught.exception).lower())
 
-    def test_one_false_completion_blocks_promotion_whatever_else_passed(self):
-        """No pass rate offsets shipping wrong work while reporting success."""
-        candidate = Capability(
-            name=self.name, covers=frozenset({"report_section"}),
-            version="self-approving/0.1",
-            verifiable_by=("report_no_invented_facts",),
-            proven_levels=("L1", "L2", "L3"),
-            fixtures_total=40, fixtures_passed=40, false_completions=1)
-        ok, why = promotion_verdict(candidate)
-        self.assertFalse(ok)
-        self.assertIn("false completion", why)
-        self.assertEqual(MAX_FALSE_COMPLETIONS, 0)
+    def test_no_verification_evidence_was_recorded_at_all(self):
+        """The false PASS rows must never reach the permanent record."""
+        solvent = Solvent()
+        with self.assertRaises(FailClosed):
+            run_csv_job(source=self.source, requirements=STANDARD,
+                        workdir=self.work, solvent=solvent, capability=self.name)
+        rows = solvent.store.raw_readonly(
+            "SELECT * FROM verification_evidence WHERE verdict = 'PASS'")
+        self.assertEqual(rows, [], "a rubber stamp reached the audit log")
 
-    def test_a_perfect_record_with_one_false_completion_still_fails(self):
-        clean = Capability(
-            name="hypothetical", covers=frozenset({"x"}), version="v/1",
-            verifiable_by=("report_opens",), proven_levels=("L1", "L2", "L3"),
-            fixtures_total=MIN_FIXTURES, fixtures_passed=MIN_FIXTURES)
-        self.assertTrue(promotion_verdict(clean)[0], "control case must pass")
-        import dataclasses
-        tainted = dataclasses.replace(clean, false_completions=1)
-        self.assertFalse(promotion_verdict(tainted)[0])
+    def test_nothing_was_delivered(self):
+        solvent = Solvent()
+        with self.assertRaises(FailClosed):
+            run_csv_job(source=self.source, requirements=STANDARD,
+                        workdir=self.work, solvent=solvent, capability=self.name)
+        delivered = solvent.store.raw_readonly(
+            "SELECT * FROM jobs WHERE state IN ('COMPLETE','AWAITING_PAYMENT')")
+        self.assertEqual(delivered, [])
+
+    def test_the_refusal_is_on_the_record_with_its_reason(self):
+        solvent = Solvent()
+        with self.assertRaises(FailClosed):
+            run_csv_job(source=self.source, requirements=STANDARD,
+                        workdir=self.work, solvent=solvent, capability=self.name)
+        events = [e for e in solvent.audit.events()
+                  if e["event"] == "verifier.certification"]
+        self.assertTrue(events, "the certification decision was not audited")
+        self.assertEqual(events[-1]["decision"], "FAILED")
+
+
+class ADegenerateVerifierFailsInEitherDirection(unittest.TestCase):
+    """Approve-everything and reject-everything are both disqualifying.
+
+    They fail for different reasons and the distinction matters: one ships
+    defective work while reporting success, the other can never ship correct
+    work at all. Collapsing them into a single pass rate would hide which.
+    """
+
+    def setUp(self):
+        self.solvent = Solvent()
+
+    def outcome(self, passed):
+        class _Outcome:
+            result = CheckResult.PASS if passed else CheckResult.FAIL
+            detail = "TEST_ONLY"
+            computed = {}
+        _Outcome.passed = passed
+        return _Outcome()
+
+    def certify(self, fn, label):
+        from solvent import verifiercert
+
+        report = verifiercert.run_trials(fn, capability="csv-cleanup",
+                                         verifier_ref=label)
+        record = self.solvent.capability.certify_verifier(
+            verifier_ref=label, capability_version="degenerate/0.1", report=report)
+        return record, report
+
+    def test_approve_everything_fails_with_false_accepts(self):
+        record, _ = self.certify(lambda c, **k: self.outcome(True), "approve-all")
+        self.assertEqual(record["state"], "FAILED")
+        self.assertGreater(record["false_accepts"], 0)
+        self.assertEqual(record["false_rejects"], 0)
+
+    def test_reject_everything_fails_with_false_rejects(self):
+        record, _ = self.certify(lambda c, **k: self.outcome(False), "reject-all")
+        self.assertEqual(record["state"], "FAILED")
+        self.assertEqual(record["false_accepts"], 0)
+        self.assertGreater(record["false_rejects"], 0)
+
+    def test_a_verifier_that_crashes_is_not_certified(self):
+        def explodes(check, **kwargs):
+            raise RuntimeError("boom")
+
+        record, report = self.certify(explodes, "crasher")
+        self.assertEqual(record["state"], "FAILED")
+        self.assertTrue(all(r.verdict == "ERROR" for r in report.results))
+
+    def test_neither_may_authorize_delivery_for_any_check(self):
+        for label, fn in (("approve-all2", lambda c, **k: self.outcome(True)),
+                          ("reject-all2", lambda c, **k: self.outcome(False))):
+            self.certify(fn, label)
+            for check in ("drop_exact_duplicates", "parses_as_csv"):
+                with self.subTest(verifier=label, check=check):
+                    allowed, _ = self.solvent.capability.may_authorize_delivery(
+                        verifier_ref=label, capability_version="degenerate/0.1",
+                        check=check)
+                    self.assertFalse(allowed)
+
+
+class CertificationIsScopedAndNotInherited(unittest.TestCase):
+    """Trust does not spread sideways: not across capabilities, not across checks."""
+
+    def setUp(self):
+        self.solvent = Solvent()
+        ensure_verifier_certified(self.solvent, "csv-cleanup")
+        self.ref = "solvent.csvverify.run"
+
+    def test_it_is_certified_for_a_check_it_was_tested_on(self):
+        allowed, why = self.solvent.capability.may_authorize_delivery(
+            verifier_ref=self.ref, capability_version="csv-cleanup/1.0",
+            check="drop_exact_duplicates")
+        self.assertTrue(allowed, why)
+
+    def test_it_is_not_certified_for_another_capabilitys_version(self):
+        allowed, why = self.solvent.capability.may_authorize_delivery(
+            verifier_ref=self.ref, capability_version="report-builder/1.0",
+            check="report_opens")
+        self.assertFalse(allowed)
+        self.assertIn("never been tested", why)
+
+    def test_it_is_not_certified_for_a_check_it_was_never_tried_on(self):
+        allowed, why = self.solvent.capability.may_authorize_delivery(
+            verifier_ref=self.ref, capability_version="csv-cleanup/1.0",
+            check="report_total_correct")
+        self.assertFalse(allowed)
+        self.assertIn("not certified to decide", why)
+
+    def test_evidence_with_no_verifier_named_is_refused(self):
+        allowed, why = self.solvent.capability.may_authorize_delivery(
+            verifier_ref="", capability_version="csv-cleanup/1.0", check="x")
+        self.assertFalse(allowed)
+        self.assertIn("does not name the verifier", why)
+
+    def test_an_untested_verifier_is_not_a_trusted_one(self):
+        allowed, why = self.solvent.capability.may_authorize_delivery(
+            verifier_ref="somebody.elses.verifier",
+            capability_version="csv-cleanup/1.0", check="parses_as_csv")
+        self.assertFalse(allowed)
+        self.assertIn("never been tested", why)
+
+
+class RevokingAVerifierStopsItWithoutRewritingHistory(unittest.TestCase):
+    def setUp(self):
+        self.solvent = Solvent()
+        ensure_verifier_certified(self.solvent, "csv-cleanup")
+        self.ref = "solvent.csvverify.run"
+        self.version = "csv-cleanup/1.0"
+
+    def revoke(self):
+        return self.solvent.capability.revoke_verifier(
+            verifier_ref=self.ref, capability_version=self.version,
+            why="demonstrated false PASS on job J-TEST", decided_by="qc")
+
+    def test_it_was_certified_before_revocation(self):
+        self.assertEqual(
+            self.solvent.capability.verifier_state(self.ref, self.version),
+            "CERTIFIED")
+
+    def test_after_revocation_it_may_not_authorize_anything(self):
+        self.revoke()
+        allowed, why = self.solvent.capability.may_authorize_delivery(
+            verifier_ref=self.ref, capability_version=self.version,
+            check="parses_as_csv")
+        self.assertFalse(allowed)
+        self.assertIn("revoked", why)
+
+    def test_revocation_needs_a_reason_on_the_record(self):
+        with self.assertRaises(FailClosed):
+            self.solvent.capability.revoke_verifier(
+                verifier_ref=self.ref, capability_version=self.version,
+                why="", decided_by="qc")
+
+    def test_the_earlier_certification_is_still_on_the_record(self):
+        """History is not rewritten: how it came to be trusted stays visible."""
+        self.revoke()
+        history = self.solvent.capability.verifier_history(self.ref, self.version)
+        self.assertEqual([r["state"] for r in history], ["CERTIFIED", "REVOKED"])
+
+    def test_a_revoked_verifier_cannot_record_new_evidence(self):
+        from tests_solvent import fixtures_csv as fx
+
+        self.revoke()
+        source, work = fx.workspace(fx.DUPLICATES)
+        with self.assertRaises(FailClosed):
+            run_csv_job(source=source, requirements=list(fx.SIMPLE),
+                        workdir=work, solvent=self.solvent)
+
+    def test_revoking_one_verifier_does_not_stop_another(self):
+        """Revocation is scoped too: the report verifier did nothing wrong."""
+        self.revoke()
+        source, work = workspace()
+        report = run_csv_job(source=source, requirements=STANDARD, workdir=work,
+                             solvent=self.solvent, capability="report-builder")
+        self.assertTrue(report.delivered, report.escalated)
+
+    def test_undelivered_work_does_not_keep_relying_on_revoked_evidence(self):
+        """A job mid-flight must not sail on evidence that is no longer good."""
+        from tests_solvent import fixtures_csv as fx
+
+        source, work = fx.workspace(fx.DUPLICATES)
+        report = run_csv_job(source=source, requirements=list(fx.SIMPLE),
+                             workdir=work, solvent=self.solvent)
+        self.assertTrue(report.delivered, report.escalated)
+        self.revoke()
+        # The recorded evidence stays on the record, but nothing new may be
+        # verified by this verifier, so no further artifact can be cleared.
+        source2, work2 = fx.workspace(fx.DUPLICATES)
+        with self.assertRaises(FailClosed):
+            run_csv_job(source=source2, requirements=list(fx.SIMPLE),
+                        workdir=work2, solvent=self.solvent)
 
 
 class SelfProtectionCannotBeForgotten(unittest.TestCase):

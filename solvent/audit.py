@@ -46,6 +46,21 @@ class AuditLog:
 
     def __init__(self, store: Store) -> None:
         self._db = store.for_authority("audit")
+        #: Answers "may this verifier's PASS count?". Injected at composition
+        #: rather than imported, because the capability registry imports this
+        #: module. It is consulted, never commanded: this module refuses on a
+        #: no, and has no way to change a certification.
+        self._verifier_trust = None
+
+    def trust_verifiers_via(self, registry) -> None:
+        """Wire the certification authority. Composition-root only.
+
+        Deliberately not a constructor argument: an :class:`AuditLog` exists
+        before the registry does, and the registry needs the audit log. Passing
+        it afterwards is what breaks that cycle without either module importing
+        the other.
+        """
+        self._verifier_trust = registry
 
     # ---------------------------------------------------------------- events
 
@@ -127,6 +142,7 @@ class AuditLog:
         executor_identity: str, verifier_identity: str, verdict: bool,
         raw_output: str, consequence: ConsequenceTier,
         requirement_id: str = "", artifact_digest: str = "", artifact_id: str = "",
+        verifier_ref: str = "", capability_version: str = "", check: str = "",
     ) -> str:
         """Record verification evidence, refusing self-attestation *and* hearsay.
 
@@ -143,6 +159,24 @@ class AuditLog:
         are what let :meth:`Orchestrator.verification_satisfied` ask the only
         question that matters before delivery: *does every committed requirement
         have a pass for this exact file?*
+
+        **Whether the attester can tell right from wrong.** The two controls
+        above both assume the verifier is competent, and nothing established
+        that. A capability that supplied an approve-everything verifier put six
+        PASS rows in this table, each recording a ``method`` of "recomputed from
+        source and deliverable" when nothing had been recomputed, and the client
+        received an invented total. ``verifier_identity`` was ``qc`` and
+        ``executor_identity`` was ``worker``, so the independence control above
+        was satisfied — because those are labels the caller chooses, not facts
+        about the code that ran.
+
+        So evidence above T0 must also name the **implementation** that produced
+        it (``verifier_ref``, derived from the callable, not typed), and that
+        implementation must be certified to decide that check for that
+        capability. The certification lives in the capability registry, which
+        already owns what-is-proven-on-what-evidence; this method asks it and
+        refuses, which is the same chokepoint doing one more check rather than a
+        second gate somewhere else.
 
         The digest is not validated for truthfulness here — this records what a
         verifier claims to have inspected. What makes it meaningful is that the
@@ -172,15 +206,36 @@ class AuditLog:
         if not verifier_identity:
             raise FailClosed("verification evidence requires a verifier identity")
 
+        verifier_state = ""
+        if tier is not VerificationTier.T0_SELF_REPORT:
+            if not verifier_ref:
+                raise FailClosed(
+                    f"{tier.value} evidence must name the verifier implementation "
+                    "that produced it; an identity label says who signed, not "
+                    "what ran, and a capability can choose its own label")
+            if self._verifier_trust is None:
+                raise FailClosed(
+                    "no verifier certification is available, so this process "
+                    f"cannot establish that {verifier_ref} detects wrong work; "
+                    "evidence above T0 is refused rather than recorded untrusted")
+            allowed, why = self._verifier_trust.may_authorize_delivery(
+                verifier_ref=verifier_ref, capability_version=capability_version,
+                check=check)
+            if not allowed:
+                raise FailClosed(f"refusing to record verification evidence: {why}")
+            verifier_state = self._verifier_trust.verifier_state(
+                verifier_ref, capability_version)
+
         evidence_id = new_id("ver")
         self._db.execute(
             "INSERT INTO verification_evidence(id,ts,subject_ref,tier,method,"
             "executor_identity,verifier_identity,verdict,raw_output,consequence,"
-            "requirement_id,artifact_digest,artifact_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "requirement_id,artifact_digest,artifact_id,verifier_ref,verifier_state) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (evidence_id, now(), subject_ref, tier.value, method, executor_identity,
              verifier_identity, "PASS" if verdict else "FAIL", raw_output,
-             consequence.value, requirement_id, artifact_digest, artifact_id),
+             consequence.value, requirement_id, artifact_digest, artifact_id,
+             verifier_ref, verifier_state),
         )
         self._db.commit()
         self.record(

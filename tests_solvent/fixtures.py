@@ -34,6 +34,12 @@ class Rig:
         self.pricing = PricingReference(self.store, self.policy)
         self.governor = FinancialGovernor(
             self.store, self.audit, self.policy, self.ledger, self.pricing)
+        # Evidence above T0 is refused unless the verifier that produced it has
+        # shown it can detect wrong work. The rig certifies the real CSV
+        # verifier against the real battery so tests about other controls can
+        # record evidence — earned, not asserted.
+        self.capability = _certify_csv_verifier(self.store, self.audit, self.policy)
+        self.audit.trust_verifiers_via(self.capability)
 
     def load_labor_fixtures(self, effective: str = "2026-06-01") -> None:
         for state, rate in STATE_LABOR_RATES.items():
@@ -52,3 +58,51 @@ class Rig:
             "owner_approval_above_cents": approval_above,
             "margin_floor": floor,
         }}, OWNER, "test: isolate the control under test")
+
+
+# --------------------------------------------------------- verifier certification
+#: A real check name from a real certified verifier. Tests that need to get
+#: *past* the verifier gate in order to exercise a control underneath it use
+#: these, rather than a stub that answers yes — a permissive stub in the
+#: fixtures would silently disable the control in every test that touched it.
+CERTIFIED_VERIFIER = "solvent.csvverify.run"
+CERTIFIED_CAPABILITY = "csv-cleanup/1.0"
+CERTIFIED_CHECK = "parses_as_csv"
+
+
+def _certify_csv_verifier(store, audit, policy):
+    """Earn the CSV verifier's certification against the real battery."""
+    from solvent import csvverify, verifiercert
+    from solvent.capability import CapabilityRegistry
+
+    registry = CapabilityRegistry(store, audit, policy)
+    report = verifiercert.run_trials(csvverify.run, capability="csv-cleanup",
+                                     verifier_ref=CERTIFIED_VERIFIER)
+    record = registry.certify_verifier(verifier_ref=CERTIFIED_VERIFIER,
+                                       capability_version=CERTIFIED_CAPABILITY,
+                                       report=report)
+    assert record["state"] == "CERTIFIED", record["why"]
+    return registry
+
+
+def certified_audit(store=None):
+    """``(audit, store)`` with the real CSV verifier genuinely certified.
+
+    The certification is earned here the same way the pipeline earns it: the
+    real verifier is run against the real hidden-ground-truth battery and the
+    real registry judges the result. Nothing is asserted into place.
+    """
+    from solvent import csvverify, verifiercert
+    from solvent.capability import CapabilityRegistry
+
+    store = store or Store(":memory:")
+    audit = AuditLog(store)
+    policy = PolicyStore(store, audit, owner_identity=OWNER)
+    audit.trust_verifiers_via(_certify_csv_verifier(store, audit, policy))
+    return audit, store
+
+
+def certified_evidence_fields(check: str = CERTIFIED_CHECK) -> dict:
+    """The three fields ``record_verification`` now requires above T0."""
+    return {"verifier_ref": CERTIFIED_VERIFIER,
+            "capability_version": CERTIFIED_CAPABILITY, "check": check}

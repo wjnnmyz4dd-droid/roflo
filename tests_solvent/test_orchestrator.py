@@ -11,6 +11,7 @@ from solvent.types import (
     GovernorVerdict, JobState, Jurisdiction, LocationSignals, OperatingMode,
     VerificationTier, money,
 )
+from tests_solvent import fixtures as fx
 from tests_solvent.fixtures import OWNER, Rig
 
 
@@ -179,7 +180,7 @@ class VerificationGate(Base):
             requirement_id="R-1", artifact_digest=self._artifact_digest,
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC, method="schema",
             executor_identity="execution", verifier_identity="qc", verdict=True,
-            raw_output="ok", consequence=ConsequenceTier.C_HIGH)
+            raw_output="ok", consequence=ConsequenceTier.C_HIGH, **fx.certified_evidence_fields())
         ok, reason = self.orch.verification_satisfied(job_id)
         self.assertFalse(ok)
         self.assertIn("T2_INDEPENDENT_REVIEW", reason)
@@ -191,7 +192,7 @@ class VerificationGate(Base):
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC,
             method="recalculated totals", executor_identity="execution",
             verifier_identity="qc", verdict=True, raw_output="ok",
-            consequence=self.orch.job(job_id).consequence)
+            consequence=self.orch.job(job_id).consequence, **fx.certified_evidence_fields())
         self.orch.mark_verified(job_id=job_id, initiator="qc")
         self.assertIs(self.orch.job(job_id).state, JobState.READY_FOR_DELIVERY)
 
@@ -201,7 +202,7 @@ class VerificationGate(Base):
             requirement_id="R-1", artifact_digest=self._artifact_digest,
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC, method="m",
             executor_identity="execution", verifier_identity="qc", verdict=True,
-            raw_output="ok", consequence=self.orch.job(job_id).consequence)
+            raw_output="ok", consequence=self.orch.job(job_id).consequence, **fx.certified_evidence_fields())
         self.orch.mark_verified(job_id=job_id, initiator="qc")
         self.orch.record_delivery(job_id=job_id, initiator="x", gate_request_id="act")
         # The Ledger records nothing collected yet, so completion is refused

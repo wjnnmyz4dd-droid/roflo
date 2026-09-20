@@ -155,6 +155,110 @@ def check_no_invented_facts(source, output, params) -> CheckOutcome:
                         "every figure traces to the supplied data", computed)
 
 
+def _section_of(text: str, heading: str) -> list[str] | None:
+    """The lines under ``## heading``, up to the next heading. None if absent."""
+    wanted = f"## {heading}".strip()
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() == wanted:
+            body = []
+            for following in lines[index + 1:]:
+                if following.startswith("## "):
+                    break
+                body.append(following.strip())
+            return body
+    return None
+
+
+def check_section_present(source, output, params) -> CheckOutcome:
+    """The named section exists and contains what that kind of section is for.
+
+    This check used to be an alias for "the document opens", which meant a
+    requirement saying *"an Overview section naming the client and period"* was
+    satisfied by any document with any heading at all. Verifier certification
+    caught it: the check name was registered, so requirements naming it could be
+    committed, but it had never demonstrated it could detect anything about a
+    section.
+
+    Checking the *section* rather than the whole document is also what catches a
+    fact rendered under the wrong heading — correct content, wrong place — which
+    a document-wide search cannot see.
+    """
+    text, problem = _read(output)
+    if problem:
+        return CheckOutcome(CheckResult.UNVERIFIABLE, problem)
+    heading = params.get("heading")
+    if not heading:
+        return CheckOutcome(CheckResult.NEEDS_INFORMATION,
+                            "no heading named, so there is no section to find")
+    body = _section_of(text, heading)
+    if body is None:
+        return CheckOutcome(CheckResult.FAIL,
+                            f"the document has no section headed {heading!r}",
+                            {"heading": heading})
+    content = [line for line in body if line]
+    if not content:
+        return CheckOutcome(CheckResult.FAIL,
+                            f"section {heading!r} is empty", {"heading": heading})
+
+    kind = params.get("kind")
+    within = set(content)
+    computed = {"heading": heading, "kind": kind, "lines": len(content)}
+
+    if kind == "facts":
+        facts, rows, source_problem = load_source(source)
+        if source_problem:
+            return CheckOutcome(CheckResult.UNVERIFIABLE, source_problem)
+        missing = []
+        for name in params.get("fields") or []:
+            value = facts.get(name)
+            if value is None and len(rows) == 1:
+                value = rows[0].get(name)
+            expected = (f"- {name}: NOT SUPPLIED" if value is None
+                        else f"- {name}: {value}")
+            if expected not in within:
+                missing.append(name)
+        computed["missing"] = missing
+        if missing:
+            return CheckOutcome(
+                CheckResult.FAIL,
+                f"section {heading!r} does not carry fact(s) {missing}; a fact "
+                "rendered elsewhere is not a fact rendered here", computed)
+
+    elif kind == "table":
+        columns = params.get("columns") or []
+        header = [line for line in content if line.startswith("|")]
+        if not header:
+            return CheckOutcome(CheckResult.FAIL,
+                                f"section {heading!r} contains no table", computed)
+        cells = {c.strip() for c in header[0].strip("|").split("|")}
+        missing = [c for c in columns if c not in cells]
+        computed["missing_columns"] = missing
+        if missing:
+            return CheckOutcome(CheckResult.FAIL,
+                                f"table in {heading!r} lacks column(s) {missing}",
+                                computed)
+
+    elif kind == "total":
+        column = params.get("column")
+        if column and not any(line.startswith(f"- {column} total:")
+                              for line in content):
+            return CheckOutcome(
+                CheckResult.FAIL,
+                f"section {heading!r} states no total for {column!r}", computed)
+
+    elif kind == "text":
+        body_text = (params.get("body") or "").strip()
+        if body_text and body_text not in within:
+            return CheckOutcome(CheckResult.FAIL,
+                                f"section {heading!r} does not carry the supplied "
+                                "text", computed)
+
+    return CheckOutcome(CheckResult.PASS,
+                        f"section {heading!r} present with {len(content)} line(s)",
+                        computed)
+
+
 def check_facts_rendered(source, output, params) -> CheckOutcome:
     """Named facts appear with the client's own values, byte for byte."""
     text, problem = _read(output)
@@ -288,7 +392,7 @@ CHECKS = {
     "report_opens": check_opens_as_text,
     # A section requirement is executed by the worker and checked as a whole by
     # the document-level checks above.
-    "report_section": check_opens_as_text,
+    "report_section": check_section_present,
 }
 
 

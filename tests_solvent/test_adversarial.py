@@ -14,6 +14,7 @@ from solvent.types import (
     ActionClass, CostCategory, GovernorVerdict, JobState, Jurisdiction,
     LocationSignals, OperatingMode, PaymentState, PrivacyClass, VerificationTier, money,
 )
+from tests_solvent import fixtures as fx
 from tests_solvent.fixtures import OWNER, Rig
 
 
@@ -115,7 +116,7 @@ class A3_UnbackedCompletion(Base):
             requirement_id="R-1", artifact_digest=artifact.digest,
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC, method="m",
             executor_identity="e", verifier_identity="v", verdict=True,
-            raw_output="", consequence=self.orch.job(job_id).consequence)
+            raw_output="", consequence=self.orch.job(job_id).consequence, **fx.certified_evidence_fields())
         self.orch.mark_verified(job_id=job_id, initiator="v")
         self.orch.record_delivery(job_id=job_id, initiator="x",
                                   gate_request_id="act")

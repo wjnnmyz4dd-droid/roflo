@@ -141,6 +141,11 @@ class Solvent:
         self.orchestrator = JobOrchestrator(self.store, self.audit, self.policy,
                                             self.governor, self.ledger)
         self.capability = CapabilityRegistry(self.store, self.audit, self.policy)
+        # The audit log refuses verification evidence from a verifier that has
+        # not shown it can detect wrong work. It asks the registry, which owns
+        # what-is-proven-on-what-evidence; wiring happens here because the
+        # registry needs the audit log and the audit log needs this answer.
+        self.audit.trust_verifiers_via(self.capability)
         self.memory = BusinessMemory(self.store, self.audit)
         self.discovery = Discovery(self.store, self.audit, self.policy, self.gate)
         self.feedback = ClientFeedback(self.store, self.audit, self.orchestrator)
@@ -799,6 +804,41 @@ class ServiceReport:
         return len(self.rounds)
 
 
+def verifier_ref(spec: "ServiceCapability") -> str:
+    """Which implementation actually verifies this capability's work.
+
+    Derived from the callable rather than supplied as a string, because the
+    point of the whole certification path is that a capability cannot choose
+    what it is called. ``verifier_identity`` ("qc") is a role label the caller
+    picks; this is the code.
+    """
+    fn = spec.verify
+    module = getattr(fn, "__module__", "") or ""
+    name = getattr(fn, "__qualname__", None) or getattr(fn, "__name__", repr(fn))
+    return f"{module}.{name}" if module else str(name)
+
+
+def ensure_verifier_certified(s: "Solvent", capability: str) -> dict:
+    """Put this capability's verifier through its battery, once, before use.
+
+    Certification is recorded, so this is a no-op on every later job. A verifier
+    that fails is recorded as failed and the audit log will refuse its evidence
+    — which refuses the job, correctly. Nothing here decides to ship anything;
+    it produces measurements and hands them to the registry.
+    """
+    from . import verifiercert
+
+    spec = CAPABILITIES[capability]
+    ref = verifier_ref(spec)
+    existing = s.capability.verifier_certification(ref, spec.version)
+    if existing is not None:
+        return existing
+    report = verifiercert.run_trials(spec.verify, capability=capability,
+                                     verifier_ref=ref)
+    return s.capability.certify_verifier(
+        verifier_ref=ref, capability_version=spec.version, report=report)
+
+
 def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
                             attempt: int, verifier: str = "qc",
                             executor: str = "worker",
@@ -809,6 +849,9 @@ def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
     it did, and it records evidence naming both the requirement and the exact
     artifact digest — so this round's passes die with this round's artifact.
     """
+    ensure_verifier_certified(s, capability)
+    spec = CAPABILITIES[capability]
+    ref = verifier_ref(spec)
     artifact = s.orchestrator.current_deliverable(job_id)
     if artifact is None:
         raise FailClosed("nothing to verify: no deliverable has been registered")
@@ -833,7 +876,8 @@ def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
             raw_output=f"{outcome.result.value}: {outcome.detail} "
                        f"| computed={outcome.computed}",
             consequence=job.consequence, requirement_id=req.id,
-            artifact_digest=artifact.digest, artifact_id=artifact.id)
+            artifact_digest=artifact.digest, artifact_id=artifact.id,
+            verifier_ref=ref, capability_version=spec.version, check=req.check)
     return round_
 
 

@@ -56,6 +56,10 @@ APPEND_ONLY = (
     # A proposal and the owner's answer to it are history. Editing either would
     # let a denial become an approval with nothing to show for the change.
     "capability_proposals",
+    # A verifier's trial record and the certification decision from it are
+    # history. A verifier that failed must stay failed on the record even after
+    # it is fixed and re-certified, or a revocation could be edited away.
+    "verifier_certifications",
 )
 
 #: Which authority owns which tables. The single source of this mapping.
@@ -74,6 +78,7 @@ TABLE_OWNER = {
     "client_feedback": "feedback",
     "capability_assessments": "capability",
     "capability_proposals": "capability",
+    "verifier_certifications": "capability",
     "price_estimates": "governor",
     "calibration_state": "governor",
     "governor_decisions": "governor",
@@ -106,7 +111,8 @@ CREATE TABLE IF NOT EXISTS verification_evidence (
   executor_identity TEXT NOT NULL, verifier_identity TEXT NOT NULL,
   verdict TEXT NOT NULL, raw_output TEXT NOT NULL, consequence TEXT NOT NULL,
   requirement_id TEXT NOT NULL DEFAULT '', artifact_digest TEXT NOT NULL DEFAULT '',
-  artifact_id TEXT NOT NULL DEFAULT ''
+  artifact_id TEXT NOT NULL DEFAULT '',
+  verifier_ref TEXT NOT NULL DEFAULT '', verifier_state TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS policy_versions (
   version INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
@@ -184,6 +190,14 @@ CREATE TABLE IF NOT EXISTS capability_proposals (
   why TEXT NOT NULL DEFAULT '', requested_by TEXT NOT NULL DEFAULT '',
   decided_by TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '',
   job_id TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS verifier_certifications (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL,
+  verifier_ref TEXT NOT NULL, capability_version TEXT NOT NULL,
+  state TEXT NOT NULL, certified_checks TEXT NOT NULL DEFAULT '',
+  trials_total INTEGER NOT NULL DEFAULT 0, trials_correct INTEGER NOT NULL DEFAULT 0,
+  false_accepts INTEGER NOT NULL DEFAULT 0, false_rejects INTEGER NOT NULL DEFAULT 0,
+  why TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS capability_assessments (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, verdict TEXT NOT NULL,

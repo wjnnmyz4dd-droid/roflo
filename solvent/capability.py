@@ -320,6 +320,190 @@ class CapabilityRegistry:
     def capabilities(self) -> list[Capability]:
         return list(self._capabilities.values())
 
+    # -------------------------------------------------- verifier certification
+    #
+    # The registry already owns "what is proven, on what evidence". A verifier's
+    # competence is the same kind of question about a different subject, so it
+    # lives here rather than in a new authority. Nothing below decides whether a
+    # deliverable may ship — that remains the verification/delivery controls'
+    # job. This only answers: *may this verifier's word count?*
+
+    #: A verifier that has not been put through its capability's battery.
+    UNTESTED = "UNTESTED"
+    #: Every trial correct: it accepted correct work and rejected wrong work.
+    CERTIFIED = "CERTIFIED"
+    #: Correct on some checks and not others. Trusted only on the ones it passed.
+    CERTIFIED_WITH_LIMITS = "CERTIFIED_WITH_LIMITS"
+    #: It let defective work through, or refused correct work. Not usable.
+    FAILED = "FAILED"
+    #: It was certified and later produced a demonstrated false PASS.
+    REVOKED = "REVOKED"
+
+    def certify_verifier(self, *, verifier_ref: str, capability_version: str,
+                         report, decided_by: str = "capability") -> dict:
+        """Record what a verifier did against hidden ground truth, and judge it.
+
+        ``report`` is a :class:`solvent.verifiercert.TrialReport` — measurements
+        taken elsewhere. This method does not run the trials and cannot change
+        them; it reads the counts and applies one rule:
+
+        * a **false accept** means defective work would ship while reporting
+          success, which is the failure the whole pipeline exists to prevent
+        * a **false reject** means correct work can never ship, which is a
+          different failure and equally disqualifying
+        * a verifier that got some checks entirely right and others wrong is
+          certified **only for the checks it got right**
+
+        A verifier with no trials at all is not certified. An empty battery is
+        not a clean sheet — it is no evidence, and no evidence is not trust.
+        """
+        results = list(getattr(report, "results", []))
+        false_accepts = list(report.false_accepts)
+        false_rejects = list(report.false_rejects)
+        passed = sorted(report.checks_passed()) if results else []
+
+        if not results:
+            state = self.FAILED
+            why = (f"no trials exist for {capability_version!r}, so this verifier "
+                   "has demonstrated nothing; an untested verifier is not a "
+                   "trusted one")
+        elif not passed:
+            state = self.FAILED
+            why = (f"every check was wrong on at least one trial: "
+                   f"{report.summary}")
+        elif false_accepts and not false_rejects:
+            state = self.CERTIFIED_WITH_LIMITS if passed else self.FAILED
+            why = (f"accepted {len(false_accepts)} defective artifact(s) "
+                   f"({', '.join(r.trial.name for r in false_accepts[:3])}); "
+                   f"trusted only on {len(passed)} check(s) it got right")
+        elif false_rejects and not false_accepts:
+            state = self.CERTIFIED_WITH_LIMITS if passed else self.FAILED
+            why = (f"refused {len(false_rejects)} correct artifact(s) "
+                   f"({', '.join(r.trial.name for r in false_rejects[:3])}); "
+                   f"trusted only on {len(passed)} check(s) it got right")
+        elif false_accepts or false_rejects:
+            state = self.CERTIFIED_WITH_LIMITS
+            why = (f"wrong in both directions; trusted only on {len(passed)} "
+                   f"check(s) it got right: {report.summary}")
+        else:
+            state = self.CERTIFIED
+            why = f"correct on every trial: {report.summary}"
+
+        return self._record_certification(
+            verifier_ref=verifier_ref, capability_version=capability_version,
+            state=state, certified_checks=passed, report=report, why=why,
+            decided_by=decided_by)
+
+    def revoke_verifier(self, *, verifier_ref: str, capability_version: str,
+                        why: str, decided_by: str) -> dict:
+        """Withdraw trust after a demonstrated false PASS. History is untouched.
+
+        The earlier CERTIFIED row stays exactly where it is. Revocation is a new
+        record, because the fact that this verifier *was* trusted is part of how
+        any artifact it passed came to be delivered, and erasing it would hide
+        the reason those deliveries happened.
+        """
+        if not why:
+            raise FailClosed("revoking a verifier requires a reason on the record")
+        return self._record_certification(
+            verifier_ref=verifier_ref, capability_version=capability_version,
+            state=self.REVOKED, certified_checks=[], report=None, why=why,
+            decided_by=decided_by)
+
+    def _record_certification(self, *, verifier_ref, capability_version, state,
+                              certified_checks, report, why, decided_by) -> dict:
+        row = {
+            "id": new_id("vcert"), "ts": now(), "verifier_ref": verifier_ref,
+            "capability_version": capability_version, "state": state,
+            "certified_checks": ",".join(certified_checks),
+            "trials_total": len(getattr(report, "results", []) or []),
+            "trials_correct": sum(1 for r in getattr(report, "results", []) or []
+                                  if r.correct),
+            "false_accepts": len(report.false_accepts) if report else 0,
+            "false_rejects": len(report.false_rejects) if report else 0,
+            "why": why[:600], "decided_by": decided_by,
+        }
+        self._db.execute(
+            "INSERT INTO verifier_certifications(id,ts,verifier_ref,"
+            "capability_version,state,certified_checks,trials_total,"
+            "trials_correct,false_accepts,false_rejects,why,decided_by) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (row["id"], row["ts"], verifier_ref, capability_version, state,
+             row["certified_checks"], row["trials_total"], row["trials_correct"],
+             row["false_accepts"], row["false_rejects"], row["why"], decided_by))
+        self._db.commit()
+        self._audit.record(
+            event="verifier.certification", authority="capability",
+            initiator=decided_by,
+            why=f"{verifier_ref} against {capability_version}",
+            decision=state, result=why[:300],
+            trials=f"{row['trials_correct']}/{row['trials_total']}",
+            false_accepts=row["false_accepts"], false_rejects=row["false_rejects"])
+        return row
+
+    def verifier_certification(self, verifier_ref: str,
+                               capability_version: str) -> dict | None:
+        """The current certification, which is the most recent record."""
+        rows = self._db.query(
+            "SELECT * FROM verifier_certifications WHERE verifier_ref = ? "
+            "AND capability_version = ? ORDER BY ts, rowid", 
+            (verifier_ref, capability_version))
+        return dict(rows[-1]) if rows else None
+
+    def verifier_history(self, verifier_ref: str,
+                         capability_version: str = "") -> list[dict]:
+        """Every certification record, oldest first. Append-only, never edited."""
+        if capability_version:
+            rows = self._db.query(
+                "SELECT * FROM verifier_certifications WHERE verifier_ref = ? "
+                "AND capability_version = ? ORDER BY ts, rowid",
+                (verifier_ref, capability_version))
+        else:
+            rows = self._db.query(
+                "SELECT * FROM verifier_certifications WHERE verifier_ref = ? "
+                "ORDER BY ts, rowid", (verifier_ref,))
+        return [dict(r) for r in rows]
+
+    def verifier_state(self, verifier_ref: str, capability_version: str) -> str:
+        record = self.verifier_certification(verifier_ref, capability_version)
+        return record["state"] if record else self.UNTESTED
+
+    def may_authorize_delivery(self, *, verifier_ref: str,
+                               capability_version: str,
+                               check: str) -> tuple[bool, str]:
+        """May this verifier's PASS for this check count towards delivery?
+
+        Scoped to the exact ``(verifier_ref, capability_version, check)``. A
+        verifier proven on ``csv-cleanup/1.0`` says nothing about its competence
+        on ``report-builder/1.0``, and being right about duplicate rows is not
+        evidence about dates. Trust does not spread sideways, so each triple is
+        asked separately and an unasked one is UNTESTED.
+        """
+        if not verifier_ref:
+            return False, ("evidence does not name the verifier that produced it, "
+                           "so there is no way to ask whether it can be trusted")
+        record = self.verifier_certification(verifier_ref, capability_version)
+        if record is None:
+            return False, (f"{verifier_ref} has never been tested against "
+                           f"{capability_version}; an untested verifier's PASS is "
+                           "an opinion, not evidence")
+        state = record["state"]
+        if state == self.FAILED:
+            return False, (f"{verifier_ref} failed certification for "
+                           f"{capability_version}: {record['why']}")
+        if state == self.REVOKED:
+            return False, (f"{verifier_ref} had its certification revoked for "
+                           f"{capability_version}: {record['why']}")
+        certified = [c for c in record["certified_checks"].split(",") if c]
+        if state == self.CERTIFIED and not certified:
+            return False, (f"{verifier_ref} is recorded CERTIFIED for "
+                           f"{capability_version} but on no checks")
+        if check and check not in certified:
+            return False, (f"{verifier_ref} is not certified to decide "
+                           f"{check!r} for {capability_version}; it is trusted "
+                           f"only on: {', '.join(certified) or 'nothing'}")
+        return True, f"{verifier_ref} is {state} for {check!r}"
+
     def assess(self, *, job_id: str, requirements: RequirementSet,
                assessor: str, needs: list[str]) -> Assessment:
         """Judge capability and conformance together, and record the evidence."""

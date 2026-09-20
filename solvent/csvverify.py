@@ -363,15 +363,60 @@ def check_no_unauthorised_changes(source, output, params) -> CheckOutcome:
 
 
 def check_parses_as_csv(source, output, params) -> CheckOutcome:
-    """The deliverable must open. A file the client cannot read is not a file."""
+    """The deliverable must open. A file the client cannot read is not a file.
+
+    "Parses" cannot mean "``csv.reader`` did not raise", because it raises at
+    almost nothing: a file of NUL bytes reads back as one column and no rows.
+    Verifier certification caught this check accepting exactly that, and this is
+    the SYSTEM_SAFETY requirement carried by every cleanup job — the one that is
+    supposed to guarantee the client can open what they were sent.
+
+    So two further conditions, both about what a reader actually gets:
+
+    * no binary control bytes, which no spreadsheet will open as text
+    * not an empty result from a source that had rows, because a deliverable
+      where every row vanished is not a cleaned file
+    """
     header, body, problem = _read(output)
     if problem:
         return CheckOutcome(CheckResult.FAIL, problem)
+
+    try:
+        raw = Path(output).read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        return CheckOutcome(CheckResult.FAIL, f"artifact is not readable text: {exc}")
+    # Stated here rather than imported from the worker: these checks never
+    # depend on the code they are checking.
+    control = sorted({c for c in raw
+                      if ord(c) < 32 and c not in "\t\n\r"} | {c for c in raw
+                                                                 if ord(c) == 127})
+    if control:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            f"artifact contains {len(control)} binary control byte(s) "
+            f"({', '.join(hex(ord(c)) for c in control[:4])}); it will not open "
+            "as a spreadsheet whatever a CSV parser makes of it",
+            {"control_bytes": [hex(ord(c)) for c in control]})
+
+    if not header or (len(header) == 1 and not header[0].strip()):
+        return CheckOutcome(CheckResult.FAIL,
+                            "artifact has no column names", {"columns": 0})
+
     widths = {len(r) for r in body}
     if len(widths) > 1:
         return CheckOutcome(CheckResult.FAIL,
                             f"ragged rows: widths {sorted(widths)}",
                             {"widths": sorted(widths)})
+
+    if not body:
+        _, source_body, source_problem = _read(source)
+        if not source_problem and source_body:
+            return CheckOutcome(
+                CheckResult.FAIL,
+                f"the deliverable has no data rows, but the source had "
+                f"{len(source_body)}; every row is gone",
+                {"rows": 0, "source_rows": len(source_body)})
+
     return CheckOutcome(CheckResult.PASS,
                         f"parses; {len(header)} columns, {len(body)} rows",
                         {"columns": len(header), "rows": len(body)})
