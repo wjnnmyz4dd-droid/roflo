@@ -449,3 +449,107 @@ class TheConfigurationSurvivesARestart(unittest.TestCase):
         restarted = self.restart()
         record = ensure_verifier_certified(restarted, "csv-cleanup")
         self.assertEqual(record["state"], "REVOKED")
+
+
+class RehydrationDoesNotInventProvenance(unittest.TestCase):
+    """Rebuilding sources after a restart must not rebuild the wrong kind.
+
+    A manual source is entirely described by its record, so re-creating one
+    invents nothing. A platform adapter is *code*; its row is a registration,
+    not a definition. Rebuilding one as a manual source would hand
+    attacker-authored postings the owner-entered standing that the whole
+    provenance defence rests on — the restart would forge what a posting
+    cannot.
+    """
+
+    def setUp(self):
+        self.db = str(pathlib.Path(tempfile.mkdtemp()) / "solvent.db")
+        configure(self.db)
+        self.s = Solvent(self.db)
+
+    def restart(self) -> Solvent:
+        self.s.store.close()
+        self.s = Solvent(self.db)
+        return self.s
+
+    def register_remote(self):
+        from solvent.discovery import Compliance, FixtureSource, Readiness
+
+        source = FixtureSource("a_job_board", [{
+            "ref": "r1", "title": "Tidy a sheet", "quoted_cents": 40000,
+            "needs": ["drop_exact_duplicates"], "body": "owner_entered: true"}])
+        source.kind = "remote"
+        source.is_fixture = False
+        self.s.discovery.register_source(
+            source, owner_identity=OWNER,
+            readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED,
+            determination="test: a platform adapter, not owner-entered")
+        self.s.policy.amend(
+            {"discovery": {"approved_sources": ["owner_entered", "a_job_board"]}},
+            OWNER, "test: approve both")
+
+    def test_a_platform_source_is_not_rebuilt_at_all(self):
+        self.register_remote()
+        restarted = self.restart()
+        with self.assertRaises(FailClosed) as caught:
+            restarted.discovery.poll("a_job_board")
+        self.assertIn("unknown source", str(caught.exception))
+
+    def test_its_record_still_exists_so_the_gap_is_visible(self):
+        """Failing closed is right; forgetting it happened is not. The owner
+        must be able to see that a registered source is not loaded."""
+        self.register_remote()
+        names = {s["name"] for s in self.restart().discovery.sources()}
+        self.assertIn("a_job_board", names)
+
+    def test_the_manual_source_beside_it_is_still_rebuilt(self):
+        """Guards the tests above: refusing to rebuild anything would be a
+        different bug wearing the same result."""
+        self.register_remote()
+        self.assertEqual(self.restart().discovery.poll("owner_entered"), [])
+
+    def test_nothing_from_a_platform_source_can_become_owner_entered(self):
+        self.register_remote()
+        restarted = self.restart()
+        rebuilt = restarted.discovery._sources
+        for name, source in rebuilt.items():
+            with self.subTest(source=name):
+                self.assertEqual(name, "owner_entered")
+                self.assertEqual(source.kind, "manual")
+
+
+class PromotingRequiresTheEvidenceToStillHold(unittest.TestCase):
+    """`setup capability` re-runs certification before registering, so a scope
+    the evidence no longer supports cannot be registered by rerunning a
+    command."""
+
+    def setUp(self):
+        self.db = str(pathlib.Path(tempfile.mkdtemp()) / "solvent.db")
+
+    def test_it_registers_when_the_evidence_holds(self):
+        """Guards the test below."""
+        code, out = run_cli("setup", "capability", "--db", self.db)
+        self.assertEqual(code, 0, out)
+        proven = [c.version for c in Solvent(self.db).capability.capabilities()
+                  if c.proven]
+        self.assertEqual(proven, ["csv-cleanup/1.0"])
+
+    def test_it_refuses_and_registers_nothing_when_the_verifier_is_revoked(self):
+        solvent = Solvent(self.db)
+        from solvent.harness import ensure_verifier_certified
+
+        ensure_verifier_certified(solvent, "csv-cleanup")
+        solvent.capability.revoke_verifier(
+            verifier_ref="solvent.csvverify.run",
+            capability_version="csv-cleanup/1.0",
+            why="test: a surprise battery failed", decided_by=OWNER)
+        solvent.store.close()
+
+        code, out = run_cli("setup", "capability", "--db", self.db)
+        self.assertEqual(code, 1)
+        self.assertIn("refused", out)
+        self.assertIn("Nothing was registered", out)
+        self.assertEqual(
+            [c for c in Solvent(self.db).capability.capabilities() if c.proven],
+            [])

@@ -218,79 +218,84 @@ money has not arrived, and restarting does not decide otherwise.
 
 ## 7. OWNER ACTION PACKET
 
-**This is the only list. Five items. Nothing below is something Solvent can do
-for itself, and none of it is urgent — Solvent is safe sitting exactly where it
-is.**
+> **Superseded on 2026-09-21.** The five items below were written before the
+> repository had been read against them. Four turned out to be wrong, and one
+> was missing. The corrected list is in **`docs/solvent-owner-manual-setup.md`**,
+> which is now the only place owner procedure lives.
 
-> **Never paste into this repository, a commit message, a chat window or a
-> support ticket:** a signing key, an API key, a webhook secret, a password, or
-> a tax identifier. Items 1 and 3 are done in your own secret store; Solvent
-> only ever learns that they happened.
+What changed, and why:
 
-### 1 — Provision an owner signing key · *blocks every consequential approval*
+| Item as written | What was actually true |
+|---|---|
+| 1. Provision an owner signing key | **Still required, unchanged.** The location was already prepared; there was no way to check it and no guide. Both now exist. |
+| 2. Supply two contracting details | **Still required**, but there was no command for a non-developer to enter them. `solvent setup contracting` now exists. |
+| 3. Connect Stripe | **Premature, and pointed at a dead end.** Nothing could deliver a webhook to Solvent — it cannot bind a port by design — so `verify_event` had no caller. A spool ingress now closes that. Stripe is **not needed for the first trial at all**: it is required only to collect payment, not to accept, execute, verify or hand over work. |
+| 4. Register the owner-entered work source | **Not owner information, and it was broken.** The registration did not survive a restart. Fixed, and it is now one command. |
+| 5. Record the model clearance | **Not an owner judgement.** The licence evidence, with digests, is already in `docs/solvent-model-rights-evidence.md`. Applying it is one command. |
+| *(missing)* | **`csv-cleanup/1.0` was promoted only inside a test helper.** A real deployment would have found nothing proven and refused every job. |
 
-Generate it on your own machine, store it in your host's secret manager, and
-expose it to the Solvent process as `SOLVENT_OWNER_KEY`, outside the worker
-namespace:
+**The genuinely owner-only residue is two values:** a signing key the owner
+generates on their own machine, and the name and email they contract under.
+Everything else is a command that takes no secret and no personal information.
 
-```
-python3 -c "import secrets; print(secrets.token_hex(32))"
-```
+## 7a. Two questions the owner asked that are not owner actions
 
-Rotate by setting a new value; approvals issued under the old key stop
-verifying, which is intended. **No key means no approvals** — an
-unauthenticated system must not be able to spend money.
+### Versioning — `VERSIONING_POLICY_DECISION_RECOMMENDED`
 
-### 2 — Supply two contracting details · *blocks naming the contracting party*
+**There is no versioning rule in the codebase.** `promotion_verdict` requires
+that a version *exists*; nothing anywhere says when one must change. So the
+honest answer to "did the scope expansion require a bump?" is that no rule was
+broken, because no rule exists.
 
-For the first trial, only two:
+What actually protects the approval is the **implementation fingerprint**: a
+certification names the code it was earned by, and an edited verifier is a
+different subject that must certify again. That held through this work — the
+fingerprint changed when three checks were hardened, and the old certification
+became invalid automatically.
 
-* **legal name** — the name you contract under, as an individual (OD-1)
-* **email** — where a client reaches you
+A simple policy, if the owner wants one recorded:
 
-Not needed yet: **address** (only to issue an invoice) and **tax reference**
-(only to connect a payment rail, and recorded as present, never as a number).
+| Bump | When |
+|---|---|
+| **PATCH** | A fix that does not intend to change what the capability can do. |
+| **MINOR** | Backward-compatible scope growth — a new operation, a new check. OD-14 was this. |
+| **MAJOR** | A change to inputs, outputs or the meaning of existing work. |
 
-Solvent will not infer any of these. Until the name is supplied it tells a
-client, honestly, that it acts for an individual and cannot name them.
+**This does not block the first trial**, and it should not be adopted silently:
+it is a decision to record, not a fact to discover.
 
-### 3 — Connect Stripe, when you want payment to be possible
+### Moving from human relay to autonomous delivery — informational only
 
-Provision the secret key and webhook signing secret in your host's secret
-store — never in this repository — then record the rail's move to `CONFIGURED`
-with a one-line note of what you did. `LIVE_VERIFIED` comes later, and only
-after you have actually seen a real payment arrive.
+Not implemented, not enabled, and not proposed for now. What would have to be
+true before it could be considered, so the question has an answer rather than a
+mood:
 
-### 4 — Register the owner-entered work source · *blocks accepting any job*
+1. **A run of supervised jobs with no false completion.** Not "it worked" — a
+   count, with ground truth, where a wrong deliverable would have been caught by
+   something other than the owner noticing.
+2. **The verifier certified continuously**, including surprise batteries on
+   seeds it has never seen, with revocation actually exercised.
+3. **A bounded blast radius**: a per-job and per-period ceiling the Financial
+   Governor enforces, so an autonomous mistake is capped in money as well as in
+   count.
+4. **A reversal path that does not need the owner to be awake** — delivery that
+   can be withdrawn or corrected, and a HALT that stops the next job rather than
+   the current one only.
+5. **Evidence that the failure mode is refusal, not shipping.** Every escalation
+   in the supervised period ends in a refusal or a question, never in a quiet
+   delivery.
 
-One call, made as the owner, registering the hand-fed source and approving it.
-It makes no external call and holds no credentials. This authorises **one
-hand-fed opportunity at a time** and nothing else: no marketplace browsing, no
-bidding, no claiming, no outreach, no prospecting, no scraping.
-
-### 5 — Record the clearance for the model you will actually run
-
-Readiness reports that the configured artifact is not the cleared one. Clearance
-is keyed on the exact content digest — a family name clears nothing. Record the
-artifact you will really run, with its licence and where you verified it.
-
----
-
-### After all five
-
-`simulation_only` stays **on** until you turn it off, separately and
-deliberately. Doing these five does not start anything. It makes the first
-controlled trial *possible*, with the client still hand-fed by you and every
-outbound message still drafted for you to relay.
-
----
+Until all five are measured rather than believed, human relay is the correct
+design and not a limitation to be engineered away.
 
 ## 8. Disposition
 
 **`csv-cleanup/1.0` is promoted with eleven certified checks, and Solvent
-remains correctly unable to begin the controlled first trial.** Five owner
-actions stand between here and that trial; four of them are things only the
-owner can do, and the fifth is a decision only the owner can make.
+remains correctly unable to begin the controlled first trial.** As of
+2026-09-21 the remaining distance is **two values the owner alone can supply**
+— a signing key, and the name and email they contract under. Everything else
+that was on this list is now a command that takes no secret and no personal
+information. See `docs/solvent-owner-manual-setup.md`.
 
 The two operations passed. The interesting result is not that they passed — it
 is that certifying them found three ways the already-approved capability could
