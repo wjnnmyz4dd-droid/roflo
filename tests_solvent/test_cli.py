@@ -113,7 +113,7 @@ class NoCommandSellsWork(unittest.TestCase):
             set(actions),
             {"doctor", "laws", "acquire", "services", "metrics", "status",
              "readiness", "demo", "state", "run", "health", "recover", "halt",
-             "resume", "setup", "payments"},
+             "resume", "setup", "payments", "relay"},
             "a new subcommand was added without reviewing it for external effect",
         )
 

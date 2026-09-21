@@ -360,6 +360,52 @@ def cmd_setup_check(args: argparse.Namespace) -> int:
     return 0 if ready else 1
 
 
+def cmd_relay(args: argparse.Namespace) -> int:
+    """What is finished and waiting for a person to pass on.
+
+    A view over the authorities that already hold these facts, not a new state.
+    The Orchestrator knows which jobs have a verified deliverable; Client
+    Relations holds the drafted message. The owner's question is "what do I
+    send, and to whom" — not "is this file correct". Verification has already
+    answered the second one, and this says so explicitly, because an owner who
+    is asked to check technical correctness is being asked to be the control
+    rather than to authorise one.
+    """
+    from .types import JobState
+
+    solvent = _owner_solvent(args)
+    waiting = [job for job in solvent.orchestrator.jobs()
+               if job.state in (JobState.READY_FOR_DELIVERY,
+                                JobState.AWAITING_PAYMENT)]
+    if not waiting:
+        print("nothing is waiting to be relayed.")
+        return 0
+
+    for job in waiting:
+        verified, why = solvent.orchestrator.verification_satisfied(job.id)
+        artifact = solvent.orchestrator.current_deliverable(job.id)
+        print(f"job {job.id}  [{job.state.value}]")
+        print(f"  client        {job.client_id}")
+        print(f"  verification  {'PASSED' if verified else 'NOT SATISFIED'} — {why}")
+        if artifact:
+            print(f"  deliverable   {artifact.path}")
+            print(f"                {artifact.size} bytes, "
+                  f"digest {artifact.digest[:23]}…")
+        drafts = [r for r in solvent.relations.responses(job.id)
+                  if r["phase"] == "PREPARED"]
+        for draft in drafts:
+            print(f"  message to    {draft['routed_to']}")
+            for line in draft["body"].splitlines():
+                print(f"      | {line}")
+        if not verified:
+            print("  DO NOT SEND — verification is not satisfied for this job.")
+        elif artifact:
+            print("  READY_FOR_HUMAN_RELAY — send the file above, then record")
+            print("  payment when it arrives. Solvent sends nothing itself.")
+        print()
+    return 0
+
+
 def cmd_payments_ingest(args: argparse.Namespace) -> int:
     """Verify spooled payment deliveries and hand the genuine ones to the Ledger."""
     from .harness import PAYMENT_SPOOL, ingest_payment_spool
@@ -733,6 +779,11 @@ def build_parser() -> argparse.ArgumentParser:
         "check", help="one line per thing the owner configures")
     check.add_argument("--db", default="/var/lib/solvent/solvent.db")
     check.set_defaults(func=cmd_setup_check)
+
+    relay = sub.add_parser(
+        "relay", help="what is verified and waiting for a person to send")
+    relay.add_argument("--db", default="/var/lib/solvent/solvent.db")
+    relay.set_defaults(func=cmd_relay)
 
     payments = sub.add_parser("payments", help="payment rail operations")
     payments_sub = payments.add_subparsers(dest="payments_command", required=True)
