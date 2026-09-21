@@ -351,13 +351,35 @@ def cmd_setup_check(args: argparse.Namespace) -> int:
     line("HALT", not halted, "not engaged" if not halted else "ENGAGED")
 
     print("-" * 70)
-    ready = not report.blocking
-    print(f"  FIRST_TRIAL_READINESS    {'READY' if ready else 'BLOCKED'}")
-    if report.blocking:
-        for item in report.blocking:
-            print(f"      - {item}")
+
+    # Two different questions, and reporting only the stricter one told an owner
+    # who was ready for a supervised trial that they were blocked -- by a
+    # webhook secret the trial never uses.
+    from .readiness import (
+        assert_may_attempt_first_real_job, assert_may_attempt_supervised_trial,
+    )
+
+    def verdict(check):
+        try:
+            check(report)
+        except FailClosed as exc:
+            return False, [l.strip(" -") for l in str(exc).splitlines()[1:]]
+        return True, []
+
+    trial_ready, trial_blockers = verdict(assert_may_attempt_supervised_trial)
+    print(f"  FIRST_TRIAL_READINESS    {'READY' if trial_ready else 'BLOCKED'}"
+          "   (supervised, human-relayed, one hand-fed job)")
+    for item in trial_blockers:
+        print(f"      - {item}")
+
+    full_ready, full_blockers = verdict(assert_may_attempt_first_real_job)
+    print(f"  FULL_ACTIVATION          {'READY' if full_ready else 'BLOCKED'}"
+          "   (autonomous delivery and payment collection)")
+    for item in full_blockers:
+        print(f"      - {item}")
+
     print("\nNo secret is printed by this command, only whether one is present.")
-    return 0 if ready else 1
+    return 0 if trial_ready else 1
 
 
 def cmd_relay(args: argparse.Namespace) -> int:
@@ -647,16 +669,16 @@ def build_parser() -> argparse.ArgumentParser:
                    ).set_defaults(func=cmd_services)
 
     metrics = sub.add_parser("metrics", help="print business metrics")
-    metrics.add_argument("--db", default=":memory:")
+    metrics.add_argument("--db", default=rt.DEFAULT_DB)
     metrics.set_defaults(func=cmd_metrics)
 
     status = sub.add_parser("status", help="business status dashboard")
-    status.add_argument("--db", default=":memory:")
+    status.add_argument("--db", default=rt.DEFAULT_DB)
     status.set_defaults(func=cmd_status)
 
     readiness = sub.add_parser("readiness",
                                help="what blocks the first real paid job")
-    readiness.add_argument("--db", default=":memory:")
+    readiness.add_argument("--db", default=rt.DEFAULT_DB)
     readiness.set_defaults(func=cmd_readiness)
 
     demo = sub.add_parser("demo", help="run the complete-job harness (fixtures only)")
@@ -674,22 +696,22 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=cmd_run)
 
     health = sub.add_parser("health", help="what this Solvent can currently do")
-    health.add_argument("--db", default=":memory:")
+    health.add_argument("--db", default=rt.DEFAULT_DB)
     health.add_argument("--always-on", action="store_true")
     health.set_defaults(func=cmd_health)
 
     recover = sub.add_parser("recover",
                              help="reconcile durable state after a crash or reboot")
-    recover.add_argument("--db", default=":memory:")
+    recover.add_argument("--db", default=rt.DEFAULT_DB)
     recover.set_defaults(func=cmd_recover)
 
     halt = sub.add_parser("halt", help="throw the kill switch (survives restarts)")
-    halt.add_argument("--db", default=":memory:")
+    halt.add_argument("--db", default=rt.DEFAULT_DB)
     halt.add_argument("--reason", default="owner halted Solvent")
     halt.set_defaults(func=cmd_halt)
 
     resume = sub.add_parser("resume", help="clear the kill switch")
-    resume.add_argument("--db", default=":memory:")
+    resume.add_argument("--db", default=rt.DEFAULT_DB)
     resume.add_argument("--reason", default="owner resumed Solvent")
     resume.set_defaults(func=cmd_resume)
 
@@ -701,7 +723,7 @@ def build_parser() -> argparse.ArgumentParser:
     def owned(parser):
         parser.add_argument("--owner", default=OWNER,
                             help="the registered owner identity making this record")
-        parser.add_argument("--db", default="/var/lib/solvent/solvent.db")
+        parser.add_argument("--db", default=rt.DEFAULT_DB)
         return parser
 
     contracting = owned(setup_sub.add_parser(
@@ -777,12 +799,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     check = setup_sub.add_parser(
         "check", help="one line per thing the owner configures")
-    check.add_argument("--db", default="/var/lib/solvent/solvent.db")
+    check.add_argument("--db", default=rt.DEFAULT_DB)
     check.set_defaults(func=cmd_setup_check)
 
     relay = sub.add_parser(
         "relay", help="what is verified and waiting for a person to send")
-    relay.add_argument("--db", default="/var/lib/solvent/solvent.db")
+    relay.add_argument("--db", default=rt.DEFAULT_DB)
     relay.set_defaults(func=cmd_relay)
 
     payments = sub.add_parser("payments", help="payment rail operations")
@@ -790,12 +812,12 @@ def build_parser() -> argparse.ArgumentParser:
     ingest = payments_sub.add_parser(
         "ingest", help="verify spooled webhook deliveries and apply them")
     ingest.add_argument("--spool", default="")
-    ingest.add_argument("--db", default="/var/lib/solvent/solvent.db")
+    ingest.add_argument("--db", default=rt.DEFAULT_DB)
     ingest.set_defaults(func=cmd_payments_ingest)
 
     state = sub.add_parser("state", help="print the Project State projection")
     state.add_argument("job_id")
-    state.add_argument("--db", default=":memory:")
+    state.add_argument("--db", default=rt.DEFAULT_DB)
     state.set_defaults(func=cmd_state)
     return parser
 

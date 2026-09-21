@@ -493,3 +493,100 @@ class TheDeploymentInstructionsAgreeWithThemselves(unittest.TestCase):
         template = (REPO / "deploy" / "solvent.env.example").read_text()
         self.assertIn(KEY_ENV, template)
         self.assertIn(STRIPE_SECRET_ENV, template)
+
+
+class TheOwnerManualMatchesTheCode(unittest.TestCase):
+    """A setup guide that has drifted is worse than none: the owner follows it,
+    it fails, and they have no way to tell whether they made the mistake."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.manual = (REPO / "docs" / "solvent-owner-manual-setup.md").read_text()
+
+    def commands_it_tells_the_owner_to_run(self) -> set[str]:
+        import re
+
+        found = set()
+        for match in re.finditer(r"^\s*solvent ([a-z-]+(?: [a-z-]+)?)",
+                                 self.manual, re.M):
+            found.add(match.group(1).strip())
+        return found
+
+    def test_every_command_it_names_exists(self):
+        from solvent.cli import build_parser
+
+        parser = build_parser()
+        top = parser._subparsers._group_actions[0].choices
+        for phrase in self.commands_it_tells_the_owner_to_run():
+            name, _, sub = phrase.partition(" ")
+            with self.subTest(command=phrase):
+                self.assertIn(name, top)
+                if sub and top[name]._subparsers is not None:
+                    self.assertIn(
+                        sub, top[name]._subparsers._group_actions[0].choices)
+
+    def test_it_names_at_least_the_commands_the_first_trial_needs(self):
+        """Guards the test above: a manual naming no commands would pass it."""
+        named = self.commands_it_tells_the_owner_to_run()
+        for required in ("setup check", "setup contracting", "setup capability",
+                         "setup work-source", "setup model", "relay"):
+            with self.subTest(required=required):
+                self.assertIn(required, named)
+
+    def test_the_environment_variables_it_names_are_the_real_ones(self):
+        self.assertIn(KEY_ENV, self.manual)
+        self.assertIn(STRIPE_SECRET_ENV, self.manual)
+
+    def test_the_payment_metadata_key_it_names_is_the_one_the_rail_reads(self):
+        from solvent.payments import JOB_METADATA_KEY
+
+        self.assertIn(JOB_METADATA_KEY, self.manual)
+
+    def test_the_spool_path_it_names_is_the_one_solvent_reads(self):
+        from solvent.harness import PAYMENT_SPOOL
+
+        self.assertIn(PAYMENT_SPOOL, self.manual)
+
+    def test_it_tells_the_owner_the_permissions_that_actually_work(self):
+        self.assertIn("0640", self.manual)
+        self.assertIn("Do not use `0600`", self.manual)
+
+    def test_it_contains_no_value_that_looks_like_a_real_secret(self):
+        import re
+
+        for pattern in (r"sk_live_[A-Za-z0-9]{8,}", r"whsec_[A-Za-z0-9]{8,}",
+                        r"\b[0-9a-f]{64}\b"):
+            with self.subTest(pattern=pattern):
+                self.assertIsNone(re.search(pattern, self.manual))
+
+    def test_it_uses_placeholders_the_owner_cannot_mistake_for_values(self):
+        for placeholder in ("<YOUR_LEGAL_NAME>", "<YOUR_CONTACT_EMAIL>",
+                            "<GENERATED_OWNER_KEY>", "<STRIPE_WEBHOOK_SECRET>"):
+            with self.subTest(placeholder=placeholder):
+                self.assertIn(placeholder, self.manual)
+
+    def test_it_never_asks_the_owner_to_send_a_secret_anywhere(self):
+        lowered = self.manual.lower()
+        for phrase in ("paste your owner key", "send me your", "paste your stripe",
+                       "give claude your", "share your key"):
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase, lowered)
+
+    def test_it_does_not_tell_the_owner_to_point_stripe_at_solvent(self):
+        """Solvent cannot bind a port. A webhook aimed at it could never
+        arrive, and the manual has to say so rather than imply otherwise."""
+        self.assertIn("cannot receive a webhook directly", self.manual)
+        self.assertIn("not at Solvent", self.manual)
+
+    def test_the_readiness_line_it_promises_is_the_one_the_command_prints(self):
+        import inspect
+
+        from solvent import cli
+
+        source = inspect.getsource(cli.cmd_setup_check)
+        for label in ("OWNER_KEY", "CONTRACTING_IDENTITY", "STRIPE", "MODEL",
+                      "WORK_SOURCE", "CSV_CAPABILITY", "SIMULATION_ONLY",
+                      "HALT", "FIRST_TRIAL_READINESS"):
+            with self.subTest(label=label):
+                self.assertIn(label, source)
+                self.assertIn(label, self.manual)

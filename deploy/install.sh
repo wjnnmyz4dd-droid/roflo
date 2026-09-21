@@ -51,6 +51,17 @@ else
     echo "    $CONF/solvent.env exists; left untouched"
 fi
 
+echo "==> solvent command"
+# Every document tells the owner to type `solvent ...`. The entry point lives in
+# the venv, which is not on anyone's PATH, so without this wrapper the first
+# instruction in the setup guide fails for them.
+cat > /usr/local/bin/solvent <<WRAPPER
+#!/bin/sh
+exec "$PREFIX/.venv/bin/python" -m solvent.cli "\$@"
+WRAPPER
+chmod 0755 /usr/local/bin/solvent
+echo "    installed /usr/local/bin/solvent"
+
 echo "==> unit"
 install -o root -g root -m 0644 "$REPO/deploy/solvent.service" \
         /etc/systemd/system/solvent.service

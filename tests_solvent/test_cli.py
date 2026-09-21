@@ -14,10 +14,23 @@ import unittest
 from solvent.cli import main
 
 
+#: Commands that act on a real deployment now default to the real database at
+#: /var/lib/solvent/solvent.db. They used to default to ":memory:", which made
+#: `solvent readiness` describe an empty system whatever the owner had
+#: configured, and made `solvent halt` throw the kill switch on a throwaway
+#: while the running service carried on. Tests must therefore say which
+#: database they mean, rather than relying on a default that was wrong.
+STATEFUL = {"metrics", "status", "readiness", "health", "recover", "halt",
+            "resume", "state", "relay", "run"}
+
+
 def run(*argv: str) -> tuple[int, str]:
+    args = list(argv)
+    if args and args[0] in STATEFUL and "--db" not in args:
+        args += ["--db", ":memory:"]
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
-        code = main(list(argv))
+        code = main(args)
     return code, buffer.getvalue()
 
 
@@ -94,6 +107,57 @@ class ReadOnlyCommands(unittest.TestCase):
         code, out = run("status")
         self.assertEqual(code, 0)
         self.assertTrue(out.strip())
+
+
+class TheDefaultDatabaseIsTheRealOne(unittest.TestCase):
+    """A command that silently acts on a throwaway database is worse than one
+    that fails: `halt` is the kill switch, and it was halting nothing."""
+
+    def test_every_stateful_command_defaults_to_the_deployment_database(self):
+        from solvent import runtime as rt
+        from solvent.cli import build_parser
+
+        parser = build_parser()
+        choices = parser._subparsers._group_actions[0].choices
+        for name in ("readiness", "status", "health", "halt", "resume",
+                     "recover", "metrics", "state", "relay"):
+            with self.subTest(command=name):
+                sub = choices[name]
+                db = next(a for a in sub._actions if a.dest == "db")
+                self.assertEqual(db.default, rt.DEFAULT_DB)
+
+    def test_the_setup_commands_use_the_same_default(self):
+        from solvent import runtime as rt
+        from solvent.cli import build_parser
+
+        parser = build_parser()
+        setup = parser._subparsers._group_actions[0].choices["setup"]
+        for name, sub in setup._subparsers._group_actions[0].choices.items():
+            with self.subTest(command=name):
+                db = next(a for a in sub._actions if a.dest == "db")
+                self.assertEqual(db.default, rt.DEFAULT_DB)
+
+
+class ThereIsASolventCommand(unittest.TestCase):
+    """Every deployment document tells the owner to type `solvent ...`."""
+
+    def test_the_package_declares_the_entry_point(self):
+        import pathlib
+        import tomllib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        with open(root / "pyproject.toml", "rb") as handle:
+            project = tomllib.load(handle)
+        self.assertEqual(project["project"]["scripts"]["solvent"],
+                         "solvent.cli:main")
+
+    def test_the_installer_puts_it_on_the_path(self):
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        installer = (root / "deploy" / "install.sh").read_text()
+        self.assertIn("/usr/local/bin/solvent", installer)
+        self.assertIn("chmod 0755 /usr/local/bin/solvent", installer)
 
 
 class NoCommandSellsWork(unittest.TestCase):

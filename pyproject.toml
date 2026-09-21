@@ -21,6 +21,10 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
 [project.scripts]
 roflo = "roflo.cli:main"
+# Every deployment document tells the owner to run `solvent <something>`. Without
+# this there was no such command -- only `python -m solvent.cli`, which is not
+# what any of them say.
+solvent = "solvent.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["roflo*"]
