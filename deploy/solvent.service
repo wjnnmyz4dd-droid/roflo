@@ -29,7 +29,10 @@ Group=solvent
 WorkingDirectory=/opt/solvent
 
 # Secrets live here, outside the repository and readable only by this user.
-# 0600 root:solvent. If the file is absent the service still starts and reports
+# 0640 root:solvent -- owned by root, readable by the group this service runs
+# as. NOT 0600: that is root-only, the solvent user could not read its own
+# secrets, and the service would start and report every credential as missing.
+# If the file is absent the service still starts and reports
 # the gap through `solvent health` -- refusing to boot would leave the owner
 # unable to inspect the very thing that is missing.
 EnvironmentFile=-/etc/solvent/solvent.env

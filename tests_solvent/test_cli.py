@@ -98,7 +98,13 @@ class ReadOnlyCommands(unittest.TestCase):
 
 class NoCommandSellsWork(unittest.TestCase):
     def test_there_is_no_command_that_performs_a_real_external_action(self):
-        """Every subcommand is inspection or a fixture run. Nothing goes out."""
+        """Every subcommand is inspection, a fixture run, or a local record.
+
+        The list is written out so that adding a command *fails this test*, and
+        somebody has to say out loud what the new one does. `setup` and
+        `payments` were added that way: each was reviewed below before being
+        listed here.
+        """
         from solvent.cli import build_parser
 
         parser = build_parser()
@@ -107,9 +113,65 @@ class NoCommandSellsWork(unittest.TestCase):
             set(actions),
             {"doctor", "laws", "acquire", "services", "metrics", "status",
              "readiness", "demo", "state", "run", "health", "recover", "halt",
-             "resume"},
+             "resume", "setup", "payments"},
             "a new subcommand was added without reviewing it for external effect",
         )
+
+    def test_no_setup_command_takes_a_secret_as_an_argument(self):
+        """A secret on a command line is in shell history and in the process
+        list, where every other user on the machine can read it. The owner key
+        and the webhook secret reach Solvent through the environment file and
+        through nothing else."""
+        from solvent.cli import build_parser
+
+        parser = build_parser()
+        setup = parser._subparsers._group_actions[0].choices["setup"]
+        for name, sub in setup._subparsers._group_actions[0].choices.items():
+            for action in sub._actions:
+                with self.subTest(command=name, option=action.dest):
+                    self.assertNotIn(
+                        action.dest,
+                        {"key", "owner_key", "secret", "webhook_secret",
+                         "api_key", "password", "token", "tax_reference"})
+
+    def test_the_tax_reference_flag_stores_presence_not_a_value(self):
+        from solvent.cli import build_parser
+
+        parser = build_parser()
+        setup = parser._subparsers._group_actions[0].choices["setup"]
+        contracting = setup._subparsers._group_actions[0].choices["contracting"]
+        flag = next(a for a in contracting._actions
+                    if a.dest == "tax_reference_provisioned")
+        self.assertEqual(flag.nargs, 0, "this flag must not accept a value")
+
+    def test_the_setup_commands_reach_no_network(self):
+        """Reviewed individually: contracting, work-source, model, stripe and
+        capability write to the local database; check reads it. None constructs
+        a source with a host or a request, and none calls the Action Gate."""
+        import inspect
+
+        from solvent import cli
+
+        for name in ("cmd_setup_contracting", "cmd_setup_work_source",
+                     "cmd_setup_model", "cmd_setup_stripe",
+                     "cmd_setup_capability", "cmd_setup_check"):
+            source = inspect.getsource(getattr(cli, name))
+            with self.subTest(command=name):
+                for forbidden in ("gate.request", "urlopen", "socket", "http"):
+                    self.assertNotIn(forbidden, source)
+
+    def test_ingesting_payments_makes_no_outbound_call(self):
+        """It reads files a receiver left on disk and verifies them locally.
+        Inbound data is not an external effect, and this cannot create money:
+        an event that does not verify never reaches the Ledger."""
+        import inspect
+
+        from solvent import harness
+
+        source = inspect.getsource(harness.ingest_payment_spool)
+        for forbidden in ("gate.request", "urlopen", "socket.", "requests."):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
 
 
 if __name__ == "__main__":

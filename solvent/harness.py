@@ -622,6 +622,70 @@ def run_manual_opportunity(*, title: str, client_ref: str, quote_dollars: str,
 # the order is the point: nothing is delivered that has not been recomputed from
 # the artifact about to leave.
 
+#: Where spooled payment deliveries are read from. Under the service's
+#: ReadWritePaths, so a receiver running as the same user can write there and
+#: nothing else on the host can.
+PAYMENT_SPOOL = "/var/lib/solvent/payments-inbox"
+
+#: Environment variable holding the Stripe endpoint's signing secret. Read at
+#: the moment of verification and never stored, logged or written to the audit.
+STRIPE_SECRET_ENV = "SOLVENT_STRIPE_WEBHOOK_SECRET"
+
+
+def ingest_payment_spool(s: "Solvent", *, spool: str = PAYMENT_SPOOL,
+                         secret: str = "", rail=None) -> list[dict]:
+    """Verify every spooled delivery and hand the genuine ones to the Ledger.
+
+    This is plumbing, not an authority. The rail decides whether an event is
+    authentic; the Ledger decides what an authentic event means for the books;
+    this moves bytes between them and files the result. It cannot mark anything
+    paid on its own, and a delivery it cannot verify is moved aside rather than
+    deleted, so a rejection can be looked at afterwards.
+
+    Returns one record per delivery: the file, the outcome, and — for a refusal
+    — why. Never the body, never the secret, and never the signature header.
+    """
+    import os
+
+    from . import payments as payments_module
+
+    rail = rail or payments_module.StripeRail()
+    secret = secret or os.environ.get(STRIPE_SECRET_ENV, "")
+    root = Path(spool)
+    if not root.is_dir():
+        return []
+    done, rejected = root / "applied", root / "rejected"
+
+    results = []
+    for path in sorted(root.glob("*" + payments_module.DELIVERY_SUFFIX)):
+        record = {"delivery": path.name}
+        try:
+            headers, body = payments_module.read_delivery(path)
+            event = rail.verify_event(body, headers, secret)
+            record["outcome"] = s.ledger.apply_payment_event(event)
+            record["event_id"] = event.event_id
+            record["livemode"] = event.livemode
+            destination = done
+        except FailClosed as exc:
+            # The reason is safe to keep: every refusal this rail raises names
+            # what was wrong with the delivery, never what the delivery said.
+            record["outcome"] = "REFUSED"
+            record["why"] = str(exc)
+            destination = rejected
+        destination.mkdir(parents=True, exist_ok=True)
+        os.replace(path, destination / path.name)
+        results.append(record)
+
+    if results:
+        s.audit.record(
+            event="payment.spool_ingested", authority="ledger",
+            initiator="ledger", why=f"read {len(results)} spooled delivery(s)",
+            decision=f"{sum(1 for r in results if r['outcome'] != 'REFUSED')} verified",
+            result=f"{sum(1 for r in results if r['outcome'] == 'REFUSED')} refused",
+            external_effect="inbound payment deliveries")
+    return results
+
+
 def _unregistered_checks(requirements: list,
                          capability: str = "csv-cleanup") -> list[str]:
     """Mandatory requirements naming a check this capability does not have."""
@@ -765,6 +829,35 @@ CAPABILITIES = {
         verify=reportverify.run, plan=None, derive=_report_derived,
         extension="md"),
 }
+
+
+#: The owner's promotion of csv-cleanup, as a record rather than as a sentence.
+#:
+#: OD-12 approved nine checks; OD-14 added ``rename_headers`` and ``sort_rows``
+#: once they met the same evidence standard. The scope is a list of *checks*,
+#: because that is what certification is per: an operation is in scope only once
+#: a verifier has been shown work that was wrong in that way and caught it,
+#: enough times, on artifacts it had never seen.
+#:
+#: It lives here rather than in a test because a promotion that exists only in
+#: the suite is not a promotion — a real deployment would find nothing proven
+#: and refuse every job. Registering it is still an owner act, and there is no
+#: code path that does it unasked.
+CSV_CERTIFIED_SCOPE = (
+    "drop_exact_duplicates", "map_values", "no_unauthorised_changes",
+    "normalise_dates", "parses_as_csv", "preserve_columns", "rename_headers",
+    "require_columns", "row_reconciliation", "sort_rows", "trim_whitespace",
+)
+
+CSV_PROMOTION = Capability(
+    name="csv-cleanup", covers=frozenset(CSV_CERTIFIED_SCOPE), proven=True,
+    version="csv-cleanup/1.0", inputs=("text/csv",), outputs=("text/csv",),
+    verifiable_by=CSV_CERTIFIED_SCOPE, proven_levels=("L1", "L2", "L3"),
+    evidence_ref="docs/solvent-controlled-trial-activation.md; "
+                 "docs/solvent-certification-hardening.md; "
+                 "tests_solvent/test_blackbox_certification.py; "
+                 "tests_solvent/test_csv_rename_and_sort.py",
+    fixtures_passed=34, fixtures_total=34, false_completions=0)
 
 
 def _csv_header(path: str) -> list[str]:

@@ -83,6 +83,73 @@ class VerifiedPaymentEvent:
         return not self.livemode
 
 
+# ------------------------------------------------------------------ delivery
+#
+# Verification above needs the raw bytes that were signed. Nothing in Solvent
+# could supply them: the egress contract denies ``socket.bind`` for the whole
+# interpreter, so this process cannot listen on a port, and no HTTP endpoint
+# exists or can be added by listening. ``verify_event`` was therefore complete,
+# tested, and unreachable — a payment could never be verified end to end.
+#
+# The delivery mechanism is a spool directory instead. Something outside this
+# process that *is* allowed to accept an HTTP request — a few lines of receiver
+# on the host, or ``stripe listen`` piped to a file — writes each delivery into
+# the spool, and Solvent reads it. That keeps the boundary where the deployment
+# contract already puts it: the thing that touches the network is not the thing
+# that holds the books.
+#
+# The file format exists to protect one property: **the body must arrive as the
+# exact bytes Stripe signed.** Re-serialising JSON changes bytes and either
+# breaks verification or, far worse, verifies something other than what arrived.
+# So the headers go on one line as JSON and everything after the first newline
+# is the body, byte for byte, untouched.
+
+#: Files the spool reader will consider. Anything else is left alone, so a
+#: half-written file under a temporary name is never read.
+DELIVERY_SUFFIX = ".webhook"
+
+
+def write_delivery(path, headers: dict, raw_body: bytes) -> None:
+    """Write one delivery atomically. Used by receivers and by the tests.
+
+    Written to a temporary name and renamed, because a reader must never see a
+    half-written delivery: a truncated body fails verification and would be
+    recorded as a rejected payment rather than as an incomplete file.
+    """
+    import json as _json
+    import os
+    from pathlib import Path as _Path
+
+    target = _Path(path)
+    partial = target.with_name(target.name + ".partial")
+    partial.write_bytes(_json.dumps(headers).encode("utf-8") + b"\n" + bytes(raw_body))
+    os.replace(partial, target)
+
+
+def read_delivery(path) -> tuple[dict, bytes]:
+    """``(headers, raw_body)`` from one spooled delivery.
+
+    The body is returned exactly as it was stored. Nothing here parses, decodes
+    or normalises it — that is the whole reason this function exists rather than
+    a JSON envelope with the body as a field.
+    """
+    from pathlib import Path as _Path
+
+    blob = _Path(path).read_bytes()
+    line, separator, body = blob.partition(b"\n")
+    if not separator:
+        raise FailClosed(
+            f"{path}: not a delivery — expected a JSON header line, a newline, "
+            "then the raw body")
+    try:
+        headers = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise FailClosed(f"{path}: header line is not JSON: {exc}") from exc
+    if not isinstance(headers, dict):
+        raise FailClosed(f"{path}: header line is not a JSON object")
+    return headers, body
+
+
 class PaymentRail(Protocol):
     """The smallest interface a payment provider must satisfy."""
 

@@ -262,6 +262,51 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
     return report
 
 
+#: Checks a supervised, human-relayed trial genuinely does not use.
+#:
+#: Not a discount. Each one is here because the trial has no way to reach the
+#: thing it guards: nothing is sent, so egress stays fail-closed; no payment is
+#: collected through Solvent, so the rail's credentials are not exercised. A
+#: check that the trial *does* use is not on this list, whatever it would cost
+#: the owner to satisfy.
+_NOT_USED_BY_A_SUPERVISED_TRIAL = (
+    "payment rail operational",
+    "real revenue to date",
+    "external execution posture",
+)
+
+
+def assert_may_attempt_supervised_trial(report: Readiness) -> None:
+    """Fail closed unless a supervised, human-relayed first trial may proceed.
+
+    The difference from :func:`assert_may_attempt_first_real_job` is what the
+    trial actually does. It accepts one hand-fed job, executes it, verifies it
+    independently, and stops with a deliverable and a drafted message for the
+    owner to relay. It sends nothing, so external execution stays fail-closed.
+    It collects nothing, so the payment rail's credentials are never used — and
+    the job stays at AWAITING_PAYMENT, which is the truth rather than an
+    oversight.
+
+    Requiring a webhook signing secret before Solvent may *prepare* a verified
+    file would be blocking on something the work never touches. Everything the
+    trial does use is still required: the owner's signing key, their contracting
+    identity, a promoted capability, an approved source, a cleared model.
+    """
+    outstanding = [item for item in report.blocking
+                   if not any(name in item for name in _blocking_names(report))]
+    if outstanding:
+        raise FailClosed(
+            "not ready for a supervised first trial:\n  - "
+            + "\n  - ".join(outstanding))
+
+
+def _blocking_names(report: Readiness) -> list[str]:
+    """The owner-decision text of the checks a supervised trial does not use."""
+    return [check.owner_decision for check in report.checks
+            if check.name in _NOT_USED_BY_A_SUPERVISED_TRIAL
+            and check.owner_decision]
+
+
 def assert_may_attempt_first_real_job(report: Readiness) -> None:
     """Fail closed unless every precondition for a real job is satisfied.
 

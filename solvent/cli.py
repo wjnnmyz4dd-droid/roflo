@@ -113,6 +113,269 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     return 0
 
 
+# --------------------------------------------------------------- owner setup
+#
+# Everything the owner has to configure, as commands rather than as Python they
+# would have to write. None of these decide anything: each one calls the
+# authority that already owns the decision, with the owner's identity, and
+# reports what that authority said. There is no second readiness here and no
+# owner-profile store — `setup check` reads the existing readiness projection.
+#
+# No command in this section accepts a secret as an argument. A signing key or a
+# webhook secret typed on a command line lands in shell history and in the
+# process list, where any other user on the machine can read it. Those two
+# values reach Solvent only through the environment file, and these commands
+# report on their presence without ever displaying them.
+
+def _owner_solvent(args) -> "Solvent":
+    return Solvent(args.db)
+
+
+def cmd_setup_contracting(args: argparse.Namespace) -> int:
+    """Record who the owner contracts as. Values come from the owner, never here."""
+    solvent = _owner_solvent(args)
+    fields = {name: value for name, value in
+              (("legal_name", args.legal_name), ("email", args.email),
+               ("address", args.address)) if value}
+    if args.tax_reference_provisioned:
+        # Recorded as present. Solvent never stores or prints the number, so
+        # this flag takes no value on purpose.
+        fields["tax_reference"] = "provisioned"
+    try:
+        solvent.policy.record_contracting_structure(
+            owner_identity=args.owner, structure=args.structure,
+            reason=args.reason, **fields)
+    except FailClosed as exc:
+        print(f"refused: {exc}")
+        return 1
+    party = solvent.policy.contracting_party()
+    print(f"contracting structure: {party['structure']}")
+    for purpose in sorted(solvent.policy.CONTRACTING_PURPOSES):
+        allowed, why = solvent.policy.may_contract_for(purpose)
+        print(f"  [{'OK ' if allowed else 'NEED'}] {purpose}: "
+              f"{'complete' if allowed else why.split(': ', 1)[-1]}")
+    return 0
+
+
+def cmd_setup_work_source(args: argparse.Namespace) -> int:
+    """Register and approve the owner-entered work source for the first trial."""
+    from .discovery import Compliance, ManualSource, Readiness
+
+    solvent = _owner_solvent(args)
+    try:
+        solvent.discovery.register_source(
+            ManualSource(args.name, []), owner_identity=args.owner,
+            readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED,
+            determination=args.determination)
+        approved = set(solvent.policy.get("discovery", "approved_sources",
+                                          default=[]) or [])
+        approved.add(args.name)
+        solvent.policy.amend({"discovery": {"approved_sources": sorted(approved)}},
+                             args.owner, f"OD-11: approve {args.name}")
+    except FailClosed as exc:
+        print(f"refused: {exc}")
+        return 1
+    print(f"work source {args.name!r} registered and approved.")
+    print("  This authorises one hand-fed opportunity at a time. It makes no")
+    print("  external call, holds no credentials, and does not authorise")
+    print("  browsing, bidding, claiming, outreach or scraping.")
+    return 0
+
+
+def cmd_setup_model(args: argparse.Namespace) -> int:
+    """Record the commercial clearance for the model that will actually run.
+
+    The defaults are the artifact verified in docs/solvent-model-rights-evidence.md
+    — digests re-fetched, the packaged licence hashed byte-identical against the
+    publisher's. The owner is applying a finding, not making a licensing
+    judgement; the judgement is already recorded, with its sources.
+    """
+    solvent = _owner_solvent(args)
+    try:
+        solvent.policy.approve_model_artifact(
+            owner_identity=args.owner, model=args.model, tag=args.tag,
+            digest=args.digest, license_id=args.license_id,
+            license_source=args.license_source, verified_on=args.verified_on,
+            restrictions=args.restrictions, reason=args.reason,
+            placement=solvent.policy.LOCAL, provider=args.provider,
+            commercial_use=True, max_privacy=args.max_privacy,
+            cost_per_1k_tokens_cents=0,
+            capabilities=tuple(args.capabilities.split(",")))
+    except FailClosed as exc:
+        print(f"refused: {exc}")
+        return 1
+    print(f"cleared {args.tag} ({args.license_id}) for commercial use.")
+    print(f"  digest {args.digest}")
+    print("  Clearance is keyed on that content address. A different artifact")
+    print("  under the same tag is not covered by it.")
+    return 0
+
+
+def cmd_setup_capability(args: argparse.Namespace) -> int:
+    """Register the owner's promotion of csv-cleanup/1.0 in this database.
+
+    The decision was made in OD-12 and widened in OD-14; this applies it to the
+    deployment the owner actually runs. Before recording anything it re-runs the
+    verifier's certification against the *current* implementation, so a scope
+    the evidence no longer supports cannot be registered by rerunning a command.
+    """
+    from .harness import CSV_PROMOTION, ensure_verifier_certified
+
+    solvent = _owner_solvent(args)
+    try:
+        record = ensure_verifier_certified(solvent, "csv-cleanup")
+    except FailClosed as exc:
+        print(f"refused: {exc}")
+        return 1
+    certified = {c for c in record["certified_checks"].split(",") if c}
+    missing = sorted(set(CSV_PROMOTION.covers) - certified)
+    if record["state"] != "CERTIFIED" or missing:
+        print(f"refused: the verifier is {record['state']} and certified for "
+              f"{len(certified)} check(s); the promotion claims "
+              f"{len(CSV_PROMOTION.covers)}.")
+        if missing:
+            print(f"         not certified: {', '.join(missing)}")
+        print("         The evidence no longer supports this scope. Nothing "
+              "was registered.")
+        return 1
+    try:
+        solvent.capability.register(CSV_PROMOTION, owner_identity=args.owner)
+    except FailClosed as exc:
+        print(f"refused: {exc}")
+        return 1
+    print(f"registered {CSV_PROMOTION.version} as proven, covering "
+          f"{len(CSV_PROMOTION.covers)} certified check(s).")
+    print(f"  verifier {record['verifier_ref']} @ {record['fingerprint']}")
+    print("  Nothing else was promoted. report-builder remains unregistered.")
+    return 0
+
+
+def cmd_setup_stripe(args: argparse.Namespace) -> int:
+    """Advance the payment rail one step. Takes evidence, never a credential."""
+    solvent = _owner_solvent(args)
+    try:
+        if args.state == "SELECTED":
+            # Choosing the rail is a separate act from moving along it, and the
+            # ladder has nothing to advance until it has been chosen.
+            solvent.policy.approve_payment_rail(
+                owner_identity=args.owner, rail="stripe",
+                verification_signal="stripe_webhook_signed_event",
+                reason=args.reason)
+        else:
+            solvent.policy.advance_payment_rail(
+                owner_identity=args.owner, state=args.state, reason=args.reason,
+                evidence=args.evidence)
+    except FailClosed as exc:
+        print(f"refused: {exc}")
+        return 1
+    rail = solvent.policy.payment_rail()
+    print(f"payment rail: {rail['operational_status']} — {rail['means']}")
+    if rail["next_state"]:
+        print(f"  next: {rail['next_state']}")
+    return 0
+
+
+def cmd_setup_check(args: argparse.Namespace) -> int:
+    """One line per thing the owner configures, and whether it is done.
+
+    Reads the existing readiness projection and the authorities themselves. It
+    is a *view*, not a second opinion: nothing here decides readiness, and if it
+    disagreed with `solvent readiness` that would be a defect in this function.
+    """
+    import os
+
+    from .harness import STRIPE_SECRET_ENV
+    from .owner import KEY_ENV
+
+    solvent = _owner_solvent(args)
+    report = solvent.readiness()
+    # Read the checks themselves. Parsing the blocking *strings* looked like it
+    # worked and quietly reported MODEL as OK with nothing cleared at all,
+    # because the prefix it split on was the category, not the check name.
+    checks = {check.name: check for check in report.checks}
+
+    def blocked(name: str) -> bool:
+        check = checks.get(name)
+        return check is not None and not check.ready
+
+    def line(name, ok, detail):
+        print(f"  {name:24s} {'OK      ' if ok else 'ACTION  '} {detail}")
+
+    print("Owner configuration")
+    print("=" * 70)
+
+    key_ok = solvent.owner.available
+    line("OWNER_KEY", key_ok,
+         f"present and valid ({KEY_ENV})" if key_ok else solvent.owner.key_refusal)
+
+    party = solvent.policy.contracting_party()
+    needed = solvent.policy.contracting_shortfall("CLIENT_AGREEMENT")
+    line("CONTRACTING_IDENTITY", party["decided"] and not needed,
+         f"{party['structure']}, complete for a client agreement"
+         if party["decided"] and not needed
+         else f"still needed: {', '.join(needed) or 'a contracting structure'}")
+
+    rail = solvent.policy.payment_rail()
+    secret_present = bool(os.environ.get(STRIPE_SECRET_ENV, ""))
+    line("STRIPE", rail["operational_status"] != solvent.policy.RAIL_SELECTED,
+         f"{rail['operational_status']}; webhook secret "
+         f"{'present' if secret_present else 'not set'} "
+         "(not required until a payment must be collected)")
+
+    cleared = solvent.policy.approved_models()
+    model_ok = not blocked("model commercial rights")
+    line("MODEL", model_ok,
+         f"{len(cleared)} artifact(s) cleared"
+         + ("" if model_ok else "; the configured artifact is not one of them"))
+
+    real_sources = [s for s in solvent.discovery.sources() if not s["is_fixture"]]
+    line("WORK_SOURCE", bool(real_sources),
+         f"{len(real_sources)} approved: "
+         f"{', '.join(s['name'] for s in real_sources)}" if real_sources
+         else "none registered")
+
+    proven = [c for c in solvent.capability.capabilities() if c.proven]
+    line("CSV_CAPABILITY", bool(proven),
+         f"{', '.join(c.version for c in proven)}" if proven
+         else "nothing promoted")
+
+    line("CLIENT_COMMUNICATION", True,
+         "human relay — every reply is drafted and needs owner approval to send")
+
+    simulation = solvent.policy.get("egress", "simulation_only", default=True)
+    line("SIMULATION_ONLY", True, "ON — no real external effects" if simulation
+         else "OFF — real external effects are enabled")
+
+    halted = solvent.policy.operating_mode is OperatingMode.HALT
+    line("HALT", not halted, "not engaged" if not halted else "ENGAGED")
+
+    print("-" * 70)
+    ready = not report.blocking
+    print(f"  FIRST_TRIAL_READINESS    {'READY' if ready else 'BLOCKED'}")
+    if report.blocking:
+        for item in report.blocking:
+            print(f"      - {item}")
+    print("\nNo secret is printed by this command, only whether one is present.")
+    return 0 if ready else 1
+
+
+def cmd_payments_ingest(args: argparse.Namespace) -> int:
+    """Verify spooled payment deliveries and hand the genuine ones to the Ledger."""
+    from .harness import PAYMENT_SPOOL, ingest_payment_spool
+
+    solvent = _owner_solvent(args)
+    results = ingest_payment_spool(solvent, spool=args.spool or PAYMENT_SPOOL)
+    if not results:
+        print("no deliveries waiting")
+        return 0
+    for record in results:
+        print(f"  {record['delivery']}: {record['outcome']}")
+        if record.get("why"):
+            print(f"      {record['why']}")
+    return 0
+
+
 def cmd_readiness(args: argparse.Namespace) -> int:
     """What stands between Solvent and its first real paid job."""
     solvent = Solvent(args.db)
@@ -383,6 +646,101 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("--db", default=":memory:")
     resume.add_argument("--reason", default="owner resumed Solvent")
     resume.set_defaults(func=cmd_resume)
+
+    # --- owner setup ---------------------------------------------------
+    setup = sub.add_parser(
+        "setup", help="record the owner's configuration (no secrets here)")
+    setup_sub = setup.add_subparsers(dest="setup_command", required=True)
+
+    def owned(parser):
+        parser.add_argument("--owner", default=OWNER,
+                            help="the registered owner identity making this record")
+        parser.add_argument("--db", default="/var/lib/solvent/solvent.db")
+        return parser
+
+    contracting = owned(setup_sub.add_parser(
+        "contracting", help="record who the owner contracts as"))
+    contracting.add_argument("--structure", default="INDIVIDUAL",
+                             choices=["INDIVIDUAL", "LLC", "CORPORATION",
+                                      "PARTNERSHIP"])
+    contracting.add_argument("--legal-name", default="",
+                             help="the name the owner contracts under")
+    contracting.add_argument("--email", default="",
+                             help="where a client reaches the owner")
+    contracting.add_argument("--address", default="",
+                             help="only needed to issue an invoice")
+    contracting.add_argument(
+        "--tax-reference-provisioned", action="store_true",
+        help="record that a tax reference exists. Takes no value: Solvent "
+             "stores presence, never the number")
+    contracting.add_argument("--reason", default="OD-1: owner contracting details")
+    contracting.set_defaults(func=cmd_setup_contracting)
+
+    source = owned(setup_sub.add_parser(
+        "work-source", help="register the owner-entered work source"))
+    source.add_argument("--name", default="owner_entered")
+    source.add_argument(
+        "--determination",
+        default="owner-entered: the owner found this client themselves and "
+                "typed the terms in; no platform terms apply and no external "
+                "call is made")
+    source.set_defaults(func=cmd_setup_work_source)
+
+    model = owned(setup_sub.add_parser(
+        "model", help="record commercial clearance for the model that will run"))
+    model.add_argument("--model", default="Qwen2.5-14B-Instruct")
+    model.add_argument("--tag", default="qwen2.5:14b-instruct")
+    model.add_argument(
+        "--digest",
+        default="sha256:2049f5674b1e92b4464e5729975c9689fcfbf0b0e4443ccf10b53"
+                "39f370f9a54")
+    model.add_argument("--license-id", default="Apache-2.0")
+    model.add_argument(
+        "--license-source",
+        default="https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/raw/main/LICENSE")
+    model.add_argument("--verified-on", default="2026-09-15")
+    model.add_argument("--provider", default="ollama")
+    model.add_argument("--max-privacy", default="CLIENT_CONFIDENTIAL")
+    model.add_argument("--capabilities", default="summarise,extract")
+    model.add_argument(
+        "--restrictions",
+        default="No trademark licence (Apache-2.0 §6): do not brand the "
+                "service with Qwen or Alibaba marks. Weights carry no warranty "
+                "(§7-8). Redistributing weights or a fine-tune would trigger "
+                "§4 notice duties; consuming output does not.")
+    model.add_argument(
+        "--reason",
+        default="OD-3: verified against publisher LICENSE and the packaged "
+                "licence blob, byte-identical "
+                "(docs/solvent-model-rights-evidence.md)")
+    model.set_defaults(func=cmd_setup_model)
+
+    capability = owned(setup_sub.add_parser(
+        "capability", help="register the owner's promotion of csv-cleanup/1.0"))
+    capability.set_defaults(func=cmd_setup_capability)
+
+    stripe = owned(setup_sub.add_parser(
+        "stripe", help="advance the payment rail (evidence, never a credential)"))
+    stripe.add_argument("state", choices=["SELECTED", "ENGINEERING_READY",
+                                          "CONFIGURED", "LIVE_VERIFIED"])
+    stripe.add_argument("--evidence", default="",
+                        help="what the owner did or saw. Required for "
+                             "CONFIGURED and LIVE_VERIFIED. Never a credential")
+    stripe.add_argument("--reason", default="OD-2: payment rail progress")
+    stripe.set_defaults(func=cmd_setup_stripe)
+
+    check = setup_sub.add_parser(
+        "check", help="one line per thing the owner configures")
+    check.add_argument("--db", default="/var/lib/solvent/solvent.db")
+    check.set_defaults(func=cmd_setup_check)
+
+    payments = sub.add_parser("payments", help="payment rail operations")
+    payments_sub = payments.add_subparsers(dest="payments_command", required=True)
+    ingest = payments_sub.add_parser(
+        "ingest", help="verify spooled webhook deliveries and apply them")
+    ingest.add_argument("--spool", default="")
+    ingest.add_argument("--db", default="/var/lib/solvent/solvent.db")
+    ingest.set_defaults(func=cmd_payments_ingest)
 
     state = sub.add_parser("state", help="print the Project State projection")
     state.add_argument("job_id")

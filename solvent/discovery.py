@@ -246,7 +246,34 @@ class Discovery:
         self._audit = audit
         self._policy = policy
         self._gate = gate
-        self._sources: dict[str, WorkSource] = {}
+        self._sources: dict[str, WorkSource] = self._rehydrate()
+
+    def _rehydrate(self) -> dict:
+        """Re-create the sources a restart would otherwise lose.
+
+        Registration wrote a row and a live object. Only the row survived a
+        restart, so the owner could register their source, restart the service,
+        and have every poll fail closed with ``unknown source`` — an owner act
+        silently undone by a process restart. Found by restarting a configured
+        Solvent rather than by reading the code.
+
+        Only a **manual** source can be rebuilt here, and that is the point: its
+        behaviour is entirely described by its record plus the postings the owner
+        typed, so re-creating it invents nothing. An adapter that fetches from a
+        platform *is* code; its row is a registration, not a definition, and
+        whatever constructs it must register it again. Such a source is left
+        absent rather than approximated, so polling it fails closed and says so.
+        """
+        sources: dict[str, WorkSource] = {}
+        try:
+            rows = self._db.query(
+                "SELECT name, kind FROM work_sources WHERE kind = 'manual'")
+        except Exception:  # noqa: BLE001 - a fresh database has no table yet
+            return sources
+        for row in rows:
+            source = ManualSource(row["name"], [])
+            sources[row["name"]] = source
+        return sources
 
     # ---------------------------------------------------------------- sources
 

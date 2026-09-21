@@ -33,39 +33,22 @@ import unittest
 from solvent.capability import Capability, promotion_verdict
 from solvent.errors import FailClosed
 from solvent.harness import (
-    CAPABILITIES, OWNER, Solvent, ensure_verifier_certified, run_csv_job,
+    CAPABILITIES, CSV_CERTIFIED_SCOPE, CSV_PROMOTION, OWNER, Solvent,
+    ensure_verifier_certified, run_csv_job,
 )
 from solvent.types import Criticality, Requirement, RequirementSource as RS
 
 from tests_solvent import fixtures_csv as fx
 
-#: The eleven checks `solvent.csvverify.run` is certified to decide. This is the
-#: evidence boundary, and therefore the approval boundary. It is a list of
-#: *checks*, not of operations: an operation belongs here only once a verifier
-#: has been shown work that was wrong in that way and caught it, enough times,
-#: on artifacts it had never seen.
-CERTIFIED_SCOPE = (
-    "drop_exact_duplicates", "map_values", "no_unauthorised_changes",
-    "normalise_dates", "parses_as_csv", "preserve_columns", "rename_headers",
-    "require_columns", "row_reconciliation", "sort_rows", "trim_whitespace",
-)
-#: Operations promoted under OD-14, recorded separately so the boundary that
-#: moved is named rather than absorbed.
-OD14_OPERATIONS = ("rename_headers", "sort_rows")
+#: The promotion under test is the one the product ships, imported rather than
+#: restated. A test that declares its own copy of the scope proves the copy is
+#: self-consistent and nothing about what a deployment would actually register.
+CERTIFIED_SCOPE = CSV_CERTIFIED_SCOPE
+CSV_EVIDENCE = CSV_PROMOTION
 
-#: Measured, not asserted: 34 black-box scenarios, 0 false completions, levels
-#: L1/L2/L3 plus boundary, hostile, trap, client and gap.
-CSV_EVIDENCE = Capability(
-    name="csv-cleanup", covers=frozenset(CERTIFIED_SCOPE), proven=True,
-    version="csv-cleanup/1.0",
-    inputs=("text/csv",), outputs=("text/csv",),
-    verifiable_by=CERTIFIED_SCOPE,
-    proven_levels=("L1", "L2", "L3"),
-    evidence_ref="docs/solvent-controlled-trial-activation.md; "
-                 "docs/solvent-certification-hardening.md; "
-                 "tests_solvent/test_blackbox_certification.py; "
-                 "tests_solvent/test_csv_rename_and_sort.py",
-    fixtures_passed=34, fixtures_total=34, false_completions=0)
+#: Operations promoted under OD-14, named separately so the boundary that moved
+#: is visible rather than absorbed.
+OD14_OPERATIONS = ("rename_headers", "sort_rows")
 
 
 def promoted(solvent: Solvent) -> Solvent:
