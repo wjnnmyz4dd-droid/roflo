@@ -69,6 +69,7 @@ NAV = (
     ("/", "Command centre"),
     ("/jobs", "Jobs"),
     ("/clients", "Clients"),
+    ("/files", "Files"),
     ("/sources", "Work sources"),
     ("/skills", "Skills Lab"),
     ("/capabilities", "Capabilities"),

@@ -42,6 +42,7 @@ stated plainly rather than designed away.
 | **Command centre** | What needs me, and then what is happening? |
 | **Jobs** | Every job, its state, price, blocker and next step. |
 | **Clients** | One client's work, their messages, and nothing of anyone else's. |
+| **Files** | Every deliverable Solvent produced — named, never served. |
 | **Work sources** | Where work may come from, and at which of the four stages. |
 | **Skills Lab** | What Solvent wants to do, is building, and has proven. |
 | **Capabilities** | What it is allowed to sell, on what evidence. |

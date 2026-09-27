@@ -109,6 +109,7 @@ class ControlCentre:
             "/job": self.job_detail,
             "/clients": self.clients,
             "/client": self.client_detail,
+            "/files": self.files,
             "/sources": self.sources,
             "/skills": self.skills,
             "/skill": self.skill_detail,
@@ -428,6 +429,64 @@ class ControlCentre:
                 "Client")
 
     # ---------------------------------------------------------- work sources
+    def files(self, request: Request):
+        """Every file Solvent has produced — listed, and deliberately not served.
+
+        The page names each deliverable, says which client it belongs to, and
+        reports whether verification passed on that exact digest. It does not
+        hand the file over, and there is no route here that does.
+
+        That is the point rather than an omission. A deliverable is the client's
+        confidential work product, and this process is the one most likely to be
+        reached from outside: it listens on a socket, and the rest of Solvent
+        does not. A control centre that could stream client files would turn a
+        stolen session into a data breach, which is a larger loss than anything
+        else on this website could cause. The owner reads a path here and opens
+        it on the machine, which is an action Solvent is not part of.
+        """
+        job = request.query.get("job", "")
+        client = request.query.get("client", "")
+        rows = self.read.deliverables(job_id=job, client_id=client)
+        body = []
+        for row in rows:
+            digest = row.get("digest", "")
+            counts = self.read.deliverable_verification(digest)
+            if counts["total"] == 0:
+                verdict = pill("not verified", "warn")
+            elif counts["failed"]:
+                verdict = pill(f"{counts['failed']} failing", "bad")
+            else:
+                verdict = pill(f"{counts['passed']} passing", "ok")
+            body.append([
+                esc(row.get("role", "")),
+                esc(row.get("media_type", "")),
+                esc(f"{row.get('size', 0):,} bytes"),
+                # Enough digest to compare against the one on the job page,
+                # and not the whole thing, which is noise at this width.
+                f'<code>{esc(digest[:16])}</code>' if digest else "—",
+                verdict,
+                esc(row.get("client_id", "")),
+                link(f"/job?id={urllib.parse.quote(row.get('job_id', ''))}",
+                     esc(row.get("job_id", ""))[:14]),
+                esc(row.get("ts", ""))[:19],
+            ])
+        scope = ""
+        if job:
+            scope = f" for job {esc(job)}"
+        elif client:
+            scope = f" for {esc(client)}"
+        return ("<h1>Files and deliverables</h1>"
+                f'<p class="sub">{esc(str(len(rows)))} file(s){scope}. '
+                "This page lists what Solvent produced and does not serve it: "
+                "open a file on the machine, not through the website.</p>"
+                + table(["role", "type", "size", "digest", "verification",
+                         "client", "job", "produced"], body,
+                        empty="No files have been produced yet.")
+                + '<p class="sub">Verification is counted against each file\'s '
+                  "own digest, so a corrected file does not inherit the passes "
+                  "of the one it replaced.</p>",
+                "Files")
+
     def sources(self, request: Request):
         rows = self.read.work_sources()
         return ("<h1>Work sources</h1>"

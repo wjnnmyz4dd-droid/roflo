@@ -123,6 +123,43 @@ class ReadModel:
         return self.rows(
             "SELECT * FROM artifacts WHERE job_id = ? ORDER BY rowid", (job_id,))
 
+    def deliverables(self, *, job_id: str = "", client_id: str = "") -> list[dict]:
+        """Every file Solvent has produced, newest first, with its job.
+
+        Joined here rather than assembled in the page, because "which client
+        does this file belong to" is a question with one right answer and the
+        answer lives in the jobs table. A page that worked it out for itself
+        would be a second place that could get it wrong.
+        """
+        sql = ("SELECT a.*, j.client_id AS client_id, j.state AS job_state, "
+               "j.title AS job_title FROM artifacts a "
+               "JOIN jobs j ON j.id = a.job_id")
+        clauses, params = [], []
+        if job_id:
+            clauses.append("a.job_id = ?")
+            params.append(job_id)
+        if client_id:
+            clauses.append("j.client_id = ?")
+            params.append(client_id)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        return self.rows(sql + " ORDER BY a.ts DESC, a.rowid DESC", tuple(params))
+
+    def deliverable_verification(self, digest: str) -> dict:
+        """``{passed, failed, total}`` for **this exact file**.
+
+        Scoped by digest, the same way the delivery gate scopes it. Evidence
+        for a previous version of a file is not evidence for this one, and a
+        page that showed the job's verification next to a corrected artifact
+        would be reporting a pass that does not apply to what it is showing.
+        """
+        rows = self.rows(
+            "SELECT verdict, COUNT(*) AS n FROM verification_evidence "
+            "WHERE artifact_digest = ? GROUP BY verdict", (digest,))
+        counts = {r["verdict"]: r["n"] for r in rows}
+        passed, failed = counts.get("PASS", 0), counts.get("FAIL", 0)
+        return {"passed": passed, "failed": failed, "total": passed + failed}
+
     def verification(self, job_id: str) -> list[dict]:
         return self.rows(
             "SELECT * FROM verification_evidence WHERE job_id = ? ORDER BY rowid",

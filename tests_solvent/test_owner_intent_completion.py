@@ -240,18 +240,41 @@ class ApprovalsAreChecked(Spooled):
         self.assertIs(self.s.policy.operating_mode, OperatingMode.HALT)
 
     def test_the_owner_identity_comes_from_the_approval_not_the_spool(self):
-        """A name typed into a spool file is not an identity."""
+        """A name typed into a spool file is not an identity.
+
+        The second registered owner is what makes this test mean anything. An
+        earlier version claimed an unregistered name, and passed — but it
+        passed because Policy refuses an unregistered owner, which is a
+        different control doing the work. Mutation testing caught it: taking
+        the identity from the spool file survived, because the assertion was
+        about the outcome rather than about which control produced it.
+
+        With two real owners, the claimed name is one Policy would accept, so
+        the only thing standing between the spool file and an action recorded
+        under somebody else's name is where this reads the identity from.
+        """
+        second = "owner:second-signatory"
+        self.s.policy.amend(
+            {"governance": {"owner_identities": [OWNER, second]}},
+            OWNER, "a second owner, so the claimed name is a real one")
+        self.assertTrue(self.s.policy.is_owner(second))
+
         self.s.policy.set_operating_mode(OperatingMode.HALT, OWNER, "test")
         record = self.queue("resume", why="done")
         path = pathlib.Path(self.spool) / f"{record['id']}.intent"
         body = json.loads(path.read_text())
-        body["owner_identity"] = "owner:somebody-else"
+        body["owner_identity"] = second
         path.write_text(json.dumps(body))
+
+        # The approval is the first owner's. The spool file claims the second.
         self.apply(self.approval_for(record["id"]))
-        amendments = [e for e in self.s.audit.events()
-                      if e["initiator"] == "owner:somebody-else"]
-        self.assertEqual(amendments, [],
-                         "an identity claimed in a spool file was acted under")
+        self.assertIs(self.s.policy.operating_mode, OperatingMode.NORMAL,
+                      "the action did not happen, so this proves nothing")
+        claimed = [e for e in self.s.audit.events()
+                   if e["initiator"] == second]
+        self.assertEqual(claimed, [],
+                         "an identity claimed in a spool file was acted under, "
+                         "and the audit log now names the wrong owner")
 
 
 class WhatAnApprovalStillCannotDo(Spooled):

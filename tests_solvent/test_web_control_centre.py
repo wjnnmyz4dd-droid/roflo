@@ -122,10 +122,10 @@ class NothingWorksWithoutASession(Base):
     """§58. Authorisation is enforced in the handler, before routing."""
 
     def test_every_page_redirects_an_anonymous_visitor(self):
-        for path in ("/", "/jobs", "/job", "/clients", "/client", "/sources",
-                     "/skills", "/skill", "/capabilities", "/service",
-                     "/approvals", "/money", "/model", "/security", "/audit",
-                     "/health", "/setup"):
+        for path in ("/", "/jobs", "/job", "/clients", "/client", "/files",
+                     "/sources", "/skills", "/skill", "/capabilities",
+                     "/service", "/approvals", "/money", "/model", "/security",
+                     "/audit", "/health", "/setup"):
             with self.subTest(path=path):
                 response = self.get(path)
                 self.assertEqual(response.status, 303)
@@ -1078,3 +1078,89 @@ class MarkingAMessageRelayedActuallyClearsIt(unittest.TestCase):
         with self.assertRaises(_FailClosed):
             self.solvent.relations.mark_relayed(response_id=self.draft,
                                                 by="owner:x")
+
+
+class TheFilesPage(Base):
+    """§38. The deliverables are listed. They are not served.
+
+    The distinction is the whole page. A client's finished work is the most
+    confidential thing Solvent holds, and this is the one process that listens
+    on a socket. Listing what exists costs nothing if a session is stolen;
+    streaming it would turn the same theft into a data breach.
+    """
+
+    def test_it_lists_the_files_that_were_produced(self):
+        body = self.get("/files", self.sign_in()).body.decode()
+        self.assertIn("Files and deliverables", body)
+        self.assertIn("client:one", body)
+        self.assertIn("client:two", body)
+
+    def test_it_shows_verification_against_each_files_own_digest(self):
+        body = self.get("/files", self.sign_in()).body.decode()
+        self.assertIn("passing", body)
+
+    def test_it_does_not_contain_the_contents_of_any_deliverable(self):
+        """The page names files; it never carries one."""
+        body = self.get("/files", self.sign_in()).body.decode()
+        rows = self.centre.read.deliverables()
+        self.assertTrue(rows, "the fixture produced no artifacts to test with")
+        for row in rows:
+            path = pathlib.Path(row["path"])
+            if not path.exists():
+                continue
+            content = path.read_text(encoding="utf-8", errors="replace")
+            for line in content.splitlines():
+                if len(line.strip()) > 12:
+                    self.assertNotIn(line.strip(), body,
+                                     "a deliverable's contents reached the page")
+
+    def test_there_is_no_route_that_serves_a_file(self):
+        """Every route answers with a page. None of them answers with a file."""
+        cookies = self.sign_in()
+        for route in sorted(self.centre._routes()):
+            with self.subTest(route=route):
+                response = self.centre.handle(Request(
+                    "GET", route, cookies=cookies,
+                    query={"id": self.job_id, "path": "/etc/passwd",
+                           "file": "/etc/passwd", "download": "1"}))
+                self.assertNotIn(b"root:x:0:0", response.body)
+                headers = dict(response.headers)
+                self.assertTrue(
+                    headers.get("Content-Type", "").startswith("text/html"),
+                    f"{route} answered with {headers.get('Content-Type')!r}")
+                self.assertNotIn("Content-Disposition", headers,
+                                 f"{route} offered a download")
+
+    def test_a_filter_cannot_reach_another_clients_files(self):
+        """Filtering is a WHERE clause on a read-only connection, so the worst
+        a crafted filter does is return nothing."""
+        cookies = self.sign_in()
+        body = self.get("/files", cookies, client="client:two").body.decode()
+        self.assertIn("client:two", body)
+        self.assertNotIn("client:one", body)
+
+    def test_a_hostile_filter_value_is_escaped_not_executed(self):
+        cookies = self.sign_in()
+        for hostile in MARKUP_PAYLOADS:
+            with self.subTest(hostile=hostile[:24]):
+                body = self.get("/files", cookies, client=hostile).body.decode()
+                self.assertNotIn(hostile, body)
+
+    def test_the_page_cannot_write(self):
+        before = self.centre.read.deliverables()
+        self.get("/files", self.sign_in())
+        self.assertEqual(self.centre.read.deliverables(), before)
+
+    def test_an_unverified_file_is_not_shown_as_verified(self):
+        for row in self.centre.read.deliverables():
+            counts = self.centre.read.deliverable_verification(row["digest"])
+            with self.subTest(digest=row["digest"][:12]):
+                self.assertEqual(counts["total"],
+                                 counts["passed"] + counts["failed"])
+
+    def test_verification_is_scoped_to_the_digest_not_the_job(self):
+        """Evidence for a previous version of a file is not evidence for this
+        one, and the page must not inherit it."""
+        self.assertEqual(
+            self.centre.read.deliverable_verification("not-a-real-digest"),
+            {"passed": 0, "failed": 0, "total": 0})
