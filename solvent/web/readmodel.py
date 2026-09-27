@@ -160,6 +160,20 @@ class ReadModel:
         passed, failed = counts.get("PASS", 0), counts.get("FAIL", 0)
         return {"passed": passed, "failed": failed, "total": passed + failed}
 
+    def lessons(self, *, kind: str = "") -> list[dict]:
+        """What Solvent has concluded, newest first, with what it concluded it from."""
+        sql = "SELECT * FROM memory_facts"
+        params: tuple = ()
+        if kind:
+            sql += " WHERE kind = ?"
+            params = (kind,)
+        return self.rows(sql + " ORDER BY ts DESC, rowid DESC", params)
+
+    def lesson_kinds(self) -> list[dict]:
+        return self.rows(
+            "SELECT kind, COUNT(*) AS n, MIN(tier) AS weakest FROM memory_facts "
+            "GROUP BY kind ORDER BY n DESC")
+
     def verification(self, job_id: str) -> list[dict]:
         return self.rows(
             "SELECT * FROM verification_evidence WHERE job_id = ? ORDER BY rowid",

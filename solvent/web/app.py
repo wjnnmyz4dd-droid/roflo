@@ -114,6 +114,7 @@ class ControlCentre:
             "/skills": self.skills,
             "/skill": self.skill_detail,
             "/capabilities": self.capabilities,
+            "/learning": self.learning,
             "/service": self.service,
             "/approvals": self.approvals,
             "/money": self.money_page,
@@ -620,6 +621,58 @@ class ControlCentre:
                 "Capabilities")
 
     # ------------------------------------------------------ customer service
+    def learning(self, request: Request):
+        """What Solvent has concluded, shown next to what it concluded it from.
+
+        The evidence tier is the column that matters, and it is why this page
+        is not just a list of lessons. Business Memory refuses a lesson drawn
+        from a self-report, and refuses an economic lesson drawn from anything
+        short of an external fact, because "the job went well" asserted by the
+        component that ran it is not a finding. Showing the tier next to each
+        lesson is what lets the owner see that rule holding rather than take it
+        on faith — a page of confident conclusions with no provenance is how a
+        system talks itself into believing its own output.
+
+        Read-only, like everything here. A lesson is never edited from the
+        website: Memory is where learning is written, and giving a second
+        writer to the record of what worked would let the component whose
+        autonomy depends on looking successful edit the evidence of its
+        success.
+        """
+        kind = request.query.get("kind", "")
+        rows = self.read.lessons(kind=kind)
+        summary = self.read.lesson_kinds()
+        body = []
+        for row in rows:
+            payload = row.get("payload", "")
+            body.append([
+                esc(row.get("kind", "")),
+                esc(row.get("subject", ""))[:40],
+                _tier_pill(row.get("tier", "")),
+                f'<code>{esc(payload[:120])}</code>' if payload else "—",
+                esc(row.get("evidence_ref", ""))[:18] or "—",
+                esc(row.get("ts", ""))[:19],
+            ])
+        head = ("<h1>What Solvent has learned</h1>"
+                f'<p class="sub">{esc(str(len(rows)))} lesson(s)'
+                + (f" of kind {esc(kind)}" if kind else "") + ". Each one is "
+                "shown with the grade of evidence it was drawn from; Memory "
+                "refuses a lesson that has none.</p>")
+        if summary:
+            head += table(
+                ["kind", "lessons", "weakest evidence"],
+                [[link(f"/learning?kind={urllib.parse.quote(r['kind'])}",
+                       esc(r["kind"])),
+                  esc(str(r["n"])), _tier_pill(r.get("weakest", ""))]
+                 for r in summary], empty="")
+        return (head + table(
+            ["kind", "subject", "evidence", "what was recorded", "from", "when"],
+            body, empty="Nothing has been learned yet. Solvent records a "
+                        "lesson only from verified evidence, so an empty list "
+                        "here is what a system that has not yet worked looks "
+                        "like."),
+                "What it learned")
+
     def service(self, request: Request):
         relay = self.read.relay_queue()
         return ("<h1>Customer service</h1>"
@@ -934,6 +987,17 @@ _PLAIN = {
     "skillslab.offered_to_owner": "skill offered for your decision",
     "owner.approval_issued": "owner approval issued",
 }
+
+
+def _tier_pill(tier: str) -> str:
+    """Stronger evidence reads greener. T0 is not evidence and says so."""
+    if not tier:
+        return pill("none", "bad")
+    if tier.startswith("T0"):
+        return pill(tier, "bad")
+    if tier.startswith("T1"):
+        return pill(tier, "warn")
+    return pill(tier, "ok")
 
 
 def _plain_event(event: str) -> str:

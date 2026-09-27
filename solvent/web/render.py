@@ -73,6 +73,7 @@ NAV = (
     ("/sources", "Work sources"),
     ("/skills", "Skills Lab"),
     ("/capabilities", "Capabilities"),
+    ("/learning", "What it learned"),
     ("/service", "Customer service"),
     ("/approvals", "Approvals"),
     ("/money", "Money"),

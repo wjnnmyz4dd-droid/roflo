@@ -76,6 +76,21 @@ def build_database(path: str) -> str:
     second = run_csv_job(source=other, requirements=list(fx.SIMPLE),
                          workdir=other_work, solvent=solvent,
                          client_id="client:two", title="Second client work")
+    # Two lessons, at the two grades that are allowed to teach anything. The
+    # learning page's tests are about provenance, and a fixture with nothing
+    # learned would let every one of them pass while showing an empty table —
+    # which is how a page of assertions ends up proving nothing at all.
+    from solvent.types import VerificationTier as _Tier
+
+    solvent.memory.learn(
+        kind="checklist_pattern", subject="csv-cleanup",
+        payload={"observed": "duplicate rows are the commonest defect"},
+        evidence_ref=report.job_id, tier=_Tier.T1_DETERMINISTIC)
+    solvent.memory.learn(
+        kind="job_economics", subject="client:one",
+        payload={"quoted_cents": 12000, "settled": True},
+        evidence_ref=report.job_id, tier=_Tier.T3_EXTERNAL_FACT)
+
     project = solvent.skillslab.record_need(
         skill="pdf-extract", need="a client sent a PDF", observed_on=report.job_id)
     solvent.skillslab.check_overlap(
@@ -124,8 +139,8 @@ class NothingWorksWithoutASession(Base):
     def test_every_page_redirects_an_anonymous_visitor(self):
         for path in ("/", "/jobs", "/job", "/clients", "/client", "/files",
                      "/sources", "/skills", "/skill", "/capabilities",
-                     "/service", "/approvals", "/money", "/model", "/security",
-                     "/audit", "/health", "/setup"):
+                     "/learning", "/service", "/approvals", "/money", "/model",
+                     "/security", "/audit", "/health", "/setup"):
             with self.subTest(path=path):
                 response = self.get(path)
                 self.assertEqual(response.status, 303)
@@ -1164,3 +1179,65 @@ class TheFilesPage(Base):
         self.assertEqual(
             self.centre.read.deliverable_verification("not-a-real-digest"),
             {"passed": 0, "failed": 0, "total": 0})
+
+
+class TheLearningPage(Base):
+    """§83. What Solvent concluded, and what it concluded it from."""
+
+    def test_it_names_what_was_learned_and_where_it_came_from(self):
+        body = self.get("/learning", self.sign_in()).body.decode()
+        self.assertIn("What Solvent has learned", body)
+        self.assertIn("checklist_pattern", body)
+        self.assertIn("job_economics", body)
+        self.assertIn(self.job_id[:18], body)
+
+    def test_an_economic_lesson_is_shown_at_the_grade_it_required(self):
+        """Memory refuses economic learning below an external fact. The page
+        is where the owner can see that rule having held."""
+        body = self.get("/learning", self.sign_in(),
+                        kind="job_economics").body.decode()
+        self.assertIn("T3_EXTERNAL_FACT", body)
+        self.assertIn("quoted_cents", body)
+        # The summary index still lists every kind, because that is how the
+        # owner navigates between them. What must be filtered is the lessons.
+        self.assertNotIn("commonest defect", body,
+                         "the filter did not narrow the lessons themselves")
+
+    def test_every_lesson_is_shown_with_its_evidence_grade(self):
+        rows = self.centre.read.lessons()
+        self.assertTrue(rows, "the fixture learned nothing, so this proves "
+                              "nothing about how lessons are shown")
+        body = self.get("/learning", self.sign_in()).body.decode()
+        for row in rows:
+            with self.subTest(lesson=row["id"]):
+                self.assertIn(esc_of(row["tier"]), body)
+
+    def test_the_page_cannot_write_a_lesson(self):
+        """Memory is the only writer. A second one would let the component
+        whose autonomy depends on looking successful edit its own record."""
+        before = self.centre.read.lessons()
+        self.get("/learning", self.sign_in())
+        self.get("/learning", self.sign_in(), kind="job_outcome")
+        self.assertEqual(self.centre.read.lessons(), before)
+
+    def test_a_hostile_kind_filter_is_escaped_and_returns_nothing(self):
+        cookies = self.sign_in()
+        for hostile in MARKUP_PAYLOADS:
+            with self.subTest(hostile=hostile[:24]):
+                body = self.get("/learning", cookies, kind=hostile).body.decode()
+                self.assertNotIn(hostile, body)
+
+    def test_the_kind_filter_narrows_rather_than_widens(self):
+        all_rows = self.centre.read.lessons()
+        self.assertGreater(len(all_rows), 1)
+        for row in all_rows[:3]:
+            narrowed = self.centre.read.lessons(kind=row["kind"])
+            with self.subTest(kind=row["kind"]):
+                self.assertTrue(narrowed)
+                self.assertTrue(all(r["kind"] == row["kind"] for r in narrowed))
+                self.assertLessEqual(len(narrowed), len(all_rows))
+
+
+def esc_of(value: str) -> str:
+    from solvent.web.render import esc
+    return esc(value)

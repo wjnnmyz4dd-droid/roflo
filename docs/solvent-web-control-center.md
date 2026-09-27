@@ -46,6 +46,7 @@ stated plainly rather than designed away.
 | **Work sources** | Where work may come from, and at which of the four stages. |
 | **Skills Lab** | What Solvent wants to do, is building, and has proven. |
 | **Capabilities** | What it is allowed to sell, on what evidence. |
+| **What it learned** | Every lesson, beside the grade of evidence it came from. |
 | **Customer service** | What a client said, and what is drafted for you to send. |
 | **Approvals** | Decisions that are genuinely yours. Nothing routine. |
 | **Money** | Collected, outstanding, and simulated — kept strictly apart. |
