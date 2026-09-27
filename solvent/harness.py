@@ -34,6 +34,7 @@ from .discovery import (
 from .metrics import business_metrics
 from .owner import OwnerChannel
 from .readiness import assert_may_attempt_first_real_job, first_revenue_readiness
+from .skillslab import SkillsLab
 from .qualification import Qualification, Verdict
 from .gate import ActionGate, approval
 from .governor import FinancialGovernor
@@ -148,6 +149,12 @@ class Solvent:
         # what-is-proven-on-what-evidence; wiring happens here because the
         # registry needs the audit log and the audit log needs this answer.
         self.audit.trust_verifiers_via(self.capability)
+        # The Skills Lab orchestrates the lifecycle around capability growth and
+        # holds no authority over it: it is given the registry to ask, and the
+        # policy store only so it can check that an owner identity is real
+        # before recording what the owner decided.
+        self.skillslab = SkillsLab(self.store, self.audit, self.capability,
+                                   policy=self.policy)
         self.memory = BusinessMemory(self.store, self.audit)
         self.discovery = Discovery(self.store, self.audit, self.policy, self.gate)
         self.feedback = ClientFeedback(self.store, self.audit, self.orchestrator)

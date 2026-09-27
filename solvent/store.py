@@ -64,6 +64,11 @@ APPEND_ONLY = (
     # new decision. Editing the row would make "we always knew it was proven"
     # indistinguishable from "we changed our minds".
     "registered_capabilities",
+    # A skill's development history. What the Lab was told, what it checked, and
+    # what it concluded at each stage is the evidence a certification rests on.
+    # Editing it would let a poisoned claim become a verified one, or a failed
+    # build become a clean record, with nothing to show for the change.
+    "skill_project_events", "skill_evidence", "skill_versions",
 )
 
 #: Which authority owns which tables. The single source of this mapping.
@@ -92,6 +97,14 @@ TABLE_OWNER = {
     "budget_grants": "governor",
     "action_requests": "gate",
     "memory_facts": "memory",
+    # The Skills Lab is an orchestrator, not an authority: it owns the record of
+    # a skill's development and nothing else. It cannot write policy, the
+    # ledger, the audit chain, or the capability registry -- every decision that
+    # matters still belongs to the authority that already owned it.
+    "skill_projects": "skillslab",
+    "skill_project_events": "skillslab",
+    "skill_evidence": "skillslab",
+    "skill_versions": "skillslab",
     "work_sources": "discovery",
     "opportunities": "discovery",
     "qualification_verdicts": "qualification",
@@ -304,6 +317,39 @@ CREATE TABLE IF NOT EXISTS qualification_verdicts (
   governor_verdict TEXT NOT NULL DEFAULT '', conformance TEXT NOT NULL DEFAULT '',
   score REAL NOT NULL DEFAULT 0.0, rank_position INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS skill_projects (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, skill TEXT NOT NULL,
+  change_type TEXT NOT NULL, stage TEXT NOT NULL, need TEXT NOT NULL,
+  observed_on TEXT NOT NULL DEFAULT '', occurrences INTEGER NOT NULL DEFAULT 1,
+  base_version TEXT NOT NULL DEFAULT '', target_version TEXT NOT NULL DEFAULT '',
+  overlap_verdict TEXT NOT NULL DEFAULT '', overlap_why TEXT NOT NULL DEFAULT '',
+  opened_by TEXT NOT NULL, note TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS skill_project_events (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, project_id TEXT NOT NULL,
+  stage TEXT NOT NULL, outcome TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS skill_evidence (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, project_id TEXT NOT NULL,
+  claim_ref TEXT NOT NULL, claim TEXT NOT NULL, source TEXT NOT NULL,
+  trust TEXT NOT NULL, status TEXT NOT NULL,
+  checked_by TEXT NOT NULL DEFAULT '', contradicts TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS skill_versions (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, skill TEXT NOT NULL,
+  version TEXT NOT NULL, change_type TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL DEFAULT '',
+  verifier_fingerprint TEXT NOT NULL DEFAULT '',
+  evidence_ref TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL,
+  supersedes TEXT NOT NULL DEFAULT '', rollback_target TEXT NOT NULL DEFAULT '',
+  why TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS memory_facts (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT NOT NULL,
   payload TEXT NOT NULL, evidence_ref TEXT NOT NULL, tier TEXT NOT NULL
