@@ -108,7 +108,68 @@ class TheOverlapGateRunsBeforeAnyWork(unittest.TestCase):
             project_id=project_id,
             target_covers=frozenset({"drop_exact_duplicates"}))
         self.assertEqual(verdict, lab.EXISTING_SUFFICIENT)
-        self.assertFalse(self.s.skillslab.may_build(project_id)[0])
+        allowed, reason = self.s.skillslab.may_build(project_id)
+        self.assertFalse(allowed)
+        # The *reason* matters. Asserting only the boolean let a mutant that
+        # removed the overlap check entirely survive the suite: with no evidence
+        # recorded, the evidence floor refused the build anyway and the test
+        # passed for the wrong reason.
+        self.assertIn(lab.EXISTING_SUFFICIENT, reason)
+
+    def test_the_overlap_gate_blocks_even_when_the_evidence_is_sound(self):
+        """The case that isolates it. With verified evidence and the owner's
+        permission in place, the overlap verdict is the only thing that can
+        refuse the build -- so if it stops refusing, this test fails."""
+        project_id = self.s.skillslab.record_need(
+            skill="csv-cleanup", need="remove duplicates", observed_on="job_1")
+        self.s.skillslab.check_overlap(
+            project_id=project_id,
+            target_covers=frozenset({"drop_exact_duplicates"}))
+        allow(self.s, "csv-cleanup")
+        claim = self.s.skillslab.record_claim(
+            project_id=project_id, claim="measured", source="ran it",
+            trust=lab.MEASURED)
+        self.s.skillslab.verify_claim(claim_id=claim, status=lab.VERIFIED,
+                                      checked_by="test")
+        self.assertEqual(self.s.skillslab.evidence_blockers(project_id), [])
+        allowed, reason = self.s.skillslab.may_build(project_id)
+        self.assertFalse(allowed, "the overlap gate stopped refusing")
+        self.assertIn(lab.EXISTING_SUFFICIENT, reason)
+
+    def test_a_human_required_verdict_also_blocks_with_sound_evidence(self):
+        project_id = self.s.skillslab.record_need(
+            skill="negotiate", need="client wants terms changed",
+            observed_on="job_1")
+        self.s.skillslab.check_overlap(project_id=project_id, needs_human=True)
+        allow(self.s, "negotiate")
+        claim = self.s.skillslab.record_claim(
+            project_id=project_id, claim="measured", source="ran it",
+            trust=lab.MEASURED)
+        self.s.skillslab.verify_claim(claim_id=claim, status=lab.VERIFIED,
+                                      checked_by="test")
+        allowed, reason = self.s.skillslab.may_build(project_id)
+        self.assertFalse(allowed)
+        self.assertIn(lab.HUMAN_REQUIRED, reason)
+
+    def test_specifying_is_refused_when_the_overlap_gate_says_no(self):
+        """Not only may_build: the next stage must refuse too, or the gate is
+        advisory."""
+        project_id = self.s.skillslab.record_need(
+            skill="csv-cleanup", need="remove duplicates", observed_on="job_1")
+        self.s.skillslab.check_overlap(
+            project_id=project_id,
+            target_covers=frozenset({"drop_exact_duplicates"}))
+        allow(self.s, "csv-cleanup")
+        claim = self.s.skillslab.record_claim(
+            project_id=project_id, claim="measured", source="ran it",
+            trust=lab.MEASURED)
+        self.s.skillslab.verify_claim(claim_id=claim, status=lab.VERIFIED,
+                                      checked_by="test")
+        with self.assertRaises(FailClosed) as caught:
+            self.s.skillslab.mark_specified(
+                project_id=project_id,
+                target_covers=frozenset({"drop_exact_duplicates"}))
+        self.assertIn(lab.EXISTING_SUFFICIENT, str(caught.exception))
 
     def test_the_same_checks_under_a_different_name_are_still_an_overlap(self):
         """The rename is the whole attack: a new name over the same checks makes
@@ -146,7 +207,9 @@ class TheOverlapGateRunsBeforeAnyWork(unittest.TestCase):
         verdict, _ = self.s.skillslab.check_overlap(project_id=project_id,
                                                     needs_human=True)
         self.assertEqual(verdict, lab.HUMAN_REQUIRED)
-        self.assertFalse(self.s.skillslab.may_build(project_id)[0])
+        allowed, reason = self.s.skillslab.may_build(project_id)
+        self.assertFalse(allowed)
+        self.assertIn(lab.HUMAN_REQUIRED, reason)
 
     def test_work_solvent_cannot_do_at_all_says_so(self):
         project_id = self.s.skillslab.record_need(
@@ -482,15 +545,57 @@ class TheLabCannotPromoteItself(unittest.TestCase):
                 why="pretending the registry promoted it")
         self.assertIn("not registered as proven", str(caught.exception))
 
+    def ready_to_promote(self) -> str:
+        """A project at AWAITING_OWNER whose capability really is registered.
+
+        Built this far on purpose. An earlier version of the test below called
+        record_promotion on a half-finished project, so the *stage* check
+        refused it and the assertion passed without the owner check running at
+        all -- a mutant that removed the owner check entirely survived the
+        suite.
+        """
+        covers = frozenset({"extract_pdf_text"})
+        project_id = verified_project(self.s, skill="pdf-extract", covers=covers)
+        self.s.skillslab.mark_specified(project_id=project_id,
+                                        target_covers=covers,
+                                        target_version="pdf-extract/1.0")
+        self.s.skillslab.mark_built(project_id=project_id,
+                                    fingerprint="sha256:aa")
+        self.s.skillslab.record_certification(
+            project_id=project_id, state="CERTIFIED", certified_checks=covers,
+            fingerprint="sha256:aa")
+        self.s.skillslab.offer_to_owner(project_id)
+        self.s.capability.register(
+            Capability(name="pdf-extract", covers=covers, proven=True,
+                       version="pdf-extract/1.0", verifiable_by=tuple(covers),
+                       proven_levels=("L1", "L2", "L3"), fixtures_passed=25,
+                       fixtures_total=25, false_completions=0,
+                       evidence_ref="tests_solvent/test_skills_lab.py"),
+            owner_identity=OWNER)
+        return project_id
+
     def test_only_a_registered_owner_may_be_recorded_as_promoting(self):
-        project_id = verified_project(self.s, skill="pdf-extract",
-                                      covers=frozenset({"extract_pdf_text"}))
+        project_id = self.ready_to_promote()
         for identity in ("skillslab", "capability", "execution", "client:x"):
             with self.subTest(identity=identity):
-                with self.assertRaises(FailClosed):
+                with self.assertRaises(FailClosed) as caught:
                     self.s.skillslab.record_promotion(
                         project_id=project_id, owner_identity=identity,
                         why="self-promotion")
+                # The owner check, not some earlier one that happened to fire.
+                self.assertIn("not a registered owner", str(caught.exception))
+                self.assertEqual(self.s.skillslab.project(project_id).stage,
+                                 lab.AWAITING_OWNER)
+
+    def test_the_owner_can_record_it_once_everything_else_holds(self):
+        """Guards the test above: if nothing can ever be recorded as promoted,
+        the refusals prove nothing."""
+        project_id = self.ready_to_promote()
+        self.s.skillslab.record_promotion(project_id=project_id,
+                                          owner_identity=OWNER,
+                                          why="the owner approved it")
+        self.assertEqual(self.s.skillslab.project(project_id).stage,
+                         lab.PROMOTED)
 
     def test_an_uncertified_project_is_not_offered_to_the_owner(self):
         """Asking the owner to approve something the evidence does not cover is
