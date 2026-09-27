@@ -264,34 +264,51 @@ class ReadModel:
                          (int(limit),))
 
     def audit_chain_intact(self) -> tuple[bool, str]:
-        """Re-walk the hash chain here rather than trusting a stored flag.
+        """Re-walk the hash chain with the Audit Log's own algorithm.
 
-        Recomputed with the same rule the Audit Log uses, because a chain that
+        Recomputed here rather than trusting a stored flag, because a chain that
         reports itself intact is the one thing an attacker would edit.
+
+        An earlier version of this hedged: when the recomputed digest did not
+        match it returned *intact* with a note saying digest recomputation had
+        not been attempted, because the field order was not certain. That is the
+        wrong direction for a security check to be unsure in — a tampered log
+        would have reported clean on the Security page. The body is now built
+        field-for-field the way :meth:`solvent.audit.AuditLog.record` builds it,
+        and a mismatch says so.
         """
         import hashlib
+        import json
 
         previous = "0" * 64
-        rows = self.rows(
-            "SELECT * FROM audit_log ORDER BY seq")
+        rows = self.rows("SELECT * FROM audit_log ORDER BY seq")
         for row in rows:
             if row.get("prev_hash") != previous:
-                return False, f"chain breaks at seq {row.get('seq')}"
-            payload = "|".join(str(row.get(field, "")) for field in (
-                "seq", "ts", "event", "authority", "initiator", "job_id",
-                "why", "input_ref", "decision", "permission",
-                "financial_authorization", "external_effect", "result",
-                "verification_ref", "payload", "prev_hash"))
-            recomputed = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-            if recomputed != row.get("hash"):
-                # The projection may not know the exact field order the Audit Log
-                # hashes. Say so rather than accusing it of tampering: a
-                # projection that cried wolf would be worse than one that admits
-                # what it cannot check.
-                return True, (f"{len(rows)} entries, links consistent "
-                              "(digest recomputation not attempted here)")
+                return False, f"chain breaks at seq {row.get('seq')}: prev_hash"
+            try:
+                payload = json.loads(row.get("payload") or "{}")
+            except ValueError:
+                return False, f"seq {row.get('seq')}: payload is not JSON"
+            body = {
+                "ts": row.get("ts"), "event": row.get("event"),
+                "authority": row.get("authority"),
+                "initiator": row.get("initiator"), "job_id": row.get("job_id"),
+                "why": row.get("why"), "input_ref": row.get("input_ref"),
+                "decision": row.get("decision"),
+                "permission": row.get("permission"),
+                "financial_authorization": row.get("financial_authorization"),
+                "external_effect": row.get("external_effect"),
+                "result": row.get("result"),
+                "verification_ref": row.get("verification_ref"),
+                "payload": payload,
+            }
+            expected = hashlib.sha256(
+                (previous + json.dumps(body, sort_keys=True,
+                                       default=str)).encode()).hexdigest()
+            if expected != row.get("hash"):
+                return False, f"seq {row.get('seq')}: content hash mismatch"
             previous = row.get("hash")
-        return True, f"{len(rows)} entries, chain consistent"
+        return True, f"{len(rows)} entries, chain verified"
 
     # ----------------------------------------------------------- owner setup
     def owner_setup(self) -> dict:

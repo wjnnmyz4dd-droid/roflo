@@ -508,6 +508,39 @@ class ClientRelations:
         "our partners", "our team of",
     )
 
+    def mark_relayed(self, *, response_id: str, by: str) -> None:
+        """Record that a person passed this draft on themselves.
+
+        Distinct from :meth:`send`, which releases a message through the Action
+        Gate and is an external effect Solvent performed. This is the owner
+        saying *I sent that* — no gate, no egress, no claim that Solvent did it.
+
+        It exists because the control centre offered the owner a "mark relayed"
+        button whose handler returned a sentence and changed nothing: the message
+        stayed in the relay queue forever, and the owner would have re-sent it.
+        A queue that cannot be cleared is worse than no queue.
+        """
+        row = self._db.query_one(
+            "SELECT * FROM client_responses WHERE id = ?", (response_id,))
+        if row is None:
+            raise FailClosed(f"no drafted response {response_id!r}")
+        if row["phase"] == "SENT":
+            raise FailClosed(
+                f"{response_id} was released through the gate; recording it as "
+                "hand-relayed as well would make the record say it went twice")
+        if row["phase"] == "RELAYED":
+            return
+        self._db.execute(
+            "UPDATE client_responses SET phase = 'RELAYED' WHERE id = ?",
+            (response_id,))
+        self._db.commit()
+        self._audit.record(
+            event="relations.relayed_by_owner", authority="relations",
+            initiator=by, why="the owner passed the drafted message on",
+            job_id=row["job_id"], input_ref=response_id,
+            external_effect="sent by a person, not by Solvent",
+            result="RELAYED")
+
     def describe_contracting_party(self) -> str:
         """How Solvent may honestly describe who it acts for.
 

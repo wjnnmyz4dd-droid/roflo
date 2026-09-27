@@ -262,23 +262,51 @@ class ThePasswordPathResists(Base):
 class CsrfHolds(Base):
     """§58. A form the owner did not submit must not act."""
 
-    def test_a_post_without_a_token_is_refused(self):
+    #: A verb that needs nothing except a valid token, so a refusal can only
+    #: have come from the CSRF check. Using `halt` here was a real weakness in
+    #: an earlier version of these tests: it *also* requires the password again,
+    #: so the assertions passed on a 403 from the wrong control and a mutant
+    #: that disabled CSRF entirely survived the suite.
+    CSRF_ONLY_VERB = "acknowledge_alert"
+
+    def test_a_post_without_a_token_is_refused_by_the_csrf_check(self):
         cookies = self.sign_in()
         response = self.centre.handle(Request(
-            "POST", "/intent", form={"verb": "halt", "why": "x"},
+            "POST", "/intent", form={"verb": self.CSRF_ONLY_VERB, "why": "x"},
             cookies=cookies))
         self.assertEqual(response.status, 403)
+        self.assertIn("did not carry this session&#x27;s token",
+                      response.body.decode())
         self.assertEqual(self.centre.intents.pending(), [])
 
-    def test_a_post_with_another_sessions_token_is_refused(self):
+    def test_a_post_with_another_sessions_token_is_refused_by_the_csrf_check(self):
         first = self.sign_in("10.0.0.2")
         second = self.sign_in("10.0.0.3")
         response = self.centre.handle(Request(
             "POST", "/intent",
-            form={"verb": "halt", "why": "x", "csrf": self.csrf(second)},
+            form={"verb": self.CSRF_ONLY_VERB, "why": "x",
+                  "csrf": self.csrf(second)},
             cookies=first))
         self.assertEqual(response.status, 403)
+        self.assertIn("did not carry this session&#x27;s token",
+                      response.body.decode())
         self.assertEqual(self.centre.intents.pending(), [])
+
+    def test_a_missing_token_and_a_missing_password_are_told_apart(self):
+        """Two controls, two reasons. A test that only reads the status code
+        cannot tell which one fired, and that is how the CSRF check came to be
+        untested while looking tested."""
+        cookies = self.sign_in()
+        no_token = self.centre.handle(Request(
+            "POST", "/intent", form={"verb": "halt", "why": "x"},
+            cookies=cookies)).body.decode()
+        no_password = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "halt", "why": "x", "csrf": self.csrf(cookies)},
+            cookies=cookies)).body.decode()
+        self.assertIn("did not carry this session", no_token)
+        self.assertIn("needs the owner&#x27;s password again", no_password)
+        self.assertNotIn("password again", no_token)
 
     def test_a_valid_token_is_accepted(self):
         """Guards the two tests above."""
@@ -867,3 +895,154 @@ class TheRuntimeSideOfTheBoundary(unittest.TestCase):
         finally:
             restarted.store.close()
             self.solvent = Solvent(self.db)
+
+
+class TheAuditCheckDetectsTampering(Base):
+    """Found by reviewing my own work: this check used to return *intact* when
+    the recomputed digest did not match, because the field order was uncertain.
+    A security check must not be unsure in that direction — a tampered log would
+    have reported clean on the Security page."""
+
+    def tampered_copy(self) -> str:
+        import shutil
+        import sqlite3 as _sqlite3
+
+        copy = str(self.dir / "tampered.db")
+        shutil.copy(self.db, copy)
+        conn = _sqlite3.connect(copy)
+        conn.execute("PRAGMA writable_schema=ON")
+        conn.execute("DROP TRIGGER IF EXISTS audit_log_no_update")
+        conn.commit()
+        conn.execute("UPDATE audit_log SET why = 'rewritten' "
+                     "WHERE seq = (SELECT MAX(seq) FROM audit_log)")
+        conn.commit()
+        conn.close()
+        return copy
+
+    def test_an_untampered_chain_verifies(self):
+        intact, note = self.centre.read.audit_chain_intact()
+        self.assertTrue(intact, note)
+        self.assertIn("verified", note)
+
+    def test_an_edited_row_is_detected(self):
+        model = ReadModel(self.tampered_copy())
+        try:
+            intact, note = model.audit_chain_intact()
+            self.assertFalse(intact)
+            self.assertIn("hash mismatch", note)
+        finally:
+            model.close()
+
+    def test_the_security_page_says_broken_when_it_is(self):
+        centre = web_server.build(self.tampered_copy(),
+                                  password_hash=self.hash, spool=str(self.spool))
+        try:
+            cookies = self.sign_in(centre=centre)
+            body = centre.handle(Request("GET", "/security",
+                                         cookies=cookies)).body.decode()
+            self.assertIn("BROKEN", body)
+        finally:
+            centre.read.close()
+
+    def test_the_banner_warns_on_every_page_when_the_chain_is_broken(self):
+        centre = web_server.build(self.tampered_copy(),
+                                  password_hash=self.hash, spool=str(self.spool))
+        try:
+            cookies = self.sign_in(centre=centre)
+            body = centre.handle(Request("GET", "/",
+                                         cookies=cookies)).body.decode()
+            self.assertIn("Audit chain problem", body)
+        finally:
+            centre.read.close()
+
+    def test_the_check_agrees_with_the_audit_logs_own_verdict(self):
+        """Two implementations of one rule is a duplicate unless they agree. They
+        must, because this one is built field-for-field from the other."""
+        solvent = Solvent(self.db)
+        try:
+            own = solvent.audit.verify_chain()[0]
+        finally:
+            solvent.store.close()
+        self.assertEqual(own, self.centre.read.audit_chain_intact()[0])
+
+
+class MarkingAMessageRelayedActuallyClearsIt(unittest.TestCase):
+    """Also found by review: the handler returned a sentence and changed
+    nothing, so the message stayed in the queue and the owner would have sent it
+    twice. A queue that cannot be cleared is worse than no queue."""
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.db = str(self.dir / "solvent.db")
+        self.spool = pathlib.Path(tempfile.mkdtemp())
+        self.solvent = promoted(Solvent(self.db))
+        source, work = workspace(CLIENT_FILE)
+        report = run_csv_job(source=source, requirements=list(AGREED),
+                             workdir=work, solvent=self.solvent,
+                             client_id="client:one", title="t")
+        self.job_id = report.job_id
+        self.solvent.relations.handle(job_id=report.job_id,
+                                      body="when is it ready?", source=source)
+        self.draft = [r for r in self.solvent.relations.responses(report.job_id)
+                      if r["phase"] == "PREPARED"][0]["id"]
+
+    def tearDown(self):
+        self.solvent.store.close()
+
+    def relay(self, subject):
+        from solvent.harness import consume_owner_intents
+
+        web_intents.IntentWriter(str(self.spool)).write(
+            verb="mark_relayed", requested_by="web:owner", why="I emailed it",
+            subject=subject)
+        return consume_owner_intents(self.solvent, spool=str(self.spool))
+
+    def test_it_leaves_the_relay_queue(self):
+        self.assertEqual(self.relay(self.draft)[0]["outcome"],
+                         "recorded as relayed by the owner")
+        remaining = [r for r in self.solvent.relations.responses(self.job_id)
+                     if r["phase"] == "PREPARED"]
+        self.assertEqual(remaining, [])
+
+    def test_the_website_queue_empties_too(self):
+        self.relay(self.draft)
+        self.solvent.store.close()
+        model = ReadModel(self.db)
+        try:
+            self.assertEqual(model.relay_queue(), [])
+        finally:
+            model.close()
+            self.solvent = Solvent(self.db)
+
+    def test_it_is_recorded_as_sent_by_a_person_not_by_solvent(self):
+        """The distinction matters: Solvent did not perform an external effect,
+        and the record must not say it did."""
+        self.relay(self.draft)
+        rows = [e for e in self.solvent.audit.events()
+                if e["event"] == "relations.relayed_by_owner"]
+        self.assertTrue(rows)
+        self.assertIn("by a person", rows[-1]["external_effect"])
+
+    def test_no_external_action_was_attempted(self):
+        self.relay(self.draft)
+        self.assertEqual(self.solvent.gate.unsettled(), [])
+
+    def test_an_unknown_response_id_is_refused(self):
+        self.assertEqual(self.relay("nope_does_not_exist")[0]["outcome"],
+                         "REFUSED")
+
+    def test_marking_it_twice_is_harmless(self):
+        self.relay(self.draft)
+        self.assertNotEqual(self.relay(self.draft)[0]["outcome"], "REFUSED")
+
+    def test_a_message_the_gate_released_cannot_also_be_hand_relayed(self):
+        """That would make the record say it went twice."""
+        from solvent.errors import FailClosed as _FailClosed
+
+        connection = self.solvent.store.for_authority("relations")
+        connection.execute("UPDATE client_responses SET phase = 'SENT' "
+                           "WHERE id = ?", (self.draft,))
+        connection.commit()
+        with self.assertRaises(_FailClosed):
+            self.solvent.relations.mark_relayed(response_id=self.draft,
+                                                by="owner:x")

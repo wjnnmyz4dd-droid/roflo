@@ -784,7 +784,9 @@ def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
         report = s.readiness()
         return f"{len(report.blocking)} blocker(s)"
     if verb == "mark_relayed":
-        return "recorded that the owner relayed the message"
+        s.relations.mark_relayed(response_id=intent.get("subject", ""),
+                                 by="owner:control-centre")
+        return "recorded as relayed by the owner"
     if verb == "abandon_skill_project":
         s.skillslab.abandon(project_id=intent.get("subject", ""),
                             why=intent.get("why", "owner stopped it"),
