@@ -800,7 +800,12 @@ class TheRuntimeSideOfTheBoundary(unittest.TestCase):
         self.assertEqual(results[0]["outcome"], "HALT engaged")
         self.assertIs(self.solvent.policy.operating_mode, OperatingMode.HALT)
 
-    def test_every_consequential_intent_is_refused_without_an_approval(self):
+    def test_no_consequential_intent_is_carried_out_without_an_approval(self):
+        """The property is that nothing happens, whatever the outcome is
+        called. A verb that needs an approval is either left waiting for one
+        or refused outright; neither of those is the action taking place."""
+        from solvent.harness import QUEUED, consume_owner_intents
+
         for verb, (intent_class, _) in web_intents.INTENTS.items():
             if intent_class != web_intents.CONSEQUENTIAL:
                 continue
@@ -809,12 +814,29 @@ class TheRuntimeSideOfTheBoundary(unittest.TestCase):
                     str(pathlib.Path(tempfile.mkdtemp())))
                 writer.write(verb=verb, requested_by="web:owner",
                              why="an attacker asks nicely", subject="anything")
-                from solvent.harness import consume_owner_intents
-
                 results = consume_owner_intents(self.solvent,
                                                 spool=str(writer.spool))
-                self.assertEqual(results[0]["outcome"], "REFUSED")
-                self.assertIn("consequential", results[0]["why"])
+                self.assertIn(results[0]["outcome"], (QUEUED, "REFUSED"))
+                if results[0]["outcome"] == "REFUSED":
+                    self.assertIn(verb, results[0]["why"])
+
+    def test_an_intent_left_waiting_is_announced_once(self):
+        """The web process cannot write to the audit log, so an attempted
+        consequential action would otherwise leave no trace until somebody
+        acted on it. It is announced the first time the runtime sees it, and
+        not again on every sweep."""
+        from solvent.harness import consume_owner_intents
+
+        writer = web_intents.IntentWriter(str(pathlib.Path(tempfile.mkdtemp())))
+        record = writer.write(verb="resume", requested_by="web:owner",
+                              why="an attacker asks nicely", subject="")
+        for _ in range(3):
+            consume_owner_intents(self.solvent, spool=str(writer.spool))
+        announced = [e for e in self.solvent.audit.events()
+                     if e["event"] == "owner.intent_queued"]
+        self.assertEqual(len(announced), 1)
+        self.assertEqual(announced[0]["decision"], "resume")
+        self.assertEqual(announced[0]["input_ref"], record["id"])
 
     def test_a_promotion_intent_promotes_nothing(self):
         self.writer.write(verb="promote_capability", requested_by="web:owner",
@@ -855,19 +877,29 @@ class TheRuntimeSideOfTheBoundary(unittest.TestCase):
     def test_a_refusal_names_the_verb_on_the_audit_record(self):
         """An investigator needs to know what was declined, not only that
         something was."""
-        self.writer.write(verb="promote_capability", requested_by="web:owner",
+        self.writer.write(verb="record_contracting", requested_by="web:owner",
                           why="x", subject="anything")
         self.consume()
         rows = [e for e in self.solvent.audit.events()
                 if e["event"] == "owner.intent_processed"]
-        self.assertEqual(rows[-1]["decision"], "promote_capability")
-        self.assertEqual(rows[-1]["result"], "REFUSED")
+        self.assertEqual(rows[-1]["decision"], "record_contracting")
+        self.assertEqual(rows[-1]["result"][:7], "REFUSED")
 
     def test_a_refused_intent_is_kept_not_deleted(self):
-        self.writer.write(verb="promote_capability", requested_by="web:owner",
+        self.writer.write(verb="record_contracting", requested_by="web:owner",
                           why="x")
         self.consume()
         self.assertTrue(list((self.spool / "refused").glob("*.intent")))
+
+    def test_an_intent_waiting_for_an_approval_stays_in_the_queue(self):
+        """Refusing it would throw the owner's own request away, and they
+        would have to go back to the website and ask for it again."""
+        record = self.writer.write(verb="promote_capability",
+                                   requested_by="web:owner", why="x")
+        self.consume()
+        self.assertEqual([r["id"] for r in self.writer.pending()],
+                         [record["id"]])
+        self.assertEqual(list((self.spool / "refused").glob("*.intent")), [])
 
     def test_a_half_written_intent_is_not_read(self):
         (self.spool / "x.intent.partial").write_text("{}", encoding="utf-8")

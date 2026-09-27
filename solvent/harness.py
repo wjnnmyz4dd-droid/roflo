@@ -697,6 +697,39 @@ def ingest_payment_spool(s: "Solvent", *, spool: str = PAYMENT_SPOOL,
 OWNER_INTENT_SPOOL = "/var/lib/solvent/owner-intents"
 
 
+#: An intent left for the owner rather than acted on or refused.
+QUEUED = "QUEUED"
+
+
+class _StillQueued(Exception):
+    """Internal: this intent is not this run's to answer. Not an error."""
+
+
+def _already_announced(s: "Solvent", intent_id: str) -> bool:
+    rows = s.store.raw_readonly(
+        "SELECT 1 FROM audit_log WHERE event = 'owner.intent_queued' "
+        "AND input_ref = ? LIMIT 1", (intent_id,))
+    return bool(rows)
+
+
+def intent_subject(intent_id: str) -> str:
+    """The approval subject that authorises exactly one spooled intent.
+
+    An approval used to be handed to :func:`consume_owner_intents` for the
+    *run*, and the loop passed the same one to every intent it found. So an
+    owner who reviewed one action and approved it authorised everything else
+    sitting in the spool at that moment — including anything queued a second
+    earlier by whoever had the website. Reviewing one thing and authorising
+    another is the definition of a confused deputy.
+
+    ``subject`` is inside :meth:`SignedApproval.payload`, so it is covered by
+    the signature and cannot be edited to point at a different intent. That
+    makes the binding free: there is no new field and no new check, only a
+    subject the runtime now insists on.
+    """
+    return f"intent:{intent_id}"
+
+
 def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
                           approval=None) -> list[dict]:
     """Execute what the control centre asked for, under this process's authorities.
@@ -744,17 +777,60 @@ def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
         else:
             record["verb"] = str(intent.get("verb", ""))
             record["why"] = str(intent.get("why", ""))
+            intent_id = str(intent.get("id") or path.stem)
+            spend = None
             try:
-                if intent_spec.classify(record["verb"]) == \
-                        intent_spec.CONSEQUENTIAL and approval is None:
-                    raise FailClosed(
-                        f"{record['verb']} is consequential and arrived without "
-                        "an owner approval; the control centre cannot produce "
-                        "one, which is why it cannot perform this")
+                bound = _approval_for(approval, intent_id)
+                if (intent_spec.classify(record["verb"])
+                        == intent_spec.CONSEQUENTIAL
+                        and record["verb"] not in intent_spec_terminal_only()):
+                    if bound is None:
+                        # Not refused — *not yet answered*. An intent waiting
+                        # for an approval it did not get on this run is left
+                        # exactly where it is, because the alternative is that
+                        # approving one thing quietly discards every other
+                        # request the owner had not looked at, and the owner
+                        # then has to go back to the website and ask again.
+                        # Refusal is for intents that are wrong; this one is
+                        # only out of turn.
+                        record["outcome"] = QUEUED
+                        raise _StillQueued
+                    problem = s.owner.verify(
+                        bound, action_class=ActionClass.C5_AUTHORITY_CHANGE,
+                        job_id="", amount_cents=0)
+                    if problem:
+                        raise FailClosed(f"approval refused: {problem}")
+                    spend = bound
                 record["outcome"] = _apply_owner_intent(
-                    s, record["verb"], intent, approval=approval)
+                    s, record["verb"], intent, approval=bound)
+            except _StillQueued:
+                # A waiting intent is not an event, and recording one on every
+                # sweep would bury the log. But an intent that was *asked for*
+                # is exactly what someone investigating an intrusion needs to
+                # see, and the web process cannot write to the audit log — so
+                # the runtime announces each one once, the first time it sees
+                # it. "Once" is decided from the audit log itself rather than
+                # from a marker in the spool, because the spool is writable by
+                # the process an attacker would already have.
+                if not _already_announced(s, intent_id):
+                    s.audit.record(
+                        event="owner.intent_queued", authority="policy",
+                        initiator="owner:control-centre",
+                        why=record["why"][:200], input_ref=intent_id,
+                        decision=record["verb"],
+                        result="waiting for an owner approval",
+                        external_effect="none; nothing was carried out")
+                results.append(record)
+                continue
             except (FailClosed, ValueError) as exc:
                 record["outcome"], record["why"] = "REFUSED", str(exc)
+            else:
+                if spend is not None:
+                    # Burned only once the action actually happened, and only
+                    # for the consequential intent it was checked against.
+                    # Consuming before would spend the owner's approval on a
+                    # failure and make them mint another to retry.
+                    s.owner.consume(spend)
 
         destination = refused_dir if record["outcome"] == "REFUSED" else done
         destination.mkdir(parents=True, exist_ok=True)
@@ -769,10 +845,35 @@ def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
     return results
 
 
+def _approval_for(approval, intent_id: str):
+    """The approval, if it names *this* intent. Otherwise nothing."""
+    if approval is None:
+        return None
+    return approval if approval.subject == intent_subject(intent_id) else None
+
+
 def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
                         approval=None) -> str:
-    """Carry out one SAFE verb. Consequential ones never reach here unapproved."""
+    """Carry out one intent.
+
+    A SAFE verb runs on its own. A consequential one arrives here only after
+    its approval has been checked against the Owner Channel and bound to this
+    intent by subject, and the owner identity it acts under is read **from the
+    approval** rather than from a constant — the signature covers that field,
+    and the name in a spool file is whatever the writer typed.
+    """
     from .types import OperatingMode
+
+    params = intent.get("params") or {}
+    why = intent.get("why", "requested by the owner")
+    acting_as = approval.owner_identity if approval is not None else OWNER
+
+    if verb in intent_spec_terminal_only():
+        from .web.intents import TERMINAL_COMMAND
+        raise FailClosed(
+            f"{verb} is not completed from a spooled intent even with an "
+            f"approval; run `{TERMINAL_COMMAND.get(verb, 'solvent setup')}` "
+            "at the terminal instead")
 
     if verb == "halt":
         s.policy.set_operating_mode(OperatingMode.HALT, OWNER,
@@ -798,9 +899,49 @@ def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
             skill=params.get("skill", ""), version=params.get("version", ""),
             why=intent.get("why", "owner marked it going away"))
         return "version deprecated"
+    # Everything below changes governance, and everything below is reached
+    # only with a verified, intent-bound owner approval in hand.
+    if verb == "resume":
+        s.policy.set_operating_mode(OperatingMode.NORMAL, acting_as, why)
+        return "operating mode NORMAL"
+    if verb == "decide_proposal":
+        s.capability.decide(
+            name=str(params.get("name", "")),
+            decision=str(params.get("decision", "")),
+            owner_identity=acting_as, why=why,
+            scope=str(params.get("scope", "")))
+        return f"proposal {params.get('name')} answered {params.get('decision')}"
+    if verb == "promote_capability":
+        s.skillslab.record_promotion(project_id=str(intent.get("subject", "")),
+                                     owner_identity=acting_as, why=why)
+        return "promotion recorded against the skill project"
+    if verb == "advance_payment_rail":
+        version = s.policy.advance_payment_rail(
+            owner_identity=acting_as, state=str(params.get("state", "")),
+            reason=why, evidence=str(params.get("evidence", "")))
+        return f"payment rail at {params.get('state')} (policy v{version})"
+    if verb == "retire_skill_version":
+        s.skillslab.retire_version(
+            skill=str(params.get("skill", "")),
+            version=str(params.get("version", "")),
+            why=why, owner_identity=acting_as)
+        return f"{params.get('skill')} {params.get('version')} retired"
+    if verb == "rollback_skill":
+        landed = s.skillslab.rollback(
+            skill=str(params.get("skill", "")),
+            from_version=str(params.get("from_version", "")),
+            to_version=str(params.get("to_version", "")),
+            why=why, owner_identity=acting_as)
+        return f"new work now uses {landed}"
     raise FailClosed(
-        f"{verb} is not executed from a spooled intent; it needs an owner "
-        "approval and a path that checks one")
+        f"{verb} is on the intent list but nothing here carries it out; "
+        "refusing rather than reporting a change that did not happen")
+
+
+def intent_spec_terminal_only() -> frozenset:
+    """Imported lazily: :mod:`solvent.web` must not be a runtime dependency."""
+    from .web.intents import TERMINAL_ONLY
+    return TERMINAL_ONLY
 
 
 def _unregistered_checks(requirements: list,

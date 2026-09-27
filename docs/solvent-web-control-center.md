@@ -104,13 +104,36 @@ safe direction, so a stolen session that halts your business is a nuisance and
 not a loss. Halting still asks for your password again, because a stolen session
 is not you.
 
-**Consequential intents are refused** without an owner approval: promoting a
-capability, clearing HALT, enabling real execution, retiring a version, changing
-who you contract as. The website can ask. It cannot do. Those are completed from
-the terminal, where the owner key lives.
+**Consequential intents wait for you.** Promoting a capability, clearing HALT,
+retiring a version, moving the payment rail along: the website can ask, and it
+cannot do. It does not hold the key that mints an owner approval, which is the
+whole reason taking over the website does not take over the business.
 
-That asymmetry is the design. If the website could complete a consequential
-action, taking over the website would take over the business.
+You answer them at the terminal:
+
+```
+solvent intents list                              # what is waiting, and what each needs
+solvent intents run                               # carry out the safe ones
+solvent intents approve int_1234 --reason "..."   # approve exactly one
+solvent intents reject  int_1234 --reason "..."   # refuse one, on the record
+```
+
+Three things are **not** completed by approving a file, even with a valid
+approval, and `solvent intents list` tells you the command to use instead:
+
+| Request | Why not | Type instead |
+|---|---|---|
+| Change who you contract as | Your legal name and address are personal data, and this would route them through a file the web process can read back | `solvent setup contracting` |
+| Authorise a work source | An adapter that fetches from a platform is code, not a row in a form | `solvent setup work-source` |
+| Leave simulation | This is the single change that turns a rehearsal into a business that spends money and contacts strangers. Approving a file is too easy a gesture for it | `solvent setup capability` |
+
+**One approval authorises one intent.** The approval is bound by subject to the
+single request you named, and the binding is inside the signature, so it cannot
+be repointed. If three things are queued and you approve one, the other two are
+still queued afterwards — not carried out, and not thrown away either.
+
+Anything left waiting is announced in the Audit log the first time the runtime
+sees it, so a request you never made is visible before you ever open the list.
 
 ---
 
@@ -178,7 +201,7 @@ The blast radius, concretely:
 |---|---|
 | Read every business figure, job, client and message | Send anything to a client |
 | Halt your business (a nuisance; needs your password) | Clear the halt |
-| Queue a consequential request | Have it executed |
+| Queue a consequential request | Have it executed, or approve one |
 | See which secrets are configured | Read any of them |
 | See capability scope and evidence | Promote a capability |
 | Read the audit log | Change one line of it |

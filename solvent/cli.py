@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import pathlib
 import sqlite3
 import sys
 
 from . import egress
+from . import harness
 from . import runtime as rt
 from . import services
 from .errors import FailClosed
@@ -475,6 +478,149 @@ def cmd_web_password(args: argparse.Namespace) -> int:
     return 0
 
 
+def _intent_spool(args) -> str:
+    return args.spool or harness.OWNER_INTENT_SPOOL
+
+
+def cmd_intents_list(args: argparse.Namespace) -> int:
+    """What the control centre has asked for and has not been able to do.
+
+    The website can queue a consequential request and cannot complete one: it
+    does not hold the key that mints an owner approval, which is the whole
+    reason taking over the website does not take over the business. This is the
+    other end of that — the owner, at a terminal, seeing what is waiting.
+    """
+    from .web.intents import (CONSEQUENTIAL, IntentWriter, TERMINAL_COMMAND,
+                              TERMINAL_ONLY, classify, describe)
+
+    pending = IntentWriter(_intent_spool(args)).pending()
+    if not pending:
+        print("nothing is queued.")
+        return 0
+
+    print(f"{len(pending)} queued intent(s) in {_intent_spool(args)}\n")
+    for record in pending:
+        verb = record.get("verb", "")
+        try:
+            kind = classify(verb)
+        except ValueError:
+            kind = "UNKNOWN VERB"
+        print(f"{record.get('id', '?')}  {verb}  [{kind}]")
+        print(f"  means      {describe(verb) if kind != 'UNKNOWN VERB' else '—'}")
+        print(f"  because    {record.get('why', '')}")
+        if record.get("subject"):
+            print(f"  subject    {record['subject']}")
+        if record.get("params"):
+            print(f"  params     {record['params']}")
+        print(f"  asked by   {record.get('requested_by', '')}")
+        if verb in TERMINAL_ONLY:
+            print(f"  ACTION     not approvable from here — run "
+                  f"`{TERMINAL_COMMAND.get(verb, 'solvent setup')}`")
+        elif kind == CONSEQUENTIAL:
+            print(f"  ACTION     solvent intents approve {record.get('id')} "
+                  f"--reason '...'")
+        else:
+            print("  ACTION     solvent intents run   (safe verbs need no approval)")
+        print()
+    return 0
+
+
+def cmd_intents_run(args: argparse.Namespace) -> int:
+    """Apply the safe intents. Consequential ones are listed, never guessed at."""
+    solvent = _owner_solvent(args)
+    results = harness.consume_owner_intents(solvent, spool=_intent_spool(args))
+    return _report_intent_results(results)
+
+
+def cmd_intents_approve(args: argparse.Namespace) -> int:
+    """Approve exactly one queued intent and carry it out.
+
+    The approval is minted here, on the owner's machine, from the owner key in
+    this process's environment — never in the web process, which is why the
+    control centre can ask for this and not do it. It is bound by subject to
+    the single intent named on the command line, so approving one thing does
+    not authorise whatever else happens to be sitting in the spool.
+    """
+    from .types import ActionClass
+    from .web.intents import IntentWriter, TERMINAL_COMMAND, TERMINAL_ONLY
+
+    solvent = _owner_solvent(args)
+    spool = _intent_spool(args)
+    queued = {r.get("id"): r for r in IntentWriter(spool).pending()}
+    record = queued.get(args.intent_id)
+    if record is None:
+        print(f"no queued intent {args.intent_id!r}. `solvent intents list` "
+              f"shows what is waiting.", file=sys.stderr)
+        return 2
+    verb = record.get("verb", "")
+    if verb in TERMINAL_ONLY:
+        print(f"{verb} is not completed by approving a file. Run "
+              f"`{TERMINAL_COMMAND.get(verb, 'solvent setup')}` instead.",
+              file=sys.stderr)
+        return 2
+
+    problem = solvent.owner.key_problem() if hasattr(solvent.owner, "key_problem") \
+        else ("" if solvent.owner.available else "no owner key")
+    if problem:
+        print(f"cannot approve: {problem}", file=sys.stderr)
+        return 2
+
+    approval = solvent.owner.issue(
+        owner_identity=args.owner,
+        subject=harness.intent_subject(args.intent_id),
+        action_class=ActionClass.C5_AUTHORITY_CHANGE,
+        ttl_minutes=args.ttl_minutes)
+    results = harness.consume_owner_intents(solvent, spool=spool,
+                                            approval=approval)
+    return _report_intent_results(results)
+
+
+def cmd_intents_reject(args: argparse.Namespace) -> int:
+    """Refuse one queued intent, on the record, without carrying it out."""
+    from .web.intents import IntentWriter
+
+    solvent = _owner_solvent(args)
+    spool = pathlib.Path(_intent_spool(args))
+    queued = {r.get("id"): r for r in IntentWriter(str(spool)).pending()}
+    if args.intent_id not in queued:
+        print(f"no queued intent {args.intent_id!r}.", file=sys.stderr)
+        return 2
+    refused = spool / "refused"
+    refused.mkdir(parents=True, exist_ok=True)
+    os.replace(spool / f"{args.intent_id}.intent",
+               refused / f"{args.intent_id}.intent")
+    solvent.audit.record(
+        event="owner.intent_rejected", authority="policy", initiator=args.owner,
+        why=args.reason, decision=queued[args.intent_id].get("verb", ""),
+        result="REJECTED by the owner at the terminal",
+        external_effect="owner intent from the control centre")
+    print(f"{args.intent_id} rejected and recorded.")
+    return 0
+
+
+def _report_intent_results(results: list) -> int:
+    if not results:
+        print("nothing was queued.")
+        return 0
+    counts = {"applied": 0, "refused": 0, "queued": 0}
+    for record in results:
+        if record["outcome"] == "REFUSED":
+            mark = "refused"
+        elif record["outcome"] == harness.QUEUED:
+            mark = "queued"
+        else:
+            mark = "applied"
+        counts[mark] += 1
+        print(f"{mark:8} {record['intent']}  {record['verb'] or '?'}")
+        print(f"         {record['why']}")
+    # A refusal is a correct outcome, not a failure of this command: the exit
+    # code reports whether the command ran, and the lines above report what
+    # happened to each intent. "queued" is neither — it is still waiting.
+    print(f"\n{counts['applied']} applied, {counts['refused']} refused, "
+          f"{counts['queued']} still waiting for an approval.")
+    return 0
+
+
 def cmd_relay(args: argparse.Namespace) -> int:
     """What is finished and waiting for a person to pass on.
 
@@ -934,6 +1080,40 @@ def build_parser() -> argparse.ArgumentParser:
         "relay", help="what is verified and waiting for a person to send")
     relay.add_argument("--db", default=rt.DEFAULT_DB)
     relay.set_defaults(func=cmd_relay)
+
+    intents = sub.add_parser(
+        "intents", help="review and answer what the control centre asked for")
+    intents_sub = intents.add_subparsers(dest="intents_command", required=True)
+
+    def spooled(parser):
+        parser.add_argument("--spool", default="",
+                            help="intent spool directory")
+        parser.add_argument("--db", default=rt.DEFAULT_DB)
+        return parser
+
+    spooled(intents_sub.add_parser(
+        "list", help="show what is queued and what each one needs")
+    ).set_defaults(func=cmd_intents_list)
+
+    spooled(intents_sub.add_parser(
+        "run", help="apply the safe intents; leave the rest queued")
+    ).set_defaults(func=cmd_intents_run)
+
+    approve = spooled(intents_sub.add_parser(
+        "approve", help="approve and carry out exactly one queued intent"))
+    approve.add_argument("intent_id")
+    approve.add_argument("--reason", required=True,
+                         help="why the owner is approving this")
+    approve.add_argument("--owner", default=OWNER)
+    approve.add_argument("--ttl-minutes", type=int, default=20)
+    approve.set_defaults(func=cmd_intents_approve)
+
+    reject = spooled(intents_sub.add_parser(
+        "reject", help="refuse one queued intent, on the record"))
+    reject.add_argument("intent_id")
+    reject.add_argument("--reason", required=True)
+    reject.add_argument("--owner", default=OWNER)
+    reject.set_defaults(func=cmd_intents_reject)
 
     payments = sub.add_parser("payments", help="payment rail operations")
     payments_sub = payments.add_subparsers(dest="payments_command", required=True)

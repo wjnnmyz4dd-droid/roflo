@@ -178,6 +178,12 @@ class NoCommandSellsWork(unittest.TestCase):
             {"doctor", "laws", "acquire", "services", "metrics", "status",
              "readiness", "demo", "state", "run", "health", "recover", "halt",
              "resume", "setup", "payments", "relay", "web", "web-exposure",
+             # `intents` reads the control centre's spool and answers it. It
+             # makes no external effect of its own: the verbs it can carry out
+             # are governance records, and the three that would reach outside
+             # this machine — contracting identity, work sources, leaving
+             # simulation — it refuses and names the terminal command for.
+             "intents",
              "web-password"},
             "a new subcommand was added without reviewing it for external effect",
         )

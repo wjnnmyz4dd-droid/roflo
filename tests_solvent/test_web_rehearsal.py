@@ -357,8 +357,11 @@ class TheHostileRehearsal(unittest.TestCase):
         self.post(cookies, verb="promote_capability", subject="anything",
                   why="attacker asks")
         results = self.consume()
-        self.assertEqual(results[0]["outcome"], "REFUSED")
-        self.assertIn("consequential", results[0]["why"])
+        self.assertNotEqual(results[0]["outcome"], "promotion recorded "
+                            "against the skill project")
+        proven = {c.name for c in self.solvent.capability.capabilities()
+                  if c.proven}
+        self.assertNotIn("anything", proven)
 
     def test_clearing_halt_is_stopped_by_the_same_classification(self):
         self.solvent.policy.set_operating_mode(OperatingMode.HALT, OWNER, "test")
@@ -387,7 +390,7 @@ class TheHostileRehearsal(unittest.TestCase):
             '{"verb": "promote_capability", "intent_class": "SAFE", '
             '"why": "I relabelled it myself"}', encoding="utf-8")
         results = self.consume()
-        self.assertEqual(results[0]["outcome"], "REFUSED")
+        self.assertNotIn("recorded", results[0]["outcome"])
         proven = {c.name for c in self.solvent.capability.capabilities()
                   if c.proven}
         self.assertEqual(proven, {"csv-cleanup"})
@@ -477,12 +480,15 @@ class TheHostileRehearsal(unittest.TestCase):
         self.assertEqual(self.solvent.ledger.real_revenue_cents(), 0)
         self.assertTrue(self.solvent.audit.verify_chain()[0])
 
-    def test_every_refusal_is_on_the_audit_record(self):
+    def test_every_attempt_is_on_the_audit_record(self):
+        """Whether an attempt was refused outright or left waiting for an
+        approval, an investigator can see that it was made and what it was."""
         cookies = self.signed_in()
         self.post(cookies, verb="promote_capability", why="x", subject="y")
         self.consume()
         rows = [e for e in self.solvent.audit.events()
-                if e["event"] == "owner.intent_processed"]
+                if e["event"] in ("owner.intent_processed",
+                                  "owner.intent_queued")]
         self.assertTrue(rows)
-        self.assertEqual(rows[-1]["result"], "REFUSED")
         self.assertEqual(rows[-1]["decision"], "promote_capability")
+        self.assertNotIn("recorded", rows[-1]["result"])

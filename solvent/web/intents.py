@@ -59,6 +59,35 @@ INTENTS = {
 }
 
 
+#: Consequential verbs that an owner approval is *not* enough to complete from
+#: a spool file. Each one is here for its own reason, and none of them is
+#: "we ran out of time".
+#:
+#: ``record_contracting`` carries the owner's legal name and contracting
+#: address. That is personal data, and routing it through a file the web
+#: process wrote — in a directory the web service can read back — would put it
+#: exactly where the rest of this design spent its effort keeping it from
+#: going. It belongs on the terminal path, which writes it straight into policy.
+#:
+#: ``authorize_work_source`` needs a source *implementation*. An adapter that
+#: fetches from a platform is code; a row naming one is a registration, not a
+#: definition, which is the same distinction Discovery's rehydration makes.
+#:
+#: ``enable_real_execution`` is the single change that converts a simulation
+#: into a business that can spend money and contact strangers. Approving a file
+#: is too easy a gesture for it. It stays a thing the owner types.
+TERMINAL_ONLY = frozenset({
+    "record_contracting", "authorize_work_source", "enable_real_execution",
+})
+
+#: What to type instead, named so a refusal is directions rather than a wall.
+TERMINAL_COMMAND = {
+    "record_contracting": "solvent setup contracting",
+    "authorize_work_source": "solvent setup work-source",
+    "enable_real_execution": "solvent setup capability",
+}
+
+
 def classify(verb: str) -> str:
     """``SAFE`` or ``CONSEQUENTIAL``. An unknown verb is neither — it is refused.
 
