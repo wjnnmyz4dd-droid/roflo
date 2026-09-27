@@ -114,9 +114,24 @@ class ThePositiveFirstTrial(unittest.TestCase):
     def test_only_the_owner_key_still_blocks_a_supervised_trial(self):
         with self.assertRaises(FailClosed) as caught:
             assert_may_attempt_supervised_trial(self.s.readiness())
-        outstanding = [l for l in str(caught.exception).splitlines() if l.strip().startswith("-")]
+        outstanding = [l for l in str(caught.exception).splitlines()
+                       if l.strip().startswith("-")]
         self.assertEqual(len(outstanding), 1, outstanding)
         self.assertIn("OD-5", outstanding[0])
+
+    def test_the_host_firewall_is_not_a_trial_blocker_but_is_still_reported(self):
+        """A terminal-only trial listens on nothing, so the host firewall is not
+        in its way. It is still reported as blocking full activation, and the
+        control centre has its own separate gate — conflating the two would
+        either stop a trial on a firewall it never touches, or let an exposed
+        website ride in on a trial's readiness."""
+        report = self.s.readiness()
+        check = next(c for c in report.checks
+                     if c.name == "host network posture")
+        self.assertFalse(check.ready)
+        with self.assertRaises(FailClosed) as caught:
+            assert_may_attempt_first_real_job(report)
+        self.assertIn("firewall", str(caught.exception))
 
     # --- the work --------------------------------------------------------
     def test_the_job_was_delivered_and_independently_verified(self):

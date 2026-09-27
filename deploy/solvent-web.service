@@ -1,0 +1,87 @@
+# systemd unit for the owner control centre. A SEPARATE service, on purpose.
+#
+#   install to /etc/systemd/system/solvent-web.service, then:
+#     systemctl daemon-reload && systemctl enable --now solvent-web
+#
+# Why this is not part of solvent.service: constructing a Solvent installs the
+# egress audit hook, which denies socket.bind for the whole interpreter and
+# cannot be removed. A web server must bind a port. The two cannot share a
+# process -- and the result is the security property the control centre depends
+# on: this process does not hold Solvent's authorities, because it cannot.
+
+[Unit]
+Description=Solvent - owner control centre (read-only surface)
+Documentation=file:///opt/solvent/docs/solvent-web-control-center.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+
+# A different user from the runtime. This is what makes "read-only" real rather
+# than a promise in the code: the database is owned by solvent and this user only
+# reads it. Create it with:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin solvent-web
+#   usermod -aG solvent-readers solvent-web
+User=solvent-web
+Group=solvent-web
+WorkingDirectory=/opt/solvent
+
+# Only the web password hash. NOT the owner key, and NOT any payment secret:
+# this process must not be able to mint an approval or verify a payment, so it
+# must not be given the means.
+EnvironmentFile=-/etc/solvent/solvent-web.env
+
+# Loopback. Exposure is the proxy's decision, made once, in the proxy's config.
+ExecStart=/opt/solvent/.venv/bin/python -m solvent.cli web \
+          --db /var/lib/solvent/solvent.db \
+          --host 127.0.0.1 --port 8765 \
+          --spool /var/lib/solvent/owner-intents
+
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=5s
+
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=64
+LimitNOFILE=256
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Two paths, and one of them is read-only. The database is mounted read-only for
+# this service even if the file permissions are ever loosened by mistake: a
+# defence that only works when everything else is right is not one.
+ReadOnlyPaths=/var/lib/solvent/solvent.db
+ReadWritePaths=/var/lib/solvent/owner-intents
+
+# Outbound: nothing. A control centre has nobody to call. This is the one service
+# where a blanket deny is simply correct, so there is no reason to leave it for
+# later like the runtime's IPAddressDeny.
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=solvent-web
+
+[Install]
+WantedBy=multi-user.target

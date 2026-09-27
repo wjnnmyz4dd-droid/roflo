@@ -192,6 +192,23 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               "OD-5: provision an owner signing key before real execution",
               category=OWNER_CONFIG))
 
+    # The control centre is the one part of Solvent that deliberately listens,
+    # so it is the one part that can be exposed by accident. Unrecorded counts
+    # as unsafe: silence is not default-deny.
+    network = policy.network_posture()
+    firewall_ok = network["default_deny"] is True
+    add(Check("host network posture", firewall_ok,
+              {True: (f"inbound default-deny recorded"
+                      + (f", proxy on {network['proxy_port']}"
+                         if network["proxy_port"] else "")),
+               False: "the host firewall does not default to deny",
+               None: "nobody has recorded the host firewall posture"}[
+                  network["default_deny"]],
+              "" if firewall_ok else
+              "run deploy/firewall.sh --apply, then record it with "
+              "`solvent setup firewall --default-deny`",
+              category=OWNER_CONFIG))
+
     # --- things only the owner can decide --------------------------------
     # OD-1 is two facts, and reporting them as one is how a decision stays
     # "unanswered" for want of data the decision never included. The structure
@@ -273,6 +290,18 @@ _NOT_USED_BY_A_SUPERVISED_TRIAL = (
     "payment rail operational",
     "real revenue to date",
     "external execution posture",
+    # The host firewall guards what can reach this machine. A supervised trial
+    # run from the terminal sends nothing, collects nothing and listens on
+    # nothing, so it does not depend on it.
+    #
+    # This is emphatically *not* an excuse for the control centre, which does
+    # listen. That has its own gate: `solvent web-exposure` reports an
+    # unrecorded posture as unsafe, and the service refuses to start without a
+    # password. Two different questions, deliberately not answered by one
+    # verdict — conflating them would either block a terminal-only trial on a
+    # firewall it never touches, or let an exposed website ride in on a trial's
+    # readiness.
+    "host network posture",
 )
 
 

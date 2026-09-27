@@ -276,6 +276,54 @@ def cmd_setup_stripe(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup_firewall(args: argparse.Namespace) -> int:
+    """Record what the host firewall does, so readiness can see it."""
+    solvent = _owner_solvent(args)
+    try:
+        solvent.policy.record_network_posture(
+            owner_identity=args.owner, default_deny=args.default_deny,
+            proxy_port=args.proxy_port, tls_terminated=args.tls_terminated,
+            note=args.note)
+    except FailClosed as exc:
+        print(f"refused: {exc}")
+        return 1
+    posture = solvent.policy.network_posture()
+    print(f"host network posture: "
+          f"{'default-deny' if posture['default_deny'] else 'NOT default deny'}")
+    print(f"  proxy port {posture['proxy_port'] or 'not recorded'}, "
+          f"TLS terminated: {posture['tls_terminated']}")
+    if not posture["default_deny"]:
+        print("  Readiness will report this as unsafe, which is correct.")
+    return 0
+
+
+def cmd_web_exposure(args: argparse.Namespace) -> int:
+    """Would this binding expose the control centre? Checks configuration."""
+    import os
+
+    from .web import auth as web_auth
+    from .web import exposure
+
+    solvent = _owner_solvent(args)
+    posture = solvent.policy.network_posture()
+    findings = exposure.assess(
+        host=args.host, port=args.port, behind_proxy=args.behind_proxy,
+        tls_terminated=posture["tls_terminated"] or args.behind_proxy,
+        secure_cookies=not args.insecure_cookies,
+        firewall_default_deny=posture["default_deny"],
+        password_configured=bool(web_auth.configured_hash()))
+    print("Control centre exposure")
+    print("=" * 70)
+    for finding in findings:
+        print(f"  {'OK    ' if finding.safe else 'UNSAFE'} {finding.name}: "
+              f"{finding.detail}")
+        if finding.remedy:
+            print(f"         -> {finding.remedy}")
+    print("-" * 70)
+    print(f"  {exposure.summary(findings)}")
+    return 0 if not exposure.unsafe(findings) else 1
+
+
 def cmd_setup_check(args: argparse.Namespace) -> int:
     """One line per thing the owner configures, and whether it is done.
 
@@ -842,6 +890,16 @@ def build_parser() -> argparse.ArgumentParser:
     stripe.add_argument("--reason", default="OD-2: payment rail progress")
     stripe.set_defaults(func=cmd_setup_stripe)
 
+    firewall = owned(setup_sub.add_parser(
+        "firewall", help="record what the host firewall does"))
+    firewall.add_argument("--default-deny", action="store_true",
+                          help="inbound denied by default")
+    firewall.add_argument("--proxy-port", type=int, default=443)
+    firewall.add_argument("--tls-terminated", action="store_true",
+                          help="a proxy terminates TLS in front of the site")
+    firewall.add_argument("--note", default="host network posture recorded")
+    firewall.set_defaults(func=cmd_setup_firewall)
+
     check = setup_sub.add_parser(
         "check", help="one line per thing the owner configures")
     check.add_argument("--db", default=rt.DEFAULT_DB)
@@ -858,6 +916,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="omit the Secure cookie flag, for local testing "
                           "over plain HTTP only")
     web.set_defaults(func=cmd_web)
+
+    exposure_cmd = sub.add_parser(
+        "web-exposure", help="would this binding expose the control centre?")
+    exposure_cmd.add_argument("--db", default=rt.DEFAULT_DB)
+    exposure_cmd.add_argument("--host", default="127.0.0.1")
+    exposure_cmd.add_argument("--port", type=int, default=8765)
+    exposure_cmd.add_argument("--behind-proxy", action="store_true")
+    exposure_cmd.add_argument("--insecure-cookies", action="store_true")
+    exposure_cmd.set_defaults(func=cmd_web_exposure)
 
     web_password = sub.add_parser(
         "web-password", help="hash a control-centre password (prompts; no echo)")

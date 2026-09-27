@@ -541,6 +541,44 @@ class PolicyStore:
             "decided": bool(rail),
         }
 
+    def record_network_posture(self, *, owner_identity: str,
+                               default_deny: bool, proxy_port: int = 0,
+                               tls_terminated: bool = False,
+                               note: str = "") -> int:
+        """Record what the host's firewall actually does. Owner only.
+
+        Recorded rather than probed, because probing from inside tells you what
+        this process can reach and not what the host allows in. Unrecorded is
+        reported as unsafe: the host whose posture nobody established is the one
+        somebody forgot, and treating silence as default-deny would turn the
+        check into decoration.
+        """
+        version = self.amend({"network": {
+            "default_deny": bool(default_deny),
+            "proxy_port": int(proxy_port),
+            "tls_terminated": bool(tls_terminated),
+            "note": note,
+        }}, owner_identity, note or "OD: host network posture")
+        self._audit.record(
+            event="policy.network_posture_recorded", authority="policy",
+            initiator=owner_identity, why=note or "host network posture",
+            decision="default_deny" if default_deny else "NOT default deny",
+            result=f"proxy port {proxy_port}, tls={tls_terminated}")
+        return version
+
+    def network_posture(self) -> dict:
+        """``default_deny`` is None when nobody has said. None is not yes."""
+        recorded = self.get("network", default=None)
+        if not isinstance(recorded, dict) or "default_deny" not in recorded:
+            return {"default_deny": None, "proxy_port": 0,
+                    "tls_terminated": False, "note": ""}
+        return {
+            "default_deny": bool(recorded.get("default_deny")),
+            "proxy_port": int(recorded.get("proxy_port") or 0),
+            "tls_terminated": bool(recorded.get("tls_terminated")),
+            "note": str(recorded.get("note") or ""),
+        }
+
     LOCAL = "LOCAL"
     CLOUD = "CLOUD"
 
