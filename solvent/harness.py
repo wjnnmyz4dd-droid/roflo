@@ -693,6 +693,114 @@ def ingest_payment_spool(s: "Solvent", *, spool: str = PAYMENT_SPOOL,
     return results
 
 
+#: Where the control centre writes owner intents, and the runtime reads them.
+OWNER_INTENT_SPOOL = "/var/lib/solvent/owner-intents"
+
+
+def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
+                          approval=None) -> list[dict]:
+    """Execute what the control centre asked for, under this process's authorities.
+
+    This is the half of the control surface that can actually change something,
+    and it is deliberately on this side of the boundary. The web process wrote a
+    file; nothing about that file is trusted. Here:
+
+    * an intent whose verb is not on the closed list is refused — a new verb
+      arriving through the spool is not a new permission;
+    * a **SAFE** intent is executed, because its worst outcome is Solvent doing
+      less. Stopping is the safe direction, so a stolen session that halts the
+      business is a nuisance rather than a loss;
+    * a **CONSEQUENTIAL** intent is refused without an owner approval from the
+      Owner Channel. The control centre does not hold the key that mints one, so
+      taking over the website does not take over the business.
+
+    Every outcome is written to the audit log, including a refusal: an intent
+    that was asked for and declined is exactly what somebody investigating an
+    intrusion needs to see.
+    """
+    import json
+    import os
+
+    from .web import intents as intent_spec
+
+    root = Path(spool)
+    if not root.is_dir():
+        return []
+    done, refused_dir = root / "applied", root / "refused"
+    results = []
+
+    for path in sorted(root.glob("*.intent")):
+        # Read first, so the verb and the reason are on the record even for an
+        # intent that is refused. A refusal with no verb tells an investigator
+        # that something was declined but not what.
+        intent: dict = {}
+        record = {"intent": path.name, "verb": "", "why": ""}
+        try:
+            intent = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(intent, dict):
+                raise ValueError("an intent must be a JSON object")
+        except (ValueError, OSError) as exc:
+            record["outcome"], record["why"] = "REFUSED", f"unreadable: {exc}"
+        else:
+            record["verb"] = str(intent.get("verb", ""))
+            record["why"] = str(intent.get("why", ""))
+            try:
+                if intent_spec.classify(record["verb"]) == \
+                        intent_spec.CONSEQUENTIAL and approval is None:
+                    raise FailClosed(
+                        f"{record['verb']} is consequential and arrived without "
+                        "an owner approval; the control centre cannot produce "
+                        "one, which is why it cannot perform this")
+                record["outcome"] = _apply_owner_intent(
+                    s, record["verb"], intent, approval=approval)
+            except (FailClosed, ValueError) as exc:
+                record["outcome"], record["why"] = "REFUSED", str(exc)
+
+        destination = refused_dir if record["outcome"] == "REFUSED" else done
+        destination.mkdir(parents=True, exist_ok=True)
+        os.replace(path, destination / path.name)
+        s.audit.record(
+            event="owner.intent_processed", authority="policy",
+            initiator="owner:control-centre", why=record["why"][:200],
+            decision=record["verb"] or "unreadable",
+            result=record["outcome"][:180],
+            external_effect="owner intent from the control centre")
+        results.append(record)
+    return results
+
+
+def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
+                        approval=None) -> str:
+    """Carry out one SAFE verb. Consequential ones never reach here unapproved."""
+    from .types import OperatingMode
+
+    if verb == "halt":
+        s.policy.set_operating_mode(OperatingMode.HALT, OWNER,
+                                    intent.get("why", "requested by the owner"))
+        return "HALT engaged"
+    if verb == "acknowledge_alert":
+        return "acknowledged"
+    if verb == "recheck_readiness":
+        report = s.readiness()
+        return f"{len(report.blocking)} blocker(s)"
+    if verb == "mark_relayed":
+        return "recorded that the owner relayed the message"
+    if verb == "abandon_skill_project":
+        s.skillslab.abandon(project_id=intent.get("subject", ""),
+                            why=intent.get("why", "owner stopped it"),
+                            actor="owner:control-centre")
+        return "project abandoned"
+    if verb == "deprecate_skill_version":
+        params = intent.get("params") or {}
+        s.skillslab.deprecate_version(
+            skill=params.get("skill", ""), version=params.get("version", ""),
+            why=intent.get("why", "owner marked it going away"))
+        return "version deprecated"
+    raise FailClosed(
+        f"{verb} is not executed from a spooled intent; it needs an owner "
+        "approval and a path that checks one")
+
+
 def _unregistered_checks(requirements: list,
                          capability: str = "csv-cleanup") -> list[str]:
     """Mandatory requirements naming a check this capability does not have."""

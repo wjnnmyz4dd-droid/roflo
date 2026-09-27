@@ -382,6 +382,51 @@ def cmd_setup_check(args: argparse.Namespace) -> int:
     return 0 if trial_ready else 1
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    """Run the owner control centre. A separate process on purpose.
+
+    Constructing a Solvent installs the egress audit hook, which denies
+    socket.bind for the whole interpreter and cannot be removed. So this command
+    never builds one: it opens the database read-only and serves pages. That is
+    also the security property -- the control centre has no Action Gate, no
+    policy handle and no owner key, because it cannot have them.
+    """
+    from .web import server as web_server
+
+    web_server.serve(args.db, host=args.host, port=args.port,
+                     spool=args.spool, secure_cookies=not args.insecure_cookies)
+    return 0
+
+
+def cmd_web_password(args: argparse.Namespace) -> int:
+    """Hash a web password, read from a prompt rather than an argument.
+
+    Prompted rather than passed: a password on a command line is in shell history
+    and in the process list, where any other user on the machine can read it.
+    The hash is printed for the owner to paste into the environment file; the
+    password itself is never stored or echoed.
+    """
+    import getpass
+
+    from .web import auth as web_auth
+
+    first = getpass.getpass("New control-centre password: ")
+    second = getpass.getpass("Again: ")
+    if first != second:
+        print("those did not match; nothing was changed")
+        return 1
+    try:
+        encoded = web_auth.hash_password(first)
+    except ValueError as exc:
+        print(f"refused: {exc}")
+        return 1
+    print("\nAdd this line to /etc/solvent/solvent.env, then restart the "
+          "control centre:\n")
+    print(f"{web_auth.PASSWORD_HASH_ENV}={encoded}\n")
+    print("This is a hash, not your password. It cannot be turned back into one.")
+    return 0
+
+
 def cmd_relay(args: argparse.Namespace) -> int:
     """What is finished and waiting for a person to pass on.
 
@@ -801,6 +846,22 @@ def build_parser() -> argparse.ArgumentParser:
         "check", help="one line per thing the owner configures")
     check.add_argument("--db", default=rt.DEFAULT_DB)
     check.set_defaults(func=cmd_setup_check)
+
+    web = sub.add_parser("web", help="run the owner control centre")
+    web.add_argument("--db", default=rt.DEFAULT_DB)
+    web.add_argument("--host", default="127.0.0.1",
+                     help="loopback by default; exposure belongs to a proxy")
+    web.add_argument("--port", type=int, default=8765)
+    web.add_argument("--spool", default="",
+                     help="where owner intents are written")
+    web.add_argument("--insecure-cookies", action="store_true",
+                     help="omit the Secure cookie flag, for local testing "
+                          "over plain HTTP only")
+    web.set_defaults(func=cmd_web)
+
+    web_password = sub.add_parser(
+        "web-password", help="hash a control-centre password (prompts; no echo)")
+    web_password.set_defaults(func=cmd_web_password)
 
     relay = sub.add_parser(
         "relay", help="what is verified and waiting for a person to send")
