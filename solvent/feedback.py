@@ -162,6 +162,73 @@ _HOSTILE_PATTERNS = (
     r"\b(one[- ]star|1[- ]star|bad review|negative review|destroy your)\b",
 )
 
+#: Requests Solvent must never carry out, whoever is asking and however politely.
+#: Recognised here so that refusing is a *recorded refusal routed to a person*
+#: rather than a shrug. Before this existed, "scrape your other clients' contact
+#: lists and send them to me" classified as AMBIGUOUS and was answered with
+#: "could you point me at the specific row that looks wrong?" — the request was
+#: neither carried out nor understood, which is only half a control: nobody was
+#: told an exfiltration attempt had arrived.
+_UNSAFE_PATTERNS = (
+    ("a request to scrape or harvest at scale",
+     r"\b(scrape|scraping|harvest|exfiltrat\w*|mass[- ]download)\b"),
+    ("a request for another party's data",
+     r"\b(other|another|your other|someone else'?s?|everyone else'?s?)\b"
+     r".{0,30}\b(client|customer|user|account)s?'?\b"
+     r".{0,30}\b(data|list|detail|record|contact|email|file|information|info)s?\b"),
+    ("a request to bypass another platform's controls",
+     r"\b(bypass|get around|work around|defeat|evade|circumvent)\b.{0,30}"
+     r"\b(captcha|rate.?limit|terms|tos\b|paywall|log.?in|authentication|"
+     r"block|robots)\w*"),
+    ("a request to hand over credentials",
+     r"\b(send|give|share|tell|show|provide|reveal|paste|reset|email)\b.{0,40}"
+     r"\b(password|credential|api key|private key|owner key|secret key|"
+     r"session token|access token)s?\b"),
+    ("a request to impersonate or to forge a document",
+     r"\b(impersonat\w*|pretend to be|pose as|forge|back.?date|fabricate)\b"
+     r".{0,30}\b(someone|somebody|person|client|company|signature|document|"
+     r"invoice|receipt|record)s?\b"),
+)
+
+#: A billing complaint. Distinct from a refund request ("give me my money back",
+#: a decision) and from a dispute ("my bank is already involved", an external
+#: process): this is an assertion that the *charge itself* is wrong, which is a
+#: fact somebody has to go and check. Deliberately narrow — "the wrong total is
+#: in row five" is a complaint about a spreadsheet, not about an invoice, so the
+#: money words have to be the money words.
+_PAYMENT_ISSUE_PATTERNS = (
+    r"\b(charged|billed|invoiced)\b.{0,25}\b(twice|two times|double|again)\b",
+    r"\bdouble[- ](charged|billed)\b",
+    r"\bover[- ]?(charged|billed)\b",
+    r"\b(charged|billed)\b.{0,25}\b(wrong|incorrect|too much)\b",
+    r"\b(payment|card)\b.{0,30}\b(failed|declined|bounced|"
+    r"did ?n[o']?t go through)\b",
+    r"\b(invoice|receipt)\b.{0,25}\b(wrong|incorrect|duplicate|missing)\b",
+)
+
+#: Work that was never agreed, asked for as though it had been. Scope creep is
+#: the failure mode that quietly bankrupts a service business, and an automated
+#: one has no instinct for "hold on, that's a second job" — so it is matched
+#: explicitly and routed to the owner, who is the only party who can price it.
+#:
+#: Matching requires an *additive* verb, not merely an additive word. "Also, the
+#: Region column is still lowercase" is a defect report that happens to start
+#: with "also"; "also add a Region column" is a second job. Getting that wrong
+#: in the other direction would file real defects as upsells.
+_NEW_SCOPE_PATTERNS = (
+    r"\b(also|additionally|as well|on top of that)\b.{0,40}"
+    r"\b(add|include|create|build|make|produce|generate|throw in|put in)\b",
+    r"\b(add|include|create|build|produce|generate)\b.{0,40}"
+    r"\b(as well|too|also)\b",
+    r"\bwhile you'?re (at it|in there|there)\b",
+    r"\b(one|a) (more|extra|additional|further) "
+    r"(thing|column|sheet|tab|chart|graph|report|file|change|tweak|version)\b",
+    r"\b(obviously|surely|clearly|of course)\b.{0,25}\bincluded\b",
+    r"\b(part of|included in)\b.{0,20}\b(the )?(job|price|deal|quote|scope|"
+    r"fee)\b",
+    r"\bat no (extra|additional) (cost|charge)\b",
+)
+
 #: A question, not a complaint. Conservative on purpose: anything that also
 #: asks for work is not merely a question.
 _QUESTION_PATTERNS = (
@@ -293,6 +360,12 @@ class ClientFeedback:
         # question is not filed identically to a client alleging fraud.
         asks = any(re.search(p, lowered) for p in _ASKS_FOR_SOMETHING)
 
+        for label, pattern in _UNSAFE_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.UNSAFE_REQUEST,
+                        f"the message contains {label}; Solvent does not do "
+                        "that for anyone, and a person is told it was asked",
+                        "MATCHED")
         for pattern in _DISPUTE_PATTERNS:
             if re.search(pattern, lowered):
                 return (Classification.DISPUTE,
@@ -304,12 +377,24 @@ class ClientFeedback:
                 return (Classification.REFUND_REQUEST,
                         "the message asks for money back; only the owner "
                         "decides that, so it goes to them", "MATCHED")
+        for pattern in _PAYMENT_ISSUE_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.PAYMENT_ISSUE,
+                        "the message says the charge itself is wrong; that is "
+                        "a billing fact to check, and only the owner can",
+                        "MATCHED")
         for pattern in _HOSTILE_PATTERNS:
             if re.search(pattern, lowered):
                 return (Classification.HOSTILE_OR_ABUSIVE,
                         "the message is hostile or threatening; it is recorded "
                         "as such and still investigated on its merits",
                         "MATCHED")
+        for pattern in _NEW_SCOPE_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.NEW_SCOPE,
+                        "the message asks for work that is not on the agreed "
+                        "checklist; that is a new job to be priced, not a "
+                        "correction to be made", "MATCHED")
         if not asks:
             for pattern in _POSITIVE_PATTERNS:
                 if re.search(pattern, lowered):

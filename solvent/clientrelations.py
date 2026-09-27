@@ -278,6 +278,26 @@ class ClientRelations:
         if (handled.investigation is not None
                 and handled.investigation.classification == Classification.AMBIGUOUS):
             reasons.append("the complaint cannot be checked against the record")
+        if handled.classification == Classification.AMBIGUOUS:
+            # The intake classifier's own fallback says an unclassifiable
+            # complaint "is the owner's to read". It routed to OWNER and then
+            # stopped there: routing names a destination, escalation is what
+            # puts the row in front of somebody, and only the second one is
+            # what :meth:`escalations` — and the owner's screen — reads. A
+            # message nobody understood answered by a guess, with nobody told,
+            # is the gap that made that distinction matter.
+            reasons.append(
+                "the message could not be classified, so the reply to it is a "
+                "guess")
+        if (handled.investigation is not None
+                and handled.investigation.verifier_missed):
+            # The client found something the verifier passed. Whatever else the
+            # message was, that is a verification failure, and the owner learns
+            # about those from here or not at all.
+            reasons.append(
+                f"re-checking the delivered file found "
+                f"{len(handled.investigation.failing)} agreed check(s) failing "
+                "that verification passed")
         repeated = self._repeated_complaints(conversation)
         if repeated >= 3:
             reasons.append(f"the same complaint has arrived {repeated} times "
@@ -320,6 +340,35 @@ class ClientRelations:
             NEUTRAL: "Thanks for your message.",
         }[handled.sentiment]
 
+        # Order matters, and this is the order. A defect proven by recomputation
+        # is told to the client **before** anything about their tone, their
+        # classification or who the message was escalated to is consulted.
+        #
+        # It used to come third, and both of the branches above it swallowed it.
+        # A client who wrote "thanks, this looks great — though a couple of rows
+        # may be duplicated?" classified as ACCEPTED, and was told "glad it was
+        # useful, we'll keep the delivered file on record" while the file was
+        # demonstrably broken. Politeness suppressed a defect the system had
+        # already found and recorded. Escalation swallowed it the same way.
+        #
+        # Withholding a defect Solvent has proven is the one failure here that
+        # is not a misjudgement but a false statement, so nothing outranks it.
+        if finding is not None and finding.verifier_missed:
+            reply = (
+                f"{opening}\n\nYou're right, and this is our error. Re-checking "
+                "the delivered file against what we agreed, it fails:\n"
+                + "\n".join(f"  - {item}" for item in finding.failing[:5])
+                + "\n\nWe're correcting it and will re-verify before sending it "
+                  "again. There is nothing for you to do.")
+            if handled.escalated_to:
+                # Both things are true, and the client is told both: the work is
+                # wrong, and the rest of what they raised is not ours to settle.
+                reply += ("\n\nThe other points in your message need a decision "
+                          "I'm not able to make, so the account owner has them "
+                          "and will come back to you. I haven't changed anything "
+                          "about the invoice in the meantime.")
+            return STANCE_CONFIRM_DEFECT, reply
+
         if classification == Classification.ACCEPTED:
             return STANCE_ACKNOWLEDGE, (
                 f"{opening}\n\nWe'll keep the delivered file on record. If "
@@ -333,14 +382,6 @@ class ClientRelations:
                 + self._agreed_summary(conversation)
                 + "\n\nI haven't changed anything about the work or the "
                   "invoice in the meantime.")
-
-        if finding is not None and finding.verifier_missed:
-            return STANCE_CONFIRM_DEFECT, (
-                f"{opening}\n\nYou're right, and this is our error. Re-checking "
-                "the delivered file against what we agreed, it fails:\n"
-                + "\n".join(f"  - {item}" for item in finding.failing[:5])
-                + "\n\nWe're correcting it and will re-verify before sending it "
-                  "again. There is nothing for you to do.")
 
         if classification in (Classification.DEFECT,
                               Classification.MISSED_REQUIREMENT):
