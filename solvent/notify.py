@@ -302,6 +302,15 @@ class Notifier:
             "channels = ? WHERE id = ?",
             (state, redact(detail)[:300], reference, ",".join(sorted(channels)),
              notification_id))
+        if state == FAILED:
+            # Counted separately from the current state, because acknowledging a
+            # notification moves it to ACKNOWLEDGED and would otherwise erase the
+            # fact that a send failed. The owner reading it on the website is a
+            # legitimate acknowledgement; the SMS channel being broken is a
+            # separate fact and it stays true afterwards.
+            self._db.execute(
+                "UPDATE notifications SET delivery_failures = "
+                "delivery_failures + 1 WHERE id = ?", (notification_id,))
         self._db.commit()
 
     # --------------------------------------------------------- the owner
@@ -389,6 +398,17 @@ class Notifier:
             sql += " WHERE " + " AND ".join(clauses)
         return [dict(r) for r in self._db.query(sql + " ORDER BY ts DESC",
                                                 tuple(params))]
+
+    def delivery_failures(self) -> list[dict]:
+        """Notifications a channel failed to carry, whatever happened since.
+
+        Read from a counter rather than from the current state: an acknowledged
+        notification is answered, and the channel that could not carry it is
+        still broken.
+        """
+        return [dict(r) for r in self._db.query(
+            "SELECT * FROM notifications WHERE delivery_failures > 0 "
+            "ORDER BY ts DESC")]
 
     def unresolved(self) -> list[dict]:
         return [dict(r) for r in self._db.query(

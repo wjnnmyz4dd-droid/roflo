@@ -342,3 +342,37 @@ class ItSurvivesARestart(unittest.TestCase):
                           [n["id"] for n in after.notifier.unresolved()])
             self.assertNotIn(acknowledged,
                              [n["id"] for n in after.notifier.unresolved()])
+
+
+class AcknowledgingDoesNotEraseADeliveryFailure(Base):
+    """Found by the invariant review: acknowledging moved the row to
+    ACKNOWLEDGED, and the count of notifications a channel could not carry —
+    which the diagnostics page reads — silently went to zero. The owner reading
+    it on the website is a legitimate acknowledgement; the SMS channel being
+    broken is a separate fact and it stays true afterwards."""
+
+    def test_a_failed_send_is_still_counted_after_acknowledgement(self):
+        self.n._providers = {}
+        notification = self.raise_(notify.CRITICAL)
+        self.assertEqual(len(self.n.delivery_failures()), 1)
+        self.n.acknowledge(notification)
+        self.assertEqual(self.n.notification(notification)["state"],
+                         notify.ACKNOWLEDGED)
+        self.assertEqual(len(self.n.delivery_failures()), 1,
+                         "acknowledging erased the record of a broken channel")
+
+    def test_a_successful_send_is_not_counted_as_a_failure(self):
+        self.raise_(notify.URGENT)
+        self.assertEqual(self.n.delivery_failures(), [])
+
+    def test_diagnostics_reports_the_broken_channel_after_acknowledgement(self):
+        from solvent.diagnostics import Diagnostics, DEGRADED
+
+        self.n._providers = {}
+        notification = self.raise_(notify.CRITICAL)
+        self.n.acknowledge(notification)
+        self.s.policy.amend(
+            {"notifications": {"owner_phone_mask": "***-***-0000",
+                               "sms_provider": "example"}},
+            OWNER, "configured, and still not working")
+        self.assertEqual(Diagnostics(self.s).notifications().state, DEGRADED)

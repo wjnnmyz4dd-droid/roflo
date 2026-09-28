@@ -150,6 +150,22 @@ class CapabilityRegistry:
                 f"capabilities are owner-registered (got {owner_identity!r}); "
                 "Solvent may propose growth, never authorise it")
 
+        # A version has to belong to the capability it versions. Nothing said
+        # so, and ``Capability(name="anything", version="csv-cleanup/1.0")``
+        # registered happily — at which point the version string stops
+        # identifying the capability. The delivery gate relies on it doing
+        # exactly that: it reads the version off an artifact, takes the name
+        # from it, and asks whether *that* capability may deploy. A version
+        # that names a different capability makes that question meaningless.
+        if capability.version and not (
+                capability.version == capability.name
+                or capability.version.startswith(capability.name + "/")):
+            raise FailClosed(
+                f"{capability.version!r} is not a version of "
+                f"{capability.name!r}; a version that names a different "
+                "capability stops identifying which code was proven, and the "
+                "delivery gate reads the capability out of the version string")
+
         decision, _ = self.development_decision(capability.name)
         if decision == self.DENIED:
             raise FailClosed(

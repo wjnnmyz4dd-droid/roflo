@@ -390,6 +390,7 @@ class Diagnostics:
         from . import notify
 
         state = notify.configuration(self._s.policy)
+        failures = self._s.notifier.delivery_failures()
         if not state["owner_phone"]:
             return Finding("Notifications", OWNER_ACTION_REQUIRED,
                            "no owner phone recorded; Solvent cannot reach you "
@@ -401,6 +402,13 @@ class Diagnostics:
                            "configured, so nothing can be sent", OBSERVE,
                            "alerting",
                            owner_action="configure an SMS provider")
+        if failures:
+            return Finding(
+                "Notifications", DEGRADED,
+                f"{len(failures)} notification(s) a channel could not carry; "
+                "the configuration is in place but something is not working",
+                OWNER_ESCALATION, "alerting",
+                owner_action="check the Notifications page and the provider")
         return Finding("Notifications", HEALTHY,
                        f"SMS via {state['sms_provider']}"
                        + (f", voice via {state['voice_provider']}"

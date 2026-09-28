@@ -82,3 +82,13 @@ Installed. Nothing is running and nothing is enabled yet.
 
 Those first two questions are different, and the second is the one that matters.
 NEXT
+
+# --- liveness watchdog ------------------------------------------------------
+# Installed as a timer rather than as part of the service, because a process
+# cannot notice its own absence. See deploy/solvent-watchdog.sh.
+install -m 0755 deploy/solvent-watchdog.sh /usr/local/bin/solvent-watchdog
+install -m 0644 deploy/solvent-watchdog.service /etc/systemd/system/
+install -m 0644 deploy/solvent-watchdog.timer /etc/systemd/system/
+id -u solvent-watchdog >/dev/null 2>&1 || useradd --system --no-create-home solvent-watchdog
+echo "watchdog installed. Enable it with:"
+echo "  systemctl enable --now solvent-watchdog.timer"

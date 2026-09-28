@@ -40,6 +40,11 @@ DEFAULT_DB = "/var/lib/solvent/solvent.db"
 RUNTIME = "runtime"
 
 
+#: Where the liveness heartbeat is written. Read by deploy/solvent-watchdog.sh
+#: from outside this process, which is the entire point of it being a file.
+HEARTBEAT_PATH = "/var/lib/solvent/heartbeat"
+
+
 class Mode(Enum):
     """How this process is deployed. Same Solvent, different lifetime."""
 
@@ -345,10 +350,39 @@ class Runtime:
         return task
 
     def default_tasks(self) -> None:
-        """The three things a first-revenue Solvent needs to do on a timer."""
+        """What a first-revenue Solvent needs to do on a timer."""
+        self.add_task("heartbeat", self._tick_heartbeat)
         self.add_task("health", self._tick_health)
         self.add_task("reconciliation", self._tick_reconcile)
         self.add_task("discovery", self._tick_discovery)
+
+    def _tick_heartbeat(self) -> str:
+        """Touch a file so something outside Solvent can tell it is working.
+
+        This is the one health signal Solvent cannot produce while broken and
+        cannot fake while healthy: writing it requires getting far enough
+        through a tick to write it.
+
+        It exists because ``solvent health`` runs *inside* Solvent. A process
+        that is wedged, deadlocked, out of memory or simply not running reports
+        nothing — and nothing looks exactly like quiet-because-everything-is-fine.
+        A process cannot notice its own absence, so the noticing is done by a
+        timer on the host reading this file's age.
+
+        Failing to write it is not fatal to the tick. The watchdog treating a
+        missing heartbeat as an outage is the correct outcome, and a Solvent that
+        crashed because it could not write a diagnostic file would be turning a
+        monitoring problem into an availability problem.
+        """
+        path = self.solvent.policy.get("runtime", "heartbeat_path",
+                                       default=HEARTBEAT_PATH)
+        try:
+            target = Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f"{time.time():.0f}\n", encoding="utf-8")
+        except OSError as exc:
+            return f"could not write the heartbeat at {path}: {exc}"
+        return f"heartbeat written to {path}"
 
     def _tick_health(self) -> str:
         state, why = health(self.solvent, started=self.started)

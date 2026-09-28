@@ -1,0 +1,21 @@
+[Unit]
+Description=Solvent liveness watchdog
+After=solvent.service
+
+[Service]
+Type=oneshot
+# Runs as its own user with no access to Solvent's database, its secrets or its
+# spools. It needs to read one file's timestamp and ask systemd a question, and
+# giving it more would make the watchdog a way into the thing it watches.
+User=solvent-watchdog
+Group=solvent
+ExecStart=/usr/local/bin/solvent-watchdog
+EnvironmentFile=-/etc/solvent/solvent-watchdog.env
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/var/lib/solvent/heartbeat
+# It never needs the network except loopback for the web check.
+IPAddressAllow=localhost
+IPAddressDeny=any

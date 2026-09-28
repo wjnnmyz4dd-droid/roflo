@@ -286,3 +286,43 @@ class TheShippedConfiguration(unittest.TestCase):
                     solvent=solvent, client_id="c", title="two")
         self.assertEqual({(c.name, c.version)
                           for c in solvent.capability.capabilities()}, before)
+
+
+class AVersionMustBelongToItsCapability(unittest.TestCase):
+    """Found by reading the data model for states it permits and the business
+    forbids: ``Capability(name="anything", version="csv-cleanup/1.0")``
+    registered happily, at which point the version string stopped identifying
+    the capability — which is exactly what the delivery gate reads it for."""
+
+    def test_a_version_naming_a_different_capability_is_refused(self):
+        solvent = Solvent()
+        with self.assertRaises(FailClosed) as caught:
+            solvent.capability.register(
+                Capability(name="anything", covers=frozenset({"x"}),
+                           version="csv-cleanup/1.0", proven=True),
+                owner_identity=OWNER)
+        self.assertIn("is not a version of", str(caught.exception))
+
+    def test_a_version_that_is_the_bare_name_is_allowed(self):
+        solvent = Solvent()
+        solvent.capability.register(
+            Capability(name="thing", covers=frozenset({"x"}), version="thing",
+                       proven=True), owner_identity=OWNER)
+        self.assertTrue(solvent.capability.may_deploy("thing")[0])
+
+    def test_no_version_at_all_is_allowed_and_delivers_nothing(self):
+        """A capability making no version claim is legitimate; an artifact
+        stamped with one still cannot match it."""
+        solvent = Solvent()
+        solvent.capability.register(
+            Capability(name="unversioned", covers=frozenset({"x"}), proven=True),
+            owner_identity=OWNER)
+        deliverable = type("A", (), {"capability_version": "unversioned/1.0"})()
+        permitted, _ = solvent.orchestrator._capability_permitted(deliverable)
+        self.assertFalse(permitted)
+
+    def test_the_shipped_promotions_satisfy_the_rule(self):
+        for capability in (CSV_PROMOTION,):
+            with self.subTest(capability=capability.name):
+                self.assertTrue(
+                    capability.version.startswith(capability.name + "/"))

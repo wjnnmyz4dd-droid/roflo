@@ -764,7 +764,7 @@ class ControlCentre:
             out.append(("Notifications", "HEALTHY",
                         f"SMS via {settings['sms_provider']}", ""))
 
-        failed = [n for n in read.notifications(state="FAILED")]
+        failed = read.notification_delivery_failures()
         if failed:
             out.append(("Notification delivery", "FAILED",
                         f"{len(failed)} notification(s) could not be delivered",

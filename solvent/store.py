@@ -223,7 +223,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   job_id TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
   channels TEXT NOT NULL DEFAULT '', provider_ref TEXT NOT NULL DEFAULT '',
   acknowledged_at TEXT NOT NULL DEFAULT '',
-  escalated_at TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT ''
+  escalated_at TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '',
+  delivery_failures INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS incidents (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, first_seen TEXT NOT NULL,

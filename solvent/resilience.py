@@ -518,6 +518,47 @@ class Resilience:
             "AND checkpoint != '' ORDER BY ts DESC, id DESC LIMIT 1", (trace_id,))
         return row["checkpoint"] if row else ""
 
+    def replay(self, trace_id: str) -> dict:
+        """Reconstruct the decision path a trace took, deterministically.
+
+        **It reports; it does not re-execute.** No external effect can be
+        repeated by calling this, because nothing is called at all — the frames
+        are read back in order and returned. That is a stronger guarantee than
+        stubbing the effects out, because there is no code path here that could
+        be pointed at a real one by mistake.
+
+        It is also the honest limit of what these frames support. They are
+        sanitised as they are written, so the inputs they hold are deliberately
+        incomplete: a secret and a client's data are both removed, and you
+        cannot re-run business logic from a record with the business data taken
+        out. Claiming to re-execute from them would mean either keeping the data
+        (which is the thing the redaction exists to prevent) or re-running
+        against different data and calling the result the same (which is worse
+        than not replaying).
+
+        What this is for is the question a reconstruction actually answers: *in
+        what order did Solvent decide things, and where did it get to before it
+        stopped?* That is what localises a bug, and it is what the timeline on
+        the incident page is built from.
+        """
+        frames = self.frames(trace_id)
+        steps = [{"at": f["ts"], "component": f["component"],
+                  "operation": f["operation"], "state": f["state"],
+                  "decision": f["decision"], "checkpoint": f["checkpoint"]}
+                 for f in frames]
+        failed = [s for s in steps if s["state"] == "FAILED"]
+        return {
+            "trace_id": trace_id,
+            "steps": steps,
+            "reached": steps[-1]["operation"] if steps else "",
+            "last_checkpoint": self.last_checkpoint(trace_id),
+            "failed_at": failed[0]["operation"] if failed else "",
+            "external_effects_replayed": 0,
+            "deterministic": True,
+            "note": ("reconstructed from sanitised frames; nothing was "
+                     "re-executed, so no external effect could repeat"),
+        }
+
     # ------------------------------------------------------ circuit breakers
 
     def _breaker(self, component: str) -> dict:

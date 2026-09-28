@@ -1,0 +1,14 @@
+[Unit]
+Description=Check that Solvent is alive, from outside Solvent
+Documentation=file:///usr/share/doc/solvent/solvent-incidents-and-recovery.md
+
+[Timer]
+# Every minute, starting a minute after boot. The watchdog's own cost is a
+# stat and a systemctl query, so the interval can be short; what must not be
+# short is the staleness limit it enforces.
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

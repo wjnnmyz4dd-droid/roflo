@@ -223,6 +223,17 @@ class ReadModel:
             "SELECT * FROM notifications WHERE state NOT IN "
             "('ACKNOWLEDGED', 'EXPIRED') ORDER BY ts DESC")
 
+    def notification_delivery_failures(self) -> list[dict]:
+        """Sends that failed, counted durably rather than read off the state.
+
+        An acknowledged notification is answered; the channel that could not
+        carry it is still broken, and a page showing zero failures because
+        somebody clicked acknowledge would be hiding a broken alerting path.
+        """
+        return self.rows(
+            "SELECT * FROM notifications WHERE delivery_failures > 0 "
+            "ORDER BY ts DESC")
+
     def notification_settings(self) -> dict:
         """What is configured, as the website is allowed to see it.
 

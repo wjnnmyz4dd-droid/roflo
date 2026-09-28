@@ -536,3 +536,50 @@ class ItSurvivesARestart(unittest.TestCase):
             self.assertEqual(after.resilience.breaker("model")["state"], res.OPEN)
             self.assertIsNotNone(after.resilience.lesson_for(print_))
             self.assertTrue(after.audit.verify_chain()[0])
+
+
+class DeterministicReplay(unittest.TestCase):
+    """§13. Reconstruct the decision path without re-running anything."""
+
+    def setUp(self):
+        self.s = Solvent()
+        self.r = self.s.resilience
+
+    def test_it_reconstructs_the_order_things_happened_in(self):
+        for step in ("intake", "qualify", "execute", "verify"):
+            self.r.frame(trace_id="t", component="orchestrator",
+                         operation=step, checkpoint=step.upper())
+        replay = self.r.replay("t")
+        self.assertEqual([s["operation"] for s in replay["steps"]],
+                         ["intake", "qualify", "execute", "verify"])
+        self.assertEqual(replay["reached"], "verify")
+
+    def test_it_is_deterministic(self):
+        self.r.frame(trace_id="t", component="c", operation="o")
+        self.assertEqual(self.r.replay("t"), self.r.replay("t"))
+
+    def test_it_names_where_the_failure_was(self):
+        self.r.frame(trace_id="t", component="c", operation="good")
+        self.r.frame(trace_id="t", component="c", operation="bad",
+                     state="FAILED")
+        self.assertEqual(self.r.replay("t")["failed_at"], "bad")
+
+    def test_it_repeats_no_external_effect(self):
+        """Not by stubbing the effects out — by not executing anything. There
+        is no code path here that could be pointed at a real one by mistake."""
+        import ast
+
+        tree = ast.parse(pathlib.Path("solvent/resilience.py").read_text())
+        replay = next(n for n in ast.walk(tree)
+                      if isinstance(n, ast.FunctionDef) and n.name == "replay")
+        calls = {getattr(n.func, "attr", getattr(n.func, "id", ""))
+                 for n in ast.walk(replay) if isinstance(n, ast.Call)}
+        self.assertEqual(calls & {"send", "execute", "commit", "record",
+                                  "notify", "request", "post"}, set())
+        self.assertEqual(self.r.replay("t")["external_effects_replayed"], 0)
+
+    def test_an_unknown_trace_replays_as_empty_rather_than_inventing_one(self):
+        replay = self.r.replay("no-such-trace")
+        self.assertEqual(replay["steps"], [])
+        self.assertEqual(replay["reached"], "")
+        self.assertEqual(replay["last_checkpoint"], "")
