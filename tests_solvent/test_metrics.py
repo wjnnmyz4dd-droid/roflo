@@ -22,7 +22,7 @@ import unittest
 from solvent.harness import (CSV_PROMOTION, OWNER, Solvent, provision_capability,
                              run_csv_job)
 from solvent.ledger import SIMULATED_PREFIX
-from solvent.types import PaymentState
+from solvent.types import CostCategory, PaymentState
 
 from tests_solvent import fixtures_csv as fx
 
@@ -93,7 +93,7 @@ class SimulatedMoneyIsNeverProfit(Base):
         self.collect(self.job("sim").job_id, SIMULATED_RAIL)
         metrics = self.s.metrics()
         self.assertEqual(metrics.real_revenue_collected, "$0.00")
-        self.assertEqual(metrics.actual_margin, 0.0)
+        self.assertIsNone(metrics.actual_margin)
         caveats = " ".join(metrics.caveats)
         self.assertIn("All collected revenue is SIMULATED", caveats)
 
@@ -117,7 +117,7 @@ class AFreshBusinessReportsNothing(Base):
                       "actual_profit"):
             with self.subTest(field=field):
                 self.assertEqual(getattr(metrics, field), "$0.00")
-        self.assertEqual(metrics.actual_margin, 0.0)
+        self.assertIsNone(metrics.actual_margin)
         self.assertEqual(metrics.client_concentration, {})
 
     def test_an_uncalibrated_estimator_says_so(self):
@@ -150,3 +150,91 @@ class ItReadsAndDecidesNothing(Base):
         from solvent.store import TABLE_OWNER
 
         self.assertNotIn("metrics", set(TABLE_OWNER.values()))
+
+
+class AnUndefinedMarginIsNotZero(Base):
+    """Found with iFix's methodology (ailen-wrx/ifix, f04ce9b).
+
+    A differential table over 27 money configurations agreed with ground truth
+    everywhere — *because the ground truth I wrote encoded the same divide
+    guard the implementation uses*. The output matched and the reason was still
+    wrong, which is precisely the case iFix's runtime comparison exists to
+    surface: a fix that passes because the oracle shares its assumption.
+
+    With no real revenue there is no margin. Reporting ``0.0`` states that the
+    business broke even, and printing that beside a $2,500 loss tells the owner
+    something untrue. This system already draws the same distinction twice — an
+    unrecorded firewall reads UNSAFE rather than safe, a check that could not
+    run reads UNKNOWN rather than healthy — and this was the third case of it.
+    """
+
+    def test_no_real_revenue_means_no_margin_rather_than_zero(self):
+        self.collect(self.job("sim").job_id, SIMULATED_RAIL)
+        self.assertIsNone(self.s.metrics().actual_margin)
+
+    def test_a_loss_with_no_real_revenue_says_so_in_words(self):
+        job = self.job("sim")
+        self.collect(job.job_id, SIMULATED_RAIL)
+        self.s.ledger.record_cost(job_id=job.job_id, category=CostCategory.AI_API,
+                                  amount_cents=250_000, source="PROVIDER_BILLING",
+                                  note="tooling")
+        metrics = self.s.metrics()
+        self.assertEqual(metrics.actual_profit, "-$2500.00")
+        self.assertIsNone(metrics.actual_margin)
+        self.assertIn("no margin to report", " ".join(metrics.caveats))
+
+    def test_real_revenue_gives_a_real_margin(self):
+        """The guard must not swallow the case it is guarding."""
+        self.collect(self.job("real").job_id, REAL_RAIL)
+        self.assertEqual(self.s.metrics().actual_margin, 1.0)
+
+    def test_a_loss_against_real_revenue_reports_a_negative_margin(self):
+        job = self.job("real")
+        self.collect(job.job_id, REAL_RAIL)
+        self.s.ledger.record_cost(job_id=job.job_id, category=CostCategory.AI_API,
+                                  amount_cents=250_000, source="PROVIDER_BILLING",
+                                  note="tooling")
+        metrics = self.s.metrics()
+        self.assertEqual(metrics.actual_profit, "-$2400.00")
+        self.assertEqual(metrics.actual_margin, -24.0)
+
+    def test_the_status_dashboard_renders_it_as_a_phrase(self):
+        """Printing ``None`` would be worse than printing 0.0."""
+        import io, contextlib, tempfile, pathlib as _p
+        from solvent.cli import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = str(_p.Path(tmp) / "s.db")
+            Solvent(db).store.close()
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                main(["status", "--db", db])
+            text = out.getvalue()
+        self.assertIn("not applicable (no real revenue)", text)
+        self.assertNotIn("actual_margin               None", text)
+
+
+class TheGroundTruthTableHolds(Base):
+    """iFix's differential comparison, kept as a test.
+
+    Every money configuration checked against a margin rule stated here rather
+    than read out of the implementation — so the oracle and the code cannot
+    agree by construction, which is how the defect above survived 27 cases.
+    """
+
+    def test_margin_is_defined_exactly_when_real_revenue_exists(self):
+        for real, simulated in ((0, 0), (0, 10_000), (10_000, 0), (10_000, 10_000)):
+            with self.subTest(real=real, simulated=simulated):
+                solvent = Solvent()
+                provision_capability(solvent, CSV_PROMOTION, owner_identity=OWNER)
+                self.s = solvent
+                if real:
+                    self.collect(self.job("real").job_id, REAL_RAIL, cents=real)
+                if simulated:
+                    self.collect(self.job("sim").job_id, SIMULATED_RAIL,
+                                 cents=simulated)
+                margin = solvent.metrics().actual_margin
+                if real:
+                    self.assertIsNotNone(margin)
+                else:
+                    self.assertIsNone(margin)

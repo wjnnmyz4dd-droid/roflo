@@ -752,7 +752,12 @@ def cmd_status(args: argparse.Namespace) -> int:
     for group, keys in groups.items():
         print(f"{group}")
         for key in keys:
-            print(f"  {key:<28} {metrics[key]}")
+            value = metrics[key]
+            if value is None:
+                # A null margin is "there is none", not "it is zero". Printing
+                # None would be worse than either.
+                value = "not applicable (no real revenue)"
+            print(f"  {key:<28} {value}")
         print()
     for caveat in metrics["caveats"]:
         print(f"!! {caveat}")

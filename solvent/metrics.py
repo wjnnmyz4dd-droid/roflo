@@ -49,7 +49,15 @@ class BusinessMetrics:
     real_revenue_collected: str = "$0.00"
     actual_costs: str = "$0.00"
     actual_profit: str = "$0.00"
-    actual_margin: float = 0.0
+    #: ``None`` when there is no real revenue to have a margin on.
+    #:
+    #: Not ``0.0``. A margin of zero is a *statement* — it says the business
+    #: broke even — and printing it beside a loss of several thousand tells the
+    #: owner something that is not true. This system already draws the same
+    #: distinction twice: an unrecorded firewall reads UNSAFE rather than safe,
+    #: and a check that could not run reads UNKNOWN rather than healthy.
+    #: Undefined is not zero, for the same reason.
+    actual_margin: float | None = None
 
     # Quality and learning
     estimate_accuracy: str = "no verified samples"
@@ -126,7 +134,7 @@ def business_metrics(*, orchestrator, ledger, governor, audit, discovery=None,
     metrics.real_revenue_collected = fmt(real)
     metrics.actual_costs = fmt(costs)
     metrics.actual_profit = fmt(profit)
-    metrics.actual_margin = (profit / real) if real else 0.0
+    metrics.actual_margin = (profit / real) if real else None
     metrics.client_concentration = {k: fmt(v) for k, v in clients.items()}
 
     calibration = governor.calibration_for()
@@ -157,6 +165,13 @@ def business_metrics(*, orchestrator, ledger, governor, audit, discovery=None,
     if metrics.jobs_overdue:
         metrics.caveats.append(
             f"{metrics.jobs_overdue} job(s) past their state timeout and escalated.")
+    if metrics.actual_margin is None and costs:
+        # Spending with nothing real coming in is a real state, and the margin
+        # field cannot express it. Say it in words rather than let a reader
+        # infer break-even from a number that means "not applicable".
+        metrics.caveats.append(
+            f"{fmt(costs)} spent and no real revenue collected, so there is no "
+            "margin to report.")
     if not samples:
         metrics.caveats.append(
             "Cost estimates are uncalibrated: no verified job outcomes yet.")
