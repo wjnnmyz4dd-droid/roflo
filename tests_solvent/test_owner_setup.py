@@ -400,12 +400,36 @@ class GitCannotCarryASecret(unittest.TestCase):
     that the patterns cover what they must, and that nothing in the tree looks
     like a credential regardless of what the patterns say."""
 
-    def test_no_file_in_the_tree_contains_a_credential_shaped_value(self):
+    @staticmethod
+    def credential_pattern():
+        """One definition, used by the scan and by the canary that guards it.
+
+        They used to be written separately: the scan covered four families and
+        the canary proved only that ``whsec_`` matched. A canary that exercises
+        a different pattern from the scan can pass while the scan's other
+        families are silently broken, which is the failure mode a canary exists
+        to rule out.
+        """
         import re
 
+        # Widened after comparing this scanner's coverage against the pattern
+        # families in K-LEAN's scan_secrets (src/klean/smol/tools.py). It knew
+        # the Stripe shapes and a PEM block, and missed every generic one --
+        # including the shape a `SOLVENT_SMS_CREDENTIAL` or
+        # `SOLVENT_VOICE_CREDENTIAL` would take, which this system only started
+        # holding once notifications existed. A scanner written before a secret
+        # exists does not cover it.
         pattern = re.compile(
             r"(sk_live_[A-Za-z0-9]{8,}|sk_test_[A-Za-z0-9]{8,}"
-            r"|whsec_[A-Za-z0-9]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")
+            r"|whsec_[A-Za-z0-9]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----"
+            r"|AKIA[0-9A-Z]{16}"
+            r"|(?i:aws[_-]?secret[_-]?access[_-]?key)\s*[=:]\s*[\"']?[A-Za-z0-9/+=]{40}"
+            r"|(?i:api[_-]?key|access[_-]?token|auth[_-]?token"
+            r"|[a-z_]*credential)\s*[=:]\s*[\"']?[A-Za-z0-9_\-\.]{24,})")
+        return pattern
+
+    def test_no_file_in_the_tree_contains_a_credential_shaped_value(self):
+        pattern = self.credential_pattern()
         offenders = []
         for relative, path in repository_files():
             if path.suffix in {".png", ".jpg", ".gguf", ".db", ".safetensors"}:
@@ -423,14 +447,41 @@ class GitCannotCarryASecret(unittest.TestCase):
 
     def test_the_search_would_find_a_credential_if_one_were_there(self):
         """Guards the test above: a pattern that matches nothing passes
-        everything."""
+        everything.
+
+        One specimen per family the scanner claims to cover, each assembled at
+        run time -- written as literals they would sit in this file and the
+        scan above would report them, which is exactly what happened the first
+        time a Stripe shape was written out."""
         import re
 
-        pattern = re.compile(r"whsec_[A-Za-z0-9]{16,}")
-        # Assembled at run time. Written as a literal it would sit in this file
-        # and the scan above would report it -- which it did, on the first run.
-        specimen = "whsec" + "_" + ("abcdefgh" * 3)
-        self.assertTrue(pattern.search(specimen))
+        pattern = self.credential_pattern()
+        specimens = {
+            "stripe live": "sk" + "_live_" + "a" * 12,
+            "stripe test": "sk" + "_test_" + "a" * 12,
+            "webhook secret": "whsec" + "_" + ("abcdefgh" * 3),
+            "pem block": "-----BEGIN " + "PRIVATE KEY-----",
+            "aws access key": "AKIA" + "B" * 16,
+            "aws secret": "aws_secret_access_key" + "=" + "c" * 40,
+            "generic api key": "api_key" + "=" + "d" * 32,
+            "access token": "access_token" + "=" + "e" * 32,
+            "provider credential": "sms_credential" + "=" + "f" * 32,
+        }
+        for label, specimen in specimens.items():
+            with self.subTest(family=label):
+                self.assertTrue(pattern.search(specimen),
+                                f"the scanner does not cover {label}")
+
+    def test_it_does_not_flag_ordinary_code(self):
+        """A scanner that fires on everything gets switched off."""
+        pattern = self.credential_pattern()
+        for benign in ("api_key = os.environ[KEY_ENV]",
+                       "token = row['id']",
+                       "password_hash = hash_password(supplied)",
+                       "credential: str = ''",
+                       "self.access_token = None"):
+            with self.subTest(line=benign):
+                self.assertIsNone(pattern.search(benign))
 
     def test_every_plausible_secret_file_location_is_ignored(self):
         for candidate in (".env", "solvent.env", "deploy/solvent.env",

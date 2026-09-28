@@ -42,6 +42,10 @@ class BusinessMetrics:
     # Money (Ledger) — the part that counts
     revenue_invoiced: str = "$0.00"
     revenue_collected: str = "$0.00"
+    #: Broken out rather than buried in ``revenue_collected``. Without it the
+    #: only way to tell fixture money from earnings was to subtract two other
+    #: fields and hope you had understood both.
+    simulated_revenue_collected: str = "$0.00"
     real_revenue_collected: str = "$0.00"
     actual_costs: str = "$0.00"
     actual_profit: str = "$0.00"
@@ -89,7 +93,7 @@ def business_metrics(*, orchestrator, ledger, governor, audit, discovery=None,
     if qualification is not None:
         metrics.rejected_by_reason = qualification.rejection_reasons()
 
-    invoiced = collected = costs = 0
+    invoiced = collected = simulated = costs = 0
     clients: dict[str, int] = {}
     for job in jobs:
         payment = ledger.payment_for(job.id) or {}
@@ -97,16 +101,32 @@ def business_metrics(*, orchestrator, ledger, governor, audit, discovery=None,
         job_collected = ledger.collected_for(job.id)
         collected += job_collected
         costs += ledger.costs_for(job.id)
-        if job_collected:
+        if job_collected and ledger.is_simulated(job.id):
+            simulated += job_collected
+        elif job_collected:
+            # Concentration is about which *clients* the business depends on,
+            # so it counts real money only. A fixture client is not a client.
             clients[job.client_id] = clients.get(job.client_id, 0) + job_collected
 
-    profit = collected - costs
+    real = ledger.real_revenue_cents()
+    # Profit and margin are computed on **real** collected revenue. They used
+    # to be computed on everything collected, so a deployment holding any
+    # fixture money reported that money as profit under a field called
+    # "actual" — and the caveat that would have said so only fired when real
+    # revenue was exactly zero. The first real payment therefore *suppressed*
+    # the warning while the simulated money stayed in the total: $100 real
+    # beside $100 simulated read as $200 profit at a 100% margin, silently.
+    #
+    # Simulated revenue is not revenue. That is the law this file exists to
+    # report on, and it was the one place breaking it.
+    profit = real - costs
     metrics.revenue_invoiced = fmt(invoiced)
     metrics.revenue_collected = fmt(collected)
-    metrics.real_revenue_collected = fmt(ledger.real_revenue_cents())
+    metrics.simulated_revenue_collected = fmt(simulated)
+    metrics.real_revenue_collected = fmt(real)
     metrics.actual_costs = fmt(costs)
     metrics.actual_profit = fmt(profit)
-    metrics.actual_margin = (profit / collected) if collected else 0.0
+    metrics.actual_margin = (profit / real) if real else 0.0
     metrics.client_concentration = {k: fmt(v) for k, v in clients.items()}
 
     calibration = governor.calibration_for()
@@ -121,10 +141,16 @@ def business_metrics(*, orchestrator, ledger, governor, audit, discovery=None,
     if memory is not None:
         metrics.lessons_learned = len(memory.recall())
 
-    real = ledger.real_revenue_cents()
     metrics.headline = (
         f"verified profitable client work: {fmt(real)} collected across "
         f"{metrics.jobs_completed} completed job(s)")
+    if simulated:
+        # Fires on *any* simulated money, not only when real revenue is zero.
+        # Conditioning it on "no real revenue" meant the warning switched off
+        # at exactly the moment the numbers started mixing.
+        metrics.caveats.append(
+            f"{fmt(simulated)} of collected revenue is SIMULATED. It is "
+            "excluded from profit, margin and client concentration.")
     if collected and not real:
         metrics.caveats.append(
             "All collected revenue is SIMULATED. Real revenue is $0.00.")
