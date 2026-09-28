@@ -108,6 +108,10 @@ TABLE_OWNER = {
     # Resilience remembers failure and contains it. It owns no decision: it
     # cannot promote a capability, change a rule, authorise spending or permit
     # an external effect. Diagnosis is not permission.
+    # Notifications consume the owner's attention and nothing else. The
+    # subsystem cannot approve, permit, spend or change a rule: receiving a
+    # text is not an authorisation, which is why there is no reply path.
+    "notifications": "notify",
     "incidents": "resilience",
     "incident_events": "resilience",
     "incident_lessons": "resilience",
@@ -210,6 +214,16 @@ CREATE TABLE IF NOT EXISTS job_clarifications (
   status TEXT NOT NULL DEFAULT 'OPEN', answer TEXT NOT NULL DEFAULT '',
   answered_by TEXT NOT NULL DEFAULT '', answered_at TEXT NOT NULL DEFAULT '',
   supersedes TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, raised_at REAL NOT NULL DEFAULT 0,
+  event TEXT NOT NULL,
+  severity TEXT NOT NULL, summary TEXT NOT NULL, body TEXT NOT NULL,
+  dedupe_key TEXT NOT NULL DEFAULT '', incident_id TEXT NOT NULL DEFAULT '',
+  job_id TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
+  channels TEXT NOT NULL DEFAULT '', provider_ref TEXT NOT NULL DEFAULT '',
+  acknowledged_at TEXT NOT NULL DEFAULT '',
+  escalated_at TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS incidents (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, first_seen TEXT NOT NULL,

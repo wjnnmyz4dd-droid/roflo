@@ -36,6 +36,9 @@ from .owner import OwnerChannel
 from .readiness import assert_may_attempt_first_real_job, first_revenue_readiness
 from .skillslab import SkillsLab
 from .qualification import Qualification, Verdict
+from . import notify
+from .diagnostics import Diagnostics
+from .notify import Notifier
 from .resilience import Resilience
 from .gate import ActionGate, approval
 from .governor import FinancialGovernor
@@ -165,6 +168,14 @@ class Solvent:
         # ask who counts as an owner, and nothing to write with: an incident
         # must never be able to change a rule.
         self.resilience = Resilience(self.store, self.audit, policy=self.policy)
+        # Notifications default to a provider that records and sends nothing.
+        # A real one is wired by deployment configuration, deliberately: a
+        # process that can place a phone call by default will place one during
+        # a test rerun nobody is watching.
+        self.notifier = Notifier(self.store, self.audit, self.policy,
+                                 providers={notify.SMS: notify.RecordingProvider(notify.SMS),
+                                            notify.VOICE: notify.RecordingProvider(notify.VOICE)})
+        self.diagnostics = Diagnostics(self)
         self.memory = BusinessMemory(self.store, self.audit)
         self.discovery = Discovery(self.store, self.audit, self.policy, self.gate)
         self.feedback = ClientFeedback(self.store, self.audit, self.orchestrator)
