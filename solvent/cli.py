@@ -247,6 +247,45 @@ def cmd_setup_capability(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup_notifications(args: argparse.Namespace) -> int:
+    """Record that a phone number is present, and which providers carry it.
+
+    Takes no number and no credential. The number is read from the runtime's
+    environment at dispatch; what is recorded here is a **mask** of it, so the
+    owner can confirm Solvent has the right number without the number existing
+    in the database, on a page, in the audit log or in a backup.
+    """
+    from . import notify
+
+    solvent = _owner_solvent(args)
+    number = os.environ.get(notify.PHONE_ENV, "")
+    masked = notify.mask(number)
+    if not masked:
+        print(f"refused: {notify.PHONE_ENV} is not set in this process's "
+              f"environment, or does not look like a phone number.\n"
+              f"         Put it in the runtime's environment file and run this "
+              f"again. It is never passed on the command line, because a "
+              f"command line ends up in shell history.", file=sys.stderr)
+        return 2
+    patch = {"notifications": {
+        "owner_phone_mask": masked,
+        "sms_provider": args.sms_provider,
+        "voice_provider": args.voice_provider,
+    }}
+    if args.escalate_after_minutes:
+        patch["notifications"]["escalate_after_seconds"] = \
+            args.escalate_after_minutes * 60
+    solvent.policy.amend(patch, args.owner,
+                         "owner recorded notification routing")
+    print(f"recorded. Solvent will text {masked}"
+          + (f" via {args.sms_provider}" if args.sms_provider else
+             " once an SMS provider is configured") + ".")
+    print("  The number itself was not stored. Nothing here can print it back.")
+    if not args.sms_provider:
+        print("  No SMS provider yet, so nothing can actually be sent.")
+    return 0
+
+
 def cmd_setup_stripe(args: argparse.Namespace) -> int:
     """Advance the payment rail one step. Takes evidence, never a credential."""
     solvent = _owner_solvent(args)
@@ -1018,6 +1057,14 @@ def build_parser() -> argparse.ArgumentParser:
     capability = owned(setup_sub.add_parser(
         "capability", help="register the owner's promotion of csv-cleanup/1.0"))
     capability.set_defaults(func=cmd_setup_capability)
+
+    notifications = owned(setup_sub.add_parser(
+        "notifications",
+        help="record that an owner phone is present (a mask, never the number)"))
+    notifications.add_argument("--sms-provider", default="")
+    notifications.add_argument("--voice-provider", default="")
+    notifications.add_argument("--escalate-after-minutes", type=int, default=0)
+    notifications.set_defaults(func=cmd_setup_notifications)
 
     stripe = owned(setup_sub.add_parser(
         "stripe", help="advance the payment rail (evidence, never a credential)"))

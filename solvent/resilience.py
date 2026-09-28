@@ -296,11 +296,18 @@ class Resilience:
             external_effect=redact(external_uncertainty)[:180] or "none recorded")
         return incident_id
 
-    def correlate(self, print_: str) -> Correlation:
-        """What the record already knows about this kind of failure."""
-        rows = self._db.query(
+    def correlate(self, print_: str, *, exclude: str = "") -> Correlation:
+        """What the record already knows about this kind of failure.
+
+        ``exclude`` leaves one incident out, which is what a caller asking
+        *about* an incident needs: called after recording, this otherwise counts
+        the incident being asked about and reports every first occurrence as
+        having been seen before. :meth:`record_incident` calls it before the
+        insert and so needs nothing excluded.
+        """
+        rows = [r for r in self._db.query(
             "SELECT * FROM incidents WHERE fingerprint = ? ORDER BY ts",
-            (print_,))
+            (print_,)) if r["id"] != exclude]
         if not rows:
             return Correlation(fingerprint=print_, seen_before=False)
         lesson = self._db.query_one(

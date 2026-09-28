@@ -16,6 +16,7 @@ delivery is impossible without verification evidence of the required tier.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field, replace
 import tempfile
 from pathlib import Path
@@ -755,6 +756,98 @@ def intent_subject(intent_id: str) -> str:
     subject the runtime now insists on.
     """
     return f"intent:{intent_id}"
+
+
+@contextlib.contextmanager
+def supervised(s: "Solvent", *, component: str, operation: str,
+               trace_id: str = "", checkpoint: str = "", job_id: str = "",
+               client_id: str = "", severity: str = "",
+               external_effect: str = "", notify_owner: bool = True):
+    """Run one step, and remember it if it fails. **Never swallow it.**
+
+    Recording a failure is not handling a failure. This writes a flight frame
+    before the step (so the frame describing an operation that never returned
+    exists), records an incident if it raises, tells the owner when the severity
+    warrants it, and then **re-raises**. A supervisor that turned an exception
+    into a log line would be turning a fail-closed system into a fail-quiet one,
+    which is the opposite of the point.
+
+    It lives at the composition layer rather than inside an authority. The
+    Orchestrator importing the incident recorder would couple the thing that
+    decides whether work may ship to the thing that remembers when it did not,
+    and the second must never be able to influence the first.
+
+    ``external_effect`` is the sentence that matters most. Passing it says *this
+    step may have had an effect outside this machine*, and if the step fails
+    nobody can know whether it did. That uncertainty is recorded and surfaced;
+    it is never resolved by guessing, and never by retrying.
+    """
+    from . import notify as _notify
+    from . import resilience as _res
+
+    from .audit import new_id as _new_id
+
+    trace = trace_id or _new_id("trace")
+    s.resilience.frame(trace_id=trace, component=component, operation=operation,
+                       state="ATTEMPTING", checkpoint=checkpoint)
+    try:
+        yield trace
+    except BaseException as exc:
+        level = severity or (_res.S_SERIOUS if external_effect
+                             else _res.S_DEGRADED)
+        incident = s.resilience.record_incident(
+            component=component, operation=operation,
+            error_class=type(exc).__name__, signature=str(exc),
+            severity=level, job_id=job_id, client_id=client_id,
+            trigger=f"{operation} raised {type(exc).__name__}",
+            symptoms=str(exc), checkpoint=s.resilience.last_checkpoint(trace),
+            external_uncertainty=external_effect, trace_id=trace)
+        s.resilience.frame(trace_id=trace, component=component,
+                           operation=operation, state="FAILED",
+                           decision=f"incident {incident}")
+        if external_effect:
+            # An effect that may already have happened is never retried and
+            # never assumed. It goes to a person.
+            s.resilience.needs_owner(
+                incident,
+                why=f"{operation} may have had an external effect before it "
+                    f"failed ({external_effect}); whether it happened cannot be "
+                    "established from here, so it must not be retried")
+        if notify_owner:
+            correlation = s.resilience.correlate(
+                s.resilience.incident(incident)["fingerprint"])
+            _raise_notification(s, incident, level, component, operation,
+                                correlation, external_effect)
+        raise
+    else:
+        s.resilience.frame(trace_id=trace, component=component,
+                           operation=operation, state="COMPLETED",
+                           checkpoint=checkpoint)
+
+
+def _raise_notification(s: "Solvent", incident: str, level: str, component: str,
+                        operation: str, correlation, external_effect: str) -> None:
+    """Map an incident to a notification severity. Policy owns the routing."""
+    from . import notify as _notify
+    from . import resilience as _res
+
+    if external_effect:
+        severity = _notify.CRITICAL
+    elif correlation.regression:
+        severity = _notify.URGENT
+    elif level == _res.S_CRITICAL:
+        severity = _notify.CRITICAL
+    elif level == _res.S_SERIOUS:
+        severity = _notify.URGENT
+    else:
+        severity = _notify.ACTION_REQUIRED
+    s.notifier.notify(
+        event=f"{component}.{operation}_failed", severity=severity,
+        summary=f"{operation} failed in {component}; {correlation.summary}",
+        # One conversation per kind of failure, so a component failing every
+        # minute is one escalating thread rather than a thousand texts.
+        dedupe_key=f"incident:{correlation.fingerprint}",
+        incident_id=incident)
 
 
 def provision_capability(s: "Solvent", capability, *,
