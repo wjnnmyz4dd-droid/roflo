@@ -170,7 +170,13 @@ class AnUndefinedMarginIsNotZero(Base):
 
     def test_no_real_revenue_means_no_margin_rather_than_zero(self):
         self.collect(self.job("sim").job_id, SIMULATED_RAIL)
-        self.assertIsNone(self.s.metrics().actual_margin)
+        metrics = self.s.metrics()
+        self.assertIsNone(metrics.actual_margin)
+        # Pin the fixture: a blank metrics object would also report ``None``,
+        # so without this the assertion above passes on an empty system and
+        # proves nothing about the simulated revenue that was collected.
+        self.assertEqual(metrics.simulated_revenue_collected, "$100.00")
+        self.assertEqual(metrics.actual_profit, "$0.00")
 
     def test_a_loss_with_no_real_revenue_says_so_in_words(self):
         job = self.job("sim")
@@ -325,5 +331,9 @@ class HoldoutCases(Base):
                                       amount_cents=3_000,
                                       source="PROVIDER_BILLING", note="c")
             expected = before.metrics().actual_margin
+            # Pin it. Comparing the two sides alone would hold just as well
+            # if both were ``None``, which is what a metrics function that
+            # computed nothing would return.
+            self.assertEqual(expected, 0.7)
             before.store.close()
             self.assertEqual(Solvent(path).metrics().actual_margin, expected)
