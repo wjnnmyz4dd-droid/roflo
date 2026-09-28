@@ -238,3 +238,92 @@ class TheGroundTruthTableHolds(Base):
                     self.assertIsNotNone(margin)
                 else:
                     self.assertIsNone(margin)
+
+
+class HoldoutCases(Base):
+    """Scenarios that did not shape the fix, run after it looked finished.
+
+    §13's point: a fix validated only against the cases used to design it has
+    been fitted to them. These were written afterwards, to attack it.
+    """
+
+    def test_breaking_even_on_real_revenue_is_a_zero_margin_not_an_absent_one(self):
+        """The sharpest case. Zero profit against real revenue is a genuine
+        0.0; zero profit against no revenue is undefined. If the guard were on
+        *profit* rather than on *revenue*, these two would collapse into one
+        and the fix would be right by accident."""
+        job = self.job("real")
+        self.collect(job.job_id, REAL_RAIL, cents=10_000)
+        self.s.ledger.record_cost(job_id=job.job_id, category=CostCategory.AI_API,
+                                  amount_cents=10_000, source="PROVIDER_BILLING",
+                                  note="exactly the revenue")
+        metrics = self.s.metrics()
+        self.assertEqual(metrics.actual_profit, "$0.00")
+        self.assertEqual(metrics.actual_margin, 0.0)
+        self.assertIsNotNone(metrics.actual_margin)
+
+    def test_the_no_margin_caveat_is_absent_once_real_revenue_exists(self):
+        """The caveat asserts a fact -- "no real revenue collected". If it
+        fires whenever there are costs, it tells the owner something false
+        about their own books. Surfaced by a surviving mutant that dropped
+        the ``actual_margin is None`` half of its guard."""
+        job = self.job("real")
+        self.collect(job.job_id, REAL_RAIL, cents=10_000)
+        self.s.ledger.record_cost(job_id=job.job_id, category=CostCategory.AI_API,
+                                  amount_cents=3_000, source="PROVIDER_BILLING",
+                                  note="spent, but earned too")
+        metrics = self.s.metrics()
+        self.assertIsNotNone(metrics.actual_margin)
+        for caveat in metrics.caveats:
+            self.assertNotIn("no margin to report", caveat)
+            self.assertNotIn("no real revenue collected", caveat)
+
+    def test_one_cent_of_real_revenue_still_defines_a_margin(self):
+        job = self.job("real", cents=1)
+        self.collect(job.job_id, REAL_RAIL, cents=1)
+        self.s.ledger.record_cost(job_id=job.job_id, category=CostCategory.AI_API,
+                                  amount_cents=500_000, source="PROVIDER_BILLING",
+                                  note="ruinous")
+        self.assertIsNotNone(self.s.metrics().actual_margin)
+
+    def test_a_margin_appears_when_the_first_real_revenue_arrives(self):
+        """Ordering: costs first, revenue after."""
+        job = self.job("real")
+        self.s.ledger.record_cost(job_id=job.job_id, category=CostCategory.AI_API,
+                                  amount_cents=3_000, source="PROVIDER_BILLING",
+                                  note="spent first")
+        self.assertIsNone(self.s.metrics().actual_margin)
+        self.collect(job.job_id, REAL_RAIL, cents=10_000)
+        self.assertEqual(self.s.metrics().actual_margin, 0.7)
+
+    def test_concentration_names_every_real_client(self):
+        for name in ("alpha", "beta"):
+            self.collect(self.job(name).job_id, REAL_RAIL)
+        self.assertEqual(set(self.s.metrics().client_concentration),
+                         {"client:alpha", "client:beta"})
+
+    def test_simulated_revenue_arriving_after_real_is_still_excluded(self):
+        self.collect(self.job("real").job_id, REAL_RAIL)
+        self.collect(self.job("sim").job_id, SIMULATED_RAIL)
+        metrics = self.s.metrics()
+        self.assertEqual(metrics.actual_profit, "$100.00")
+        self.assertIn("SIMULATED", " ".join(metrics.caveats))
+
+    def test_the_margin_survives_a_restart(self):
+        import pathlib as _p
+        import tempfile as _t
+
+        with _t.TemporaryDirectory() as tmp:
+            path = str(_p.Path(tmp) / "solvent.db")
+            before = Solvent(path)
+            provision_capability(before, CSV_PROMOTION, owner_identity=OWNER)
+            self.s = before
+            job = self.job("real")
+            self.collect(job.job_id, REAL_RAIL, cents=10_000)
+            before.ledger.record_cost(job_id=job.job_id,
+                                      category=CostCategory.AI_API,
+                                      amount_cents=3_000,
+                                      source="PROVIDER_BILLING", note="c")
+            expected = before.metrics().actual_margin
+            before.store.close()
+            self.assertEqual(Solvent(path).metrics().actual_margin, expected)
