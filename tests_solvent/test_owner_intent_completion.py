@@ -396,8 +396,29 @@ class TheWebProcessStillCannotDoThis(unittest.TestCase):
         for module in (solvent.web.app, solvent.web.intents,
                        solvent.web.readmodel, solvent.web.server):
             source = pathlib.Path(module.__file__).read_text()
-            self.assertNotIn("OwnerChannel", source)
-            self.assertNotIn("SOLVENT_OWNER_KEY", source)
+            with self.subTest(module=module.__name__):
+                self.assertNotIn("OwnerChannel", source)
+
+    def test_the_web_package_never_reads_the_owner_key(self):
+        """*Reads*, not *mentions*.
+
+        The getting-started page has to tell the owner which variable to set, so
+        asserting the name is absent from the source flagged a page whose whole
+        job is naming it. What must not happen is the web process reading the
+        value, and that is what this checks — by resolving the variable name at
+        each environment read, the same way the duplicate-authority audit does.
+        """
+        from tests_solvent.test_no_duplicate_authorities import reads_environment
+
+        for name in ("app", "intents", "readmodel", "server", "auth",
+                     "render", "exposure"):
+            path = pathlib.Path(f"solvent/web/{name}.py")
+            for secret in ("SOLVENT_OWNER_KEY", "SOLVENT_STRIPE_SECRET",
+                           "SOLVENT_OWNER_PHONE"):
+                with self.subTest(module=name, secret=secret):
+                    self.assertFalse(
+                        reads_environment(path, secret),
+                        f"solvent/web/{name}.py reads {secret}")
 
     def test_the_intent_writer_cannot_mint_an_approval(self):
         with tempfile.TemporaryDirectory() as tmp:

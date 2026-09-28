@@ -13,6 +13,7 @@ supplied documentation all pass through ``esc``.
 from __future__ import annotations
 
 import json
+import pathlib
 import urllib.parse
 from dataclasses import dataclass, field
 
@@ -110,6 +111,13 @@ class ControlCentre:
             "/clients": self.clients,
             "/client": self.client_detail,
             "/files": self.files,
+            "/incidents": self.incidents,
+            "/incident": self.incident_detail,
+            "/diagnostics": self.diagnostics,
+            "/breakers": self.breakers,
+            "/notifications": self.notifications,
+            "/recommendations": self.recommendations,
+            "/wizard": self.wizard,
             "/sources": self.sources,
             "/skills": self.skills,
             "/skill": self.skill_detail,
@@ -487,6 +495,529 @@ class ControlCentre:
                   "own digest, so a corrected file does not inherit the passes "
                   "of the one it replaced.</p>",
                 "Files")
+
+    # ------------------------------------------------------------ resilience
+
+    def incidents(self, request: Request):
+        """§42. What has failed, whether it has failed before, and where it got to."""
+        status = request.query.get("status", "")
+        component = request.query.get("component", "")
+        fingerprint = request.query.get("fingerprint", "")
+        rows = self.read.incidents(status=status, component=component,
+                                   fingerprint=fingerprint)
+        summary = self.read.incident_components()
+        body = [[
+            _incident_pill(r.get("status", "")),
+            _severity_pill(r.get("severity", "")),
+            esc(r.get("component", "")),
+            esc(r.get("operation", ""))[:28],
+            (f'<code>{esc(r.get("fingerprint", "")[:10])}</code>'
+             if r.get("fingerprint") else "—"),
+            (esc(str(r.get("recurrence_count", 1)))
+             + ("×" if (r.get("recurrence_count") or 1) > 1 else "")),
+            esc(r.get("last_seen", ""))[:19],
+            link(f"/incident?id={urllib.parse.quote(r.get('id', ''))}", "open"),
+        ] for r in rows]
+        head = ("<h1>Incidents</h1>"
+                f'<p class="sub">{esc(str(len(rows)))} incident(s)'
+                + (f" filtered by {esc(status or component or fingerprint)}"
+                   if (status or component or fingerprint) else "")
+                + ". An incident is a failure Solvent recorded, not a message "
+                  "it printed.</p>")
+        if summary:
+            head += table(
+                ["component", "incidents", "still open"],
+                [[link(f"/incidents?component={urllib.parse.quote(r['component'])}",
+                       esc(r["component"])),
+                  esc(str(r["n"])),
+                  (pill(str(r["open"]), "warn") if r["open"] else pill("0", "ok"))]
+                 for r in summary], empty="")
+        return (head + table(
+            ["status", "severity", "component", "operation", "fingerprint",
+             "seen", "last", ""], body,
+            empty="Nothing has failed yet. An empty list here is the state of a "
+                  "system that has not yet had a bad day, not a system that is "
+                  "not watching."),
+                "Incidents")
+
+    def incident_detail(self, request: Request):
+        """§43. The twelve questions an owner actually asks, answered in order."""
+        incident_id = request.query.get("id", "")
+        row = self.read.incident(incident_id)
+        # ``one`` returns ``{}`` for no row, not ``None``. Checking ``is None``
+        # meant an unknown id rendered a complete, empty incident page — down
+        # to "this is a new failure class" — which is inventing an incident.
+        if not row:
+            return "<h1>Incident</h1><p class=\"sub\">No such incident.</p>", "Incident"
+        fingerprint = row.get("fingerprint", "")
+        related = self.read.related_incidents(fingerprint, exclude=incident_id)
+        lesson = self.read.incident_lesson(fingerprint)
+        frames = self.read.flight_frames(row.get("trace_id", "")) \
+            if row.get("trace_id") else []
+
+        answers = [
+            ("What happened?",
+             f"{esc(row.get('error_class', ''))} in "
+             f"{esc(row.get('component', ''))}"),
+            ("Where did it start?",
+             f"{esc(row.get('component', ''))} / {esc(row.get('operation', ''))}"),
+            ("What was Solvent doing?", esc(row.get("trigger", "")) or "—"),
+            ("What were the symptoms?", esc(row.get("symptoms", "")) or "—"),
+            ("What was affected?",
+             ", ".join(filter(None, [esc(row.get("job_id", "")),
+                                     esc(row.get("client_id", ""))])) or "nothing recorded"),
+            ("Did any external action become uncertain?",
+             esc(row.get("external_uncertainty", ""))
+             or "nothing recorded as uncertain"),
+            ("Last safe checkpoint", esc(row.get("checkpoint", "")) or "none recorded"),
+            ("What did Solvent do?", esc(row.get("recovery_action", "")) or "—"),
+            ("Did it recover?", esc(row.get("recovery_result", "")) or "—"),
+            ("What caused it?",
+             esc(row.get("root_cause", "")) or "not established yet"),
+            ("What fix was applied?", esc(row.get("fix", "")) or "none yet"),
+            ("How was the fix verified?",
+             esc(row.get("verification_ref", ""))
+             or "not verified — a fix is not proven by the symptom stopping"),
+            ("How will it be prevented?",
+             esc(row.get("prevention", "")) or "nothing recorded yet"),
+            ("Has this happened before?",
+             (f"yes — {len(related)} earlier incident(s) with this fingerprint"
+              if related else "no; this is a new failure class")),
+        ]
+        out = [f"<h1>Incident {esc(incident_id)[:20]}</h1>",
+               f'<p class="sub">{_incident_pill(row.get("status", ""))} '
+               f'{_severity_pill(row.get("severity", ""))} · first seen '
+               f'{esc(row.get("first_seen", ""))[:19]} · seen '
+               f'{esc(str(row.get("recurrence_count", 1)))} time(s)</p>',
+               table(["question", "answer"],
+                     [[esc(q), a] for q, a in answers], empty="")]
+        if row.get("owner_action"):
+            out.append('<div class="banner banner-warn">Owner action: '
+                       + esc(row["owner_action"]) + "</div>")
+        if lesson:
+            out.append("<h2>What was learned last time</h2>")
+            out.append(table(
+                ["", ""],
+                [["Root cause", esc(lesson.get("root_cause", ""))],
+                 ["Fix", esc(lesson.get("fix", ""))],
+                 ["Prevention", esc(lesson.get("prevention", ""))],
+                 ["Verified by", esc(lesson.get("verification_ref", ""))]],
+                empty=""))
+        out.append("<h2>Timeline</h2>")
+        out.append(table(["when", "stage", "detail", "by"],
+                         [[esc(e.get("ts", ""))[:19], esc(e.get("stage", "")),
+                           esc(e.get("detail", ""))[:120], esc(e.get("actor", ""))]
+                          for e in self.read.incident_timeline(incident_id)],
+                         empty="No timeline recorded."))
+        if related:
+            out.append("<h2>Earlier incidents of the same kind</h2>")
+            out.append(table(["when", "status", ""],
+                             [[esc(r.get("ts", ""))[:19],
+                               _incident_pill(r.get("status", "")),
+                               link(f"/incident?id={urllib.parse.quote(r['id'])}",
+                                    "open")] for r in related], empty=""))
+        out.append("<h2>What Solvent was doing</h2>")
+        out.append('<p class="sub">The flight recorder, sanitised. Secrets are '
+                   "removed as frames are written, not as they are shown.</p>")
+        out.append(table(["when", "component", "operation", "state", "checkpoint"],
+                         [[esc(f.get("ts", ""))[:19], esc(f.get("component", "")),
+                           esc(f.get("operation", "")), esc(f.get("state", "")),
+                           esc(f.get("checkpoint", ""))] for f in frames],
+                         empty="No flight frames were recorded for this incident."))
+        return "".join(out), "Incident"
+
+    def breakers(self, request: Request):
+        """§47. What is contained, why, and when it will be probed again."""
+        rows = self.read.breakers()
+        body = [[
+            esc(r.get("component", "")),
+            _breaker_pill(r.get("state", "")),
+            esc(str(r.get("failure_count", 0))),
+            esc(r.get("why", ""))[:60] or "—",
+            esc(r.get("opened_at", ""))[:19] or "—",
+            esc(r.get("canary_result", "")) or "—",
+        ] for r in rows]
+        return ("<h1>Circuit breakers</h1>"
+                '<p class="sub">A breaker contains a failing dependency. It does '
+                "not grant anything: nothing here can route around a block, "
+                "because choosing a different provider is a permission question "
+                "and containment cannot answer one.</p>"
+                + table(["component", "state", "failures", "why", "opened",
+                         "canary"], body,
+                        empty="No dependency has failed enough to be contained."),
+                "Circuit breakers")
+
+    def diagnostics(self, request: Request):
+        """§44. Plain English first, and no green light Solvent has not earned.
+
+        Computed here from the read-only projection rather than by running
+        :class:`solvent.diagnostics.Diagnostics`, which would need the
+        authorities this process deliberately does not hold. The rules are the
+        same ones and they are the point: a check that cannot be answered reads
+        UNKNOWN, and an unrecorded control reads UNSAFE.
+        """
+        findings = self._diagnostic_findings()
+        worst = max((f[1] for f in findings), key=_DIAG_RANK.get)
+        banner = ""
+        if worst in ("UNSAFE", "FAILED"):
+            banner = ('<div class="banner banner-bad">Something is wrong: '
+                      f"{esc(worst)}. The rows below say what.</div>")
+        elif worst in ("UNKNOWN", "OWNER_ACTION_REQUIRED"):
+            banner = ('<div class="banner banner-warn">Some things could not be '
+                      "confirmed, or are waiting on you. Unknown is not the "
+                      "same as fine.</div>")
+        return (banner + "<h1>Diagnostics</h1>"
+                '<p class="sub">Every check Solvent can make about itself. '
+                "A check that could not run reads UNKNOWN rather than passing, "
+                "and a control nobody recorded reads UNSAFE rather than safe."
+                "</p>"
+                + table(["check", "state", "what it means", "what to do"],
+                        [[esc(name), _diag_pill(state), esc(detail),
+                          esc(action) or "—"]
+                         for name, state, detail, action in findings],
+                        empty="No checks ran.")
+                + self._host_metrics(),
+                "Diagnostics")
+
+    def _diagnostic_findings(self) -> list:
+        """``(name, state, detail, owner_action)`` from the projection."""
+        read = self.read
+        out = []
+
+        # ``audit_chain_intact`` returns ``(ok, detail)``. Treating the tuple
+        # as a boolean made this row read HEALTHY on a tampered log, because a
+        # non-empty tuple is always truthy — the exact fake green this page
+        # exists to prevent, on the one check where it matters most.
+        intact, chain_detail = read.audit_chain_intact()
+        out.append(("Audit chain", "HEALTHY" if intact else "FAILED",
+                    chain_detail if intact
+                    else f"the hash chain does not verify ({chain_detail}); "
+                         "the record of what happened cannot be trusted",
+                    "" if intact else "stop work and investigate"))
+
+        posture = read.policy_value("network", "default_deny", default=None)
+        if posture is None:
+            out.append(("Network firewall", "UNSAFE",
+                        "nobody has recorded whether a default-deny firewall "
+                        "is applied on this host",
+                        "run deploy/firewall.sh --apply, then record it with "
+                        "`solvent setup firewall --default-deny`"))
+        else:
+            out.append(("Network firewall",
+                        "HEALTHY" if posture else "UNSAFE",
+                        "recorded as default-deny" if posture
+                        else "recorded as not default-deny",
+                        "" if posture else "apply a default-deny policy"))
+
+        simulation = read.policy_value("egress", "simulation_only", default=True)
+        allowlist = read.policy_value("egress", "allowlist", default=[]) or []
+        if simulation:
+            out.append(("Egress", "HEALTHY",
+                        f"simulation only; nothing leaves this machine "
+                        f"({len(allowlist)} destination(s) would be allowed)", ""))
+        elif not allowlist:
+            out.append(("Egress", "UNSAFE",
+                        "simulation is off and the allowlist is empty", ""))
+        else:
+            out.append(("Egress", "WARNING",
+                        f"live; {len(allowlist)} destination(s) allowed", ""))
+
+        capabilities = [c for c in read.capabilities() if c.get("proven")]
+        out.append(("Capabilities",
+                    "HEALTHY" if capabilities else "OWNER_ACTION_REQUIRED",
+                    f"{len(capabilities)} proven" if capabilities
+                    else "nothing is registered as proven, so no work can be "
+                         "delivered",
+                    "" if capabilities else "run `solvent setup capability`"))
+
+        open_incidents = read.incidents(open_only=True)
+        owner_incidents = [i for i in open_incidents
+                           if i.get("status") == "OWNER_ACTION_REQUIRED"]
+        if owner_incidents:
+            state, detail = "OWNER_ACTION_REQUIRED", (
+                f"{len(owner_incidents)} incident(s) need you")
+        elif open_incidents:
+            state, detail = "DEGRADED", f"{len(open_incidents)} open incident(s)"
+        else:
+            state, detail = "HEALTHY", "no open incidents"
+        out.append(("Incidents", state, detail,
+                    "read them on the Incidents page" if owner_incidents else ""))
+
+        open_breakers = [b for b in read.breakers() if b.get("state") != "CLOSED"]
+        out.append(("Circuit breakers",
+                    "DEGRADED" if open_breakers else "HEALTHY",
+                    ("contained: "
+                     + ", ".join(sorted(b["component"] for b in open_breakers)))
+                    if open_breakers else "all closed", ""))
+
+        settings = read.notification_settings()
+        if not settings["owner_phone_mask"]:
+            out.append(("Notifications", "OWNER_ACTION_REQUIRED",
+                        "no owner phone recorded; Solvent cannot reach you away "
+                        "from this website",
+                        "run `solvent setup notifications`"))
+        elif not settings["sms_provider"]:
+            out.append(("Notifications", "DEGRADED",
+                        "a phone is recorded but no SMS provider is configured, "
+                        "so nothing can be sent", "configure an SMS provider"))
+        else:
+            out.append(("Notifications", "HEALTHY",
+                        f"SMS via {settings['sms_provider']}", ""))
+
+        failed = [n for n in read.notifications(state="FAILED")]
+        if failed:
+            out.append(("Notification delivery", "FAILED",
+                        f"{len(failed)} notification(s) could not be delivered",
+                        "check the Notifications page"))
+
+        setup = read.owner_setup()
+        out.append(("Owner key",
+                    "HEALTHY" if setup.get("owner_key") else "OWNER_ACTION_REQUIRED",
+                    "configured" if setup.get("owner_key")
+                    else "no signing key, so no consequential action can be "
+                         "approved",
+                    "" if setup.get("owner_key")
+                    else "generate one and set SOLVENT_OWNER_KEY"))
+        return out
+
+    def _host_metrics(self) -> str:
+        """§8. Numbers, with no opinion attached.
+
+        What this process can measure from where it stands: it reads a file and
+        holds no authorities, so it reports the database it can see and says
+        nothing about a runtime it cannot.
+        """
+        import shutil
+
+        rows = []
+        try:
+            path = pathlib.Path(self.read.path)
+            total = 0
+            for suffix in ("", "-wal", "-shm"):
+                candidate = pathlib.Path(str(path) + suffix)
+                if candidate.exists():
+                    total += candidate.stat().st_size
+            rows.append(["Database size", f"{total:,} bytes (including the "
+                                          "write-ahead log)"])
+            usage = shutil.disk_usage(path.parent)
+            rows.append(["Disk", f"{round(100 * usage.used / usage.total, 1)}% "
+                                 f"used, {usage.free / (1024 ** 3):.2f} GB free"])
+        except OSError as exc:
+            rows.append(["Storage", f"could not be measured: {exc}"])
+        rows.append(["Audit events", f"{len(self.read.audit(limit=10 ** 9)):,}"])
+        rows.append(["Jobs", f"{sum(self.read.job_counts().values()):,}"])
+        return ("<h2>Host and storage</h2>"
+                '<p class="sub">Measured from this process, which reads the '
+                "database file and holds no authorities. Runtime uptime and "
+                "memory belong to the service process and are reported by "
+                "`solvent health`.</p>"
+                + table(["measure", "value"],
+                        [[esc(a), esc(b)] for a, b in rows], empty=""))
+
+    def notifications(self, request: Request):
+        """§45. What was sent, what got through, and what is still unanswered."""
+        settings = self.read.notification_settings()
+        rows = self.read.notifications()
+        unresolved = self.read.unresolved_notifications()
+        configured = [
+            ("Owner phone", esc(settings["owner_phone_mask"])
+             or "not configured — Solvent cannot reach you away from here"),
+            ("SMS provider", esc(settings["sms_provider"]) or "not configured"),
+            ("Voice provider", esc(settings["voice_provider"]) or "not configured"),
+            ("Escalate after",
+             f"{esc(str(settings['escalate_after_seconds']))} seconds without "
+             "an acknowledgement"),
+        ]
+        banner = ""
+        if unresolved:
+            banner = ('<div class="banner banner-warn">'
+                      f"{len(unresolved)} notification(s) unresolved.</div>")
+        return (banner + "<h1>Notifications</h1>"
+                '<p class="sub">Solvent tells you what happened and where to '
+                "look. It never sends a key, client data or figures, because a "
+                "text is read off a lock screen. Receiving one approves "
+                "nothing.</p>"
+                + table(["setting", "value"],
+                        [[esc(name), value] for name, value in configured],
+                        empty="")
+                + "<h2>Recent</h2>"
+                + table(["when", "severity", "event", "state", "channels",
+                         "detail"],
+                        [[esc(r.get("ts", ""))[:19],
+                          _severity_pill(r.get("severity", "")),
+                          esc(r.get("event", "")),
+                          _delivery_pill(r.get("state", "")),
+                          esc(r.get("channels", "")) or "—",
+                          esc(r.get("detail", ""))[:60] or "—"]
+                         for r in rows],
+                        empty="Nothing has been sent."),
+                "Notifications")
+
+    def recommendations(self, request: Request):
+        """§7. What Solvent suggests, and what it has no power to do about it.
+
+        A recommendation carries zero authority. Each row says which of three
+        things it is, because the difference is the only thing that matters:
+        something already handled under existing policy, something waiting on
+        the owner, or a suggestion nobody has acted on.
+        """
+        rows = []
+
+        for proposal in self.read.capability_proposals():
+            if proposal.get("kind") != "PROPOSED":
+                continue
+            rows.append(("Skill", f"{proposal.get('name', '')} was proposed",
+                         esc(proposal.get("why", ""))[:80],
+                         "OWNER DECISION REQUIRED"))
+        for project in self.read.skill_projects():
+            if project.get("stage") == "AWAITING_OWNER":
+                rows.append(("Skill", f"{project.get('skill', '')} is certified "
+                                      "and waiting", "the Lab finished it",
+                             "OWNER DECISION REQUIRED"))
+        for breaker in self.read.breakers():
+            if breaker.get("state") != "CLOSED":
+                rows.append(("Resilience",
+                             f"{breaker.get('component', '')} is contained",
+                             "it failed repeatedly and was contained "
+                             "automatically",
+                             "AUTOMATICALLY HANDLED"))
+        for incident in self.read.incidents(open_only=True):
+            if incident.get("status") == "OWNER_ACTION_REQUIRED":
+                rows.append(("Resilience",
+                             f"incident in {incident.get('component', '')}",
+                             esc(incident.get("owner_action", ""))[:80],
+                             "OWNER DECISION REQUIRED"))
+            elif (incident.get("recurrence_count") or 1) >= 3:
+                rows.append(("Resilience",
+                             f"{incident.get('component', '')} keeps failing",
+                             f"seen {incident.get('recurrence_count')} times; "
+                             "a root cause is worth establishing",
+                             "RECOMMENDATION"))
+        posture = self.read.policy_value("network", "default_deny", default=None)
+        if not posture:
+            rows.append(("Security", "record the host firewall posture",
+                         "unrecorded reads as unsafe, and it is the only "
+                         "honest reading", "OWNER DECISION REQUIRED"))
+        if not self.read.notification_settings()["owner_phone_mask"]:
+            rows.append(("Alerting", "configure owner notifications",
+                         "without a number Solvent cannot reach you away from "
+                         "this website", "RECOMMENDATION"))
+        for row in self.read.relay_queue():
+            rows.append(("Clients", f"a reply is drafted for {row.get('client_id','')}",
+                         "it needs a person to send it", "OWNER DECISION REQUIRED"))
+
+        return ("<h1>Recommendations</h1>"
+                '<p class="sub">Suggestions, and nothing more. A recommendation '
+                "has no authority: it cannot promote a skill, change a rule, "
+                "spend anything or send anything. Each row says whether it is "
+                "already handled, waiting on you, or just a suggestion.</p>"
+                + table(["area", "what", "why", "standing"],
+                        [[esc(area), esc(what), esc(why), _standing_pill(standing)]
+                         for area, what, why, standing in rows],
+                        empty="Nothing to suggest. Solvent is not inventing work "
+                              "to look busy."),
+                "Recommendations")
+
+    def wizard(self, request: Request):
+        """§77. Getting started, for somebody who does not write software.
+
+        Ordered by what blocks what, not by what is easy. Each step says what
+        it is for, whether it is done, and — the part that matters for a first
+        supervised job — whether it is needed *yet*. Sending an owner to
+        configure a payment rail before they have delivered anything is how a
+        setup guide stops being followed.
+
+        No secret is displayed, and no step asks for one here: every value the
+        owner provides goes in at a terminal.
+        """
+        DONE, ACTION, OPTIONAL = "DONE", "ACTION REQUIRED", "OPTIONAL"
+        NOT_YET, BLOCKED = "NOT REQUIRED YET", "BLOCKED"
+
+        setup = self.read.owner_setup()
+        settings = self.read.notification_settings()
+        proven = [c for c in self.read.capabilities() if c.get("proven")]
+        rail = self.read.policy_value("payment", "operational_status", default="")
+        posture = self.read.policy_value("network", "default_deny", default=None)
+        models = self.read.policy_value("models", "approved", default={}) or {}
+        contracting = self.read.policy_value("contracting", default={}) or {}
+        sources = self.read.work_sources()
+
+        steps = [
+            ("1. Owner signing key",
+             "Nothing consequential can be approved without it. It never goes "
+             "in this website.",
+             DONE if setup.get("owner_key") else ACTION,
+             "Generate a long random value and set SOLVENT_OWNER_KEY in the "
+             "runtime's environment file."),
+            ("2. Who you contract as",
+             "Your legal name and contact address, for agreements and invoices. "
+             "Solvent will never invent these.",
+             DONE if contracting.get("structure") else ACTION,
+             "Run `solvent setup contracting` at the terminal."),
+            ("3. A cleared AI model",
+             "Exactly which model artifact is allowed, by digest.",
+             DONE if models else ACTION,
+             "Run `solvent setup model`."),
+            ("4. A proven capability",
+             "What Solvent is allowed to sell. Until this is recorded, work is "
+             "done and refused at the delivery gate.",
+             DONE if proven else ACTION,
+             "Run `solvent setup capability`."),
+            ("5. Host firewall",
+             "Default-deny, recorded. Unrecorded reads as unsafe, because a "
+             "script in a repository is not a firewall on a host.",
+             DONE if posture else ACTION,
+             "Run deploy/firewall.sh --apply, then `solvent setup firewall "
+             "--default-deny`."),
+            ("6. Control-centre password",
+             "How you sign in here. Stored as a hash, never as a password.",
+             DONE,
+             "Already set, or this page would not be visible."),
+            ("7. Owner notifications",
+             "So Solvent can reach you when you are not looking at this page.",
+             DONE if settings["owner_phone_mask"] else OPTIONAL,
+             "Run `solvent setup notifications`. Your number is stored as a "
+             "mask here and kept in the runtime's environment."),
+            ("8. First supervised job",
+             "One real job, hand-fed, watched from start to finish.",
+             NOT_YET if not proven else ACTION,
+             "With steps 1-5 done, feed one CSV job and watch it through."),
+            ("9. Payment rail",
+             "How money is collected and verified. Not needed for a first "
+             "supervised job that collects nothing.",
+             DONE if rail == "LIVE_VERIFIED" else NOT_YET,
+             "Run `solvent setup stripe` when you are ready to charge."),
+            ("10. Work sources",
+             "Where jobs come from automatically. Not needed while work is "
+             "hand-fed, and deliberately last.",
+             DONE if sources else NOT_YET,
+             "Register one only after a supervised job has worked."),
+        ]
+
+        first_trial = [s for s in steps[:5] if s[2] == ACTION]
+        if first_trial:
+            banner = ('<div class="banner banner-warn">'
+                      f"{len(first_trial)} step(s) stand between here and a "
+                      "first supervised job.</div>")
+        else:
+            banner = ('<div class="banner banner-ok">Everything a first '
+                      "supervised job needs is in place.</div>")
+
+        return (banner + "<h1>Getting started</h1>"
+                '<p class="sub">In the order things depend on each other. '
+                "Nothing here asks you to type a secret into this website: "
+                "every value you provide goes in at a terminal, and this page "
+                "only ever reports whether it is there.</p>"
+                + table(["step", "what it is for", "state", "how"],
+                        [[esc(name), esc(purpose), _step_pill(state), esc(how)]
+                         for name, purpose, state, how in steps],
+                        empty="")
+                + '<p class="sub">A first supervised job needs steps 1-5. '
+                  "Steps 9 and 10 are for later and are marked NOT REQUIRED "
+                  "YET rather than missing, because being sent to configure a "
+                  "payment rail before delivering anything is how a setup "
+                  "guide stops being followed.</p>",
+                "Getting started")
 
     def sources(self, request: Request):
         rows = self.read.work_sources()
@@ -998,6 +1529,63 @@ def _tier_pill(tier: str) -> str:
     if tier.startswith("T1"):
         return pill(tier, "warn")
     return pill(tier, "ok")
+
+
+#: Diagnostic severity order, mirroring solvent.diagnostics. UNKNOWN sits
+#: above HEALTHY deliberately: it is not good news.
+_DIAG_RANK = {"HEALTHY": 0, "DEGRADED": 1, "WARNING": 2, "UNKNOWN": 3,
+              "OWNER_ACTION_REQUIRED": 4, "FAILED": 5, "UNSAFE": 6}
+
+
+def _diag_pill(state: str) -> str:
+    tone = {"HEALTHY": "ok", "DEGRADED": "warn", "WARNING": "warn",
+            "UNKNOWN": "warn", "OWNER_ACTION_REQUIRED": "info",
+            "FAILED": "bad", "UNSAFE": "bad"}.get(state, "neutral")
+    return pill(state.replace("_", " ").lower(), tone)
+
+
+def _incident_pill(status: str) -> str:
+    tone = {"VERIFIED": "ok", "FIXED": "ok", "RECOVERED": "ok",
+            "DETECTED": "warn", "CONTAINED": "warn", "RECOVERING": "warn",
+            "ROOT_CAUSE_PENDING": "warn", "FIX_PENDING": "warn",
+            "RECURRED": "bad", "OWNER_ACTION_REQUIRED": "bad"}.get(status,
+                                                                   "neutral")
+    return pill(status.replace("_", " ").lower(), tone)
+
+
+def _severity_pill(severity: str) -> str:
+    tone = {"INFO": "neutral", "DEGRADED": "warn", "SERIOUS": "bad",
+            "CRITICAL": "bad", "ACTION_REQUIRED": "info",
+            "URGENT": "bad"}.get(severity, "neutral")
+    return pill(severity.replace("_", " ").lower(), tone)
+
+
+def _breaker_pill(state: str) -> str:
+    return pill(state.replace("_", "-").lower(),
+                {"CLOSED": "ok", "HALF_OPEN": "warn", "OPEN": "bad"}.get(
+                    state, "neutral"))
+
+
+def _delivery_pill(state: str) -> str:
+    """DELIVERED and SENT read differently on purpose: most providers confirm
+    only that they accepted the request."""
+    tone = {"DELIVERED": "ok", "ACKNOWLEDGED": "ok", "SENT": "info",
+            "QUEUED": "neutral", "ESCALATED": "warn", "EXPIRED": "neutral",
+            "FAILED": "bad"}.get(state, "neutral")
+    return pill(state.lower(), tone)
+
+
+def _standing_pill(standing: str) -> str:
+    tone = {"AUTOMATICALLY HANDLED": "ok", "OWNER DECISION REQUIRED": "warn",
+            "RECOMMENDATION": "info"}.get(standing, "neutral")
+    return pill(standing.lower(), tone)
+
+
+def _step_pill(state: str) -> str:
+    tone = {"DONE": "ok", "ACTION REQUIRED": "bad", "OPTIONAL": "info",
+            "NOT REQUIRED YET": "neutral", "BLOCKED": "bad"}.get(state,
+                                                                 "neutral")
+    return pill(state.lower(), tone)
 
 
 def _plain_event(event: str) -> str:

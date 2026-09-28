@@ -160,6 +160,86 @@ class ReadModel:
         passed, failed = counts.get("PASS", 0), counts.get("FAIL", 0)
         return {"passed": passed, "failed": failed, "total": passed + failed}
 
+    # ------------------------------------------------------------ resilience
+    def incidents(self, *, status: str = "", component: str = "",
+                  fingerprint: str = "", open_only: bool = False) -> list[dict]:
+        sql, params, clauses = "SELECT * FROM incidents", [], []
+        for column, value in (("status", status), ("component", component),
+                              ("fingerprint", fingerprint)):
+            if value:
+                clauses.append(f"{column} = ?")
+                params.append(value)
+        if open_only:
+            clauses.append("status NOT IN ('VERIFIED', 'FIXED')")
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        return self.rows(sql + " ORDER BY ts DESC", tuple(params))
+
+    def incident(self, incident_id: str) -> dict | None:
+        return self.one("SELECT * FROM incidents WHERE id = ?", (incident_id,))
+
+    def incident_timeline(self, incident_id: str) -> list[dict]:
+        return self.rows(
+            "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY ts, id",
+            (incident_id,))
+
+    def related_incidents(self, fingerprint: str, exclude: str = "") -> list[dict]:
+        return [r for r in self.rows(
+            "SELECT * FROM incidents WHERE fingerprint = ? ORDER BY ts",
+            (fingerprint,)) if r["id"] != exclude]
+
+    def incident_lesson(self, fingerprint: str) -> dict | None:
+        return self.one(
+            "SELECT * FROM incident_lessons WHERE fingerprint = ? "
+            "ORDER BY ts DESC LIMIT 1", (fingerprint,))
+
+    def flight_frames(self, trace_id: str) -> list[dict]:
+        return self.rows(
+            "SELECT * FROM flight_frames WHERE trace_id = ? ORDER BY ts, id",
+            (trace_id,))
+
+    def breakers(self) -> list[dict]:
+        return self.rows("SELECT * FROM circuit_breakers ORDER BY component")
+
+    def incident_components(self) -> list[dict]:
+        return self.rows(
+            "SELECT component, COUNT(*) AS n, "
+            "SUM(CASE WHEN status NOT IN ('VERIFIED','FIXED') THEN 1 ELSE 0 END) "
+            "AS open FROM incidents GROUP BY component ORDER BY n DESC")
+
+    # --------------------------------------------------------- notifications
+    def notifications(self, *, state: str = "", severity: str = "") -> list[dict]:
+        sql, params, clauses = "SELECT * FROM notifications", [], []
+        for column, value in (("state", state), ("severity", severity)):
+            if value:
+                clauses.append(f"{column} = ?")
+                params.append(value)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        return self.rows(sql + " ORDER BY ts DESC", tuple(params))
+
+    def unresolved_notifications(self) -> list[dict]:
+        return self.rows(
+            "SELECT * FROM notifications WHERE state NOT IN "
+            "('ACKNOWLEDGED', 'EXPIRED') ORDER BY ts DESC")
+
+    def notification_settings(self) -> dict:
+        """What is configured, as the website is allowed to see it.
+
+        The phone number is a mask. The full value lives in the runtime's
+        environment and never reaches this process, which reads a file.
+        """
+        return {
+            "owner_phone_mask": self.policy_value("notifications",
+                                                  "owner_phone_mask", default=""),
+            "sms_provider": self.policy_value("notifications", "sms_provider",
+                                              default=""),
+            "voice_provider": self.policy_value("notifications",
+                                                "voice_provider", default=""),
+            "escalate_after_seconds": self.policy_value(
+                "notifications", "escalate_after_seconds", default=900),
+        }
+
     def lessons(self, *, kind: str = "") -> list[dict]:
         """What Solvent has concluded, newest first, with what it concluded it from."""
         sql = "SELECT * FROM memory_facts"

@@ -78,10 +78,16 @@ NAV = (
     ("/approvals", "Approvals"),
     ("/money", "Money"),
     ("/model", "AI model"),
+    ("/incidents", "Incidents"),
+    ("/diagnostics", "Diagnostics"),
+    ("/breakers", "Circuit breakers"),
+    ("/notifications", "Notifications"),
+    ("/recommendations", "Recommendations"),
     ("/security", "Security"),
     ("/audit", "Audit"),
     ("/health", "System health"),
     ("/setup", "Owner setup"),
+    ("/wizard", "Getting started"),
 )
 
 STYLE = """
