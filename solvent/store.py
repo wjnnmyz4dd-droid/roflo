@@ -56,6 +56,10 @@ APPEND_ONLY = (
     # A proposal and the owner's answer to it are history. Editing either would
     # let a denial become an approval with nothing to show for the change.
     "capability_proposals",
+    # An incident's timeline and its verified lessons are the record of what
+    # went wrong and what was done about it. An editable incident history is
+    # how "this has never happened before" stays true.
+    "incident_events", "incident_lessons",
     # A verifier's trial record and the certification decision from it are
     # history. A verifier that failed must stay failed on the record even after
     # it is fixed and re-certified, or a revocation could be edited away.
@@ -101,6 +105,14 @@ TABLE_OWNER = {
     # a skill's development and nothing else. It cannot write policy, the
     # ledger, the audit chain, or the capability registry -- every decision that
     # matters still belongs to the authority that already owned it.
+    # Resilience remembers failure and contains it. It owns no decision: it
+    # cannot promote a capability, change a rule, authorise spending or permit
+    # an external effect. Diagnosis is not permission.
+    "incidents": "resilience",
+    "incident_events": "resilience",
+    "incident_lessons": "resilience",
+    "flight_frames": "resilience",
+    "circuit_breakers": "resilience",
     "skill_projects": "skillslab",
     "skill_project_events": "skillslab",
     "skill_evidence": "skillslab",
@@ -198,6 +210,46 @@ CREATE TABLE IF NOT EXISTS job_clarifications (
   status TEXT NOT NULL DEFAULT 'OPEN', answer TEXT NOT NULL DEFAULT '',
   answered_by TEXT NOT NULL DEFAULT '', answered_at TEXT NOT NULL DEFAULT '',
   supersedes TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS incidents (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, first_seen TEXT NOT NULL,
+  last_seen TEXT NOT NULL, component TEXT NOT NULL, operation TEXT NOT NULL,
+  error_class TEXT NOT NULL, fingerprint TEXT NOT NULL, severity TEXT NOT NULL,
+  status TEXT NOT NULL, job_id TEXT NOT NULL DEFAULT '',
+  client_id TEXT NOT NULL DEFAULT '', trigger TEXT NOT NULL DEFAULT '',
+  symptoms TEXT NOT NULL DEFAULT '', checkpoint TEXT NOT NULL DEFAULT '',
+  external_uncertainty TEXT NOT NULL DEFAULT '',
+  trace_id TEXT NOT NULL DEFAULT '', detected_by TEXT NOT NULL DEFAULT '',
+  recurrence_count INTEGER NOT NULL DEFAULT 1,
+  related_to TEXT NOT NULL DEFAULT '', root_cause TEXT NOT NULL DEFAULT '',
+  fix TEXT NOT NULL DEFAULT '', prevention TEXT NOT NULL DEFAULT '',
+  verification_ref TEXT NOT NULL DEFAULT '',
+  recovery_action TEXT NOT NULL DEFAULT '',
+  recovery_result TEXT NOT NULL DEFAULT '',
+  owner_action TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS incident_events (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, incident_id TEXT NOT NULL,
+  stage TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS incident_lessons (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, fingerprint TEXT NOT NULL,
+  root_cause TEXT NOT NULL, fix TEXT NOT NULL,
+  prevention TEXT NOT NULL DEFAULT '', verification_ref TEXT NOT NULL,
+  incident_id TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS flight_frames (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, trace_id TEXT NOT NULL,
+  component TEXT NOT NULL, operation TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT '', decision TEXT NOT NULL DEFAULT '',
+  checkpoint TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS circuit_breakers (
+  component TEXT PRIMARY KEY, state TEXT NOT NULL, failure_count INTEGER NOT NULL,
+  opened_at TEXT NOT NULL DEFAULT '', last_failure TEXT NOT NULL DEFAULT '',
+  next_probe REAL NOT NULL DEFAULT 0, canary_result TEXT NOT NULL DEFAULT '',
+  why TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL, role TEXT NOT NULL,

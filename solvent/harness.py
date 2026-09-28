@@ -36,6 +36,7 @@ from .owner import OwnerChannel
 from .readiness import assert_may_attempt_first_real_job, first_revenue_readiness
 from .skillslab import SkillsLab
 from .qualification import Qualification, Verdict
+from .resilience import Resilience
 from .gate import ActionGate, approval
 from .governor import FinancialGovernor
 from .ledger import SIMULATED_PREFIX, Ledger
@@ -160,6 +161,10 @@ class Solvent:
         # before recording what the owner decided.
         self.skillslab = SkillsLab(self.store, self.audit, self.capability,
                                    policy=self.policy)
+        # Resilience remembers failure. Given Policy to read thresholds and to
+        # ask who counts as an owner, and nothing to write with: an incident
+        # must never be able to change a rule.
+        self.resilience = Resilience(self.store, self.audit, policy=self.policy)
         self.memory = BusinessMemory(self.store, self.audit)
         self.discovery = Discovery(self.store, self.audit, self.policy, self.gate)
         self.feedback = ClientFeedback(self.store, self.audit, self.orchestrator)
