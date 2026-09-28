@@ -376,3 +376,83 @@ class AcknowledgingDoesNotEraseADeliveryFailure(Base):
                                "sms_provider": "example"}},
             OWNER, "configured, and still not working")
         self.assertEqual(Diagnostics(self.s).notifications().state, DEGRADED)
+
+
+class TheOwnerSetupCommand(unittest.TestCase):
+    """`solvent setup notifications`, which had no test at all.
+
+    Found by K-LEAN's test-coverage question at function granularity. That
+    probe is unsound for most of this codebase — argparse, HTTP routes and the
+    check registry all dispatch by name, so it reports hundreds of functions as
+    uncalled that are exercised every run — but this one was a true positive: a
+    command added with the notification subsystem and never invoked by a test.
+
+    It is worth testing for what it does *not* do. It writes a mask and the
+    provider names, and neither the number nor any credential reaches the
+    database, the audit log or the terminal.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.db = str(pathlib.Path(self.dir.name) / "solvent.db")
+        previous = os.environ.get(notify.PHONE_ENV)
+        self.addCleanup(
+            lambda: (os.environ.__setitem__(notify.PHONE_ENV, previous)
+                     if previous is not None
+                     else os.environ.pop(notify.PHONE_ENV, None)))
+
+    def run_cli(self, *argv):
+        from solvent.cli import main
+
+        return main(["setup", "notifications", "--db", self.db, *argv])
+
+    def test_it_records_a_mask_and_never_the_number(self):
+        os.environ[notify.PHONE_ENV] = "+15558675309"
+        self.assertEqual(self.run_cli("--sms-provider", "example-sms"), 0)
+        solvent = Solvent(self.db)
+        settings = notify.configuration(solvent.policy)
+        self.assertEqual(settings["owner_phone"], "***-***-5309")
+        self.assertEqual(settings["sms_provider"], "example-sms")
+
+    def test_the_number_reaches_neither_policy_nor_the_audit_log(self):
+        import json
+
+        os.environ[notify.PHONE_ENV] = "+15558675309"
+        self.run_cli("--sms-provider", "example-sms")
+        solvent = Solvent(self.db)
+        self.assertNotIn("5558675309", json.dumps(solvent.policy.doc, default=str))
+        self.assertNotIn("8675309", json.dumps(
+            [dict(e) for e in solvent.audit.events()], default=str))
+
+    def test_it_refuses_when_no_number_is_in_the_environment(self):
+        """And says where to put it, rather than inviting it on the command
+        line — a command line ends up in shell history."""
+        os.environ.pop(notify.PHONE_ENV, None)
+        self.assertEqual(self.run_cli("--sms-provider", "example-sms"), 2)
+        self.assertEqual(
+            notify.configuration(Solvent(self.db).policy)["owner_phone"], "")
+
+    def test_it_refuses_a_value_that_is_not_a_phone_number(self):
+        os.environ[notify.PHONE_ENV] = "nope"
+        self.assertEqual(self.run_cli(), 2)
+
+    def test_the_escalation_interval_is_recorded_in_seconds(self):
+        os.environ[notify.PHONE_ENV] = "+15558675309"
+        self.run_cli("--sms-provider", "example-sms",
+                     "--escalate-after-minutes", "5")
+        self.assertEqual(
+            notify.configuration(Solvent(self.db).policy)["escalate_after_seconds"],
+            300)
+
+    def test_it_takes_no_credential_argument_at_all(self):
+        """A credential passed on a command line is a credential in history."""
+        from solvent.cli import build_parser
+
+        actions = build_parser()._subparsers._group_actions[0].choices
+        notifications = actions["setup"]._subparsers._group_actions[0] \
+            .choices["notifications"]
+        flags = {o for action in notifications._actions for o in action.option_strings}
+        for forbidden in ("--phone", "--number", "--credential", "--api-key",
+                          "--token", "--secret"):
+            self.assertNotIn(forbidden, flags)
