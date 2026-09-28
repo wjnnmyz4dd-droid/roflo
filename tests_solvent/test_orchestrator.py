@@ -4,6 +4,7 @@ import unittest
 
 from solvent.capability import Assessment
 from solvent.errors import FailClosed
+from solvent.harness import CSV_PROMOTION, provision_capability
 from solvent.orchestrator import JobOrchestrator
 from solvent.types import (
     Requirement, RequirementSource,
@@ -25,6 +26,21 @@ def nonconforming(job_id="J"):
                       conformance=Conformance.UNKNOWN, assessor="extractor")
 
 
+class _Bundle:
+    """The two attributes :func:`provision_capability` needs from a Rig.
+
+    A named shim rather than a mock: it makes it obvious that provisioning
+    touches the capability registry and nothing else, and it fails loudly if
+    that ever stops being true.
+    """
+
+    def __init__(self, rig):
+        self.capability = rig.capability
+        self.audit = rig.audit
+        self.policy = rig.policy
+        self.store = rig.store
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.rig = Rig()
@@ -32,6 +48,11 @@ class Base(unittest.TestCase):
         self.rig.relax_caps()
         self.orch = JobOrchestrator(self.rig.store, self.rig.audit, self.rig.policy,
                                     self.rig.governor, self.rig.ledger)
+        # Delivery asks the registry whether the capability that produced a file
+        # may reach a client. Without this the gate refuses, which is correct
+        # and is not what these tests are about.
+        self.orch.permit_capabilities_via(self.rig.capability)
+        provision_capability(_Bundle(self.rig), CSV_PROMOTION, owner_identity=OWNER)
 
     def make_job(self, dollars="600", state="CA"):
         return self.orch.intake(
@@ -136,7 +157,11 @@ class VerificationGate(Base):
                                     path=str(work / "source.csv"))
         artifact = self.orch.register_artifact(
             job_id=job_id, role="DELIVERABLE", path=str(work / "out.csv"),
-            produced_by="worker")
+            produced_by="worker",
+            # Stamped the way the pipeline stamps it. The gate asks which
+            # capability produced the file, and an unstamped artifact is one
+            # whose provenance nothing can establish.
+            capability_version=CSV_PROMOTION.version)
         return artifact.digest
 
     def _to_verifying(self, dollars="600"):

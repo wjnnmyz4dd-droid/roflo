@@ -15,6 +15,8 @@ import pathlib
 import tempfile
 import unittest
 
+from tests_solvent.test_report_capability import report_under_test
+
 from solvent import clientrelations as cr
 from solvent.errors import FailClosed
 from solvent.feedback import Classification, ROUTING
@@ -186,7 +188,7 @@ class ClientTextIsUntrustedInput(unittest.TestCase):
         report = run_csv_job(source=str(source), requirements=STANDARD,
                              workdir=str(directory), solvent=self.s,
                              client_id="client:inject", title="inject",
-                             capability="report-builder")
+                             capability="report-builder", provision=report_under_test())
         self.assertTrue(report.delivered, report.escalated)
         before = self.s.policy.version
         self.s.relations.handle(job_id=report.job_id,
@@ -250,7 +252,7 @@ class FalseSelfBlameAndFalseClientBlame(unittest.TestCase):
         source, work = report_workspace()
         report = run_csv_job(source=source, requirements=STANDARD, workdir=work,
                              solvent=self.s, client_id="client:rep",
-                             title="rep", capability="report-builder")
+                             title="rep", capability="report-builder", provision=report_under_test())
         self.assertTrue(report.delivered, report.escalated)
         handled = self.s.relations.handle(
             job_id=report.job_id, body="Could you add a commentary section?",
@@ -262,7 +264,7 @@ class FalseSelfBlameAndFalseClientBlame(unittest.TestCase):
         source, work = report_workspace()
         report = run_csv_job(source=source, requirements=STANDARD, workdir=work,
                              solvent=self.s, client_id="client:rep2",
-                             title="rep2", capability="report-builder")
+                             title="rep2", capability="report-builder", provision=report_under_test())
         path = pathlib.Path(
             self.s.orchestrator.current_deliverable(report.job_id).path)
         path.write_text(path.read_text(encoding="utf-8")
@@ -293,7 +295,7 @@ class FalseSelfBlameAndFalseClientBlame(unittest.TestCase):
         rep_report = run_csv_job(source=rep_source, requirements=STANDARD,
                                  workdir=rep_work, solvent=self.s,
                                  client_id="client:b", title="b",
-                                 capability="report-builder")
+                                 capability="report-builder", provision=report_under_test())
         for report, source in ((csv_report, csv_source), (rep_report, rep_source)):
             handled = self.s.relations.handle(
                 job_id=report.job_id, body="Could you also sort it differently?",
@@ -669,11 +671,19 @@ class MemoryIsNotPoisonedByClients(unittest.TestCase):
                                 evidence_ref="", tier=VerificationTier.T0_SELF_REPORT)
 
     def test_a_positive_review_does_not_make_a_capability_proven(self):
+        """Praise is not evidence, so it must move nothing in the registry.
+
+        Asserted as *no change*: the deployment provisions csv-cleanup before
+        any job runs, and the property under test is that a delighted client
+        cannot add to that."""
+        before = {(c.name, c.version) for c in self.s.capability.capabilities()
+                  if c.proven}
         self.s.relations.handle(job_id=self.report.job_id,
                                 body="Five stars, flawless, best service ever.",
                                 source=self.source)
-        self.assertEqual(
-            [c.name for c in self.s.capability.capabilities() if c.proven], [])
+        self.assertEqual({(c.name, c.version)
+                          for c in self.s.capability.capabilities() if c.proven},
+                         before)
 
 
 class CapabilityGrowthRouting(unittest.TestCase):

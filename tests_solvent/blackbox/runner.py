@@ -32,6 +32,34 @@ class Result:
         return self.solvent_claimed and not self.outcome.acceptable
 
 
+def _under_evaluation(name: str):
+    """The capability this scenario exercises, cleared for delivery.
+
+    A certification run measures whether a capability does correct work. That
+    question is independent of whether the owner has cleared it for sale, and
+    conflating them makes the measurement impossible: delivery asks the registry
+    for permission, permission comes from the owner's promotion, and the
+    promotion needs the evidence this run exists to gather.
+
+    So each scenario clears its own capability inside its own throwaway Solvent.
+    Registered with no proposal behind it, which the registry treats as the
+    owner's own judgement rather than as something Solvent must grade — the
+    fixture floor is there to stop Solvent grading its own homework, and it is
+    exactly the number these scenarios produce.
+
+    Without this every report-builder scenario fails for want of permission and
+    the whole certification reads as a capability defect.
+    """
+    from solvent.capability import Capability
+    from solvent.checks import checks_for
+
+    covers = frozenset(checks_for(name))
+    if not covers:
+        return None
+    return Capability(name=name, covers=covers, version=f"{name}/1.0",
+                      proven=True, verifiable_by=tuple(sorted(covers)))
+
+
 def run_scenario(scenario: Scenario, *, solvent: Solvent | None = None) -> Result:
     s = solvent or Solvent()
     source, workdir = scenario.materialise()
@@ -42,7 +70,8 @@ def run_scenario(scenario: Scenario, *, solvent: Solvent | None = None) -> Resul
             source=source, requirements=list(scenario.requirements),
             workdir=workdir, solvent=s, client_id=scenario.client_id,
             title=scenario.id, sabotage=scenario.sabotage,
-            capability=scenario.runs_on)
+            capability=scenario.runs_on,
+            provision=_under_evaluation(scenario.runs_on))
     except FailClosed as refusal:
         # Refusing before a job can even start is a legitimate outcome.
         expected = scenario.truth.refusal_contains

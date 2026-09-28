@@ -20,15 +20,50 @@ import tempfile
 import unittest
 
 from solvent import reportverify, reportwork
-from solvent.checks import checks_for, runner_for
+from solvent.checks import runner_for
 from solvent.errors import FailClosed
 from solvent.gate import ATTEMPTING
-from solvent.harness import OWNER, Solvent, run_csv_job
+from solvent.capability import Capability
+from solvent.checks import checks_for
+from solvent.harness import (OWNER, Solvent, provision_capability,
+                             run_csv_job)
 from solvent.types import (
     ActionClass, BlockedOn, Criticality, JobState, Jurisdiction,
     LocationSignals, OperatingMode, PrivacyClass, Requirement,
     RequirementSource as RS, CheckResult,
 )
+
+#: report-builder, cleared for delivery **inside a test's own Solvent only**.
+#:
+#: The shipped configuration does not promote it. It is technically certified,
+#: the owner has not cleared it for client work, and ``harness._owner_promoted``
+#: returns nothing for it — asserted in ``test_all_capability_certification``
+#: and again at the bottom of this file.
+#:
+#: These tests have to clear it. Delivery asks the registry whether the
+#: capability that produced a file may reach a client, so without this every
+#: negative assertion in this file — "the trap artifact was not delivered",
+#: "the invented total was not delivered" — would pass because *nothing*
+#: report-builder makes is ever delivered. A whole file of vacuous greens would
+#: hide the day the trap detection broke.
+#:
+#: Registered with no proposal behind it, which the registry treats as the
+#: owner's own judgement rather than as a capability Solvent was asked to build
+#: and must now grade. That distinction is what makes this possible at all: the
+#: fixture floor exists to stop Solvent grading its own homework, and the
+#: evidence it demands is gathered by running exactly these scenarios. Requiring
+#: it here would mean needing the evidence before it could be measured.
+#:
+#: The real measured promotion evidence for report-builder lives in
+#: ``test_all_capability_certification.TheEvidenceForPromotingTheSecondCapability``,
+#: counted from an actual run, which is where it belongs.
+def report_under_test() -> Capability:
+    """report-builder, cleared for delivery in a throwaway test Solvent."""
+    return Capability(
+        name="report-builder", covers=frozenset(checks_for("report-builder")),
+        version="report-builder/1.0", proven=True,
+        verifiable_by=tuple(sorted(reportverify.CHECKS)))
+
 
 FACTS = {
     "client": "Acme Corp",
@@ -75,24 +110,24 @@ class TheCapabilityDoesTheWork(unittest.TestCase):
 
     def test_a_standard_report_is_produced_and_verified(self):
         report = run_csv_job(source=self.source, requirements=STANDARD,
-                             workdir=self.work, capability="report-builder")
+                             workdir=self.work, capability="report-builder", provision=report_under_test())
         self.assertTrue(report.delivered, report.escalated)
 
     def test_supplied_facts_appear_exactly_as_supplied(self):
         run_csv_job(source=self.source, requirements=STANDARD,
-                    workdir=self.work, capability="report-builder")
+                    workdir=self.work, capability="report-builder", provision=report_under_test())
         text = self.delivered()
         self.assertIn("- client: Acme Corp", text)
         self.assertIn("- period: Q1 2026", text)
 
     def test_a_fact_nobody_supplied_is_named_not_filled_in(self):
         run_csv_job(source=self.source, requirements=STANDARD,
-                    workdir=self.work, capability="report-builder")
+                    workdir=self.work, capability="report-builder", provision=report_under_test())
         self.assertIn("- approved_by: NOT SUPPLIED", self.delivered())
 
     def test_the_total_is_the_sum_of_the_supplied_amounts(self):
         run_csv_job(source=self.source, requirements=STANDARD,
-                    workdir=self.work, capability="report-builder")
+                    workdir=self.work, capability="report-builder", provision=report_under_test())
         self.assertIn("- amount total: 450.50", self.delivered())
 
     def delivered(self) -> str:
@@ -106,14 +141,14 @@ class ItRefusesRatherThanImprovises(unittest.TestCase):
     def refuse(self, requirements, facts=None):
         source, work = workspace(facts)
         return run_csv_job(source=source, requirements=requirements,
-                           workdir=work, capability="report-builder")
+                           workdir=work, capability="report-builder", provision=report_under_test())
 
     def test_an_unreadable_source_is_refused_not_reported_as_empty(self):
         directory = pathlib.Path(tempfile.mkdtemp())
         source = directory / "facts.json"
         source.write_text("{not json", encoding="utf-8")
         report = run_csv_job(source=str(source), requirements=STANDARD,
-                             workdir=str(directory), capability="report-builder")
+                             workdir=str(directory), capability="report-builder", provision=report_under_test())
         self.assertFalse(report.delivered)
         self.assertIn("not valid JSON", report.escalated)
 
@@ -189,7 +224,7 @@ class AFactMustMatchOnItsOwnLine(unittest.TestCase):
     def setUp(self):
         self.source, self.work = workspace()
         run_csv_job(source=self.source, requirements=STANDARD,
-                    workdir=self.work, capability="report-builder")
+                    workdir=self.work, capability="report-builder", provision=report_under_test())
         self.output = sorted(pathlib.Path(self.work).glob("*.md"))[-1]
 
     def check(self):
@@ -228,7 +263,7 @@ class AnAbsenceMustStayAnAbsence(unittest.TestCase):
     def setUp(self):
         self.source, self.work = workspace()
         self.report = run_csv_job(source=self.source, requirements=STANDARD,
-                                  workdir=self.work, capability="report-builder")
+                                  workdir=self.work, capability="report-builder", provision=report_under_test())
 
     def test_solvent_derives_the_disclosure_requirement_itself(self):
         committed = {r.id for r in self.report.committed}
@@ -265,7 +300,7 @@ class ComplaintsAreRecheckedByTheRightLibrary(unittest.TestCase):
         self.solvent = Solvent()
         self.report = run_csv_job(source=self.source, requirements=STANDARD,
                                   workdir=self.work, solvent=self.solvent,
-                                  capability="report-builder")
+                                  capability="report-builder", provision=report_under_test())
         self.assertTrue(self.report.delivered, self.report.escalated)
 
     def investigate(self, body):
@@ -325,7 +360,7 @@ class CrashCertification(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             run_csv_job(source=self.source, requirements=STANDARD,
                         workdir=self.work, solvent=self.solvent,
-                        capability="report-builder", sabotage=dies)
+                        capability="report-builder", provision=report_under_test(), sabotage=dies)
 
     def test_a_document_on_disk_is_not_a_delivered_job(self):
         self.crash_after_the_document_is_written()
@@ -413,7 +448,7 @@ class ATruncatedDocumentNeverVerifies(unittest.TestCase):
     def setUp(self):
         self.source, self.work = workspace()
         run_csv_job(source=self.source, requirements=STANDARD,
-                    workdir=self.work, capability="report-builder")
+                    workdir=self.work, capability="report-builder", provision=report_under_test())
         self.output = sorted(pathlib.Path(self.work).glob("*.md"))[-1]
         whole = self.output.read_text(encoding="utf-8")
         self.output.write_text(whole[:len(whole) // 2], encoding="utf-8")
@@ -459,11 +494,11 @@ class ConcurrentClientsStayApart(unittest.TestCase):
         self.a = run_csv_job(source=self.a_source, requirements=STANDARD,
                              workdir=self.a_work, solvent=self.solvent,
                              client_id="client:a", title="A",
-                             capability="report-builder")
+                             capability="report-builder", provision=report_under_test())
         self.b = run_csv_job(source=self.b_source, requirements=STANDARD,
                              workdir=self.b_work, solvent=self.solvent,
                              client_id="client:b", title="B",
-                             capability="report-builder")
+                             capability="report-builder", provision=report_under_test())
 
     def test_both_jobs_delivered(self):
         self.assertTrue(self.a.delivered and self.b.delivered)

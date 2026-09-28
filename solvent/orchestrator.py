@@ -140,6 +140,11 @@ class JobOrchestrator:
         # Completion asks the Ledger what was actually collected rather than
         # believing its caller. Without it, "complete" is an assertion.
         self._ledger = ledger
+        #: Answers "may this capability's output reach a client?". Injected at
+        #: composition rather than imported, because the registry imports this
+        #: module's types. ``None`` means the question cannot be answered, and
+        #: an unanswerable permission question refuses.
+        self._capability_permission = None
 
     # ----------------------------------------------------------------- intake
 
@@ -675,6 +680,59 @@ class JobOrchestrator:
     def required_tier(self, job_id: str) -> VerificationTier:
         return REQUIRED_TIER[self.job(job_id).consequence]
 
+    def permit_capabilities_via(self, registry) -> None:
+        """Wire the capability authority. Composition-root only.
+
+        Deliberately not a constructor argument, for the same reason the audit
+        log is given the registry afterwards: an Orchestrator exists before the
+        registry does. It is *consulted*, never commanded — this module refuses
+        on a no and has no way to register, promote or prove anything.
+        """
+        self._capability_permission = registry
+
+    def _capability_permitted(self, deliverable) -> tuple[bool, str]:
+        """May the capability that produced this file reach a client?
+
+        This check was missing, and its absence made the entire capability
+        architecture advisory. A cold-start Solvent with an empty registry
+        executed a CSV job, verified it, and delivered it: ``may_deploy`` said
+        no and nothing asked. The owner's promotion decision, the LIMITED
+        "development and testing only" grant, the registry, and the Skills
+        Lab's promotion boundary were all bypassable by simply running a job.
+
+        It belongs here because this method is already the single answer to
+        *may this be delivered?*, and the alternative — a second gate elsewhere
+        — would be a second place that decides delivery. The registry owns
+        what-is-permitted; this asks it.
+
+        Two distinct questions, because passing one does not answer the other:
+        is this capability permitted to deploy at all, and is the **version**
+        that produced this exact file the version that was proven? Evidence
+        gathered against one version is not evidence for the next, which is
+        why ``Capability.version`` exists.
+        """
+        version = (deliverable.capability_version or "").strip()
+        if not version:
+            return False, ("the deliverable records no capability version, so "
+                           "nothing can establish that the code which produced "
+                           "it was ever proven")
+        if self._capability_permission is None:
+            return False, (f"no capability registry is wired, so this process "
+                           f"cannot establish that {version} may reach a "
+                           "client; refusing rather than assuming it may")
+        name = version.split("/")[0]
+        permitted, why = self._capability_permission.may_deploy(name)
+        if not permitted:
+            return False, f"{version} may not be delivered: {why}"
+        registered = {c.version for c in self._capability_permission.capabilities()
+                      if c.name == name and c.proven}
+        if version not in registered:
+            return False, (
+                f"{version} produced this file, but the proven registration for "
+                f"{name} is {sorted(registered) or 'absent'}; evidence gathered "
+                "against one version is not evidence for another")
+        return True, f"{version} is registered as proven and permitted to deploy"
+
     def verification_satisfied(self, job_id: str) -> tuple[bool, str]:
         """May this job be delivered?
 
@@ -726,8 +784,15 @@ class JobOrchestrator:
             return False, (f"requirement(s) {weak} are verified below "
                            f"{required.value}, which this consequence tier requires")
 
+        # Verified is not the same as permitted. Work can be correct and still
+        # be work the owner never agreed to sell.
+        allowed, why = self._capability_permitted(deliverable)
+        if not allowed:
+            return False, why
+
         return True, (f"{len(mandatory)} mandatory requirement(s) pass at "
-                      f"{required.value} for artifact {deliverable.short}…")
+                      f"{required.value} for artifact {deliverable.short}…; "
+                      f"{why}")
 
     def verification_report(self, job_id: str) -> list[dict]:
         """Requirement-by-requirement status for the owner and the client.

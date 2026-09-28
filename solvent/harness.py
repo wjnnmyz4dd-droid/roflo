@@ -149,6 +149,11 @@ class Solvent:
         # what-is-proven-on-what-evidence; wiring happens here because the
         # registry needs the audit log and the audit log needs this answer.
         self.audit.trust_verifiers_via(self.capability)
+        # Delivery asks the registry whether the capability that produced a file
+        # is permitted to reach a client. Wired here for the same reason as the
+        # line above: the registry needs the audit log and the orchestrator
+        # needs the registry's answer.
+        self.orchestrator.permit_capabilities_via(self.capability)
         # The Skills Lab orchestrates the lifecycle around capability growth and
         # holds no authority over it: it is given the registry to ask, and the
         # policy store only so it can check that an owner identity is real
@@ -215,7 +220,13 @@ def run_first_job(*, state: str = "CA", quote_dollars: str = "900",
     s.capability.register(
         Capability(name="spreadsheet", covers=frozenset({"spreadsheet"}), proven=True),
         owner_identity=OWNER)
-    r.step("owner granted: fixture pricing, one allowlisted destination, one capability")
+    # The work this harness does is csv-cleanup and the artifact it produces is
+    # stamped csv-cleanup/1.0, so that is the capability that has to be cleared.
+    # Registering "spreadsheet" and delivering csv-cleanup output was harmless
+    # only while nothing checked which capability produced the file.
+    provision_capability(s, CSV_PROMOTION, owner_identity=OWNER)
+    r.step("owner granted: fixture pricing, one allowlisted destination, "
+           "and csv-cleanup/1.0 provisioned against re-verified evidence")
 
     # --- 1. intake: a manually inserted opportunity, no discovery ---------------
     signals = LocationSignals(project=Jurisdiction(state=state),
@@ -730,6 +741,83 @@ def intent_subject(intent_id: str) -> str:
     return f"intent:{intent_id}"
 
 
+def provision_capability(s: "Solvent", capability, *,
+                         owner_identity: str = OWNER,
+                         record_decision: bool = True) -> dict:
+    """Register an owner-promoted capability, re-verifying the evidence first.
+
+    **The one production path.** ``solvent setup capability`` calls this, and so
+    does the test fixture, deliberately: a deployment step that only the CLI
+    exercises is a deployment step nothing tests, and a fixture that registers
+    capabilities its own way is a fixture testing something production does not
+    do. Both now go through here.
+
+    Idempotent, because provisioning is something an owner may reasonably run
+    twice and because a restart must not need it again — registration is
+    durable, so this returns the existing record rather than refusing.
+
+    The certification is re-run against the *current* implementation every time,
+    so a scope the evidence no longer supports cannot be registered by repeating
+    the command.
+    """
+    record = ensure_verifier_certified(s, capability.name)
+    certified = {c for c in record["certified_checks"].split(",") if c}
+    missing = sorted(set(capability.covers) - certified)
+    if record["state"] != "CERTIFIED" or missing:
+        raise FailClosed(
+            f"the verifier for {capability.name} is {record['state']} and "
+            f"certified for {len(certified)} check(s); the promotion claims "
+            f"{len(capability.covers)}"
+            + (f"; not certified: {', '.join(missing)}" if missing else "")
+            + ". The evidence no longer supports this scope. "
+              "Nothing was registered.")
+    # Registration alone does not make a capability deliverable, and that
+    # asymmetry was invisible while nothing consulted the registry at delivery.
+    # `may_deploy` asks `may_develop` first, which requires the owner to have
+    # *answered a proposal* — and csv-cleanup had never been proposed anywhere
+    # outside a test. So an owner who followed the setup guide exactly ended up
+    # with a Solvent that refused every job with "csv-cleanup has not been
+    # proposed". Provisioning records the whole decision, because running this
+    # as the owner *is* the decision:
+    #
+    #   proposed  — this is the capability and this is what it covers
+    #   APPROVED  — the owner's answer, under their own identity
+    #   proven    — registered against re-verified evidence
+    #
+    # Each step is separately audited, so the record shows an owner decision
+    # rather than a capability that appeared already approved.
+    # ``record_decision=False`` registers without a proposal behind it. The
+    # registry draws that distinction itself: a capability the owner asked
+    # Solvent to *build* must earn PROVEN against a fixture floor, because the
+    # thing being approved is the thing Solvent would be grading; a capability
+    # the owner registers outright is their own judgement about their own
+    # business and needs no fixture count. A suite clearing a capability so it
+    # can *measure* that capability is the second case, and treating it as the
+    # first is circular — the floor would require evidence that cannot be
+    # gathered until the floor is passed.
+    if not record_decision:
+        if not any(c.version == capability.version and c.proven
+                   for c in s.capability.capabilities()):
+            s.capability.register(capability, owner_identity=owner_identity)
+        return record
+    if not s.capability.proposals(capability.name):
+        s.capability.propose(
+            name=capability.name, covers=capability.covers,
+            why=f"provisioning {capability.version} for client work",
+            requested_by=owner_identity)
+    decision, _ = s.capability.development_decision(capability.name)
+    if not decision:
+        s.capability.decide(
+            name=capability.name, decision=s.capability.APPROVED,
+            owner_identity=owner_identity,
+            why=f"the owner provisioned {capability.version} with "
+                f"{len(certified)} certified check(s) behind it")
+    if not any(c.version == capability.version and c.proven
+               for c in s.capability.capabilities()):
+        s.capability.register(capability, owner_identity=owner_identity)
+    return record
+
+
 def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
                           approval=None) -> list[dict]:
     """Execute what the control centre asked for, under this process's authorities.
@@ -1118,6 +1206,43 @@ CSV_PROMOTION = Capability(
     fixtures_passed=34, fixtures_total=34, false_completions=0)
 
 
+def _owner_promoted(name: str):
+    """The registration a configured deployment carries for this capability.
+
+    ``report-builder`` is deliberately absent. It is technically certified and
+    the owner has not promoted it, and this function is what that sentence means
+    in code: returning something here is a promotion decision, so there is one
+    place to look for which capabilities an owner has actually cleared for
+    client work.
+    """
+    return {"csv-cleanup": CSV_PROMOTION}.get(name)
+
+
+#: Capabilities the owner has cleared to **build and test** and not to deploy.
+#: This is what ``LIMITED`` is for, and report-builder is the case it was
+#: written for: the evidence is there, the owner has not said "sell it", and
+#: those are different sentences. Recording it this way means the boundary is
+#: enforced by the registry rather than by everyone remembering.
+_DEVELOPMENT_ONLY = {
+    "report-builder": "technically certified; the owner has not cleared it for "
+                      "client delivery, so it may be built and tested only",
+}
+
+
+def provision_development_only(s: "Solvent", name: str, covers,
+                               *, owner_identity: str = OWNER) -> None:
+    """Record a LIMITED owner decision: build and test it, do not deploy it."""
+    why = _DEVELOPMENT_ONLY[name]
+    if not s.capability.proposals(name):
+        s.capability.propose(name=name, covers=frozenset(covers), why=why,
+                             requested_by=owner_identity)
+    decision, _ = s.capability.development_decision(name)
+    if not decision:
+        s.capability.decide(name=name, decision=s.capability.LIMITED,
+                            owner_identity=owner_identity, why=why,
+                            scope="development and testing")
+
+
 def _csv_header(path: str) -> list[str]:
     """The source's column names, or [] if it will not parse. Never guesses."""
     import csv as _csv
@@ -1340,6 +1465,7 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
                 path: str = ":memory:", solvent: "Solvent | None" = None,
                 configure_fixture_policy: bool = True,
                 capability: str = "csv-cleanup",
+                provision=None,
                 sabotage=None) -> ServiceReport:
     """Take one CSV job from requirements to a verified, gated deliverable.
 
@@ -1347,6 +1473,15 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
     path after each execution, so a deliberately defective artifact can be put in
     front of the verifier. Production never passes it, and the gate cannot tell
     the difference — which is the whole point of testing with it.
+
+    ``provision`` overrides which capability this fixture clears for delivery,
+    and also exists for the suite. The default is :func:`_owner_promoted`, which
+    is the shipped configuration and promotes csv-cleanup only. A suite that
+    exercises an unpromoted capability's *work* has to clear it here, or every
+    negative assertion in that suite ("the defective artifact was not
+    delivered") passes because nothing that capability makes is ever delivered —
+    a vacuous green that would hide the day the detection broke. Production
+    never passes it.
     """
     s = solvent or Solvent(path)
     report = ServiceReport()
@@ -1359,6 +1494,21 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
                                       "classes": ["C2_EXTERNAL_COMMUNICATION"]}],
                        "simulation_only": True},
         }, OWNER, "csv pipeline fixture: one destination, simulation only")
+        # A configured deployment has its capability provisioned; an unconfigured
+        # one does not. Delivery now asks the registry whether the capability
+        # that produced a file may reach a client, so a fixture that skipped
+        # this was testing a pipeline production cannot run. Provisioned through
+        # the same function `solvent setup capability` uses, so what the tests
+        # exercise is what the owner actually does.
+        if provision is not None:
+            provision_capability(s, provision, owner_identity=OWNER,
+                                 record_decision=False)
+        elif _owner_promoted(capability) is not None:
+            provision_capability(s, _owner_promoted(capability),
+                                 owner_identity=OWNER)
+        elif capability in _DEVELOPMENT_ONLY:
+            provision_development_only(s, capability,
+                                       checks_for(capability), owner_identity=OWNER)
 
     job_id = s.orchestrator.intake(
         title=title, client_id=client_id, quoted_cents=quoted_cents,

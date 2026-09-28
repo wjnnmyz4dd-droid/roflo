@@ -274,6 +274,20 @@ class CapabilityRegistry:
         if not decision:
             if self._proposals_for(name):
                 return False, f"{name} is proposed and awaiting an owner decision"
+            # :meth:`register` already draws this distinction: "a capability the
+            # owner registers with no proposal behind it is their own judgement
+            # about their own business, and needs no fixture count". That case
+            # was unreachable here — such a capability registered fine and then
+            # could never be deployed, because this asked for a proposal that by
+            # definition does not exist. Registration is itself an owner act:
+            # only an owner identity may do it, and the registry enforces that.
+            # So the registration *is* the decision, and saying otherwise made
+            # the documented path a dead end. It stayed invisible while nothing
+            # consulted this method before delivering.
+            capability = self._capabilities.get(name)
+            if capability is not None and capability.proven:
+                return True, (f"{name} was registered directly by the owner; "
+                              "the registration is the decision")
             return False, f"{name} has not been proposed"
         if decision == self.DENIED:
             return False, f"the owner denied development of {name}"

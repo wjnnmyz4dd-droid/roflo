@@ -223,29 +223,22 @@ def cmd_setup_capability(args: argparse.Namespace) -> int:
     verifier's certification against the *current* implementation, so a scope
     the evidence no longer supports cannot be registered by rerunning a command.
     """
-    from .harness import CSV_PROMOTION, ensure_verifier_certified
+    from .harness import CSV_PROMOTION, provision_capability
 
     solvent = _owner_solvent(args)
     try:
-        record = ensure_verifier_certified(solvent, "csv-cleanup")
+        record = provision_capability(solvent, CSV_PROMOTION,
+                                      owner_identity=args.owner)
     except FailClosed as exc:
         print(f"refused: {exc}")
         return 1
-    certified = {c for c in record["certified_checks"].split(",") if c}
-    missing = sorted(set(CSV_PROMOTION.covers) - certified)
-    if record["state"] != "CERTIFIED" or missing:
-        print(f"refused: the verifier is {record['state']} and certified for "
-              f"{len(certified)} check(s); the promotion claims "
-              f"{len(CSV_PROMOTION.covers)}.")
-        if missing:
-            print(f"         not certified: {', '.join(missing)}")
-        print("         The evidence no longer supports this scope. Nothing "
-              "was registered.")
-        return 1
-    try:
-        solvent.capability.register(CSV_PROMOTION, owner_identity=args.owner)
-    except FailClosed as exc:
-        print(f"refused: {exc}")
+    permitted, why = solvent.capability.may_deploy(CSV_PROMOTION.name)
+    if not permitted:
+        # Provisioning is only done when the capability can actually be
+        # delivered. Reporting success while delivery would refuse is the
+        # failure this command existed to prevent and did not.
+        print(f"refused: provisioning completed but delivery would still be "
+              f"refused: {why}")
         return 1
     print(f"registered {CSV_PROMOTION.version} as proven, covering "
           f"{len(CSV_PROMOTION.covers)} certified check(s).")

@@ -8,6 +8,7 @@ import unittest
 
 from solvent.errors import FailClosed
 from solvent.gate import ActionGate, approval
+from solvent.harness import CSV_PROMOTION, provision_capability
 from solvent.orchestrator import JobOrchestrator
 from solvent.types import (
     Requirement, RequirementSource,
@@ -18,6 +19,16 @@ from tests_solvent import fixtures as fx
 from tests_solvent.fixtures import OWNER, Rig
 
 
+class _Bundle:
+    """The attributes :func:`provision_capability` reads from a Rig."""
+
+    def __init__(self, rig):
+        self.capability = rig.capability
+        self.audit = rig.audit
+        self.policy = rig.policy
+        self.store = rig.store
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.rig = Rig()
@@ -25,6 +36,8 @@ class Base(unittest.TestCase):
         self.rig.relax_caps()
         self.orch = JobOrchestrator(self.rig.store, self.rig.audit, self.rig.policy,
                                     self.rig.governor, self.rig.ledger)
+        self.orch.permit_capabilities_via(self.rig.capability)
+        provision_capability(_Bundle(self.rig), CSV_PROMOTION, owner_identity=OWNER)
         self.gate = ActionGate(self.rig.store, self.rig.audit, self.rig.policy,
                                self.rig.governor)
 
@@ -111,7 +124,7 @@ class A3_UnbackedCompletion(Base):
         self.orch.commit_requirements(job_id=job_id, initiator=OWNER)
         artifact = self.orch.register_artifact(
             job_id=job_id, role="DELIVERABLE", path=str(work / "out.csv"),
-            produced_by="worker")
+            produced_by="worker", capability_version=CSV_PROMOTION.version)
         self.rig.audit.record_verification(
             requirement_id="R-1", artifact_digest=artifact.digest,
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC, method="m",

@@ -24,6 +24,8 @@ import json
 import pathlib
 import tempfile
 import unittest
+
+from tests_solvent.test_report_capability import report_under_test
 from dataclasses import dataclass, field
 
 from solvent import reportverify
@@ -426,7 +428,7 @@ class RevokingAVerifierStopsItWithoutRewritingHistory(unittest.TestCase):
         self.revoke()
         source, work = workspace()
         report = run_csv_job(source=source, requirements=STANDARD, workdir=work,
-                             solvent=self.solvent, capability="report-builder")
+                             solvent=self.solvent, capability="report-builder", provision=report_under_test())
         self.assertTrue(report.delivered, report.escalated)
 
     def test_undelivered_work_does_not_keep_relying_on_revoked_evidence(self):
@@ -523,7 +525,7 @@ class AProjectThatSpansTwoCapabilities(unittest.TestCase):
         return run_csv_job(source=self.cleaned, requirements=requirements,
                            workdir=directory, solvent=self.solvent,
                            client_id="client:chain", title="stage 2",
-                           capability="report-builder")
+                           capability="report-builder", provision=report_under_test())
 
     def test_the_cleaned_file_can_be_reported_on(self):
         report = self.build_report([

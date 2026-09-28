@@ -187,8 +187,25 @@ class APositiveWalkthrough(unittest.TestCase):
         self.assertLessEqual(hosts, {"client.example.com"})
 
     def test_no_capability_was_promoted_by_completing_a_job(self):
-        self.assertEqual([c.name for c in self.s.capability.capabilities()
-                          if c.proven], [])
+        """Doing the work does not widen what Solvent is allowed to sell.
+
+        Asserted as *no change*, not as *nothing registered*. A configured
+        deployment has its capability provisioned before any job runs — that is
+        the owner's decision, recorded once — and the thing that must never
+        happen is a job adding to it. Asserting the list was empty tested the
+        fixture rather than the property, and stopped being true the moment the
+        fixture started provisioning the way production does."""
+        before = {(c.name, c.version) for c in self.s.capability.capabilities()
+                  if c.proven}
+        self.assertEqual(before, {("csv-cleanup", "csv-cleanup/1.0")},
+                         "the walkthrough did not provision what it claims to")
+        source, work = workspace(CLEAN_ENOUGH)
+        run_csv_job(source=source, requirements=list(fx.SIMPLE), workdir=work,
+                    solvent=self.s, client_id="client:second",
+                    title="a second job changes nothing about permission")
+        self.assertEqual({(c.name, c.version)
+                          for c in self.s.capability.capabilities() if c.proven},
+                         before)
 
     def test_the_audit_chain_is_intact_across_the_whole_loop(self):
         self.assertTrue(self.s.audit.verify_chain()[0])

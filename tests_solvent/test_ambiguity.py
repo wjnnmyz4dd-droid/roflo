@@ -19,6 +19,8 @@ import pathlib
 import tempfile
 import unittest
 
+from tests_solvent.test_report_capability import report_under_test
+
 from solvent import ambiguity
 from solvent.clientrelations import STANCE_ASK_CLARIFICATION
 from solvent.csvwork import _to_iso
@@ -493,9 +495,16 @@ class CustomerServiceAsksButDecidesNothing(unittest.TestCase):
         self.assertTrue(self.s.orchestrator.open_clarifications(self.report.job_id))
 
     def test_a_clarification_answer_is_not_owner_approval(self):
+        """A client answering a question does not widen what Solvent may sell.
+
+        Asserted as *no change*. A configured deployment has csv-cleanup
+        provisioned before any job runs — that is the owner's decision, made
+        once — so asserting the list was empty tested the fixture rather than
+        the property."""
+        before = {c.name for c in self.s.capability.capabilities() if c.proven}
         self.reply("Use DD/MM/YYYY")
-        self.assertEqual([c.name for c in self.s.capability.capabilities()
-                          if c.proven], [])
+        self.assertEqual({c.name for c in self.s.capability.capabilities()
+                          if c.proven}, before)
         self.assertEqual(
             self.s.store.raw_readonly("SELECT * FROM ledger_entries"), [])
         self.assertTrue(self.s.policy.get("egress", "simulation_only",
@@ -689,7 +698,7 @@ class LegitimateVariationIsNotRejected(unittest.TestCase):
             encoding="utf-8")
         report = run(source=str(facts), workdir=str(directory),
                      solvent=Solvent(), client_id="client:sub", title="sub",
-                     capability="report-builder",
+                     capability="report-builder", provision=report_under_test(),
                      requirements=[
                          req("R-T", "Tabulate the lines.", "report_section",
                              {"kind": "table", "heading": "Lines",
