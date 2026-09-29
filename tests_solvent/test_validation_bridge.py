@@ -54,6 +54,31 @@ class Base(unittest.TestCase):
                                     fingerprint=fingerprint)
         return project_id
 
+    def owner_opened(self, skill="pdf-extract") -> str:
+        """A built candidate whose project was opened by the owner, so the
+        creator check cannot be the one that refuses."""
+        project_id = self.s.skillslab.record_need(
+            skill=skill, need="the owner asked for this",
+            observed_on="job_owner", requested_by=OWNER)
+        self.s.skillslab.check_overlap(project_id=project_id,
+                                       target_covers=self.covers)
+        self.s.capability.propose(name=skill, covers=self.covers,
+                                  why="test", requested_by=OWNER)
+        self.s.capability.decide(name=skill, decision="APPROVED",
+                                 owner_identity=OWNER, why="test")
+        claim_id = self.s.skillslab.record_claim(
+            project_id=project_id, claim="measured behaviour",
+            source="ran it against fixtures", trust=lab.MEASURED)
+        self.s.skillslab.verify_claim(claim_id=claim_id, status=lab.VERIFIED,
+                                      checked_by="test harness",
+                                      detail="reproduced")
+        self.s.skillslab.mark_specified(project_id=project_id,
+                                        target_covers=self.covers,
+                                        target_version=f"{skill}/1.0")
+        self.s.skillslab.mark_built(project_id=project_id,
+                                    fingerprint=BUILT_AT)
+        return project_id
+
     def register(self, skill="pdf-extract", version="pdf-extract/1.0"):
         self.s.capability.register(
             Capability(name=skill, covers=self.covers, proven=True,
@@ -85,6 +110,40 @@ class ACandidateCannotValidateItself(Base):
             self.s.skillslab.record_validation(
                 project_id=project_id, validator=lab.AUTHORITY, passed=True,
                 fingerprint=BUILT_AT)
+
+    def test_the_lab_may_not_validate_a_project_it_did_not_open(self):
+        """The case that makes the Lab check load-bearing rather than a
+        duplicate of the creator check.
+
+        A mutation deleting "the Lab may not validate" survived the suite,
+        because every project in the tests was opened by the Lab and so the
+        *creator* check was doing the refusing. But record_need takes
+        requested_by, so a project opened by the owner can exist -- and for
+        that project the creator check does not fire and only this one stands
+        between the Lab and certifying its own work.
+        """
+        project_id = self.owner_opened()
+        self.s.skillslab.request_validation(project_id=project_id,
+                                            fingerprint=BUILT_AT)
+        with self.assertRaises(FailClosed) as caught:
+            self.s.skillslab.record_validation(
+                project_id=project_id, validator=lab.AUTHORITY, passed=True,
+                fingerprint=BUILT_AT)
+        message = str(caught.exception)
+        self.assertIn("Skills Lab may not validate", message)
+        # Specifically not the creator check, which cannot fire here.
+        self.assertNotIn("may not also validate", message)
+
+    def test_an_owner_opened_project_can_still_be_validated_by_somebody_else(self):
+        """The positive canary. Without it the refusal above could hold on a
+        project that was never validatable at all."""
+        project_id = self.owner_opened()
+        self.s.skillslab.request_validation(project_id=project_id,
+                                            fingerprint=BUILT_AT)
+        ok, why = self.s.skillslab.record_validation(
+            project_id=project_id, validator=VALIDATOR, passed=True,
+            fingerprint=BUILT_AT)
+        self.assertTrue(ok, why)
 
     def test_an_unnamed_validator_is_refused(self):
         project_id = self.built()
