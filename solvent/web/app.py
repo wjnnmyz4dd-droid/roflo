@@ -1076,6 +1076,7 @@ class ControlCentre:
                              link("/skill?id="
                                   + urllib.parse.quote(p.get("id", "")), "review")]
                             for p in awaiting]) if awaiting else "")
+                + self._skill_inventory()
                 + "<h2>All projects</h2>"
                 + table(["skill", "stage", "change", "overlap verdict", "need", ""],
                         [[esc(p.get("skill", "")),
@@ -1130,6 +1131,50 @@ class ControlCentre:
                          for e in self.read.skill_timeline(project_id)],
                         empty="Nothing yet."),
                 "Skill")
+
+    def _skill_inventory(self) -> str:
+        """§28. What DeskPilot can actually do, from the authoritative record.
+
+        Assembled from two places, both of them sources of truth rather than
+        copies: the capability registry says what is proven and deliverable,
+        and the Lab's version rows say what was certified and at which
+        artifact. Nothing here is hard-coded -- a skill that reaches 1.1
+        appears as 1.1 because the registry says so, not because anybody
+        edited this page.
+        """
+        registered = {c.get("name"): c for c in self.read.capabilities()}
+        versions = self.read.skill_versions()
+        names = sorted(set(registered) | {v.get("skill") for v in versions
+                                          if v.get("skill")})
+        if not names:
+            return ('<h2>Skills</h2><p class="empty">No skill has been '
+                    "registered or certified yet. Nothing can be delivered "
+                    "until one is.</p>")
+
+        rows = []
+        for name in names:
+            capability = registered.get(name) or {}
+            mine = [v for v in versions if v.get("skill") == name]
+            latest = mine[-1] if mine else {}
+            proven = bool(capability.get("proven"))
+            rows.append([
+                esc(name),
+                esc(capability.get("version") or latest.get("version") or "—"),
+                pill("proven", "ok") if proven
+                else pill("not proven", "warn"),
+                _lifecycle_pill(latest.get("lifecycle", "")),
+                esc((latest.get("fingerprint") or "—")[:24]),
+                esc(capability.get("evidence_ref") or
+                    latest.get("evidence_ref") or "—")[:40],
+                esc(len(mine)),
+            ])
+        return ("<h2>Skills</h2>"
+                f'<p class="sub">Read from the capability registry and the '
+                f"Lab's version record. This table is not written anywhere — "
+                f"a new version appears here because the registry says so.</p>"
+                + table(["skill", "version", "registry", "lifecycle",
+                         "artifact", "evidence", "versions"], rows,
+                        empty="None."))
 
     # ---------------------------------------------------------- capabilities
     def capabilities(self, request: Request):
@@ -1535,9 +1580,14 @@ def _change_pill(value: str) -> str:
 
 
 def _stage_pill(value: str) -> str:
-    return pill(value or "—", {"PROMOTED": "ok", "AWAITING_OWNER": "warn",
-                               "CERTIFIED": "info", "ABANDONED": "neutral"
-                               }.get(value, "neutral"))
+    """Lifecycle stage. VALIDATION_FAILED reads red because a candidate that
+    did not pass is not a neutral state of affairs, and VALIDATION_REQUESTED
+    reads amber because "waiting on somebody else" must not look like done."""
+    return pill(value.replace("_", " ").lower() if value else "—",
+                {"PROMOTED": "ok", "AWAITING_OWNER": "warn",
+                 "CERTIFIED": "info", "ABANDONED": "neutral",
+                 "VALIDATION_REQUESTED": "warn",
+                 "VALIDATION_FAILED": "bad"}.get(value, "neutral"))
 
 
 def _lifecycle_pill(value: str) -> str:

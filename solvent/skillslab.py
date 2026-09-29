@@ -76,6 +76,12 @@ OVERLAP_CHECKED = "OVERLAP_CHECKED"
 EVIDENCE = "EVIDENCE"
 SPECIFIED = "SPECIFIED"
 BUILT = "BUILT"
+#: Handed to an external validator. The candidate is built and nobody has
+#: independently tested it yet, which is a different thing from "untested".
+VALIDATION_REQUESTED = "VALIDATION_REQUESTED"
+#: An external validator ran the battery and it did not pass. The candidate
+#: stays a candidate; this is a recorded outcome, not a dead end.
+VALIDATION_FAILED = "VALIDATION_FAILED"
 CERTIFIED = "CERTIFIED"
 AWAITING_OWNER = "AWAITING_OWNER"
 PROMOTED = "PROMOTED"
@@ -582,6 +588,156 @@ class SkillsLab:
         self._db.commit()
         self._event(project_id, BUILT, "BUILT", f"{fingerprint} {detail}"[:200],
                     AUTHORITY)
+
+    # -------------------------------------------------- external validation
+
+    def request_validation(self, *, project_id: str, fingerprint: str,
+                           requested_by: str = AUTHORITY) -> dict:
+        """Hand a built candidate to an external validator, and say so.
+
+        DeskPilot may build a candidate. It may not then decide the candidate
+        is sound, because "I made it, therefore it is safe" is the reasoning
+        this whole lifecycle exists to prevent (§22). So a built candidate goes
+        out to somebody else, and the state says openly that it is waiting on
+        them -- which is also what stops the dashboard implying a candidate has
+        been tested when nothing has tested it.
+
+        Returns the handoff package. It is deterministic and self-contained so
+        a validator working from it is working from the same facts as the
+        dashboard, with no screen-scraping and no second registry.
+        """
+        project = self.project(project_id)
+        if project.stage not in (BUILT, VALIDATION_FAILED):
+            raise FailClosed(
+                f"{project_id} is at {project.stage}; validation follows a "
+                "build, and a candidate that was never built has nothing to "
+                "validate")
+        if not (fingerprint or "").strip():
+            raise FailClosed(
+                "validation must name the artifact being validated; evidence "
+                "that names no artifact belongs to no artifact")
+        self._db.execute("UPDATE skill_projects SET stage = ? WHERE id = ?",
+                         (VALIDATION_REQUESTED, project_id))
+        self._db.commit()
+        self._event(project_id, VALIDATION_REQUESTED, "REQUESTED",
+                    f"{fingerprint} handed to an external validator"[:200],
+                    requested_by)
+        self._audit.record(
+            event="skillslab.validation_requested", authority=AUTHORITY,
+            initiator=requested_by, input_ref=project_id,
+            why=f"{project.skill} {project.target_version} needs independent "
+                "testing",
+            decision=VALIDATION_REQUESTED, result=fingerprint)
+        return self.handoff(project_id, fingerprint=fingerprint)
+
+    def handoff(self, project_id: str, *, fingerprint: str = "") -> dict:
+        """Everything a validator needs, and nothing it should not have.
+
+        Deliberately contains no credential, no client data and no owner key.
+        A validator tests a candidate; it does not operate the business, and a
+        package that carried production secrets would make every validator a
+        production risk (§25).
+        """
+        project = self.project(project_id)
+        return {
+            "project_id": project.id,
+            "skill": project.skill,
+            "change_type": project.change_type,
+            "base_version": project.base_version,
+            "target_version": project.target_version,
+            "fingerprint": fingerprint,
+            "need": project.need,
+            "stage": project.stage,
+            # What the candidate must do, from the specification that fixed
+            # the scope -- not from whatever the candidate happens to do.
+            "required_checks": sorted(self.target_scope(project_id)),
+            "evidence": self.evidence(project_id),
+            "prior_failures": [
+                e for e in self.timeline(project_id)
+                if e.get("outcome") in ("VALIDATION_FAILED",
+                                        "CERTIFICATION_FAILED")],
+            "created_by": project.opened_by,
+            "test_standard": (
+                "baseline, requirements, positive, negative, boundary, "
+                "adversarial, malformed input, security, restart, "
+                "determinism, independent verification, mutation, "
+                "vacuous-test audit, holdout, full regression"),
+        }
+
+    def record_validation(self, *, project_id: str, validator: str,
+                          passed: bool, fingerprint: str, evidence_ref: str = "",
+                          detail: str = "", certified_checks=None,
+                          verifier_fingerprint: str = "") -> tuple[bool, str]:
+        """Take an external validator's result.
+
+        Two things are checked before the result is believed at all.
+
+        The **validator is not the creator** (§22). A candidate that certified
+        itself would make the separation between building and attesting a
+        matter of convention, and conventions are what get skipped at 2am.
+
+        The **artifact matches** what was handed out. A validator reporting a
+        pass on a different digest tested something else, and the fact that
+        both are called version 1.1 is not evidence that they are the same.
+
+        A pass records certification through the existing path -- there is no
+        parallel certification here, because there is one certification
+        authority and this is not it.
+        """
+        project = self.project(project_id)
+        if project.stage != VALIDATION_REQUESTED:
+            raise FailClosed(
+                f"{project_id} is at {project.stage}; a validation result "
+                "answers a validation request, and there is none outstanding")
+        if not (validator or "").strip():
+            raise FailClosed("a validation result must name its validator")
+        if validator == project.opened_by:
+            raise FailClosed(
+                f"{validator!r} opened this candidate and may not also validate "
+                "it; a thing cannot be its own independent evidence")
+        if validator == AUTHORITY:
+            raise FailClosed(
+                "the Skills Lab may not validate its own candidates")
+        if not (fingerprint or "").strip():
+            raise FailClosed(
+                "a validation result must name the artifact it tested")
+
+        if not passed:
+            self._db.execute("UPDATE skill_projects SET stage = ? WHERE id = ?",
+                             (VALIDATION_FAILED, project_id))
+            self._db.commit()
+            self._event(project_id, VALIDATION_FAILED, "VALIDATION_FAILED",
+                        f"{validator}: {detail}"[:200], validator)
+            self._audit.record(
+                event="skillslab.validation_failed", authority=AUTHORITY,
+                initiator=validator, input_ref=project_id,
+                why=detail[:200] or "external validation did not pass",
+                decision=VALIDATION_FAILED,
+                result="the candidate remains a candidate")
+            return False, detail or "validation did not pass"
+
+        # A pass returns the project to BUILT so the existing certification
+        # path can run unchanged. The Lab does not certify here.
+        self._db.execute("UPDATE skill_projects SET stage = ? WHERE id = ?",
+                         (BUILT, project_id))
+        self._db.commit()
+        self._event(project_id, BUILT, "VALIDATED",
+                    f"{validator} @ {fingerprint}"[:200], validator)
+        self._audit.record(
+            event="skillslab.validated", authority=AUTHORITY,
+            initiator=validator, input_ref=project_id,
+            why=detail[:200] or "external validation passed",
+            decision="VALIDATED", result=fingerprint)
+        checks = frozenset(certified_checks if certified_checks is not None
+                           else self.target_scope(project_id))
+        return self.record_certification(
+            project_id=project_id, state="CERTIFIED", certified_checks=checks,
+            fingerprint=fingerprint, verifier_fingerprint=verifier_fingerprint,
+            evidence_ref=evidence_ref)
+
+    def validation_state(self, project_id: str) -> str:
+        """What a dashboard should say about this candidate's validation."""
+        return self.project(project_id).stage
 
     # ------------------------------------------------------- certification
     def record_certification(self, *, project_id: str, state: str,
