@@ -121,6 +121,12 @@ TABLE_OWNER = {
     "skill_project_events": "skillslab",
     "skill_evidence": "skillslab",
     "skill_versions": "skillslab",
+    # Diagnostics observes every authority and commands none. It owns the
+    # record of its own runs, and nothing else: a report cannot promote,
+    # permit, spend or change a rule. The web control centre renders these
+    # rows rather than re-deciding what they mean, because a second copy of
+    # that judgement is a second answer to the same question.
+    "diagnostic_reports": "diagnostics",
     "work_sources": "discovery",
     "opportunities": "discovery",
     "qualification_verdicts": "qualification",
@@ -363,6 +369,10 @@ CREATE TABLE IF NOT EXISTS owner_approvals (
   owner_identity TEXT NOT NULL, subject TEXT NOT NULL, action_class TEXT NOT NULL,
   job_id TEXT NOT NULL DEFAULT '', max_cents INTEGER NOT NULL DEFAULT 0,
   used_at TEXT, key_id TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS diagnostic_reports (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, ran_at REAL NOT NULL,
+  worst TEXT NOT NULL, findings TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS work_sources (
   name TEXT PRIMARY KEY, kind TEXT NOT NULL, readiness TEXT NOT NULL,

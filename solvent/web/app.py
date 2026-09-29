@@ -649,29 +649,55 @@ class ControlCentre:
                 "Circuit breakers")
 
     def diagnostics(self, request: Request):
-        """§44. Plain English first, and no green light Solvent has not earned.
+        """§44. Plain English first, and no green light DeskPilot has not earned.
 
-        Computed here from the read-only projection rather than by running
-        :class:`solvent.diagnostics.Diagnostics`, which would need the
-        authorities this process deliberately does not hold. The rules are the
-        same ones and they are the point: a check that cannot be answered reads
-        UNKNOWN, and an unrecorded control reads UNSAFE.
+        This page **renders** the diagnostics authority's recorded report. It
+        does not decide what any of it means. It used to: this process cannot
+        construct a :class:`~solvent.harness.Solvent` (the egress hook denies
+        ``socket.bind``, so a process that serves a port can never hold the
+        authorities), so the page carried its own copy of all eighteen checks.
+        Two copies of one judgement is two answers to one question, and they
+        drift. The runtime records the report; this renders it.
+
+        The cost of that is honesty about time: a report is evidence about when
+        it ran. A stale or missing one is shown as stale or missing, never as a
+        current verdict, because the moment an owner most needs this page is the
+        moment the runtime writing it has stopped.
         """
-        findings = self._diagnostic_findings()
-        worst = max((f[1] for f in findings), key=_DIAG_RANK.get)
-        banner = ""
-        if worst in ("UNSAFE", "FAILED"):
+        report = self.read.latest_diagnostics()
+        findings = report["findings"]
+
+        if not report["present"]:
+            banner = ('<div class="banner banner-warn">No diagnostics have been '
+                      "recorded yet. The checks run in the "
+                      f"{esc(ENGINE.lower())} runtime, not in this website, so "
+                      "this page has nothing to show until the runtime has "
+                      "run once.</div>")
+        elif report["stale"]:
+            banner = ('<div class="banner banner-bad">These checks are stale — '
+                      f"last run {esc(_ago(report['age_seconds']))} ago. They "
+                      "describe the system as it was then, not as it is now. "
+                      f"Check that the {esc(ENGINE.lower())} runtime is "
+                      "running.</div>")
+        elif report["worst"] in ("UNSAFE", "FAILED"):
             banner = ('<div class="banner banner-bad">Something is wrong: '
-                      f"{esc(worst)}. The rows below say what.</div>")
-        elif worst in ("UNKNOWN", "OWNER_ACTION_REQUIRED"):
+                      f"{esc(report['worst'])}. The rows below say what.</div>")
+        elif report["worst"] in ("UNKNOWN", "OWNER_ACTION_REQUIRED"):
             banner = ('<div class="banner banner-warn">Some things could not be '
                       "confirmed, or are waiting on you. Unknown is not the "
                       "same as fine.</div>")
+        else:
+            banner = ""
+
+        when = (f"Last run {esc(report['ran_at'])} "
+                f"({esc(_ago(report['age_seconds']))} ago)."
+                if report["present"] else "Never run.")
+
         return (banner + "<h1>Diagnostics</h1>"
                 f'<p class="sub">Every check {PRODUCT} can make about itself. '
                 "A check that could not run reads UNKNOWN rather than passing, "
-                "and a control nobody recorded reads UNSAFE rather than safe."
-                "</p>"
+                "and a control nobody recorded reads UNSAFE rather than safe. "
+                f"{when}</p>"
                 # §7. The engine identity is useful exactly here, on a
                 # technical page, and nowhere the owner is simply working.
                 f'<p class="sub muted">Engine: {ENGINE}. Internal names —'
@@ -680,113 +706,12 @@ class ControlCentre:
                 f"audit records — stay {ENGINE}. {PRODUCT} is the product "
                 f"they run.</p>"
                 + table(["check", "state", "what it means", "what to do"],
-                        [[esc(name), _diag_pill(state), esc(detail),
-                          esc(action) or "—"]
-                         for name, state, detail, action in findings],
-                        empty="No checks ran.")
+                        [[esc(f["name"]), _diag_pill(f["state"]),
+                          esc(f["detail"]), esc(f["owner_action"]) or "—"]
+                         for f in findings],
+                        empty="No checks have been recorded.")
                 + self._host_metrics(),
                 "Diagnostics")
-
-    def _diagnostic_findings(self) -> list:
-        """``(name, state, detail, owner_action)`` from the projection."""
-        read = self.read
-        out = []
-
-        # ``audit_chain_intact`` returns ``(ok, detail)``. Treating the tuple
-        # as a boolean made this row read HEALTHY on a tampered log, because a
-        # non-empty tuple is always truthy — the exact fake green this page
-        # exists to prevent, on the one check where it matters most.
-        intact, chain_detail = read.audit_chain_intact()
-        out.append(("Audit chain", "HEALTHY" if intact else "FAILED",
-                    chain_detail if intact
-                    else f"the hash chain does not verify ({chain_detail}); "
-                         "the record of what happened cannot be trusted",
-                    "" if intact else "stop work and investigate"))
-
-        posture = read.policy_value("network", "default_deny", default=None)
-        if posture is None:
-            out.append(("Network firewall", "UNSAFE",
-                        "nobody has recorded whether a default-deny firewall "
-                        "is applied on this host",
-                        "run deploy/firewall.sh --apply, then record it with "
-                        "`solvent setup firewall --default-deny`"))
-        else:
-            out.append(("Network firewall",
-                        "HEALTHY" if posture else "UNSAFE",
-                        "recorded as default-deny" if posture
-                        else "recorded as not default-deny",
-                        "" if posture else "apply a default-deny policy"))
-
-        simulation = read.policy_value("egress", "simulation_only", default=True)
-        allowlist = read.policy_value("egress", "allowlist", default=[]) or []
-        if simulation:
-            out.append(("Egress", "HEALTHY",
-                        f"simulation only; nothing leaves this machine "
-                        f"({len(allowlist)} destination(s) would be allowed)", ""))
-        elif not allowlist:
-            out.append(("Egress", "UNSAFE",
-                        "simulation is off and the allowlist is empty", ""))
-        else:
-            out.append(("Egress", "WARNING",
-                        f"live; {len(allowlist)} destination(s) allowed", ""))
-
-        capabilities = [c for c in read.capabilities() if c.get("proven")]
-        out.append(("Capabilities",
-                    "HEALTHY" if capabilities else "OWNER_ACTION_REQUIRED",
-                    f"{len(capabilities)} proven" if capabilities
-                    else "nothing is registered as proven, so no work can be "
-                         "delivered",
-                    "" if capabilities else "run `solvent setup capability`"))
-
-        open_incidents = read.incidents(open_only=True)
-        owner_incidents = [i for i in open_incidents
-                           if i.get("status") == "OWNER_ACTION_REQUIRED"]
-        if owner_incidents:
-            state, detail = "OWNER_ACTION_REQUIRED", (
-                f"{len(owner_incidents)} incident(s) need you")
-        elif open_incidents:
-            state, detail = "DEGRADED", f"{len(open_incidents)} open incident(s)"
-        else:
-            state, detail = "HEALTHY", "no open incidents"
-        out.append(("Incidents", state, detail,
-                    "read them on the Incidents page" if owner_incidents else ""))
-
-        open_breakers = [b for b in read.breakers() if b.get("state") != "CLOSED"]
-        out.append(("Circuit breakers",
-                    "DEGRADED" if open_breakers else "HEALTHY",
-                    ("contained: "
-                     + ", ".join(sorted(b["component"] for b in open_breakers)))
-                    if open_breakers else "all closed", ""))
-
-        settings = read.notification_settings()
-        if not settings["owner_phone_mask"]:
-            out.append(("Notifications", "OWNER_ACTION_REQUIRED",
-                        f"no owner phone recorded; {PRODUCT} cannot reach you away "
-                        "from this website",
-                        "run `solvent setup notifications`"))
-        elif not settings["sms_provider"]:
-            out.append(("Notifications", "DEGRADED",
-                        "a phone is recorded but no SMS provider is configured, "
-                        "so nothing can be sent", "configure an SMS provider"))
-        else:
-            out.append(("Notifications", "HEALTHY",
-                        f"SMS via {settings['sms_provider']}", ""))
-
-        failed = read.notification_delivery_failures()
-        if failed:
-            out.append(("Notification delivery", "FAILED",
-                        f"{len(failed)} notification(s) could not be delivered",
-                        "check the Notifications page"))
-
-        setup = read.owner_setup()
-        out.append(("Owner key",
-                    "HEALTHY" if setup.get("owner_key") else "OWNER_ACTION_REQUIRED",
-                    "configured" if setup.get("owner_key")
-                    else "no signing key, so no consequential action can be "
-                         "approved",
-                    "" if setup.get("owner_key")
-                    else "generate one and set SOLVENT_OWNER_KEY"))
-        return out
 
     def _host_metrics(self) -> str:
         """§8. Numbers, with no opinion attached.
@@ -1543,6 +1468,20 @@ def _tier_pill(tier: str) -> str:
 #: above HEALTHY deliberately: it is not good news.
 _DIAG_RANK = {"HEALTHY": 0, "DEGRADED": 1, "WARNING": 2, "UNKNOWN": 3,
               "OWNER_ACTION_REQUIRED": 4, "FAILED": 5, "UNSAFE": 6}
+
+
+def _ago(seconds) -> str:
+    """Human elapsed time. Used to say how old a diagnostics report is."""
+    if seconds is None:
+        return "never"
+    seconds = int(seconds)
+    if seconds < 90:
+        return f"{seconds}s"
+    if seconds < 5400:
+        return f"{seconds // 60}m"
+    if seconds < 172800:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
 
 
 def _diag_pill(state: str) -> str:

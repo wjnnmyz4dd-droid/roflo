@@ -260,10 +260,29 @@ class DiagnosisIsNotAuthority(unittest.TestCase):
             "incidents": len(solvent.resilience.incidents()),
         }, before)
 
-    def test_the_module_owns_no_table(self):
+    def test_it_owns_exactly_one_table_and_that_table_is_its_own_runs(self):
+        """It used to own none. It now owns the record of its own reports, so
+        the control centre can render an authoritative finding instead of
+        deciding for itself what the state means.
+
+        "Owns no table" was a proxy for "commands nothing". The property that
+        actually matters is asserted directly: diagnostics may write its own
+        report and may write nothing else, which ``AuthorityConnection``
+        enforces at the connection rather than by convention."""
         from solvent.store import TABLE_OWNER
 
-        self.assertNotIn("diagnostics", set(TABLE_OWNER.values()))
+        owned = {t for t, o in TABLE_OWNER.items() if o == "diagnostics"}
+        self.assertEqual(owned, {"diagnostic_reports"})
+
+    def test_it_cannot_write_to_another_authoritys_table(self):
+        """The real invariant, exercised rather than asserted from a list."""
+        from solvent.errors import AuthorityError
+
+        db = Solvent().store.for_authority("diagnostics")
+        for table in ("policy_current", "ledger_entries", "audit_log",
+                      "registered_capabilities", "jobs", "action_requests"):
+            with self.assertRaises(AuthorityError, msg=table):
+                db.execute(f"UPDATE {table} SET ts = 'tampered'")
 
     def test_it_recommends_a_halt_and_cannot_perform_one(self):
         """The strongest response it can name, and it still cannot act on it."""
@@ -275,10 +294,15 @@ class DiagnosisIsNotAuthority(unittest.TestCase):
                              f"diagnostics calls {forbidden}; noticing a "
                              "problem is not licence to act on it")
 
-    def test_it_never_writes(self):
+    def test_its_only_write_is_its_own_report(self):
+        """One INSERT, into one table. No UPDATE, DELETE or DROP anywhere: a
+        report is a new row, never an edit to an old one, so the history of
+        what the system looked like cannot be rewritten."""
         tree = ast.parse(pathlib.Path("solvent/diagnostics.py").read_text())
-        writes = [n for n in ast.walk(tree)
+        writes = [n.value.strip() for n in ast.walk(tree)
                   if isinstance(n, ast.Constant) and isinstance(n.value, str)
                   and n.value.strip().upper().startswith(
                       ("INSERT", "UPDATE", "DELETE", "DROP"))]
-        self.assertEqual(writes, [], "diagnostics contains a write statement")
+        self.assertEqual(len(writes), 1, writes)
+        self.assertTrue(writes[0].upper().startswith(
+            "INSERT INTO DIAGNOSTIC_REPORTS"), writes[0])

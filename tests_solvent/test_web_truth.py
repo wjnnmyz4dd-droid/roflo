@@ -62,7 +62,19 @@ class Base(unittest.TestCase):
         self.spool = pathlib.Path(self.dir.name) / "spool"
         self.solvent = Solvent(self.db)
         self.arrange(self.solvent)
-        self.solvent.store.close()
+        try:
+            self.solvent.store.close()
+        except Exception:                       # arrange closed it to tamper
+            pass
+        # The Diagnostics page renders the authority's recorded report rather
+        # than deciding for itself what the backend state means, so the report
+        # has to exist. Recorded from a *fresh* process, which is what the
+        # runtime really is: whatever broke the system is not what reports on
+        # it. This makes each test below an end-to-end assertion -- the
+        # authority reaches the right finding, and the page shows that finding.
+        recorder = Solvent(self.db)
+        recorder.diagnostics.record()
+        recorder.store.close()
         self.centre = web_server.build(
             self.db, password_hash=web_auth.hash_password(PASSWORD),
             spool=str(self.spool))
@@ -70,6 +82,24 @@ class Base(unittest.TestCase):
 
     def arrange(self, solvent):
         """Override to break something before the website reads it."""
+
+    def diagnostic_row(self, check: str) -> str:
+        """Exactly one row of the diagnostics table, and none of the next.
+
+        The boundary is derived from the recorded report's own ordering rather
+        than hard-coded, because a window bounded by a guessed "next check"
+        silently starts reading a neighbouring row's state the moment the
+        authority's order changes -- and then asserts about the wrong check
+        while still passing.
+        """
+        body = self.page("/diagnostics")
+        names = [f["name"] for f in
+                 self.centre.read.latest_diagnostics()["findings"]]
+        start = body.find(check, body.find("what to do"))
+        self.assertNotEqual(start, -1, f"{check!r} is not on the page")
+        ends = [body.find(n, start + len(check)) for n in names if n != check]
+        ends = [e for e in ends if e != -1]
+        return body[start:min(ends)] if ends else body[start:]
 
     def page(self, path, **query):
         response = self.centre.handle(Request(
@@ -165,11 +195,7 @@ class SentIsNotDelivered(Base):
 
 class AnUnprovisionedCapabilityCannotReadAsAvailable(Base):
     def test_diagnostics_says_nothing_can_be_delivered(self):
-        body = self.page("/diagnostics")
-        # Bounded to this row: the next row begins at "Incidents", and a
-        # window that ran past it would read the following check's state.
-        window = after_heading(body, "what it means", "Capabilities")
-        window = window[:window.find("Incidents")]
+        window = self.diagnostic_row("Capabilities")
         self.assertIn("owner action required", window)
         self.assertNotIn("healthy", window)
 
@@ -184,10 +210,12 @@ class AProvisionedCapabilityReadsAsAvailable(Base):
         provision_capability(solvent, CSV_PROMOTION, owner_identity=OWNER)
 
     def test_diagnostics_names_it(self):
-        body = self.page("/diagnostics")
-        window = after_heading(body, "what it means", "Capabilities")[:120]
+        """The authority reports what is *deliverable*, which is the operative
+        property -- proven but not cleared to deliver is a different state, and
+        it has its own row. The page names the capability either way."""
+        window = self.diagnostic_row("Capabilities")
         self.assertIn("healthy", window)
-        self.assertIn("proven", window)
+        self.assertIn("csv-cleanup", window)
 
     def test_the_wizard_marks_the_step_done(self):
         body = self.page("/wizard")

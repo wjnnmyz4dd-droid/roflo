@@ -23,6 +23,7 @@ honest reading of "nobody recorded whether it was applied" is that it was not.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import time
@@ -30,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import resilience as res
+from .audit import new_id, now
 from .branding import PRODUCT
 
 #: How a check came out. Ordered worst-last so a summary can take the maximum.
@@ -62,6 +64,13 @@ RESPONSES = (OBSERVE, SAFE_RECOVERY, CONTAIN, RETRY_LATER, CIRCUIT_BREAK,
 
 #: A backup older than this is stale enough to say so.
 BACKUP_STALE_HOURS = 26
+#: A recorded report older than this is not evidence about *now*. The control
+#: centre shows it as stale rather than as current, because diagnostics matter
+#: most exactly when the runtime that produces them has stopped -- and a stale
+#: green is the reassuring-and-wrong failure the whole subsystem exists to
+#: prevent.
+REPORT_STALE_SECONDS = 15 * 60
+
 #: Disk and memory headroom below which Solvent is in trouble.
 DISK_WARN_PERCENT = 85
 DISK_FAIL_PERCENT = 95
@@ -150,6 +159,7 @@ class Diagnostics:
 
     def __init__(self, solvent, *, started_at: float | None = None) -> None:
         self._s = solvent
+        self._db = solvent.store.for_authority("diagnostics")
         self._started_at = started_at if started_at is not None else time.time()
 
     # --------------------------------------------------------------- the run
@@ -162,8 +172,38 @@ class Diagnostics:
             self.customer_service(), self.incidents(), self.breakers(),
             self.network_posture(), self.egress(), self.model(),
             self.payment_ingress(), self.work_sources(), self.owner_key(),
-            self.notifications(), self.disk(), self.backups(),
+            self.notifications(), self.notification_delivery(),
+            self.disk(), self.backups(),
         ])
+
+    # ------------------------------------------------------------- recording
+
+    def record(self, report=None) -> "Report":
+        """Run the checks and persist the result, so the control centre has
+        something authoritative to render.
+
+        The website cannot call :meth:`run` itself. Constructing a
+        :class:`~solvent.harness.Solvent` installs the egress audit hook, which
+        denies ``socket.bind`` for the whole interpreter, so the process that
+        serves a port can never hold the authorities these checks read. That is
+        a deliberate security property, not an accident -- and it is the reason
+        the website used to carry its own copy of this judgement. It renders
+        these rows instead.
+        """
+        report = self.run() if report is None else report
+        self._db.execute(
+            "INSERT INTO diagnostic_reports(id,ts,ran_at,worst,findings) "
+            "VALUES(?,?,?,?,?)",
+            (new_id("diag"), now(), time.time(), report.worst,
+             json.dumps([f.to_dict() for f in report.findings])))
+        self._db.commit()
+        return report
+
+    def latest(self) -> dict | None:
+        """The most recent recorded report, or ``None`` if none was ever run."""
+        row = self._db.query_one(
+            "SELECT * FROM diagnostic_reports ORDER BY ran_at DESC LIMIT 1")
+        return dict(row) if row else None
 
     # ---------------------------------------------------------------- checks
 
@@ -415,6 +455,31 @@ class Diagnostics:
                        + (f", voice via {state['voice_provider']}"
                           if state["voice_provider"] else ", no voice provider"),
                        OBSERVE, "alerting")
+
+    @_checked("Notification delivery", "alerting", OWNER_ESCALATION)
+    def notification_delivery(self) -> Finding:
+        """Sends that were attempted and did not arrive.
+
+        Separate from :meth:`notifications`, which is about *configuration*.
+        A failed delivery is an observed fact about a send that was actually
+        tried, and it stays visible even when the configuration check has its
+        own, earlier complaint -- otherwise "no phone recorded" hides the more
+        alarming "something tried to reach you and could not".
+
+        This check existed only in the website's copy of the diagnostics
+        judgement. Deleting that copy is what revealed the authority had no
+        equivalent, which is the argument for having one of these rather than
+        two.
+        """
+        failures = self._s.notifier.delivery_failures()
+        if failures:
+            return Finding(
+                "Notification delivery", FAILED,
+                f"{len(failures)} notification(s) could not be delivered",
+                OWNER_ESCALATION, "alerting",
+                owner_action="check the Notifications page")
+        return Finding("Notification delivery", HEALTHY,
+                       "nothing has failed to deliver", OBSERVE, "alerting")
 
     @_checked("Disk", "system", OWNER_ESCALATION)
     def disk(self) -> Finding:

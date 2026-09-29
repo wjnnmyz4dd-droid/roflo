@@ -265,6 +265,10 @@ DEFAULT_INTERVALS = {
     "discovery": 900.0,        # look for work every 15 minutes
     "reconciliation": 300.0,   # re-check payment and job state every 5
     "health": 60.0,            # notice trouble within a minute
+    # Well inside diagnostics.REPORT_STALE_SECONDS, so a running system keeps
+    # the control centre's report fresh with margin to spare -- and a system
+    # that has stopped crosses into "stale" quickly enough to be noticed.
+    "diagnostics": 300.0,
 }
 
 #: Consecutive failures of one task before the runtime calls itself degraded.
@@ -355,6 +359,7 @@ class Runtime:
         self.add_task("health", self._tick_health)
         self.add_task("reconciliation", self._tick_reconcile)
         self.add_task("discovery", self._tick_discovery)
+        self.add_task("diagnostics", self._tick_diagnostics)
 
     def _tick_heartbeat(self) -> str:
         """Touch a file so something outside Solvent can tell it is working.
@@ -387,6 +392,17 @@ class Runtime:
     def _tick_health(self) -> str:
         state, why = health(self.solvent, started=self.started)
         return f"{state.value}: {why}"
+
+    def _tick_diagnostics(self) -> str:
+        """Run the self-checks and record them.
+
+        The control centre cannot run these itself -- it holds no authorities --
+        so this is what keeps its Diagnostics page truthful. If this task stops,
+        the page says the report is stale rather than showing the last good one
+        as though it were current.
+        """
+        report = self.solvent.diagnostics.record()
+        return f"{len(report.findings)} check(s); worst {report.worst}"
 
     def _tick_reconcile(self) -> str:
         notes = reconcile(self.solvent)

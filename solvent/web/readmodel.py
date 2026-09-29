@@ -14,6 +14,7 @@ disagreed nobody would know which was right.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 #: Columns that must never reach a page. Read as a belt-and-braces check rather
@@ -34,6 +35,37 @@ class ReadModel:
         self._conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True,
                                      check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+
+    def latest_diagnostics(self) -> dict:
+        """The diagnostics authority's most recent recorded report.
+
+        The control centre renders this. It does not re-derive what any of it
+        means, because a second copy of that judgement is a second answer to
+        the same question -- and the two answers drifted apart the last time
+        this page carried its own.
+
+        Returns ``{"present", "stale", "age_seconds", "ran_at", "worst",
+        "findings"}``. An absent or stale report is reported as such rather
+        than dressed up as current: diagnostics matter most when the runtime
+        that writes them has stopped.
+        """
+        import time
+
+        from ..diagnostics import REPORT_STALE_SECONDS, UNKNOWN
+
+        row = self.one("SELECT * FROM diagnostic_reports "
+                       "ORDER BY ran_at DESC LIMIT 1")
+        if not row:
+            return {"present": False, "stale": True, "age_seconds": None,
+                    "ran_at": "", "worst": UNKNOWN, "findings": []}
+        age = max(0.0, time.time() - float(row["ran_at"]))
+        stale = age > REPORT_STALE_SECONDS
+        return {"present": True, "stale": stale, "age_seconds": age,
+                "ran_at": row["ts"],
+                # A stale report is not evidence about now, so its summary is
+                # not allowed to read as a current verdict.
+                "worst": UNKNOWN if stale else row["worst"],
+                "findings": json.loads(row["findings"] or "[]")}
 
     def close(self) -> None:
         self._conn.close()
