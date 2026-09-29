@@ -69,6 +69,13 @@ class CatalogueEntry:
     #: typing what they found. No platform permission is involved.
     manual_import: bool = True
     notes: str = ""
+    #: The day the access terms were read from their authoritative source.
+    #: A determination is true of a moment, not forever (§9).
+    verified_on: str = ""
+    #: Where it was read from, so the reading can be repeated.
+    evidence: str = ""
+    #: Whether a real adapter exists, as opposed to an entry in a list.
+    adapter_implemented: bool = False
 
     @property
     def automated_discovery_supported(self) -> bool:
@@ -83,8 +90,33 @@ class CatalogueEntry:
             "manual_import": self.manual_import,
             "auth_required": self.auth_required,
             "determination_needed": self.determination_needed,
-            "notes": self.notes,
+            "notes": self.notes, "verified_on": self.verified_on,
+            "evidence": self.evidence,
+            "adapter_implemented": self.adapter_implemented,
         }
+
+    def stale(self, *, today: str = "", max_age_days: int = 180) -> bool:
+        """Whether the determination is old enough to need re-reading.
+
+        Terms change. A determination with no date is stale by definition --
+        "somebody checked at some point" is not a finding.
+        """
+        import datetime as _dt
+
+        if self.access_method == access.MANUAL_IMPORT:
+            # The owner typing work in has no external terms to expire. A
+            # staleness flag here would be permanent noise on the one path
+            # that is never blocked by anybody.
+            return False
+        if not self.verified_on:
+            return True
+        try:
+            checked = _dt.date.fromisoformat(self.verified_on)
+            now = (_dt.date.fromisoformat(today) if today
+                   else _dt.date.today())
+        except ValueError:
+            return True
+        return (now - checked).days > max_age_days
 
 
 _TERMS = ("the owner must read this platform's current terms of service for "
@@ -95,9 +127,21 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
 
     # ------------------------------------------------ freelance marketplaces
     CatalogueEntry(
-        "upwork", "Upwork", FREELANCE_MARKETPLACE, _TERMS,
-        notes="Listings are behind an account. Nothing about automated access "
-              "has been established here; manual ingestion is available now."),
+        "upwork", "Upwork", FREELANCE_MARKETPLACE,
+        "Upwork publishes a GraphQL API with OAuth2 and a marketplace job "
+        "search. Using it needs the owner to register an application on the "
+        "Upwork developer site under their own account, complete identity "
+        "verification, and accept the API terms — and to establish that their "
+        "intended use is permitted by those terms",
+        verified_on="2026-09-29",
+        evidence="upwork.com/developer — GraphQL API at api.upwork.com/graphql, "
+                 "OAuth 2.0 authorization code flow, documented job-search "
+                 "queries. Whether a given automated use is permitted is in "
+                 "the API terms for the owner's own account and was not "
+                 "established here.",
+        notes="An API demonstrably exists, which is not the same as permission "
+              "to use it this way. Left manual-only until the owner registers "
+              "an application and records what their terms allow."),
     CatalogueEntry(
         "fiverr", "Fiverr", FREELANCE_MARKETPLACE, _TERMS,
         notes="Seller-led rather than brief-led, so the acquisition shape "
@@ -118,15 +162,39 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
 
     # ------------------------------------------------- public / government
     CatalogueEntry(
-        "sam_gov", "SAM.gov (US federal opportunities)", PUBLIC_PROCUREMENT,
-        "the owner must establish which access route applies to them, and "
-        "whether federal contracting is work DeskPilot is registered and "
-        "eligible to perform at all",
-        auth_required=False,
-        notes="Public procurement is materially different from marketplace "
-              "work: eligibility, registration and reporting obligations "
-              "attach to the contractor, not just to the contract. Eligibility "
-              "is a separate question from access and is not assumed here."),
+        "sam_gov", "SAM.gov (US federal contract opportunities)",
+        PUBLIC_PROCUREMENT,
+        "the owner must obtain a free public API key from their SAM.gov "
+        "account, and must separately establish whether they are registered "
+        "and eligible to bid on federal contracts at all",
+        access_method=access.OFFICIAL_API, auth_required=True,
+        verified_on="2026-09-29",
+        evidence="open.gsa.gov/api/get-opportunities-public-api/ — api_key "
+                 "required, GET https://api.sam.gov/opportunities/v2/search, "
+                 "pagination required, limit max 1000, postedFrom/postedTo "
+                 "required and at most one year apart",
+        adapter_implemented=True,
+        notes="Contract work, which is DeskPilot's actual mission. Visible is "
+              "not eligible: eligibility, registration and reporting "
+              "obligations attach to the contractor, not to the contract, and "
+              "nothing here infers that the owner may bid."),
+    CatalogueEntry(
+        "grants_gov", "Grants.gov (US federal funding opportunities)",
+        PUBLIC_PROCUREMENT,
+        "none for access; the owner decides whether grant-funded work is in "
+        "scope, since a grant is applied for rather than sold",
+        access_method=access.PUBLIC_FEED, auth_required=False,
+        verified_on="2026-09-29",
+        evidence="grants.gov/api/api-guide — \"Authentication and "
+                 "authorization are not required for the following APIs: "
+                 "Endpoint: search2\"; POST https://api.grants.gov/v1/api/"
+                 "search2; confirmed against a live response on the same date",
+        adapter_implemented=True,
+        notes="The only source needing no credential of any kind, so the only "
+              "one that can demonstrate autonomous discovery on a machine the "
+              "owner has not configured. Returns funding opportunities rather "
+              "than client work, which is why it is labelled and left for the "
+              "owner to enable."),
     CatalogueEntry(
         "state_local_procurement", "State / local procurement portal",
         PUBLIC_PROCUREMENT,

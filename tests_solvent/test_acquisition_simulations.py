@@ -298,7 +298,7 @@ class ADuplicateDoesNotBecomeTwoJobs(Lifecycle):
         self.s.discovery.poll("board")
         self.register("owner_entered", [dict(GOOD, ref="hand-1")],
                       kind=ManualSource)
-        self.s.discovery.poll("owner_entered")
+        self.s.discovery.insert("owner_entered", owner_identity=OWNER)
         rows = self.s.discovery.opportunities()
         self.assertEqual(len(rows), 2)
         self.assertEqual({r["discovered_via"] for r in rows},

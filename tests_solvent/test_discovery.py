@@ -273,5 +273,8 @@ class TrustIsNotSelfDeclared(Base):
             manual, owner_identity=OWNER, readiness=Readiness.PERMITTED_AUTOMATION,
             compliance=Compliance.PERMITTED, determination="owner typed it in")
         self.approve("by_hand")
-        found = self.discovery.poll("by_hand")
+        # Inserted work comes through its own entry point (§4). Polling a
+        # manual source is refused: inserted work is typed in, not fetched.
+        found = self.discovery.insert("by_hand", owner_identity=OWNER)
         self.assertTrue(found[0].owner_entered)
+        self.assertEqual(self.discovery.poll("by_hand"), [])

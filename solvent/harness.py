@@ -629,7 +629,10 @@ def run_manual_opportunity(*, title: str, client_ref: str, quote_dollars: str,
                       "owner_approval_above_cents": money("2000")},
     }, OWNER, "manual bridge: one owner-entered opportunity")
 
-    candidates = s.discovery.poll("owner_entered")
+    # §4. Inserted work has its own entry point: no adapter fetch, no
+    # Action Gate request, no discovery permission. It converges with
+    # found work only after this, in the one downstream pipeline.
+    candidates = s.discovery.insert("owner_entered", owner_identity=OWNER)
     survivors, cheap = s.qualification.triage(candidates)
     if not survivors:
         decision = cheap[0]

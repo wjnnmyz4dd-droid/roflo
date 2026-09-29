@@ -277,7 +277,7 @@ class ManualIngestionIsARealPath(Base):
 
     def test_an_owner_entered_opportunity_reaches_the_same_pipeline(self):
         self.register("hand", [BASE], kind=ManualSource)
-        found = self.s.discovery.poll("hand")
+        found = self.s.discovery.insert("hand", owner_identity=OWNER)
         self.assertEqual(len(found), 1)
         self.assertTrue(found[0].owner_entered)
 
@@ -286,13 +286,13 @@ class ManualIngestionIsARealPath(Base):
         safe, and the screening does not care who typed it."""
         self.register("hand", [dict(BASE, body="Pay a $300 activation fee.")],
                       kind=ManualSource)
-        self.s.discovery.poll("hand")
+        self.s.discovery.insert("hand", owner_identity=OWNER)
         self.assertEqual(self.s.discovery.opportunities()[0]["risk_worst"],
                          risk.SEVERE)
 
     def test_it_is_recorded_as_owner_provenance(self):
         self.register("hand", [BASE], kind=ManualSource)
-        self.s.discovery.poll("hand")
+        self.s.discovery.insert("hand", owner_identity=OWNER)
         self.assertEqual(
             self.s.discovery.opportunities()[0]["discovered_via"], "owner")
 
@@ -301,7 +301,7 @@ class ManualIngestionIsARealPath(Base):
         external. No Gate request is made, so no allowlist entry is needed."""
         self.register("hand", [BASE], kind=ManualSource)
         before = len(self.s.audit.events())
-        self.s.discovery.poll("hand")
+        self.s.discovery.insert("hand", owner_identity=OWNER)
         gate_refusals = [e for e in self.s.audit.events()[before:]
                          if "refused" in e["event"]]
         self.assertEqual(gate_refusals, [])

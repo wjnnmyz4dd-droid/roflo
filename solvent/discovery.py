@@ -40,6 +40,7 @@ from enum import Enum
 from .audit import AuditLog, new_id, now
 from .content import UntrustedContent, quarantine
 from .errors import FailClosed
+from . import intake
 from . import opportunityrisk as risk
 from . import sourceaccess as access
 from .store import Store
@@ -321,6 +322,12 @@ class Discovery:
         permissions = (json.loads(existing["permissions"])
                        if existing.get("permissions") else
                        list(access.DEFAULT_PERMISSIONS))
+        # §4/§5. Filtered on the way in, not checked on the way out: an
+        # inserted-role source must not be *stored* holding DISCOVER, because a
+        # stored permission is one a later code path may read and honour.
+        permissions = list(intake.permissions_for(
+            intake.INSERTED if source.kind == "manual" else intake.FOUND,
+            permissions))
         self._db.execute(
             "INSERT OR REPLACE INTO work_sources(name,kind,readiness,compliance,"
             "determination,determined_by,determined_at,is_fixture,healthy,"
@@ -536,6 +543,14 @@ class Discovery:
                            f"{compliance.value}; only PERMITTED may be polled")
         if not int(state.get("enabled", 1)):
             return False, f"source {source.name!r} is disabled"
+        try:
+            # Belt and braces with the permission filter above: one stops the
+            # permission being stored, this stops the call being made. They
+            # fail for different reasons, so a mutation removing either one is
+            # visible.
+            intake.assert_may_discover(state)
+        except FailClosed as refusal:
+            return False, str(refusal)
         permitted, why = self.may(source.name, access.DISCOVER)
         if not permitted:
             return False, why
@@ -602,7 +617,11 @@ class Discovery:
         # registered as "manual" *and* making no external call is owner-entered.
         # Otherwise a remote adapter could mark attacker-authored postings as
         # owner-confirmed and walk straight past the injection defence.
-        owner_entered = state["kind"] == "manual" and request is None
+        # §4. One place decides what the provenance says. A remote adapter
+        # cannot nominate its own role, and an inserted source that somehow
+        # issued a request is not owner-confirmed on the strength of its kind.
+        stamp = intake.provenance(state)
+        owner_entered = stamp["owner_entered"] and request is None
         try:
             parsed = [replace(o, owner_entered=owner_entered)
                       for o in source.parse(payload)]
@@ -633,6 +652,67 @@ class Discovery:
             why=f"polled {source_name}",
             result=f"{len(found)} new candidate(s), {duplicates} already seen",
             external_effect=f"poll {source_name}", is_fixture=source.is_fixture)
+        return found
+
+    def insert(self, source_name: str, *, owner_identity: str,
+               method: str = intake.OWNER_ENTERED,
+               postings: list | None = None) -> list[Opportunity]:
+        """The **Inserted Work** entry point. A separate door on purpose.
+
+        Work the owner brings does not arrive by polling. It is typed in or
+        uploaded, there is no adapter fetch, no Action Gate request and no
+        network, and this method physically has no path to any of them -- which
+        is the difference §4 asks for, expressed as two methods rather than as
+        a flag inside one.
+
+        It refuses a found-role source outright. Owner-confirmed terms may gate
+        a commitment where a board posting may not, so a source that reaches
+        the network must never be able to record work under this provenance.
+        """
+        if not self._policy.is_owner(owner_identity):
+            raise FailClosed(
+                f"inserting work is an owner action (got {owner_identity!r}); "
+                "inserted terms are owner-confirmed and only the owner can "
+                "confirm them")
+        source = self._sources.get(source_name)
+        if source is None:
+            raise FailClosed(f"unknown source {source_name!r}")
+        state = self.source_state(source_name)
+        if state is None:
+            raise FailClosed(f"source {source_name!r} is not registered")
+        # The role check, from the one place that decides roles.
+        intake.assert_may_insert(state)
+
+        if postings is not None:
+            source = ManualSource(source_name, list(postings))
+        # A source registered as manual but declaring an external fetch is
+        # misregistered, and the combination is exactly how attacker-authored
+        # text would arrive wearing owner-confirmed provenance. Refused rather
+        # than quietly downgraded: the registration is wrong and should be
+        # fixed, not worked around.
+        if source.request() is not None:
+            raise FailClosed(
+                f"source {source_name!r} is registered for inserted work but "
+                "declares an external fetch; inserted work is typed in, and a "
+                "source that reaches the network may not record owner-"
+                "confirmed terms")
+        parsed = [replace(o, owner_entered=True) for o in source.parse(None)]
+        found, duplicates = self._deduplicate(source_name, parsed)
+        for opportunity in found:
+            self._record(opportunity, stamp=intake.provenance(state,
+                                                              method=method))
+        if found:
+            self._db.execute(
+                "UPDATE work_sources SET opportunities_found = "
+                "opportunities_found + ? WHERE name = ?",
+                (len(found), source_name))
+            self._db.commit()
+        self._audit.record(
+            event="discovery.inserted", authority="discovery",
+            initiator=owner_identity,
+            why=f"owner inserted work via {method}",
+            result=f"{len(found)} new, {duplicates} already seen",
+            decision=intake.INSERTED)
         return found
 
     def _deduplicate(self, source_name: str,
@@ -667,7 +747,8 @@ class Discovery:
 
     # ------------------------------------------------------------- recording
 
-    def _record(self, opportunity: Opportunity) -> None:
+    def _record(self, opportunity: Opportunity, *,
+                stamp: dict | None = None) -> None:
         """Store a candidate, with the evidence that it came from somewhere.
 
         §49/§50: nothing here invents. ``client_ref`` stays empty when the
@@ -691,7 +772,9 @@ class Discovery:
              opportunity.external_url,
              screening.worst if screening.signals else "",
              json.dumps([s.to_dict() for s in screening.signals]),
-             "owner" if opportunity.owner_entered else opportunity.source,
+             (stamp or {}).get("discovered_via",
+                               "owner" if opportunity.owner_entered
+                               else opportunity.source),
              opportunity.posting.id if opportunity.posting else "",
              opportunity.platform_fee_cents, opportunity.upfront_cost_cents))
         self._db.commit()

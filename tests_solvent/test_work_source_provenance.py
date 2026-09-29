@@ -61,7 +61,7 @@ class TheOwnerEnteredClaimComesFromRegistration(Rig):
     def test_an_owner_entered_source_is_owner_entered(self):
         """Guards everything below: a claim that is never true proves nothing."""
         self.register(ManualSource("owner_entered", [posting()]))
-        found = self.s.discovery.poll("owner_entered")
+        found = self.s.discovery.insert("owner_entered", owner_identity=OWNER)
         self.assertTrue(found)
         self.assertTrue(found[0].owner_entered)
 
@@ -88,10 +88,16 @@ class TheOwnerEnteredClaimComesFromRegistration(Rig):
 
         source = RemoteManual("owner_entered", [posting(body=HOSTILE_BODY)])
         self.register(source)
-        found = self.s.discovery.poll("owner_entered")
-        for opportunity in found:
-            with self.subTest(ref=opportunity.external_ref):
-                self.assertFalse(opportunity.owner_entered)
+        # Now refused outright rather than downgraded. The combination
+        # "registered as inserted work" + "declares a network fetch" is how
+        # attacker-authored text would arrive wearing owner-confirmed
+        # provenance, and a misregistration should be fixed rather than
+        # silently worked around.
+        with self.assertRaises(FailClosed) as caught:
+            self.s.discovery.insert("owner_entered", owner_identity=OWNER)
+        self.assertIn("may not record owner-confirmed terms",
+                      str(caught.exception))
+        self.assertEqual(self.s.discovery.opportunities(), [])
 
     def test_an_unapproved_source_is_not_polled_at_all(self):
         self.s.discovery.register_source(
@@ -130,7 +136,10 @@ class ForgedProvenanceBuysNoAuthority(Rig):
             {"qualification": {"minimum_value_cents": 2500,
                                "max_concurrent_jobs": 1, "default_hours": 2.0}},
             OWNER, "test: qualification limits")
-        found = self.s.discovery.poll(source.name)
+        # Inserted work uses its own entry point; found work is polled.
+        found = (self.s.discovery.insert(source.name, owner_identity=OWNER)
+                 if source.kind == "manual"
+                 else self.s.discovery.poll(source.name))
         survivors, cheap = self.s.qualification.triage(found)
         return (self.s.qualification.qualify(survivors[0]) if survivors
                 else cheap[0])
@@ -201,7 +210,7 @@ class TheTrialPathAuthorisesNothingWider(Rig):
 
     def test_the_simulation_posture_is_untouched_by_any_of_this(self):
         self.register(ManualSource("owner_entered", [posting()]))
-        self.s.discovery.poll("owner_entered")
+        self.s.discovery.insert("owner_entered", owner_identity=OWNER)
         self.assertTrue(self.s.policy.get("egress", "simulation_only",
                                           default=True))
 
@@ -211,7 +220,7 @@ class TheTrialPathAuthorisesNothingWider(Rig):
         external effect whether or not one happened, which is the wrong place
         to look for this."""
         self.register(ManualSource("owner_entered", [posting()]))
-        self.s.discovery.poll("owner_entered")
+        self.s.discovery.insert("owner_entered", owner_identity=OWNER)
         self.assertEqual(self.s.gate.unsettled(), [])
         attempts = [e for e in self.s.audit.events()
                     if e["authority"] == "gate"]

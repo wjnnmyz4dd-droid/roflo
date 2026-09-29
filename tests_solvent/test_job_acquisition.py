@@ -414,8 +414,26 @@ class NothingIsInvented(Base):
 
 class TheCatalogueClaimsNothingItCannotShow(Base):
 
-    def test_no_entry_claims_automated_discovery(self):
-        self.assertEqual(catalogue.automated_sources(), [])
+    def test_only_sources_with_a_real_adapter_claim_automation(self):
+        """This used to assert that *nothing* was automated, which was true
+        when nothing was. Two public-sector APIs have since been researched,
+        verified against their own documentation and implemented, so the
+        assertion is now that a claim of automation implies an adapter --
+        which is the property that actually matters."""
+        automated = catalogue.automated_sources()
+        self.assertTrue(automated, "no source can discover work autonomously")
+        for entry in automated:
+            self.assertTrue(entry.adapter_implemented,
+                            f"{entry.source_id} claims automation with no adapter")
+            self.assertTrue(entry.verified_on,
+                            f"{entry.source_id} claims automation with no date")
+            self.assertTrue(entry.evidence,
+                            f"{entry.source_id} claims automation with no evidence")
+
+    def test_no_commercial_marketplace_claims_automation(self):
+        for entry in catalogue.by_type(catalogue.FREELANCE_MARKETPLACE):
+            self.assertFalse(entry.automated_discovery_supported,
+                             f"{entry.source_id} was marked automated")
 
     def test_every_marketplace_needs_a_determination(self):
         for entry in catalogue.by_type(catalogue.FREELANCE_MARKETPLACE):
