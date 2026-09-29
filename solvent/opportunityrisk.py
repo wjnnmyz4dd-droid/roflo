@@ -182,9 +182,16 @@ _PATTERNS: tuple[tuple[str, str, str, str], ...] = (
     ("DATA_EXFILTRATION", SEVERE,
      "the listing asks for another client's material, which DeskPilot will "
      "not provide under any commercial terms",
+     # Two orders, because both are natural English and only one was
+     # matched before: "send me another client's files" puts the object
+     # last, "upload the files from your other clients" puts it first.
      r"\b(send|upload|share|provide)\b[^.]{0,40}\b(other|another|previous|"
      r"past|existing)\b[^.]{0,20}\b(client|customer)s?\b"
-     r"[^.]{0,30}\b(files?|data|work|documents?|details?)\b"),
+     r"[^.]{0,30}\b(files?|data|work|documents?|details?)\b"
+     r"|\b(send|upload|share|provide)\b[^.]{0,30}"
+     r"\b(files?|data|work|documents?|details?)\b[^.]{0,30}"
+     r"\b(other|another|previous|past|existing)\b[^.]{0,20}"
+     r"\b(client|customer)s?\b"),
 
     # --- the work itself --------------------------------------------------
     ("ILLEGAL_WORK", SEVERE,

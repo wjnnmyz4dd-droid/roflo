@@ -108,7 +108,7 @@ def business_metrics(*, orchestrator, ledger, governor, audit, discovery=None,
         invoiced += int(payment.get("amount_cents", 0) or 0)
         job_collected = ledger.collected_for(job.id)
         collected += job_collected
-        costs += ledger.costs_for(job.id)
+        pass  # per-job costs are totalled globally below
         if job_collected and ledger.is_simulated(job.id):
             simulated += job_collected
         elif job_collected:
@@ -116,6 +116,11 @@ def business_metrics(*, orchestrator, ledger, governor, audit, discovery=None,
             # so it counts real money only. A fixture client is not a client.
             clients[job.client_id] = clients.get(job.client_id, 0) + job_collected
 
+    # Every cost, not only those attached to a job. Operating spend --
+    # subscriptions, bid credits, licences -- belongs to no job and was
+    # previously invisible here, which understated costs and overstated
+    # profit by exactly that amount.
+    costs = ledger.total_costs_cents()
     real = ledger.real_revenue_cents()
     # Profit and margin are computed on **real** collected revenue. They used
     # to be computed on everything collected, so a deployment holding any

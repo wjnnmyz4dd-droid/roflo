@@ -111,6 +111,23 @@ class Ledger:
         return sum(int(r["amount_cents"]) * (1 if r["direction"] == "COST" else -1)
                    for r in rows)
 
+    def total_costs_cents(self) -> Cents:
+        """Every cost recorded, whether or not it belongs to a job.
+
+        ``costs_for`` answers "what did this job cost", which is the right
+        question per job and the wrong one for the business. Operating spend --
+        a marketplace subscription, bid credits, a software licence, compute --
+        is real money leaving and belongs to no job, so summing per-job costs
+        understates what was spent and overstates profit by exactly that
+        amount.
+
+        Only ``COST`` and ``CREDIT`` rows exist in this table, so a global sum
+        is well defined: a credit is a correction against a cost, not revenue.
+        """
+        rows = self._db.query("SELECT direction, amount_cents FROM ledger_entries")
+        return sum(int(r["amount_cents"]) * (1 if r["direction"] == "COST" else -1)
+                   for r in rows)
+
     # -------------------------------------------------------------- payments
 
     def open_payment(self, *, job_id: str, amount_cents: Cents, rail: str,
