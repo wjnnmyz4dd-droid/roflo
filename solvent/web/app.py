@@ -17,6 +17,7 @@ import pathlib
 import urllib.parse
 from dataclasses import dataclass, field
 
+from ..branding import ENGINE, PRODUCT
 from . import auth as auth_module
 from . import intents as intents_module
 from .render import (
@@ -162,7 +163,7 @@ class ControlCentre:
         note = (f'<div class="banner banner-bad">{esc(message)}</div>'
                 if message else "")
         return page("Sign in",
-                    f'<div class="login">{note}<h1>Solvent</h1>'
+                    f'<div class="login">{note}<h1>{PRODUCT}</h1>'
                     '<p class="sub">Owner control centre.</p>'
                     '<form method="post" action="/login">'
                     '<label for="p">Password</label>'
@@ -221,7 +222,7 @@ class ControlCentre:
                     if k not in ("csrf", "verb", "why", "subject", "password")})
         note = (
             "Recorded and queued. This is a <strong>request</strong>: the "
-            "Solvent runtime executes it under its own authorities, and a "
+            "runtime executes it under its own authorities, and a "
             "consequential one needs an owner approval the control centre "
             "cannot produce."
             if intent_class == intents_module.CONSEQUENTIAL else
@@ -252,10 +253,10 @@ class ControlCentre:
         out = []
         posture = self.read.posture()
         if posture["halted"]:
-            out.append(("bad", "HALT is engaged. Solvent is taking no new work "
+            out.append(("bad", f"HALT is engaged. {PRODUCT} is taking no new work "
                                "and performing no external effects."))
         if not posture["simulation_only"]:
-            out.append(("warn", "Real external effects are ENABLED. Solvent can "
+            out.append(("warn", f"Real external effects are ENABLED. {PRODUCT} can "
                                 "send and charge."))
         intact, why = self.read.audit_chain_intact()
         if not intact:
@@ -322,7 +323,7 @@ class ControlCentre:
                 + f" {esc(money(cash['simulated_cents']))} of fixture money "
                   "exists in this database and is counted nowhere above.</p>")
 
-        return (f"<h1>Command centre</h1>"
+        return (f"<h1>{PRODUCT} Command Centre</h1>"
                 f'<p class="sub">What needs you, then what is happening.</p>'
                 f"<h2>Needs your attention</h2>{needs}"
                 f"<h2>Business</h2>{cards}{simulated}"
@@ -486,7 +487,7 @@ class ControlCentre:
             scope = f" for {esc(client)}"
         return ("<h1>Files and deliverables</h1>"
                 f'<p class="sub">{esc(str(len(rows)))} file(s){scope}. '
-                "This page lists what Solvent produced and does not serve it: "
+                f"This page lists what {PRODUCT} produced and does not serve it: "
                 "open a file on the machine, not through the website.</p>"
                 + table(["role", "type", "size", "digest", "verification",
                          "client", "job", "produced"], body,
@@ -522,7 +523,7 @@ class ControlCentre:
                 f'<p class="sub">{esc(str(len(rows)))} incident(s)'
                 + (f" filtered by {esc(status or component or fingerprint)}"
                    if (status or component or fingerprint) else "")
-                + ". An incident is a failure Solvent recorded, not a message "
+                + f". An incident is a failure {PRODUCT} recorded, not a message "
                   "it printed.</p>")
         if summary:
             head += table(
@@ -561,7 +562,7 @@ class ControlCentre:
              f"{esc(row.get('component', ''))}"),
             ("Where did it start?",
              f"{esc(row.get('component', ''))} / {esc(row.get('operation', ''))}"),
-            ("What was Solvent doing?", esc(row.get("trigger", "")) or "—"),
+            (f"What was {PRODUCT} doing?", esc(row.get("trigger", "")) or "—"),
             ("What were the symptoms?", esc(row.get("symptoms", "")) or "—"),
             ("What was affected?",
              ", ".join(filter(None, [esc(row.get("job_id", "")),
@@ -570,7 +571,7 @@ class ControlCentre:
              esc(row.get("external_uncertainty", ""))
              or "nothing recorded as uncertain"),
             ("Last safe checkpoint", esc(row.get("checkpoint", "")) or "none recorded"),
-            ("What did Solvent do?", esc(row.get("recovery_action", "")) or "—"),
+            (f"What did {PRODUCT} do?", esc(row.get("recovery_action", "")) or "—"),
             ("Did it recover?", esc(row.get("recovery_result", "")) or "—"),
             ("What caused it?",
              esc(row.get("root_cause", "")) or "not established yet"),
@@ -616,7 +617,7 @@ class ControlCentre:
                                _incident_pill(r.get("status", "")),
                                link(f"/incident?id={urllib.parse.quote(r['id'])}",
                                     "open")] for r in related], empty=""))
-        out.append("<h2>What Solvent was doing</h2>")
+        out.append(f"<h2>What {PRODUCT} was doing</h2>")
         out.append('<p class="sub">The flight recorder, sanitised. Secrets are '
                    "removed as frames are written, not as they are shown.</p>")
         out.append(table(["when", "component", "operation", "state", "checkpoint"],
@@ -667,10 +668,17 @@ class ControlCentre:
                       "confirmed, or are waiting on you. Unknown is not the "
                       "same as fine.</div>")
         return (banner + "<h1>Diagnostics</h1>"
-                '<p class="sub">Every check Solvent can make about itself. '
+                f'<p class="sub">Every check {PRODUCT} can make about itself. '
                 "A check that could not run reads UNKNOWN rather than passing, "
                 "and a control nobody recorded reads UNSAFE rather than safe."
                 "</p>"
+                # §7. The engine identity is useful exactly here, on a
+                # technical page, and nowhere the owner is simply working.
+                f'<p class="sub muted">Engine: {ENGINE}. Internal names —'
+                f" the <code>{ENGINE.lower()}</code> command, "
+                f"<code>{ENGINE.lower()}.service</code>, database tables and "
+                f"audit records — stay {ENGINE}. {PRODUCT} is the product "
+                f"they run.</p>"
                 + table(["check", "state", "what it means", "what to do"],
                         [[esc(name), _diag_pill(state), esc(detail),
                           esc(action) or "—"]
@@ -753,7 +761,7 @@ class ControlCentre:
         settings = read.notification_settings()
         if not settings["owner_phone_mask"]:
             out.append(("Notifications", "OWNER_ACTION_REQUIRED",
-                        "no owner phone recorded; Solvent cannot reach you away "
+                        f"no owner phone recorded; {PRODUCT} cannot reach you away "
                         "from this website",
                         "run `solvent setup notifications`"))
         elif not settings["sms_provider"]:
@@ -821,7 +829,7 @@ class ControlCentre:
         unresolved = self.read.unresolved_notifications()
         configured = [
             ("Owner phone", esc(settings["owner_phone_mask"])
-             or "not configured — Solvent cannot reach you away from here"),
+             or f"not configured — {PRODUCT} cannot reach you away from here"),
             ("SMS provider", esc(settings["sms_provider"]) or "not configured"),
             ("Voice provider", esc(settings["voice_provider"]) or "not configured"),
             ("Escalate after",
@@ -833,7 +841,7 @@ class ControlCentre:
             banner = ('<div class="banner banner-warn">'
                       f"{len(unresolved)} notification(s) unresolved.</div>")
         return (banner + "<h1>Notifications</h1>"
-                '<p class="sub">Solvent tells you what happened and where to '
+                f'<p class="sub">{PRODUCT} tells you what happened and where to '
                 "look. It never sends a key, client data or figures, because a "
                 "text is read off a lock screen. Receiving one approves "
                 "nothing.</p>"
@@ -900,7 +908,7 @@ class ControlCentre:
                          "honest reading", "OWNER DECISION REQUIRED"))
         if not self.read.notification_settings()["owner_phone_mask"]:
             rows.append(("Alerting", "configure owner notifications",
-                         "without a number Solvent cannot reach you away from "
+                         f"without a number {PRODUCT} cannot reach you away from "
                          "this website", "RECOMMENDATION"))
         for row in self.read.relay_queue():
             rows.append(("Clients", f"a reply is drafted for {row.get('client_id','')}",
@@ -914,7 +922,7 @@ class ControlCentre:
                 + table(["area", "what", "why", "standing"],
                         [[esc(area), esc(what), esc(why), _standing_pill(standing)]
                          for area, what, why, standing in rows],
-                        empty="Nothing to suggest. Solvent is not inventing work "
+                        empty=f"Nothing to suggest. {PRODUCT} is not inventing work "
                               "to look busy."),
                 "Recommendations")
 
@@ -951,7 +959,7 @@ class ControlCentre:
              "runtime's environment file."),
             ("2. Who you contract as",
              "Your legal name and contact address, for agreements and invoices. "
-             "Solvent will never invent these.",
+             f"{PRODUCT} will never invent these.",
              DONE if contracting.get("structure") else ACTION,
              "Run `solvent setup contracting` at the terminal."),
             ("3. A cleared AI model",
@@ -959,7 +967,7 @@ class ControlCentre:
              DONE if models else ACTION,
              "Run `solvent setup model`."),
             ("4. A proven capability",
-             "What Solvent is allowed to sell. Until this is recorded, work is "
+             f"What {PRODUCT} is allowed to sell. Until this is recorded, work is "
              "done and refused at the delivery gate.",
              DONE if proven else ACTION,
              "Run `solvent setup capability`."),
@@ -974,7 +982,7 @@ class ControlCentre:
              DONE,
              "Already set, or this page would not be visible."),
             ("7. Owner notifications",
-             "So Solvent can reach you when you are not looking at this page.",
+             f"So {PRODUCT} can reach you when you are not looking at this page.",
              DONE if settings["owner_phone_mask"] else OPTIONAL,
              "Run `solvent setup notifications`. Your number is stored as a "
              "mask here and kept in the runtime's environment."),
@@ -1054,7 +1062,7 @@ class ControlCentre:
         projects = self.read.skill_projects()
         awaiting = [p for p in projects if p.get("stage") == "AWAITING_OWNER"]
         return ("<h1>Skills Lab</h1>"
-                '<p class="sub">What Solvent wants to be able to do, what it is '
+                f'<p class="sub">What {PRODUCT} wants to be able to do, what it is '
                 "building, and what it has proven.</p>"
                 + ("<h2>Waiting for your decision</h2>"
                    + table(["skill", "change", "version", "why", ""],
@@ -1125,7 +1133,7 @@ class ControlCentre:
         rows = self.read.capabilities()
         certs = self.read.verifier_certifications()
         return ("<h1>Capabilities</h1>"
-                '<p class="sub">What Solvent is allowed to sell, and on what '
+                f'<p class="sub">What {PRODUCT} is allowed to sell, and on what '
                 "evidence. Derived from the registry, never a second list.</p>"
                 + table(["capability", "version", "proven", "scope", "evidence"],
                         [[esc(r.get("name", "")), esc(r.get("version", "")),
@@ -1184,7 +1192,7 @@ class ControlCentre:
                 esc(row.get("evidence_ref", ""))[:18] or "—",
                 esc(row.get("ts", ""))[:19],
             ])
-        head = ("<h1>What Solvent has learned</h1>"
+        head = (f"<h1>What {PRODUCT} has learned</h1>"
                 f'<p class="sub">{esc(str(len(rows)))} lesson(s)'
                 + (f" of kind {esc(kind)}" if kind else "") + ". Each one is "
                 "shown with the grade of evidence it was drawn from; Memory "
@@ -1198,7 +1206,7 @@ class ControlCentre:
                  for r in summary], empty="")
         return (head + table(
             ["kind", "subject", "evidence", "what was recorded", "from", "when"],
-            body, empty="Nothing has been learned yet. Solvent records a "
+            body, empty=f"Nothing has been learned yet. {PRODUCT} records a "
                         "lesson only from verified evidence, so an empty list "
                         "here is what a system that has not yet worked looks "
                         "like."),
@@ -1207,7 +1215,7 @@ class ControlCentre:
     def service(self, request: Request):
         relay = self.read.relay_queue()
         return ("<h1>Customer service</h1>"
-                '<p class="sub">Solvent drafts; a person sends. Nothing on this '
+                f'<p class="sub">{PRODUCT} drafts; a person sends. Nothing on this '
                 "page has been sent.</p>"
                 "<h2>Waiting for you to pass on</h2>"
                 + table(["job", "routed to", "stance", "message"],

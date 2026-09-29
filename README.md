@@ -173,3 +173,24 @@ pytest
 94 tests, no network and no model weights required — the `echo` and scripted
 backends stand in for real ones, and the HTTP backends are exercised against
 mocked transports that assert on the exact request payloads.
+
+---
+
+## Also in this repository: DeskPilot
+
+**DeskPilot** — an AI office operating system, powered by the **Solvent**
+engine — lives alongside `roflo` in this repository. It is a separate system
+with its own mission, authorities and test suite:
+
+> Find, qualify, complete, deliver, and profit from legitimate client work.
+
+Start at [`SOLVENT.md`](SOLVENT.md) for the mission and architecture. The
+product is named DeskPilot; the engine, the `solvent` Python package, the
+`solvent` CLI and the on-disk contracts are named Solvent, and
+[`docs/deskpilot-naming.md`](docs/deskpilot-naming.md) explains which name goes
+where. **Do not rename one to the other** — several of those names are
+contracts with a running installation.
+
+```bash
+python3 -m unittest discover -s tests_solvent -t .
+```

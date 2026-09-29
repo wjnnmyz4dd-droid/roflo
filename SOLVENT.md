@@ -1,9 +1,27 @@
-# Solvent
+# DeskPilot
 
-## SOLVENT EXISTS TO FIND, QUALIFY, COMPLETE, DELIVER, AND PROFIT FROM LEGITIMATE CLIENT WORK.
+**AI office operating system. Powered by the Solvent engine.**
+
+## DESKPILOT EXISTS TO FIND, QUALIFY, COMPLETE, DELIVER, AND PROFIT FROM LEGITIMATE CLIENT WORK.
 
 That sentence is the product. Everything else in this repository exists to
 protect it.
+
+### Two names, on purpose
+
+**DeskPilot** is the product: what the owner signs into, what the control
+centre is branded as, what a text message says it is from.
+
+**Solvent** is the engine underneath: the Python package, the database and its
+tables, the `solvent` command, `solvent.service`, `/var/lib/solvent`, the
+`SOLVENT_OWNER_KEY` environment variable, audit event names, and the fields
+inside signed approval payloads.
+
+Both names are correct. They name different things, and the boundary is
+load-bearing — see [`docs/deskpilot-naming.md`](docs/deskpilot-naming.md)
+before renaming anything. **Do not run a repository-wide replacement of
+"Solvent".** Several of those names are contracts with a running installation,
+not labels, and changing one is a migration rather than a branding decision.
 
 All adaptive, analytical, learning, strategic and growth capabilities are in
 service of that mission. **They are not the mission themselves.**
@@ -26,9 +44,9 @@ Said plainly:
 > Get the right permission. Do the work well. Verify it. Deliver it. Get paid.
 > Know the real profit. Learn. Do it better next time.
 
-## What Solvent is not
+## What DeskPilot is not
 
-Solvent is **not** primarily a generic adaptive AI, a self-improvement
+DeskPilot is **not** primarily a generic adaptive AI, a self-improvement
 experiment, an AI board of directors, a business consultant, a
 project-management application, or a general autonomous operating system.
 

@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import resilience as res
+from .branding import PRODUCT
 
 #: How a check came out. Ordered worst-last so a summary can take the maximum.
 HEALTHY = "HEALTHY"
@@ -393,8 +394,8 @@ class Diagnostics:
         failures = self._s.notifier.delivery_failures()
         if not state["owner_phone"]:
             return Finding("Notifications", OWNER_ACTION_REQUIRED,
-                           "no owner phone recorded; Solvent cannot reach you "
-                           "away from the website", OBSERVE, "alerting",
+                           f"no owner phone recorded; {PRODUCT} cannot reach "
+                           "you away from the website", OBSERVE, "alerting",
                            owner_action="run `solvent setup notifications`")
         if not state["sms_provider"]:
             return Finding("Notifications", DEGRADED,

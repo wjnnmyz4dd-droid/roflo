@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from html import escape
 
+from ..branding import PRODUCT
+
 #: Progressive disclosure (§55): three levels, so the owner is not handed
 #: fingerprints to read but is never prevented from reaching them.
 PLAIN, OPERATIONAL, EVIDENCE = "plain", "operational", "evidence"
@@ -186,9 +188,9 @@ def page(title: str, body: str, *, path: str = "/", authenticated: bool = True,
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        f"<title>{esc(title)} · Solvent</title>"
+        f"<title>{esc(title)} · {PRODUCT}</title>"
         f"<style>{STYLE}</style></head><body>"
-        f'<header><span class="brand">Solvent</span>'
+        f'<header><span class="brand">{PRODUCT}</span>'
         f'<span class="muted">owner control centre</span>'
         f'<span style="margin-left:auto">{logout}</span></header>'
         f"{nav}<main>{alerts}{body}</main></body></html>"

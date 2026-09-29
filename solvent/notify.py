@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .branding import PRODUCT
 from .audit import AuditLog, new_id, now
 from .errors import FailClosed
 from .resilience import redact
@@ -253,7 +254,7 @@ class Notifier:
         data, no figures and no artifact contents, because a text message is
         read off a lock screen and stored by whatever the phone syncs with.
         """
-        return redact(f"Solvent: {event}. {summary} — open the control centre "
+        return redact(f"{PRODUCT}: {event}. {summary} — open the control centre "
                       f"for details.")[:280]
 
     def _dispatch(self, notification_id: str, channel: str, body: str,

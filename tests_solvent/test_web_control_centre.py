@@ -19,6 +19,7 @@ import tempfile
 import unittest
 
 from solvent import skillslab as lab
+from solvent.branding import PRODUCT
 from solvent.harness import OWNER, Solvent, run_csv_job
 from solvent.web import auth as web_auth
 from solvent.web import intents as web_intents
@@ -1186,7 +1187,7 @@ class TheLearningPage(Base):
 
     def test_it_names_what_was_learned_and_where_it_came_from(self):
         body = self.get("/learning", self.sign_in()).body.decode()
-        self.assertIn("What Solvent has learned", body)
+        self.assertIn(f"What {PRODUCT} has learned", body)
         self.assertIn("checklist_pattern", body)
         self.assertIn("job_economics", body)
         self.assertIn(self.job_id[:18], body)

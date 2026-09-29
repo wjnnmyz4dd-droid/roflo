@@ -11,6 +11,7 @@ import contextlib
 import io
 import unittest
 
+from solvent.branding import PRODUCT
 from solvent.cli import main
 
 
@@ -48,7 +49,11 @@ class ReadOnlyCommands(unittest.TestCase):
     def test_laws_runs(self):
         code, out = run("laws")
         self.assertEqual(code, 0)
-        self.assertIn("SOLVENT", out.upper())
+        # Assert the mission itself, not merely that some product name is
+        # present -- the name can change again, the mission may not.
+        self.assertIn("FIND, QUALIFY, COMPLETE, DELIVER AND PROFIT FROM",
+                      out.upper())
+        self.assertIn(PRODUCT.upper(), out.upper())
 
     def test_services_ranks_without_quoting_a_price(self):
         code, out = run("services")

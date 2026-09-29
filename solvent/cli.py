@@ -17,6 +17,7 @@ from . import egress
 from . import harness
 from . import runtime as rt
 from . import services
+from .branding import ENGINE, PRODUCT
 from .errors import FailClosed
 from .harness import OWNER, Solvent, run_acquisition_cycle, run_first_job
 from .store import TABLE_OWNER
@@ -26,7 +27,7 @@ from .types import OperatingMode
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Report measured enforcement, not intentions."""
     solvent = Solvent()
-    print("Solvent readiness")
+    print(f"{PRODUCT} readiness")
     print("=" * 60)
 
     probe = egress.probe()
@@ -277,7 +278,7 @@ def cmd_setup_notifications(args: argparse.Namespace) -> int:
             args.escalate_after_minutes * 60
     solvent.policy.amend(patch, args.owner,
                          "owner recorded notification routing")
-    print(f"recorded. Solvent will text {masked}"
+    print(f"recorded. {PRODUCT} will text {masked}"
           + (f" via {args.sms_provider}" if args.sms_provider else
              " once an SMS provider is configured") + ".")
     print("  The number itself was not stored. Nothing here can print it back.")
@@ -694,7 +695,7 @@ def cmd_relay(args: argparse.Namespace) -> int:
             print("  DO NOT SEND — verification is not satisfied for this job.")
         elif artifact:
             print("  READY_FOR_HUMAN_RELAY — send the file above, then record")
-            print("  payment when it arrives. Solvent sends nothing itself.")
+            print(f"  payment when it arrives. {PRODUCT} sends nothing itself.")
         print()
     return 0
 
@@ -736,7 +737,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     """Business status without terminal archaeology."""
     solvent = Solvent(args.db)
     metrics = solvent.metrics().to_dict()
-    print("Solvent business status")
+    print(f"{PRODUCT} business status")
     print("=" * 66)
     print(f"\n{metrics['headline']}\n")
     groups = {
@@ -766,7 +767,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_laws(args: argparse.Namespace) -> int:
     """Print the laws and where each is enforced in code."""
-    print("  Solvent exists to FIND, QUALIFY, COMPLETE, DELIVER and PROFIT FROM")
+    print(f"  {PRODUCT} exists to FIND, QUALIFY, COMPLETE, DELIVER and PROFIT FROM")
     print("  legitimate client work. Everything below protects that mission.\n")
     laws = [
         ("discovery finds work, never takes it", "discovery.Discovery (no accept path)"),
@@ -782,7 +783,7 @@ def cmd_laws(args: argparse.Namespace) -> int:
         ("ledger and audit are append-only", "store immutability triggers"),
         ("learning cannot touch gate parameters", "no write path in TABLE_OWNER"),
         ("external content has no authority", "content.UntrustedContent"),
-        ("solvent may not expand itself", "capability.register owner check"),
+        (f"{PRODUCT} may not expand itself", "capability.register owner check"),
         ("no silent stalls", "orchestrator.TIMEOUTS_MINUTES + escalate_overdue"),
     ]
     for law, where in laws:
@@ -869,7 +870,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         report = rt.serve(solvent, mode=_mode(args), tick_s=args.tick,
                           max_ticks=args.max_ticks)
     except FailClosed as refusal:
-        print(f"solvent did not start: {refusal}", file=sys.stderr)
+        print(f"{PRODUCT} did not start: {refusal}", file=sys.stderr)
         return 1
     print(f"stopped: {report}")
     return 0
@@ -932,7 +933,9 @@ def cmd_resume(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="solvent", description="Owner-governed business operating system.")
+        prog=ENGINE.lower(),
+        description=f"{PRODUCT} — AI office operating system. "
+                    f"Engine: {ENGINE}.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("doctor", help="report measured enforcement").set_defaults(
@@ -962,7 +965,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--quote", default="900", help="quoted price in dollars")
     demo.set_defaults(func=cmd_demo)
 
-    run = sub.add_parser("run", help="run Solvent as a long-lived service")
+    run = sub.add_parser("run", help=f"run {PRODUCT} as a long-lived service")
     run.add_argument("--db", default=rt.DEFAULT_DB)
     run.add_argument("--always-on", action="store_true",
                      help="production mode: refuse to start without durable storage")
@@ -971,7 +974,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="stop after N ticks (testing)")
     run.set_defaults(func=cmd_run)
 
-    health = sub.add_parser("health", help="what this Solvent can currently do")
+    health = sub.add_parser("health", help=f"what this {PRODUCT} can currently do")
     health.add_argument("--db", default=rt.DEFAULT_DB)
     health.add_argument("--always-on", action="store_true")
     health.set_defaults(func=cmd_health)
@@ -1015,7 +1018,7 @@ def build_parser() -> argparse.ArgumentParser:
                              help="only needed to issue an invoice")
     contracting.add_argument(
         "--tax-reference-provisioned", action="store_true",
-        help="record that a tax reference exists. Takes no value: Solvent "
+        help=f"record that a tax reference exists. Takes no value: {PRODUCT} "
              "stores presence, never the number")
     contracting.add_argument("--reason", default="OD-1: owner contracting details")
     contracting.set_defaults(func=cmd_setup_contracting)
