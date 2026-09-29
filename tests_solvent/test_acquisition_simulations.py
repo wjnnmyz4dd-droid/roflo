@@ -120,6 +120,7 @@ class AGoodOpportunityReachesTheWall(Lifecycle):
 
         self.s.discovery.grant("board", access.SUBMIT_APPLICATION,
                                owner_identity=OWNER, why="test")
+        before = len(self.s.store.raw_readonly("SELECT id FROM action_requests"))
         sent, second = self.s.applications.submit(application)
 
         self.assertFalse(sent)
@@ -127,6 +128,40 @@ class AGoodOpportunityReachesTheWall(Lifecycle):
                             "the same refusal for two different reasons means "
                             "one of the two controls is not being consulted")
         self.assertNotIn("SUBMIT_APPLICATION", second)
+
+        # The Gate was actually asked. Without this, a mutation that skipped
+        # the Gate entirely survived: submit() falls through to a final "no
+        # submission client" refusal, so it still returned False and every
+        # assertion above still held. Returning False is not evidence that the
+        # control ran -- the Gate's own record is.
+        after = self.s.store.raw_readonly(
+            "SELECT * FROM action_requests ORDER BY ts")
+        self.assertEqual(len(after), before + 1,
+                         "the Action Gate was never consulted")
+        self.assertEqual(after[-1]["action_class"], "C3_FINANCIAL_COMMITMENT")
+        self.assertIn("owner approval", second)
+
+    def test_the_gate_refusal_is_the_gates_own_words(self):
+        """The refusal has to come from the Gate, not from a message this
+        module composed that merely sounds like one."""
+        self.register("board", [GOOD])
+        self.s.discovery.poll("board")
+        row = self.s.discovery.opportunities()[0]
+        application = self.s.applications.prepare(
+            row, price_cents=36_000, capability_version=CSV_PROMOTION.version,
+            deliverables=["clean.csv"], timeline_days=3, scope="Clean the CSV.")
+        self.s.discovery.grant("board", access.SUBMIT_APPLICATION,
+                               owner_identity=OWNER, why="test")
+
+        direct = self.s.gate.request(
+            action_class=__import__(
+                "solvent.types", fromlist=["x"]).ActionClass.C3_FINANCIAL_COMMITMENT,
+            destination="board",
+            privacy=__import__(
+                "solvent.types", fromlist=["x"]).PrivacyClass.INTERNAL,
+            purpose="submit an application to board", initiator="test")
+        self.assertEqual(self.s.applications.submit(application)[1],
+                         direct.reason)
 
     def test_state_survives_a_restart(self):
         self.register("board", [GOOD])

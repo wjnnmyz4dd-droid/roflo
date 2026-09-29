@@ -200,16 +200,53 @@ class SourceHealthIsNamedNotGuessed(Base):
 
     def test_a_rate_limited_source_is_not_polled(self):
         """§41. Backing off, not trying harder."""
+        self.register("board2")
+        self.assertEqual(len(self.s.discovery.poll("board2")), 1,
+                         "canary: this fixture does yield work when healthy")
         self.register()
         self.s.discovery.record_health("board", access.RATE_LIMITED,
                                        reason="429")
         self.assertEqual(self.s.discovery.poll("board"), [])
 
     def test_each_not_pollable_state_stops_polling(self):
+        """Asserting the *reason*, not just the empty result.
+
+        A mutation that deleted this check entirely survived the first version
+        of this test: a second, older boolean was also refusing, so the empty
+        list proved nothing about which control fired. The reason string names
+        the health state, so only the health check can produce it."""
         self.register()
         for state in access.NOT_POLLABLE:
             self.s.discovery.record_health("board", state, reason="test")
             self.assertEqual(self.s.discovery.poll("board"), [], state)
+            allowed, why = self.s.discovery._may_poll(
+                self.s.discovery._sources["board"])
+            self.assertFalse(allowed)
+            self.assertIn(state, why,
+                          f"refused, but not by the health check: {why}")
+
+    def test_a_healthy_source_is_polled(self):
+        """The positive control. Without it the test above would pass on a
+        source that could never be polled for some entirely different reason."""
+        self.register()
+        self.s.discovery.record_health("board", access.HEALTHY)
+        allowed, why = self.s.discovery._may_poll(
+            self.s.discovery._sources["board"])
+        self.assertTrue(allowed, why)
+        self.assertEqual(len(self.s.discovery.poll("board")), 1)
+
+    def test_a_legacy_unhealthy_flag_still_stops_polling(self):
+        """Older databases carry a boolean rather than a named state. It is
+        folded into the state so one check decides, and it still refuses."""
+        self.register()
+        self.s.discovery._db.execute(
+            "UPDATE work_sources SET healthy = 0, health = ? WHERE name = ?",
+            (access.HEALTHY, "board"))
+        self.s.discovery._db.commit()
+        allowed, why = self.s.discovery._may_poll(
+            self.s.discovery._sources["board"])
+        self.assertFalse(allowed)
+        self.assertIn(access.FAILED, why)
 
 
 # ---------------------------------------------------------------- §60, §61
@@ -335,8 +372,9 @@ class AListingIsNotAnInstruction(Base):
         """The false-positive side. A screen that flags everything is a screen
         nobody reads."""
         self.register()
-        self.s.discovery.poll("board")
+        self.assertEqual(len(self.s.discovery.poll("board")), 1)
         row = self.s.discovery.opportunities()[0]
+        self.assertTrue(row["title"], "canary: a real listing was recorded")
         self.assertEqual(row["risk_worst"], "")
         self.assertEqual(row["risk_signals"], "[]")
 
@@ -353,6 +391,11 @@ class NothingIsInvented(Base):
         self.assertEqual(row["external_ref"], "job-1")
         self.assertTrue(row["ts"])
         self.assertTrue(row["evidence_ref"], "no link back to the raw posting")
+        # raw_ref is the older name for the same link and is what the existing
+        # projection reads. A mutation blanking it survived until this line:
+        # evidence_ref alone was asserted, so half the provenance was untested.
+        self.assertTrue(row["raw_ref"], "the raw posting reference was dropped")
+        self.assertEqual(row["raw_ref"], row["evidence_ref"])
 
     def test_a_missing_client_is_left_missing(self):
         posting = dict(POSTING, client_ref="")

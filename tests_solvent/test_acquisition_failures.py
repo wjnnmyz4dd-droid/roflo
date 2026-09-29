@@ -71,6 +71,15 @@ class HalfBrokenSource(FixtureSource):
 
 class AnAdapterThatFailsDoesNotProduceJobs(Base):
 
+    def test_canary_a_working_adapter_does_produce_a_job(self):
+        """§67. Every "yields nothing" test below would pass just as well
+        against a fixture that never yields anything. This is the control that
+        proves the fixture is capable of producing work, so the empty results
+        are caused by the failure and not by there being nothing there."""
+        self.register(FixtureSource("board", [GOOD]))
+        self.assertEqual(len(self.s.discovery.poll("board")), 1)
+        self.assertEqual(len(self.s.discovery.opportunities()), 1)
+
     def test_a_throwing_adapter_yields_nothing(self):
         self.register(ThrowingSource("board", [GOOD]))
         self.assertEqual(self.s.discovery.poll("board"), [])
@@ -136,10 +145,17 @@ class AnAdapterThatFailsDoesNotProduceJobs(Base):
         self.assertEqual(len(self.s.discovery.poll("board")), 1)
 
     def test_recovery_does_not_restore_a_permission(self):
-        self.register(ThrowingSource("board", [GOOD]))
+        # Canary first: this adapter works, so an empty poll below is the
+        # revoked permission and not a broken source.
+        self.register(FixtureSource("board", [GOOD]))
+        self.assertEqual(len(self.s.discovery.poll("board")), 1)
+        self.s.discovery.set_status(
+            self.s.discovery.opportunities()[0]["id"],
+            __import__("solvent.discovery", fromlist=["x"]).OpportunityStatus.REJECTED)
         self.s.discovery.revoke("board", access.DISCOVER,
                                 owner_identity=OWNER, why="test")
         self.s.discovery.record_health("board", access.HEALTHY)
+        self.register(FixtureSource("board", [dict(GOOD, ref="g2")]))
         self.assertEqual(self.s.discovery.poll("board"), [])
 
 
@@ -153,6 +169,13 @@ class AGateRefusalIsNotAnAdapterFailure(Base):
 
         def request(self):
             return {"url": "https://example.com/jobs"}
+
+    def test_canary_the_same_postings_are_found_without_a_fetch(self):
+        """The identical postings, from a source that needs no external call,
+        are discovered. So the empty result below is the Gate refusing, not an
+        empty board."""
+        self.register(FixtureSource("local", [GOOD]))
+        self.assertEqual(len(self.s.discovery.poll("local")), 1)
 
     def test_the_gate_refuses_and_nothing_is_discovered(self):
         self.register(self.Remote("remote", [GOOD]))
@@ -174,8 +197,15 @@ class CapabilityGapsAreEvidenceNotPermission(Base):
         self.register(FixtureSource(f"src-{need}", postings))
         self.s.discovery.poll(f"src-{need}")
 
+    def test_canary_the_seed_actually_records_opportunities(self):
+        """Without this, every "no gap" assertion below would hold on a system
+        where seeding silently did nothing."""
+        self.seed("quantum-alignment", 1)
+        self.assertEqual(len(self.s.discovery.opportunities()), 1)
+
     def test_one_unusual_request_is_not_a_gap(self):
         self.seed("quantum-alignment", 1)
+        self.assertEqual(len(self.s.discovery.opportunities()), 1)
         self.assertEqual(self.s.discovery.capability_gaps(), [])
 
     def test_a_repeated_request_is(self):
@@ -188,6 +218,9 @@ class CapabilityGapsAreEvidenceNotPermission(Base):
     def test_a_capability_we_have_is_not_a_gap(self):
         provision_capability(self.s, CSV_PROMOTION, owner_identity=OWNER)
         self.seed("csv-cleanup", 5)
+        # The opportunities exist -- five of them. The gap list is empty
+        # because the capability covers them, not because nothing was seeded.
+        self.assertEqual(len(self.s.discovery.opportunities()), 5)
         self.assertEqual(
             [g["need"] for g in self.s.discovery.capability_gaps()], [])
 

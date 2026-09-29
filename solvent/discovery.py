@@ -539,7 +539,16 @@ class Discovery:
         permitted, why = self.may(source.name, access.DISCOVER)
         if not permitted:
             return False, why
+        # One question, one answer. ``health`` is the named state; ``healthy``
+        # is the boolean that predates it and is still written by older paths
+        # and older databases. Folding the boolean into the state here means
+        # there is a single place that decides whether a source may be polled
+        # -- when both existed as separate checks, either one alone was enough
+        # to refuse, so neither was load-bearing and a mutation test could
+        # remove one without any test noticing.
         health = state.get("health") or access.HEALTHY
+        if health == access.HEALTHY and not int(state.get("healthy", 1)):
+            health = access.FAILED
         if health in access.NOT_POLLABLE:
             # §29/§41. A source that cannot be reached is not polled again on
             # the same tick, and a rate-limited one is backed off rather than
@@ -547,8 +556,6 @@ class Discovery:
             return False, (f"source {source.name!r} is {health}"
                            + (f": {state.get('failure_reason')}"
                               if state.get("failure_reason") else ""))
-        if not int(state["healthy"]):
-            return False, f"source {source.name!r} is marked unhealthy"
         return True, "permitted"
 
     def poll(self, source_name: str, *, initiator: str = "discovery") -> list[Opportunity]:
