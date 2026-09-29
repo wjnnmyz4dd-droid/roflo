@@ -40,6 +40,8 @@ from enum import Enum
 from .audit import AuditLog, new_id, now
 from .content import UntrustedContent, quarantine
 from .errors import FailClosed
+from . import opportunityrisk as risk
+from . import sourceaccess as access
 from .store import Store
 from .types import ActionClass, Cents, Jurisdiction, LocationSignals, PrivacyClass
 
@@ -241,11 +243,15 @@ class ManualSource(FixtureSource):
 class Discovery:
     """The candidate-sourcing authority. It finds work; it never takes it."""
 
-    def __init__(self, store: Store, audit: AuditLog, policy, gate=None) -> None:
+    def __init__(self, store: Store, audit: AuditLog, policy, gate=None,
+                 capability=None) -> None:
         self._db = store.for_authority("discovery")
         self._audit = audit
         self._policy = policy
         self._gate = gate
+        # Read-only reference, used to tell a gap from a skill
+        # DeskPilot already has. Discovery never writes to it.
+        self._capability = capability
         self._sources: dict[str, WorkSource] = self._rehydrate()
 
     def _rehydrate(self) -> dict:
@@ -298,13 +304,45 @@ class Discovery:
             raise FailClosed(
                 f"source {source.name!r} is {readiness.value}; automation may not "
                 "be permitted before it reaches PERMITTED_AUTOMATION")
+        base_url = (getattr(source, "base_url", "") or "").strip()
+        if base_url:
+            # §60/§61. Rejected here, before anyone can be asked to put it on
+            # the egress allowlist. The Gate is the real control; this stops a
+            # loopback or metadata address ever reaching it.
+            access.safe_url(base_url)
+
         self._sources[source.name] = source
+        existing = self.source_state(source.name) or {}
+        # §11. Re-registering never *widens* what a source may do: whatever was
+        # granted stays, and a new source starts with the read side only. The
+        # consequential permissions are never granted by registration, so a
+        # source cannot acquire the power to apply, bid, message or spend by
+        # being added or re-added.
+        permissions = (json.loads(existing["permissions"])
+                       if existing.get("permissions") else
+                       list(access.DEFAULT_PERMISSIONS))
         self._db.execute(
             "INSERT OR REPLACE INTO work_sources(name,kind,readiness,compliance,"
-            "determination,determined_by,determined_at,is_fixture,healthy) "
-            "VALUES(?,?,?,?,?,?,?,?,1)",
+            "determination,determined_by,determined_at,is_fixture,healthy,"
+            "display_name,source_type,enabled,access_method,auth_required,"
+            "manual_import,base_url,health,permissions,credential_configured,"
+            "rate_limit_note,terms_notes,opportunities_found) "
+            "VALUES(?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (source.name, source.kind, readiness.value, compliance.value,
-             determination, owner_identity, now(), 1 if source.is_fixture else 0))
+             determination, owner_identity, now(), 1 if source.is_fixture else 0,
+             getattr(source, "display_name", "") or source.name,
+             getattr(source, "source_type", "GENERIC"),
+             1 if existing.get("enabled", 1) else 0,
+             getattr(source, "access_method", access.UNDETERMINED),
+             1 if getattr(source, "auth_required", False) else 0,
+             1 if getattr(source, "manual_import", True) else 0,
+             base_url,
+             existing.get("health", access.HEALTHY),
+             json.dumps(access.validate_permissions(permissions)),
+             int(existing.get("credential_configured", 0)),
+             getattr(source, "rate_limit_note", ""),
+             getattr(source, "terms_notes", ""),
+             int(existing.get("opportunities_found", 0))))
         self._db.commit()
         self._audit.record(
             event="discovery.source_registered", authority="discovery",
@@ -334,6 +372,154 @@ class Discovery:
             event="discovery.source_suspended", authority="discovery",
             initiator="discovery", why=why, decision=name)
 
+    # ---------------------------------------------------------- permissions
+
+    def permissions(self, name: str) -> tuple[str, ...]:
+        """What this source is currently permitted to do. Empty is normal."""
+        state = self.source_state(name)
+        if state is None:
+            return ()
+        return tuple(json.loads(state["permissions"] or "[]"))
+
+    def may(self, name: str, permission: str) -> tuple[bool, str]:
+        """Is one named action permitted on one named source?
+
+        Fails closed on every unknown: an unregistered source, a disabled one,
+        a health state that means it cannot be reached, or a permission nobody
+        granted. "We are not sure" and "no" are the same answer here.
+        """
+        if permission not in access.PERMISSIONS:
+            return False, f"{permission!r} is not a source permission"
+        state = self.source_state(name)
+        if state is None:
+            return False, f"source {name!r} is not registered"
+        if not int(state.get("enabled", 1)):
+            return False, f"source {name!r} is disabled"
+        granted = json.loads(state["permissions"] or "[]")
+        if permission not in granted:
+            return False, (
+                f"{name!r} does not have {permission}; it has "
+                + (", ".join(granted) if granted else "no permissions")
+                + ". Discovering work on a source is not permission to act on it")
+        if permission in access.CONSEQUENTIAL:
+            # A granted consequential permission is still not a licence to act
+            # now: the Action Gate decides that, every time, and simulation
+            # keeps it shut. Saying so here stops a caller reading a True from
+            # this method as "go ahead".
+            return True, (f"{name!r} has {permission}; the Action Gate still "
+                          "decides each individual effect")
+        return True, f"{name!r} has {permission}"
+
+    def grant(self, name: str, permission: str, *, owner_identity: str,
+              why: str) -> None:
+        """Give one source one more power. Owner only, one at a time.
+
+        There is deliberately no "grant everything". Each consequential
+        permission is a separate decision with its own recorded reason, because
+        the difference between applying for work and spending money on applying
+        for work is exactly the kind of difference a bulk grant erases.
+        """
+        if not self._policy.is_owner(owner_identity):
+            raise FailClosed(
+                f"source permissions are owner-granted (got {owner_identity!r})")
+        if not why:
+            raise FailClosed(
+                f"granting {permission} on {name!r} needs a recorded reason")
+        if self.source_state(name) is None:
+            raise FailClosed(f"unknown source {name!r}")
+        access.validate_permissions([permission])
+        granted = list(self.permissions(name))
+        if permission not in granted:
+            granted.append(permission)
+        self._db.execute("UPDATE work_sources SET permissions = ? WHERE name = ?",
+                         (json.dumps(access.validate_permissions(granted)), name))
+        self._db.commit()
+        self._audit.record(
+            event="discovery.permission_granted", authority="discovery",
+            initiator=owner_identity, why=why, decision=f"{name}:{permission}",
+            permission=permission)
+
+    def revoke(self, name: str, permission: str, *, owner_identity: str,
+               why: str) -> None:
+        if not self._policy.is_owner(owner_identity):
+            raise FailClosed(
+                f"source permissions are owner-held (got {owner_identity!r})")
+        granted = [p for p in self.permissions(name) if p != permission]
+        self._db.execute("UPDATE work_sources SET permissions = ? WHERE name = ?",
+                         (json.dumps(granted), name))
+        self._db.commit()
+        self._audit.record(
+            event="discovery.permission_revoked", authority="discovery",
+            initiator=owner_identity, why=why, decision=f"{name}:{permission}",
+            permission=permission)
+
+    def set_enabled(self, name: str, enabled: bool, *, owner_identity: str,
+                    why: str) -> None:
+        if not self._policy.is_owner(owner_identity):
+            raise FailClosed(f"sources are owner-controlled (got {owner_identity!r})")
+        self._db.execute(
+            "UPDATE work_sources SET enabled = ?, health = ? WHERE name = ?",
+            (1 if enabled else 0,
+             access.HEALTHY if enabled else access.DISABLED, name))
+        self._db.commit()
+        self._audit.record(
+            event="discovery.source_enabled" if enabled
+            else "discovery.source_disabled",
+            authority="discovery", initiator=owner_identity, why=why,
+            decision=name)
+
+    def set_credential_configured(self, name: str, configured: bool, *,
+                                  owner_identity: str) -> None:
+        """Record *that* a credential exists. Never what it is.
+
+        The registry stores a boolean. The secret itself lives where secrets
+        live, and nothing here can read it back -- so a compromised control
+        centre learns only that a source has been set up.
+        """
+        if not self._policy.is_owner(owner_identity):
+            raise FailClosed(f"credentials are owner-held (got {owner_identity!r})")
+        self._db.execute(
+            "UPDATE work_sources SET credential_configured = ? WHERE name = ?",
+            (1 if configured else 0, name))
+        self._db.commit()
+        self._audit.record(
+            event="discovery.credential_state_changed", authority="discovery",
+            initiator=owner_identity,
+            why="owner recorded that a credential is configured" if configured
+                else "owner recorded that no credential is configured",
+            decision=name)
+
+    # -------------------------------------------------------------- health
+
+    def record_health(self, name: str, health: str, *, reason: str = "") -> None:
+        """Set a source's operational state, and keep the failure counters.
+
+        An unreachable source is never represented as healthy (§29). A run of
+        failures raises the count, which is what the circuit breaker reads --
+        so a source that has stopped working is left alone rather than polled
+        harder (§30, §41).
+        """
+        if health not in access.HEALTH_STATES:
+            raise FailClosed(f"{health!r} is not a source health state")
+        state = self.source_state(name)
+        if state is None:
+            raise FailClosed(f"unknown source {name!r}")
+        stamp = now()
+        if health == access.HEALTHY:
+            self._db.execute(
+                "UPDATE work_sources SET health = ?, last_checked = ?, "
+                "last_success = ?, consecutive_failures = 0, failure_reason = '',"
+                " healthy = 1 WHERE name = ?",
+                (health, stamp, stamp, name))
+        else:
+            self._db.execute(
+                "UPDATE work_sources SET health = ?, last_checked = ?, "
+                "last_failure = ?, failure_reason = ?, "
+                "consecutive_failures = consecutive_failures + 1, healthy = 0 "
+                "WHERE name = ?",
+                (health, stamp, stamp, reason, name))
+        self._db.commit()
+
     # -------------------------------------------------------------- polling
 
     def _may_poll(self, source: WorkSource) -> tuple[bool, str]:
@@ -348,6 +534,19 @@ class Discovery:
         if not compliance.may_poll:
             return False, (f"source {source.name!r} compliance is "
                            f"{compliance.value}; only PERMITTED may be polled")
+        if not int(state.get("enabled", 1)):
+            return False, f"source {source.name!r} is disabled"
+        permitted, why = self.may(source.name, access.DISCOVER)
+        if not permitted:
+            return False, why
+        health = state.get("health") or access.HEALTHY
+        if health in access.NOT_POLLABLE:
+            # §29/§41. A source that cannot be reached is not polled again on
+            # the same tick, and a rate-limited one is backed off rather than
+            # retried harder.
+            return False, (f"source {source.name!r} is {health}"
+                           + (f": {state.get('failure_reason')}"
+                              if state.get("failure_reason") else ""))
         if not int(state["healthy"]):
             return False, f"source {source.name!r} is marked unhealthy"
         return True, "permitted"
@@ -397,11 +596,31 @@ class Discovery:
         # Otherwise a remote adapter could mark attacker-authored postings as
         # owner-confirmed and walk straight past the injection defence.
         owner_entered = state["kind"] == "manual" and request is None
-        parsed = [replace(o, owner_entered=owner_entered)
-                  for o in source.parse(payload)]
+        try:
+            parsed = [replace(o, owner_entered=owner_entered)
+                      for o in source.parse(payload)]
+        except Exception as exc:
+            # §42. A source whose shape changed is not reinterpreted, guessed
+            # at, or partially accepted. It fails closed and says why.
+            self.record_health(source_name, access.FAILED,
+                               reason=f"{type(exc).__name__} while parsing: {exc}")
+            self._audit.record(
+                event="discovery.parse_failed", authority="discovery",
+                initiator=initiator,
+                why=f"{source_name} returned something this adapter cannot read",
+                decision="REFUSED", result=f"{type(exc).__name__}: {exc}")
+            return []
+
         found, duplicates = self._deduplicate(source_name, parsed)
         for opportunity in found:
             self._record(opportunity)
+        self.record_health(source_name, access.HEALTHY)
+        if found:
+            self._db.execute(
+                "UPDATE work_sources SET opportunities_found = "
+                "opportunities_found + ? WHERE name = ?",
+                (len(found), source_name))
+            self._db.commit()
         self._audit.record(
             event="discovery.polled", authority="discovery", initiator=initiator,
             why=f"polled {source_name}",
@@ -442,17 +661,41 @@ class Discovery:
     # ------------------------------------------------------------- recording
 
     def _record(self, opportunity: Opportunity) -> None:
+        """Store a candidate, with the evidence that it came from somewhere.
+
+        §49/§50: nothing here invents. ``client_ref`` stays empty when the
+        source did not supply one rather than being inferred from the text, and
+        ``evidence_ref`` points at the quarantined posting, so every normalised
+        field can be traced back to what was actually observed.
+        """
+        screening = risk.screen(opportunity)
         self._db.execute(
             "INSERT OR REPLACE INTO opportunities(id,ts,source,external_ref,title,"
-            "quoted_cents,deadline,client_ref,needs,signals,raw_ref,status) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "quoted_cents,deadline,client_ref,needs,signals,raw_ref,status,"
+            "external_url,risk_worst,risk_signals,discovered_via,evidence_ref,"
+            "platform_fee_cents,upfront_cost_cents) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (opportunity.id, now(), opportunity.source, opportunity.external_ref,
              opportunity.title, opportunity.quoted_cents, opportunity.deadline,
              opportunity.client_ref, json.dumps(list(opportunity.needs)),
              json.dumps(_signals(opportunity.signals)),
              opportunity.posting.id if opportunity.posting else "",
-             OpportunityStatus.DISCOVERED.value))
+             OpportunityStatus.DISCOVERED.value,
+             opportunity.external_url,
+             screening.worst if screening.signals else "",
+             json.dumps([s.to_dict() for s in screening.signals]),
+             "owner" if opportunity.owner_entered else opportunity.source,
+             opportunity.posting.id if opportunity.posting else "",
+             opportunity.platform_fee_cents, opportunity.upfront_cost_cents))
         self._db.commit()
+        if screening.severe:
+            self._audit.record(
+                event="discovery.risk_flagged", authority="discovery",
+                initiator="discovery",
+                why=f"{len(screening.severe)} severe signal(s) on "
+                    f"{opportunity.id}",
+                decision=",".join(s.code for s in screening.severe),
+                result="recorded as evidence; no decision taken here")
 
     def set_status(self, opportunity_id: str, status: OpportunityStatus,
                    job_id: str | None = None) -> None:
@@ -460,6 +703,56 @@ class Discovery:
             "UPDATE opportunities SET status = ?, job_id = COALESCE(?, job_id) "
             "WHERE id = ?", (status.value, job_id, opportunity_id))
         self._db.commit()
+
+    def capability_gaps(self, *, capability=None, min_occurrences: int = 3
+                        ) -> list[dict]:
+        """Skills that opportunities keep asking for and DeskPilot cannot do.
+
+        §55. Evidence for the recommendation pathway, and nothing more. This
+        cannot create a skill, propose one, promote one or change what
+        DeskPilot claims it can do -- the Skills Lab and the owner keep every
+        one of those decisions. All it says is "this was asked for N times".
+
+        Deliberately conservative in two ways. It reports *advertised* budget,
+        labelled as such, because what a listing says it pays is not profit and
+        this module has no business implying otherwise (§51). And it requires a
+        run of occurrences, because one unusual request is not a gap in the
+        business -- it is one unusual request.
+        """
+        registry = capability if capability is not None else getattr(
+            self, "_capability", None)
+        proven: set[str] = set()
+        if registry is not None:
+            proven = {c.name for c in registry.capabilities() if c.proven}
+
+        counts: dict[str, dict] = {}
+        for row in self.opportunities():
+            try:
+                needs = json.loads(row.get("needs") or "[]")
+            except ValueError:
+                continue
+            for need in needs:
+                if need in proven:
+                    continue
+                entry = counts.setdefault(need, {
+                    "need": need, "occurrences": 0,
+                    "advertised_cents": 0, "sources": set(),
+                    "examples": []})
+                entry["occurrences"] += 1
+                entry["advertised_cents"] += int(row.get("quoted_cents") or 0)
+                entry["sources"].add(row.get("source", ""))
+                if len(entry["examples"]) < 3:
+                    entry["examples"].append(row.get("title", "")[:70])
+
+        out = []
+        for entry in counts.values():
+            if entry["occurrences"] < min_occurrences:
+                continue
+            entry["sources"] = sorted(s for s in entry["sources"] if s)
+            #: Named so nobody reads it as profit. It is what postings claimed.
+            entry["advertised_only"] = True
+            out.append(entry)
+        return sorted(out, key=lambda e: (-e["occurrences"], e["need"]))
 
     def opportunities(self, status: OpportunityStatus | None = None) -> list[dict]:
         sql = "SELECT * FROM opportunities"

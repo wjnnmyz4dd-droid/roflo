@@ -31,6 +31,38 @@ BUSY_TIMEOUT_S = 10.0
 #: ``(table, column, column-spec)`` added to databases created before the column
 #: existed. Append to this list; never edit or remove an entry.
 MIGRATIONS = (
+    # --- the job source registry (§4). Additive: an existing installation
+    # --- keeps its rows and gains these with safe defaults.
+    ("work_sources", "display_name", "TEXT NOT NULL DEFAULT ''"),
+    ("work_sources", "source_type", "TEXT NOT NULL DEFAULT 'GENERIC'"),
+    ("work_sources", "enabled", "INTEGER NOT NULL DEFAULT 1"),
+    ("work_sources", "access_method", "TEXT NOT NULL DEFAULT 'UNDETERMINED'"),
+    ("work_sources", "auth_required", "INTEGER NOT NULL DEFAULT 0"),
+    ("work_sources", "credential_configured", "INTEGER NOT NULL DEFAULT 0"),
+    ("work_sources", "manual_import", "INTEGER NOT NULL DEFAULT 1"),
+    ("work_sources", "rate_limit_note", "TEXT NOT NULL DEFAULT ''"),
+    ("work_sources", "terms_notes", "TEXT NOT NULL DEFAULT ''"),
+    ("work_sources", "base_url", "TEXT NOT NULL DEFAULT ''"),
+    # Health is a named state, not a boolean: "cannot authenticate" and
+    # "rate limited" call for different responses, and neither is "unhealthy".
+    ("work_sources", "health", "TEXT NOT NULL DEFAULT 'HEALTHY'"),
+    ("work_sources", "last_checked", "TEXT NOT NULL DEFAULT ''"),
+    ("work_sources", "last_success", "TEXT NOT NULL DEFAULT ''"),
+    ("work_sources", "last_failure", "TEXT NOT NULL DEFAULT ''"),
+    ("work_sources", "failure_reason", "TEXT NOT NULL DEFAULT ''"),
+    ("work_sources", "consecutive_failures", "INTEGER NOT NULL DEFAULT 0"),
+    # Granted permissions, as a JSON list. Empty is a real value and means
+    # nothing may be done with this source at all.
+    ("work_sources", "permissions", "TEXT NOT NULL DEFAULT '[]'"),
+    ("work_sources", "opportunities_found", "INTEGER NOT NULL DEFAULT 0"),
+    # --- opportunity provenance and screening (§15, §49)
+    ("opportunities", "external_url", "TEXT NOT NULL DEFAULT ''"),
+    ("opportunities", "risk_worst", "TEXT NOT NULL DEFAULT ''"),
+    ("opportunities", "risk_signals", "TEXT NOT NULL DEFAULT '[]'"),
+    ("opportunities", "discovered_via", "TEXT NOT NULL DEFAULT ''"),
+    ("opportunities", "evidence_ref", "TEXT NOT NULL DEFAULT ''"),
+    ("opportunities", "platform_fee_cents", "INTEGER NOT NULL DEFAULT 0"),
+    ("opportunities", "upfront_cost_cents", "INTEGER NOT NULL DEFAULT 0"),
     ("action_requests", "phase", "TEXT NOT NULL DEFAULT 'SETTLED'"),
     ("action_requests", "request_id", "TEXT NOT NULL DEFAULT ''"),
     ("requirements", "acceptance", "TEXT NOT NULL DEFAULT ''"),

@@ -49,6 +49,21 @@ def external_imports(tree: ast.Module) -> set[str]:
     return found
 
 
+def dotted_imports(tree: ast.Module) -> set[str]:
+    """Absolute imports by their full dotted name.
+
+    ``external_imports`` collapses to the top-level package, which cannot tell
+    ``urllib.parse`` (string handling) from ``urllib.request`` (opens sockets).
+    """
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            found.add(node.module)
+    return found
+
+
 def sibling_imports(tree: ast.Module) -> set[str]:
     """Intra-package (relative) imports, e.g. ``from .projection import project``."""
     found = set()
@@ -110,6 +125,13 @@ class GateIsTheOnlyEgress(unittest.TestCase):
                 self.assertNotIn("window", calls_in(tree),
                                  f"{name}.py must not open an egress window")
 
+    #: ``urllib.parse`` is string manipulation and cannot open a socket, so it
+    #: is allowed by its full dotted name. Nothing else under ``urllib`` is:
+    #: ``urllib.request`` opens connections, and a bare ``import urllib``
+    #: reaches it. Named precisely rather than by prefix, so widening this
+    #: takes an edit to this line and not an accident.
+    PURE_SUBMODULES = frozenset({"urllib.parse"})
+
     def test_no_module_imports_a_network_client_except_the_boundary(self):
         """A network import anywhere else is a path around the Gate."""
         network = {"socket", "http", "urllib", "ssl", "ftplib", "smtplib",
@@ -118,8 +140,23 @@ class GateIsTheOnlyEgress(unittest.TestCase):
             if name in ("egress",):
                 continue
             with self.subTest(module=name):
-                self.assertEqual(external_imports(tree) & network, set(),
+                offending = set()
+                for dotted in dotted_imports(tree):
+                    if dotted.split(".")[0] not in network:
+                        continue
+                    if dotted in self.PURE_SUBMODULES:
+                        continue
+                    offending.add(dotted)
+                self.assertEqual(offending, set(),
                                  f"{name}.py imports a network or process module")
+
+    def test_the_pure_submodule_exemption_does_not_admit_the_network_one(self):
+        """The exemption is the kind that quietly grows. This is the canary:
+        if ``urllib.request`` ever becomes acceptable, this fails."""
+        self.assertNotIn("urllib.request", self.PURE_SUBMODULES)
+        self.assertNotIn("urllib", self.PURE_SUBMODULES)
+        for entry in self.PURE_SUBMODULES:
+            self.assertIn(".", entry, "an exemption must name a submodule")
 
 
 class NoGateReadsTheProjection(unittest.TestCase):

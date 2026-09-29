@@ -67,6 +67,37 @@ class ReadModel:
                 "worst": UNKNOWN if stale else row["worst"],
                 "findings": json.loads(row["findings"] or "[]")}
 
+    def capability_gaps(self, *, min_occurrences: int = 3) -> list[dict]:
+        """Needs that opportunities keep asking for and no proven capability
+        covers. Mirrors :meth:`solvent.discovery.Discovery.capability_gaps`
+        over the read-only projection.
+
+        Deliberately *not* a second judgement: it counts rows and subtracts the
+        proven set, which is arithmetic, and it reports advertised budget as
+        advertised. The decision about whether a gap is worth closing stays
+        with the owner and the Skills Lab, exactly as it does in the authority.
+        """
+        proven = {c.get("name") for c in self.capabilities() if c.get("proven")}
+        counts: dict[str, dict] = {}
+        for row in self.opportunities():
+            try:
+                needs = json.loads(row.get("needs") or "[]")
+            except ValueError:
+                continue
+            for need in needs:
+                if need in proven:
+                    continue
+                entry = counts.setdefault(
+                    need, {"need": need, "occurrences": 0,
+                           "advertised_cents": 0, "sources": set()})
+                entry["occurrences"] += 1
+                entry["advertised_cents"] += int(row.get("quoted_cents") or 0)
+                entry["sources"].add(row.get("source", ""))
+        out = [e for e in counts.values() if e["occurrences"] >= min_occurrences]
+        for entry in out:
+            entry["sources"] = sorted(s for s in entry["sources"] if s)
+        return sorted(out, key=lambda e: (-e["occurrences"], e["need"]))
+
     def close(self) -> None:
         self._conn.close()
 

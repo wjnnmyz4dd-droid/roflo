@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, replace
 import tempfile
 from pathlib import Path
 
+from .application import Applications
 from .audit import AuditLog
 from . import ambiguity as ambiguity_module
 from .capability import Capability, CapabilityRegistry
@@ -178,7 +179,12 @@ class Solvent:
                                             notify.VOICE: notify.RecordingProvider(notify.VOICE)})
         self.diagnostics = Diagnostics(self)
         self.memory = BusinessMemory(self.store, self.audit)
-        self.discovery = Discovery(self.store, self.audit, self.policy, self.gate)
+        self.discovery = Discovery(self.store, self.audit, self.policy,
+                                   self.gate, capability=self.capability)
+        # Prepares applications; cannot send one. Not an authority -- it owns no
+        # table and holds no permission, and every refusal it gives comes from
+        # asking the authority that already had the answer.
+        self.applications = Applications(self)
         self.feedback = ClientFeedback(self.store, self.audit, self.orchestrator)
         # Customer service reads the record and answers the client. It calls
         # the feedback authority for intake, classification and investigation

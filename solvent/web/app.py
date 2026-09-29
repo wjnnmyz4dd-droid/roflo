@@ -826,6 +826,18 @@ class ControlCentre:
                              f"seen {incident.get('recurrence_count')} times; "
                              "a root cause is worth establishing",
                              "RECOMMENDATION"))
+        for gap in self.read.capability_gaps():
+            # §55/§56. Evidence, and an explicit statement that it is not
+            # permission to do anything about itself. Budget is advertised,
+            # not earned, and is labelled so nobody reads it as profit.
+            rows.append((
+                "Capability",
+                f"{gap['need']} was asked for {gap['occurrences']} time(s)",
+                f"across {len(gap['sources'])} source(s); "
+                f"{money(gap['advertised_cents'])} advertised, not earned. "
+                "Whether to build it is yours and the Skills Lab's to decide",
+                "RECOMMENDATION"))
+
         posture = self.read.policy_value("network", "default_deny", default=None)
         if not posture:
             rows.append(("Security", "record the host firewall posture",
@@ -953,30 +965,96 @@ class ControlCentre:
                 "Getting started")
 
     def sources(self, request: Request):
+        """§9. Where work may come from, and what may be done about it.
+
+        The permission columns are the point of this page. A source can be
+        registered, healthy, connected and still unable to apply for anything,
+        because registering a source grants the read side only. Showing the
+        granted powers next to the health makes that visible rather than
+        something the owner has to infer from nothing going wrong.
+        """
+        from ..sourceaccess import CONSEQUENTIAL, DISCOVER, PERMISSIONS
+        from ..sourcecatalog import CATALOGUE
+
         rows = self.read.work_sources()
+
+        def granted(row):
+            try:
+                return json.loads(row.get("permissions") or "[]")
+            except ValueError:
+                return []
+
+        def permission_cell(row):
+            held = granted(row)
+            consequential = [p for p in held if p in CONSEQUENTIAL]
+            if not held:
+                return pill("none", "neutral")
+            label = ", ".join(p.replace("_", " ").lower() for p in held)
+            return (pill(f"{len(held)} granted", "warn" if consequential else "ok")
+                    + f'<div class="muted">{esc(label)}</div>')
+
         return ("<h1>Work sources</h1>"
                 '<p class="sub">Where work may come from. Registering a source '
-                "is not permission to act on it.</p>"
-                + table(["name", "kind", "readiness", "compliance", "fixture",
-                         "healthy"],
-                        [[esc(r.get("name", "")), esc(r.get("kind", "")),
-                          esc(r.get("readiness", "")),
+                "is not permission to act on it: a new source may be looked at, "
+                "and may not apply, bid, message or spend until you say so, one "
+                "power at a time.</p>"
+                + table(["source", "type", "enabled", "compliance", "health",
+                         "credential", "last success", "found", "may"],
+                        [[esc(r.get("display_name") or r.get("name", "")),
+                          esc(r.get("source_type", "") or r.get("kind", "")),
+                          pill("yes", "ok") if r.get("enabled", 1)
+                          else pill("no", "neutral"),
                           _compliance_pill(r.get("compliance", "")),
-                          esc("yes" if r.get("is_fixture") else "no"),
-                          pill("yes" if r.get("healthy") else "no",
-                               "ok" if r.get("healthy") else "bad")]
+                          _health_pill(r.get("health", "")),
+                          pill("configured", "ok")
+                          if r.get("credential_configured")
+                          else pill("not configured", "neutral"),
+                          esc((r.get("last_success") or "never")[:19]),
+                          esc(r.get("opportunities_found", 0)),
+                          permission_cell(r)]
                          for r in rows], empty="No sources registered.")
-                + detail("What the four stages mean",
-                         "<p>A source is <code>CONFIGURED</code> when it exists, "
-                         "<code>VERIFIED</code> when somebody has recorded what "
-                         "its terms allow, <code>AUTHORIZED</code> when the owner "
-                         "has approved it, and <code>ACTIVE</code> when it is "
-                         "being polled. Adding one grants nothing: an unverified "
-                         "source fails closed.</p>")
+                + _source_failures(rows)
+                + detail("What a source may do",
+                         "<p>Ten separate permissions, because the differences "
+                         "between them are the ones that cost money: "
+                         "<code>DISCOVER</code>, <code>READ</code> and "
+                         "<code>IMPORT</code> are the read side and are granted "
+                         "when a source is registered. "
+                         "<code>PREPARE_APPLICATION</code>, "
+                         "<code>SUBMIT_APPLICATION</code>, "
+                         "<code>PREPARE_BID</code>, <code>SUBMIT_BID</code>, "
+                         "<code>PREPARE_MESSAGE</code>, "
+                         "<code>SEND_MESSAGE</code> and "
+                         "<code>SPEND_MONEY</code> are each granted on their "
+                         "own. Holding one never implies another, and a granted "
+                         "permission is still not permission to act now — the "
+                         "Action Gate decides each individual effect.</p>")
+                + "<h2>Platforms known to DeskPilot</h2>"
+                + f'<p class="sub">Listed is not connected. For every '
+                  f'commercial marketplace below, whether automated access is '
+                  f'permitted has <strong>not been established</strong> — that '
+                  f'is a reading of a specific platform\'s current terms for '
+                  f'your account, it changes, and guessing wrong gets the '
+                  f'account banned. Every one of them supports you entering an '
+                  f'opportunity by hand today, which needs nobody\'s '
+                  f'permission and feeds exactly the same pipeline.</p>'
+                + table(["platform", "category", "automated discovery",
+                         "manual entry", "what would have to be established"],
+                        [[esc(e.display_name),
+                          esc(e.source_type.replace("_", " ").title()),
+                          pill("yes", "ok") if e.automated_discovery_supported
+                          else pill("not established", "neutral"),
+                          pill("yes", "ok") if e.manual_import
+                          else pill("no", "neutral"),
+                          esc(e.determination_needed)]
+                         for e in CATALOGUE],
+                        empty="None.")
                 + "<h2>Opportunities seen</h2>"
-                + table(["source", "title", "status"],
+                + table(["source", "title", "budget", "risk", "status"],
                         [[esc(o.get("source", "")),
                           esc(o.get("title", ""))[:60],
+                          esc(money(o.get("quoted_cents", 0) or 0)),
+                          _risk_pill(o.get("risk_worst", "")),
                           esc(o.get("status", ""))]
                          for o in self.read.opportunities()],
                         empty="None yet."),
@@ -1408,6 +1486,42 @@ def _verdict_pill(verdict: str) -> str:
 def _payment_pill(state: str) -> str:
     return pill(state or "—", {"PAID": "ok", "PARTIALLY_PAID": "warn",
                                "REFUNDED": "bad"}.get(state, "neutral"))
+
+
+def _health_pill(value: str) -> str:
+    """A source's operational state. Only HEALTHY reads green: "cannot
+    authenticate" and "rate limited" are different problems with different
+    answers, and neither of them is fine."""
+    return pill(value or "—", {"HEALTHY": "ok", "DEGRADED": "warn",
+                               "AUTH_REQUIRED": "warn", "RATE_LIMITED": "warn",
+                               "UNSUPPORTED": "neutral", "DISABLED": "neutral",
+                               "FAILED": "bad"}.get(value, "neutral"))
+
+
+def _risk_pill(value: str) -> str:
+    """Screening severity. Blank means nothing was noticed, which is not the
+    same as a clean bill of health and so is shown as a dash, not a tick."""
+    return pill(value or "—", {"SEVERE": "bad", "CONCERN": "warn",
+                               "NOTE": "info"}.get(value, "neutral"))
+
+
+def _source_failures(rows) -> str:
+    """Recent source trouble, named. A source failing quietly is a source that
+    stops producing work without anybody noticing why."""
+    failing = [r for r in rows
+               if (r.get("health") or "HEALTHY") != "HEALTHY"
+               or int(r.get("consecutive_failures") or 0)]
+    if not failing:
+        return ""
+    return ("<h2>Sources needing attention</h2>"
+            + table(["source", "state", "consecutive failures", "last failure",
+                     "reason"],
+                    [[esc(r.get("display_name") or r.get("name", "")),
+                      _health_pill(r.get("health", "")),
+                      esc(r.get("consecutive_failures", 0)),
+                      esc((r.get("last_failure") or "—")[:19]),
+                      esc(r.get("failure_reason", "") or "—")]
+                     for r in failing], empty=""))
 
 
 def _compliance_pill(value: str) -> str:
