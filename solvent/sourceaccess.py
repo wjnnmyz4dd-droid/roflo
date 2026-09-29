@@ -113,6 +113,60 @@ HEALTH_STATES = (HEALTHY, DEGRADED, AUTH_REQUIRED, RATE_LIMITED, UNSUPPORTED,
 NOT_POLLABLE = (AUTH_REQUIRED, RATE_LIMITED, UNSUPPORTED, DISABLED, FAILED)
 
 
+# ------------------------------------------------- submission capability (§7)
+#
+# Whether a source will accept an application *from a machine* is a separate
+# question from whether it will let one search. Having an API is not permission
+# to apply through it, and a documented search endpoint says nothing about a
+# submission endpoint. Each is determined on its own evidence.
+
+#: An official, documented endpoint exists and needs no credential.
+AUTOMATED_SUBMISSION_SUPPORTED = "AUTOMATED_SUBMISSION_SUPPORTED"
+#: An official, documented endpoint exists behind the owner's credentials.
+AUTOMATED_SUBMISSION_WITH_AUTH = "AUTOMATED_SUBMISSION_SUPPORTED_WITH_AUTH"
+#: DeskPilot may assemble and verify a package; a person sends it. Not a
+#: lesser outcome -- for most sources it is the only correct one.
+APPLICATION_PREPARATION_ONLY = "APPLICATION_PREPARATION_ONLY"
+#: The source accepts applications, but by a route no machine may drive
+#: (per-solicitation email, an agency portal, a human-only workflow).
+MANUAL_SUBMISSION_ONLY = "MANUAL_SUBMISSION_ONLY"
+#: No submission route of any kind is documented.
+SUBMISSION_UNSUPPORTED = "UNSUPPORTED"
+#: The source's own terms forbid automated submission. Stronger than
+#: unsupported: somebody has said no, and a workaround is a violation.
+SUBMISSION_PROHIBITED = "PROHIBITED"
+#: Nobody has established which of the above applies. The honest default, and
+#: it means no automated submission.
+SUBMISSION_UNDETERMINED = "UNDETERMINED"
+
+SUBMISSION_MODES = (
+    AUTOMATED_SUBMISSION_SUPPORTED, AUTOMATED_SUBMISSION_WITH_AUTH,
+    APPLICATION_PREPARATION_ONLY, MANUAL_SUBMISSION_ONLY,
+    SUBMISSION_UNSUPPORTED, SUBMISSION_PROHIBITED, SUBMISSION_UNDETERMINED)
+
+#: The only two modes under which a machine may transmit. Everything else --
+#: including UNDETERMINED -- means a person sends it.
+SUBMITTABLE = (AUTOMATED_SUBMISSION_SUPPORTED, AUTOMATED_SUBMISSION_WITH_AUTH)
+
+
+def may_transmit(mode: str) -> tuple[bool, str]:
+    """Whether a machine may transmit an application to a source in this mode.
+
+    Fails closed on an unrecognised mode, because a mode nobody wrote down is
+    not a permission somebody granted.
+    """
+    if mode not in SUBMISSION_MODES:
+        return False, (f"{mode!r} is not a submission mode; no automated "
+                       "transmission is possible under an unknown one")
+    if mode == SUBMISSION_PROHIBITED:
+        return False, ("the source's terms forbid automated submission; a way "
+                       "around that is a violation, not an implementation")
+    if mode not in SUBMITTABLE:
+        return False, (f"submission mode is {mode}; DeskPilot may prepare and "
+                       "verify the application, and a person sends it")
+    return True, f"submission mode is {mode}"
+
+
 # ------------------------------------------------------------- access method
 
 #: How work is actually got out of a source. Recorded per source, from a human

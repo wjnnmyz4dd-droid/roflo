@@ -114,21 +114,19 @@ class AProfitableSupportedOpportunity(Simulation):
             scope="Deduplicate the supplied CSV.")
         self.assertEqual(application.state, "PREPARED")
 
-    def test_submission_is_blocked_by_permission_then_by_the_gate(self):
-        """Two distinct walls, in order. One refusal for two reasons would
-        mean one of the controls is not being consulted."""
+    def test_submission_is_refused_and_the_reason_is_the_source_route(self):
+        """A fixture board has no researched submission route, so the first
+        thing that refuses is the submission determination -- before any
+        permission or gate question is reached. The full four-wall chain is
+        asserted in test_acquisition_simulations."""
         application = self.s.applications.prepare(
             self.row, price_cents=36_000,
             capability_version=CSV_PROMOTION.version,
             deliverables=["clean.csv"], timeline_days=3, scope="Clean it.")
-        first = self.s.applications.submit(application)[1]
-        self.assertIn("SUBMIT_APPLICATION", first)
-
-        self.s.discovery.grant("board", access.SUBMIT_APPLICATION,
-                               owner_identity=OWNER, why="simulation")
-        second = self.s.applications.submit(application)[1]
-        self.assertNotEqual(first, second)
-        self.assertIn("owner approval", second)
+        sent, why = self.s.applications.submit(application,
+                                               opportunity=self.row)
+        self.assertFalse(sent)
+        self.assertIn("prepare and verify", why)
 
     def test_no_real_money_moved(self):
         self.assertIsNone(self.s.metrics().actual_margin)
@@ -291,7 +289,8 @@ class AMaliciousOpportunity(Simulation):
             self.row, price_cents=10_000,
             capability_version=CSV_PROMOTION.version,
             deliverables=["x"], timeline_days=2, scope="x")
-        self.assertFalse(self.s.applications.submit(application)[0])
+        self.assertFalse(self.s.applications.submit(
+            application, opportunity=self.row)[0])
 
     def test_the_audit_chain_still_verifies(self):
         ok, detail = self.s.audit.verify_chain()

@@ -44,8 +44,14 @@ class Lifecycle(unittest.TestCase):
         except Exception:
             pass
 
-    def register(self, name, postings, kind=FixtureSource):
+    def register(self, name, postings, kind=FixtureSource,
+                 submission_mode=""):
         source = kind(name, list(postings))
+        if submission_mode:
+            # A fixture standing in for a source that does accept machine
+            # submissions. Declared explicitly, because the default for a
+            # source nobody has researched is that it does not.
+            source.submission_mode = submission_mode
         self.s.discovery.register_source(
             source, owner_identity=OWNER,
             readiness=Readiness.PERMITTED_AUTOMATION,
@@ -100,68 +106,68 @@ class AGoodOpportunityReachesTheWall(Lifecycle):
         self.assertIn("clean.csv", application.render())
 
         # and submitting it is refused, naming the missing permission
-        sent, why = self.s.applications.submit(application)
+        sent, why = self.s.applications.submit(application, opportunity=row)
         self.assertFalse(sent)
-        self.assertIn("SUBMIT_APPLICATION", why)
+        self.assertIn("prepare and verify", why)
 
-    def test_it_is_blocked_by_permission_not_by_accident(self):
-        """iFix: the correct outcome for the correct reason. Grant the
-        permission and the refusal must move to the *next* control, not
-        disappear and not stay the same."""
+    def test_each_control_refuses_in_turn_and_none_stands_in_for_another(self):
+        """iFix, applied to a chain. Satisfy one control and the refusal must
+        move to the *next* one -- not vanish, and not stay the same. Four walls
+        stand between a prepared application and a transmission, and each is
+        asserted by its own words.
+        """
         self.register("board", [GOOD])
         self.s.discovery.poll("board")
         row = self.s.discovery.opportunities()[0]
         application = self.s.applications.prepare(
             row, price_cents=36_000, capability_version=CSV_PROMOTION.version,
             deliverables=["clean.csv"], timeline_days=3, scope="Clean the CSV.")
+        reasons = []
 
-        first = self.s.applications.submit(application)[1]
-        self.assertIn("SUBMIT_APPLICATION", first)
+        # 1. The source has no researched submission route at all.
+        sent, why = self.s.applications.submit(application, opportunity=row)
+        self.assertFalse(sent)
+        self.assertIn("prepare and verify", why)
+        reasons.append(why)
 
+        # 2. It has one, but no SUBMIT_APPLICATION permission.
+        self.register("board", [GOOD],
+                      submission_mode=access.AUTOMATED_SUBMISSION_WITH_AUTH)
+        sent, why = self.s.applications.submit(application, opportunity=row)
+        self.assertFalse(sent)
+        self.assertIn("SUBMIT_APPLICATION", why)
+        reasons.append(why)
+
+        # 3. It has permission, but the owner has authorised nothing.
         self.s.discovery.grant("board", access.SUBMIT_APPLICATION,
                                owner_identity=OWNER, why="test")
-        before = len(self.s.store.raw_readonly("SELECT id FROM action_requests"))
-        sent, second = self.s.applications.submit(application)
-
+        sent, why = self.s.applications.submit(application, opportunity=row)
         self.assertFalse(sent)
-        self.assertNotEqual(first, second,
-                            "the same refusal for two different reasons means "
-                            "one of the two controls is not being consulted")
-        self.assertNotIn("SUBMIT_APPLICATION", second)
+        self.assertIn("not been approved", why)
+        reasons.append(why)
 
-        # The Gate was actually asked. Without this, a mutation that skipped
-        # the Gate entirely survived: submit() falls through to a final "no
-        # submission client" refusal, so it still returned False and every
-        # assertion above still held. Returning False is not evidence that the
+        # 4. The owner has authorised it, and the Action Gate still decides.
+        digest = self.s.applications.stored(application.id)["digest"]
+        self.s.applications.approve(application.id, owner_identity=OWNER,
+                                    why="test authorises this digest",
+                                    digest=digest)
+        before = len(self.s.store.raw_readonly("SELECT id FROM action_requests"))
+        sent, why = self.s.applications.submit(application, opportunity=row)
+        self.assertFalse(sent)
+        reasons.append(why)
+
+        # The Gate was actually asked. Returning False is not evidence that a
         # control ran -- the Gate's own record is.
         after = self.s.store.raw_readonly(
             "SELECT * FROM action_requests ORDER BY ts")
         self.assertEqual(len(after), before + 1,
                          "the Action Gate was never consulted")
         self.assertEqual(after[-1]["action_class"], "C3_FINANCIAL_COMMITMENT")
-        self.assertIn("owner approval", second)
+        self.assertIn("owner approval", why)
 
-    def test_the_gate_refusal_is_the_gates_own_words(self):
-        """The refusal has to come from the Gate, not from a message this
-        module composed that merely sounds like one."""
-        self.register("board", [GOOD])
-        self.s.discovery.poll("board")
-        row = self.s.discovery.opportunities()[0]
-        application = self.s.applications.prepare(
-            row, price_cents=36_000, capability_version=CSV_PROMOTION.version,
-            deliverables=["clean.csv"], timeline_days=3, scope="Clean the CSV.")
-        self.s.discovery.grant("board", access.SUBMIT_APPLICATION,
-                               owner_identity=OWNER, why="test")
-
-        direct = self.s.gate.request(
-            action_class=__import__(
-                "solvent.types", fromlist=["x"]).ActionClass.C3_FINANCIAL_COMMITMENT,
-            destination="board",
-            privacy=__import__(
-                "solvent.types", fromlist=["x"]).PrivacyClass.INTERNAL,
-            purpose="submit an application to board", initiator="test")
-        self.assertEqual(self.s.applications.submit(application)[1],
-                         direct.reason)
+        # Four refusals, four distinct reasons. Any two being equal would mean
+        # one control is standing in for another.
+        self.assertEqual(len(set(reasons)), 4, reasons)
 
     def test_state_survives_a_restart(self):
         self.register("board", [GOOD])

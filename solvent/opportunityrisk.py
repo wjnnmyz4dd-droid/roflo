@@ -157,7 +157,10 @@ _PATTERNS: tuple[tuple[str, str, str, str], ...] = (
      "never as an instruction",
      r"\b(ignore|disregard|forget|override|bypass)\b[^.]{0,40}"
      r"\b(previous|prior|earlier|above|your|all)\b[^.]{0,30}"
-     r"\b(instructions?|rules?|prompts?|polic\w+|constraints?|guidelines?|systems?)\b"
+     r"\b(instructions?|rules?|prompts?|polic\w+|constraints?|guidelines?|"
+     # An instruction to disregard the *owner* is the same attack aimed
+     # at the one authority that matters most.
+     r"systems?|owners?|governance|approvals?|authorit\w+)\b"
      r"|\byou are now\b|\bnew instructions?:\b|\bsystem prompt\b"
      r"|\bact as (if|though)\b[^.]{0,30}\bno (restrictions?|rules?)\b"),
     ("EXECUTION_REQUEST", SEVERE,
@@ -171,7 +174,11 @@ _PATTERNS: tuple[tuple[str, str, str, str], ...] = (
      "the listing asks for a security control to be turned off",
      r"\b(disable|turn off|switch off|deactivate|uninstall)\b[^.]{0,40}"
      r"\b(security|antivirus|firewalls?|defender|protections?|sandbox|"
-     r"safety|monitoring)\b"),
+     # DeskPilot's own controls, by name. A listing that names the Action Gate
+     # or the owner approval is not describing work -- it has read something
+     # about how this system is governed and is addressing it directly.
+     r"safety|monitoring|action gate|owner approval|audit log|"
+     r"financial governor|policy store|verification)\b"),
     ("POLICY_CHANGE", SEVERE,
      "the listing tries to change how approvals or payments work, which is "
      "the owner's decision and not a client's",

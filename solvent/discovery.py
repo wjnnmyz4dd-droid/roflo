@@ -350,6 +350,19 @@ class Discovery:
              getattr(source, "rate_limit_note", ""),
              getattr(source, "terms_notes", ""),
              int(existing.get("opportunities_found", 0))))
+        # §7. The submission determination is recorded per source, from the
+        # client that knows it, so the owner sees "may DeskPilot submit here"
+        # as its own answer rather than inferring it from the search route.
+        from . import submission as _tx
+        client = _tx.client_for(source.name)
+        self._db.execute(
+            "UPDATE work_sources SET submission_mode = ?, "
+            "submission_verified_on = ?, submission_evidence = ? WHERE name = ?",
+            (getattr(source, "submission_mode", "") or client.mode,
+             getattr(source, "submission_verified_on", "")
+             or client.verified_on,
+             getattr(source, "submission_evidence", "") or client.evidence,
+             source.name))
         self._db.commit()
         self._audit.record(
             event="discovery.source_registered", authority="discovery",

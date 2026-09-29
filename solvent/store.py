@@ -54,6 +54,12 @@ MIGRATIONS = (
     # Granted permissions, as a JSON list. Empty is a real value and means
     # nothing may be done with this source at all.
     ("work_sources", "permissions", "TEXT NOT NULL DEFAULT '[]'"),
+    # §7. Whether this source accepts a machine-submitted application, as a
+    # determination in its own right. Searching and submitting are different
+    # permissions from the platform's side too, and UNDETERMINED means no.
+    ("work_sources", "submission_mode", "TEXT NOT NULL DEFAULT 'UNDETERMINED'"),
+    ("work_sources", "submission_verified_on", "TEXT NOT NULL DEFAULT ''"),
+    ("work_sources", "submission_evidence", "TEXT NOT NULL DEFAULT ''"),
     ("work_sources", "opportunities_found", "INTEGER NOT NULL DEFAULT 0"),
     # --- opportunity provenance and screening (§15, §49)
     ("opportunities", "external_url", "TEXT NOT NULL DEFAULT ''"),
@@ -158,6 +164,11 @@ TABLE_OWNER = {
     # permit, spend or change a rule. The web control centre renders these
     # rows rather than re-deciding what they mean, because a second copy of
     # that judgement is a second answer to the same question.
+    # Applications are the Job Orchestrator's: an application is a promise
+    # about work, and the authority that owns work owns the promise. It is not
+    # a new authority -- there is no "submission authority" deciding anything.
+    "applications": "orchestrator",
+    "submission_attempts": "orchestrator",
     "diagnostic_reports": "diagnostics",
     "work_sources": "discovery",
     "opportunities": "discovery",
@@ -401,6 +412,24 @@ CREATE TABLE IF NOT EXISTS owner_approvals (
   owner_identity TEXT NOT NULL, subject TEXT NOT NULL, action_class TEXT NOT NULL,
   job_id TEXT NOT NULL DEFAULT '', max_cents INTEGER NOT NULL DEFAULT 0,
   used_at TEXT, key_id TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS applications (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, opportunity_id TEXT NOT NULL,
+  source TEXT NOT NULL, capability_version TEXT NOT NULL DEFAULT '',
+  price_cents INTEGER NOT NULL DEFAULT 0, timeline_days INTEGER NOT NULL DEFAULT 0,
+  scope TEXT NOT NULL DEFAULT '', deliverables TEXT NOT NULL DEFAULT '[]',
+  state TEXT NOT NULL, digest TEXT NOT NULL DEFAULT '',
+  verified INTEGER NOT NULL DEFAULT 0, problems TEXT NOT NULL DEFAULT '[]',
+  approved_digest TEXT NOT NULL DEFAULT '', approved_by TEXT NOT NULL DEFAULT '',
+  approved_at TEXT NOT NULL DEFAULT '', submission_mode TEXT NOT NULL DEFAULT '',
+  intake_role TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS submission_attempts (
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, application_id TEXT NOT NULL,
+  digest TEXT NOT NULL DEFAULT '', phase TEXT NOT NULL,
+  outcome TEXT NOT NULL DEFAULT '', failure TEXT NOT NULL DEFAULT '',
+  remote_ref TEXT NOT NULL DEFAULT '', remote_status TEXT NOT NULL DEFAULT '',
+  response_digest TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS diagnostic_reports (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, ran_at REAL NOT NULL,
