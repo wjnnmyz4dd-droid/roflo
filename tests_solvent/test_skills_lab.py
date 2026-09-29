@@ -542,7 +542,8 @@ class TheLabCannotPromoteItself(unittest.TestCase):
         with self.assertRaises(FailClosed) as caught:
             self.s.skillslab.record_promotion(
                 project_id=project_id, owner_identity=OWNER,
-                why="pretending the registry promoted it")
+                why="pretending the registry promoted it",
+                fingerprint="sha256:aa")
         self.assertIn("not registered as proven", str(caught.exception))
 
     def ready_to_promote(self) -> str:
@@ -581,7 +582,7 @@ class TheLabCannotPromoteItself(unittest.TestCase):
                 with self.assertRaises(FailClosed) as caught:
                     self.s.skillslab.record_promotion(
                         project_id=project_id, owner_identity=identity,
-                        why="self-promotion")
+                        why="self-promotion", fingerprint="sha256:aa")
                 # The owner check, not some earlier one that happened to fire.
                 self.assertIn("not a registered owner", str(caught.exception))
                 self.assertEqual(self.s.skillslab.project(project_id).stage,
@@ -593,7 +594,8 @@ class TheLabCannotPromoteItself(unittest.TestCase):
         project_id = self.ready_to_promote()
         self.s.skillslab.record_promotion(project_id=project_id,
                                           owner_identity=OWNER,
-                                          why="the owner approved it")
+                                          why="the owner approved it",
+                                          fingerprint="sha256:aa")
         self.assertEqual(self.s.skillslab.project(project_id).stage,
                          lab.PROMOTED)
 

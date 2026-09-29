@@ -403,7 +403,8 @@ class TheHostileRehearsal(unittest.TestCase):
             project_id=project, target_covers=frozenset({"check_x"}))
         with self.assertRaises(FailClosed):
             self.solvent.skillslab.record_promotion(
-                project_id=project, owner_identity="skillslab", why="myself")
+                project_id=project, owner_identity="skillslab", why="myself",
+                fingerprint="sha256:aa")
 
     def test_poisoned_evidence_is_stopped_by_the_evidence_floor(self):
         project = self.solvent.skillslab.record_need(

@@ -1115,8 +1115,14 @@ def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
             scope=str(params.get("scope", "")))
         return f"proposal {params.get('name')} answered {params.get('decision')}"
     if verb == "promote_capability":
+        # §39. The fingerprint travels with the owner's decision: they
+        # approved the artifact they were shown, and if the code moved between
+        # the dashboard rendering it and this intent being executed, the two
+        # no longer describe the same thing. Absent means refused, not waved
+        # through -- record_promotion fails closed on an empty fingerprint.
         s.skillslab.record_promotion(project_id=str(intent.get("subject", "")),
-                                     owner_identity=acting_as, why=why)
+                                     owner_identity=acting_as, why=why,
+                                     fingerprint=str(params.get("fingerprint", "")))
         return "promotion recorded against the skill project"
     if verb == "advance_payment_rail":
         version = s.policy.advance_payment_rail(

@@ -643,12 +643,22 @@ class SkillsLab:
         return AWAITING_OWNER
 
     def record_promotion(self, *, project_id: str, owner_identity: str,
-                         why: str) -> None:
+                         why: str, fingerprint: str) -> None:
         """Note that the owner promoted this. The registry did the promoting.
 
         Deliberately takes the owner's identity and checks it, even though this
         writes nothing the owner owns: a Lab that recorded promotions on its own
         say-so would make its own history the wrong place to look.
+
+        ``fingerprint`` binds the approval to an artifact. The owner approves
+        *a thing that was tested*, not a name: an approval that travelled with
+        the version number alone would authorise whatever code happened to be
+        sitting behind that number at promotion time, including code written
+        after the certification the owner was shown. Changing certified code
+        invalidates the certification, and this is where that is enforced.
+
+        It is a required argument rather than an optional check, because an
+        optional integrity check is one every caller is free to skip.
         """
         if self._policy is not None and not self._policy.is_owner(owner_identity):
             raise FailClosed(
@@ -658,6 +668,18 @@ class SkillsLab:
         if project.stage != AWAITING_OWNER:
             raise FailClosed(
                 f"{project_id} is at {project.stage}; nothing was offered")
+        if not (fingerprint or "").strip():
+            raise FailClosed(
+                f"promoting {project_id} needs the fingerprint of the artifact "
+                "being promoted; an approval that names no artifact authorises "
+                "any artifact")
+        certified = self.certified_fingerprint(project)
+        if certified and fingerprint != certified:
+            raise FailClosed(
+                f"{project_id} was certified at {certified} and promotion "
+                f"presents {fingerprint}; the code changed after the evidence "
+                "the owner was shown, so the certification no longer describes "
+                "it and a new one is required")
         registered = {c.name: c for c in self._capability.capabilities()}
         if project.skill not in registered:
             raise FailClosed(
@@ -668,6 +690,19 @@ class SkillsLab:
         self._db.commit()
         self._supersede_earlier(project)
         self._event(project_id, PROMOTED, "PROMOTED", why, owner_identity)
+
+    def certified_fingerprint(self, project) -> str:
+        """The artifact digest the certification was recorded against.
+
+        Read from the version row the certification wrote, which is the only
+        place that records what was actually tested.
+        """
+        version = project.target_version or ""
+        for row in self.versions(project.skill):
+            if row.get("version") == version and row.get("fingerprint"):
+                return row["fingerprint"]
+        rows = [r for r in self.versions(project.skill) if r.get("fingerprint")]
+        return rows[-1]["fingerprint"] if rows else ""
 
     def abandon(self, *, project_id: str, why: str,
                 actor: str = AUTHORITY) -> None:
