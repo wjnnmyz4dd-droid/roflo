@@ -319,7 +319,13 @@ class Applications:
         verified, problems = self.verify(application, opportunity)
         digest = self.digest(application, opportunity)
         state = self._s.discovery.source_state(application.source) or {}
+        # The registry's determination, not the client's own opinion of itself.
+        # A client that *can* submit does not make a source submittable: the
+        # owner may have recorded it as prohibited or undetermined, and reading
+        # the client here would have offered such an application for
+        # authorisation on the approvals page.
         client = tx.client_for(application.source)
+        mode = state.get("submission_mode") or client.mode
         self._db.execute(
             "INSERT OR REPLACE INTO applications(id,ts,opportunity_id,source,"
             "capability_version,price_cents,timeline_days,scope,deliverables,"
@@ -330,7 +336,7 @@ class Applications:
              application.price_cents, application.timeline_days,
              application.scope, json.dumps(list(application.deliverables)),
              PREPARED, digest, 1 if verified else 0, json.dumps(problems),
-             client.mode, intake.role_of(state)))
+             mode, intake.role_of(state)))
         self._db.commit()
         self._s.audit.record(
             event="application.recorded", authority="orchestrator",

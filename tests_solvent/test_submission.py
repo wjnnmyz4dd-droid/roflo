@@ -760,3 +760,43 @@ class AMaliciousOpportunityCannotDriveASubmission(Base):
         body = str(request["body"])
         for foreign in ("/etc/passwd", "other clients", "client:beta"):
             self.assertNotIn(foreign, body)
+
+
+class TheRegistryDeterminationOutranksTheClient(Base):
+    """A defect the dashboard tests found.
+
+    ``record()`` stored the submission client's own mode rather than the
+    registry's recorded determination. A client that *can* submit does not make
+    a source submittable -- the owner may have recorded it prohibited, or not
+    yet determined -- and reading the client meant such an application was
+    offered on the approvals page as something to authorise sending.
+
+    The client knows how to talk to a source. Whether DeskPilot may is the
+    owner's determination, and it lives in the registry.
+    """
+
+    def test_a_prohibited_source_is_recorded_as_prohibited(self):
+        row = self.discover("freelancer",
+                            mode=access.SUBMISSION_PROHIBITED)
+        application = self.prepared(row)
+        self.assertEqual(
+            self.s.applications.stored(application.id)["submission_mode"],
+            access.SUBMISSION_PROHIBITED)
+
+    def test_an_undetermined_source_is_recorded_as_undetermined(self):
+        row = self.discover("freelancer",
+                            mode=access.SUBMISSION_UNDETERMINED)
+        application = self.prepared(row)
+        self.assertEqual(
+            self.s.applications.stored(application.id)["submission_mode"],
+            access.SUBMISSION_UNDETERMINED)
+
+    def test_a_submittable_source_is_recorded_as_submittable(self):
+        """The canary. Without it the two above could hold on a field that is
+        always the same value."""
+        row = self.discover("freelancer",
+                            mode=access.AUTOMATED_SUBMISSION_WITH_AUTH)
+        application = self.prepared(row)
+        self.assertEqual(
+            self.s.applications.stored(application.id)["submission_mode"],
+            access.AUTOMATED_SUBMISSION_WITH_AUTH)

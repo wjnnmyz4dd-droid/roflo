@@ -1060,6 +1060,69 @@ class ControlCentre:
                         empty="None yet."),
                 "Work sources")
 
+    def _submission_approvals(self) -> str:
+        """§38. What clicking approve would actually authorise.
+
+        Written so an owner who does not read code can still make an authority
+        decision: what is being sent, to whom, for how much, against which
+        capability, by when, and the digest that the authorisation binds to.
+        The technical question -- is this package correct -- is already settled,
+        which is why "verification: passed" is stated rather than asked.
+        """
+        waiting = self.read.applications_awaiting_approval()
+        manual = self.read.applications_needing_manual_submission()
+        unresolved = self.read.submissions_needing_reconciliation()
+        parts = []
+
+        if waiting:
+            parts.append(
+                "<h2>Applications awaiting your authorisation</h2>"
+                '<p class="sub">Approving one authorises DeskPilot to transmit '
+                "<em>that exact application</em> to that one source. It does "
+                "not authorise any other application, any other source, or a "
+                "changed price — if the application changes, the "
+                "authorisation stops applying.</p>"
+                + table(["opportunity", "source", "capability", "price",
+                         "deadline", "verification", "authorises sending"],
+                        [[esc(a.get("opportunity_id", ""))[:22],
+                          esc(a.get("source", "")),
+                          esc(a.get("capability_version", "")),
+                          esc(money(a.get("price_cents", 0) or 0)),
+                          esc(a.get("deadline", "") or "—"),
+                          pill("passed", "ok") if int(a.get("verified") or 0)
+                          else pill("not passed", "bad"),
+                          f'<code>{esc(a.get("digest", "")[:26])}…</code>']
+                         for a in waiting], empty="None."))
+
+        if manual:
+            parts.append(
+                "<h2>Prepared packages you must submit yourself</h2>"
+                '<p class="sub">These sources do not accept a '
+                "machine-submitted application, so DeskPilot has prepared and "
+                "verified the package and a person sends it. Nothing here has "
+                "been transmitted.</p>"
+                + table(["opportunity", "source", "why it is manual", "price"],
+                        [[esc(a.get("opportunity_id", ""))[:22],
+                          esc(a.get("source", "")),
+                          _submission_mode_pill(a.get("submission_mode", "")),
+                          esc(money(a.get("price_cents", 0) or 0))]
+                         for a in manual], empty="None."))
+
+        if unresolved:
+            parts.append(
+                '<div class="banner banner-bad">One or more submissions left '
+                "and no answer came back, so whether they arrived is not "
+                "known. These must not be sent again until somebody checks the "
+                "source.</div>"
+                "<h2>Submissions needing reconciliation</h2>"
+                + table(["application", "source reference", "when", "detail"],
+                        [[esc(a.get("application_id", ""))[:22],
+                          esc(a.get("remote_ref", "") or "—"),
+                          esc((a.get("ts", "") or "")[:19]),
+                          esc(a.get("detail", ""))[:80]]
+                         for a in unresolved], empty=""))
+        return "".join(parts)
+
     # ------------------------------------------------------------ skills lab
     def skills(self, request: Request):
         projects = self.read.skill_projects()
@@ -1300,7 +1363,8 @@ class ControlCentre:
                 '<p class="sub">Decisions that are genuinely yours. Routine '
                 "technical decisions are not here — they are governed already."
                 "</p>"
-                "<h2>Certified skills awaiting your decision</h2>"
+                + self._submission_approvals()
+                + "<h2>Certified skills awaiting your decision</h2>"
                 + table(["skill", "change", "version", ""],
                         [[esc(p.get("skill", "")),
                           _change_pill(p.get("change_type", "")),
@@ -1567,6 +1631,17 @@ def _source_failures(rows) -> str:
                       esc((r.get("last_failure") or "—")[:19]),
                       esc(r.get("failure_reason", "") or "—")]
                      for r in failing], empty=""))
+
+
+def _submission_mode_pill(value: str) -> str:
+    """Why a source is manual. PROHIBITED reads red: somebody has said no, and
+    that is different from nobody having built it yet."""
+    return pill(value.replace("_", " ").lower() if value else "—",
+                {"AUTOMATED_SUBMISSION_SUPPORTED": "ok",
+                 "AUTOMATED_SUBMISSION_SUPPORTED_WITH_AUTH": "ok",
+                 "PROHIBITED": "bad",
+                 "APPLICATION_PREPARATION_ONLY": "warn",
+                 "MANUAL_SUBMISSION_ONLY": "info"}.get(value, "neutral"))
 
 
 def _compliance_pill(value: str) -> str:

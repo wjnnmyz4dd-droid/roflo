@@ -98,6 +98,52 @@ class ReadModel:
             entry["sources"] = sorted(s for s in entry["sources"] if s)
         return sorted(out, key=lambda e: (-e["occurrences"], e["need"]))
 
+    def applications(self) -> list[dict]:
+        return self.rows("SELECT * FROM applications ORDER BY ts DESC")
+
+    def submission_attempts(self, application_id: str = "") -> list[dict]:
+        if application_id:
+            return self.rows(
+                "SELECT * FROM submission_attempts WHERE application_id = ? "
+                "ORDER BY ts", (application_id,))
+        return self.rows("SELECT * FROM submission_attempts ORDER BY ts DESC")
+
+    def applications_awaiting_approval(self) -> list[dict]:
+        """Prepared, verified, and waiting on the owner to authorise sending.
+
+        Verified is part of the filter on purpose: an unverified application
+        must never appear as something to approve, because approving one would
+        be the owner standing in for the verification.
+        """
+        return [a for a in self.applications()
+                if a.get("state") == "PREPARED" and int(a.get("verified") or 0)
+                and a.get("submission_mode") in
+                ("AUTOMATED_SUBMISSION_SUPPORTED",
+                 "AUTOMATED_SUBMISSION_SUPPORTED_WITH_AUTH")]
+
+    def applications_needing_manual_submission(self) -> list[dict]:
+        """Verified packages a person has to send (§39).
+
+        Listed separately from the approval queue so nothing can present "a
+        person must do this" as "waiting for your authorisation to automate
+        it" -- they need different actions from the owner.
+        """
+        return [a for a in self.applications()
+                if int(a.get("verified") or 0)
+                and a.get("submission_mode") not in
+                ("AUTOMATED_SUBMISSION_SUPPORTED",
+                 "AUTOMATED_SUBMISSION_SUPPORTED_WITH_AUTH")]
+
+    def submissions_needing_reconciliation(self) -> list[dict]:
+        """Attempts whose outcome nobody can establish (§24).
+
+        The one thing that must not happen to these is another send, so they
+        are surfaced as their own category rather than mixed in with failures
+        that can safely be retried.
+        """
+        return [a for a in self.submission_attempts()
+                if a.get("outcome") == "UNKNOWN_REMOTE_STATE"]
+
     def close(self) -> None:
         self._conn.close()
 
