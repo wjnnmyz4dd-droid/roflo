@@ -574,16 +574,22 @@ class Applications:
         :meth:`submit` so nothing can report a prepared package as a
         transmission (§39, §40).
         """
-        client = tx.client_for(application.source)
         verified, problems = self.verify(application, opportunity)
         if not verified:
             raise FailClosed(
                 "the package is not verified, so handing it over would hand "
                 "over a problem: " + "; ".join(problems))
-        if hasattr(client, "package"):
-            return client.package(application, opportunity)
-        return tx.Result(outcome=tx.MANUAL_REQUIRED,
-                         detail=f"{application.source} requires a person")
+        client = tx.client_for(application.source)
+        if not hasattr(client, "package"):
+            # A source with an automated client can still be recorded
+            # manual-only -- the commonest reason being that the owner has not
+            # accepted that API's terms yet. Handing over a package with no
+            # instructions would be the least useful possible outcome, so a
+            # manual client for the same source supplies them.
+            client = tx.ManualSubmissionClient(
+                application.source,
+                destination=str((opportunity or {}).get("external_url") or ""))
+        return client.package(application, opportunity)
 
     # ------------------------------------------------------------- recording
 
