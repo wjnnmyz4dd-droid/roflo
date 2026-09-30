@@ -15,6 +15,7 @@ import os
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 from solvent import sourceaccess as access
 from solvent import submission as tx
@@ -44,20 +45,18 @@ class Base(unittest.TestCase):
         # signing key from the environment. Set before Solvent is constructed,
         # because that is when the Owner Channel reads it -- and restored, so a
         # key never leaks into another test's environment.
-        self._previous_key = os.environ.get(owner_module.KEY_ENV)
-        os.environ[owner_module.KEY_ENV] = TEST_ONLY_OWNER_KEY.decode()
-        self.addCleanup(self._restore_key)
+        # patch.dict restores the whole mapping on exit whatever happens, so
+        # there is no saved "previous" value to get out of step with reality --
+        # which is exactly how a signing key leaked out of this fixture once.
+        patcher = mock.patch.dict(
+            os.environ, {owner_module.KEY_ENV: TEST_ONLY_OWNER_KEY.decode()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.db = str(pathlib.Path(self.dir.name) / "solvent.db")
         self.s = Solvent(self.db)
         provision_capability(self.s, CSV_PROMOTION, owner_identity=OWNER)
         self.addCleanup(self.close)
         self.sent = []
-
-    def _restore_key(self):
-        if self._previous_key is None:
-            os.environ.pop(owner_module.KEY_ENV, None)
-        else:
-            os.environ[owner_module.KEY_ENV] = self._previous_key
 
     def close(self):
         try:

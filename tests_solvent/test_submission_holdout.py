@@ -11,6 +11,7 @@ import os
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 from solvent import owner as owner_module
 from solvent import sourceaccess as access
@@ -31,20 +32,18 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
-        self._previous = os.environ.get(owner_module.KEY_ENV)
-        os.environ[owner_module.KEY_ENV] = TEST_ONLY_OWNER_KEY.decode()
-        self.addCleanup(self._restore)
+        # patch.dict restores the whole mapping on exit whatever happens, so
+        # there is no saved "previous" value to get out of step with reality --
+        # which is exactly how a signing key leaked out of this fixture once.
+        patcher = mock.patch.dict(
+            os.environ, {owner_module.KEY_ENV: TEST_ONLY_OWNER_KEY.decode()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.db = str(pathlib.Path(self.dir.name) / "solvent.db")
         self.s = Solvent(self.db)
         provision_capability(self.s, CSV_PROMOTION, owner_identity=OWNER)
         self.addCleanup(self.close)
         self.sent = []
-
-    def _restore(self):
-        if self._previous is None:
-            os.environ.pop(owner_module.KEY_ENV, None)
-        else:
-            os.environ[owner_module.KEY_ENV] = self._previous
 
     def close(self):
         try:
@@ -262,18 +261,37 @@ class TheSeamBetweenNoAnswerAndNoEffect(Base):
         self.assertEqual(attempt["remote_status"], "InvalidCredentials")
 
     def test_the_response_digest_is_recorded_for_every_outcome(self):
-        for response in ({"status_code": 200, "result": {"id": 7}},
-                         {"status_code": 400, "error_code": "X"},
-                         "garbage"):
+        """One application per response shape, in one database.
+
+        An earlier version of this called ``self.setUp()`` from inside the test
+        body to get a clean slate. That re-read the saved "previous" value of
+        the owner-key environment variable *after* setUp had already set it, so
+        the cleanup restored the test key instead of removing it -- leaking a
+        signing key into every later test in the process and breaking an
+        unrelated fixture twenty tests away. Re-entering setUp is not a way to
+        reset state; it is a way to corrupt whatever setUp saved.
+        """
+        application, row = self.ready()
+        for index, response in enumerate((
+                {"status_code": 200, "result": {"id": 7}},
+                {"status_code": 400, "error_code": "X"},
+                "garbage")):
             with self.subTest(response=response):
-                application, row = self.ready()
+                # A fresh application each time: the previous one may now be
+                # unrepeatable, which is the at-most-once rule working.
+                fresh = self.s.applications.prepare(
+                    row, price_cents=36_000 + index,
+                    capability_version=CSV_PROMOTION.version,
+                    deliverables=["clean.csv"], timeline_days=3,
+                    scope=f"Deduplicate the supplied CSV ({index}).")
+                self.s.applications.approve(
+                    fresh.id, owner_identity=OWNER, why="holdout",
+                    digest=self.s.applications.stored(fresh.id)["digest"])
                 self.s.applications.submit(
-                    application, opportunity=row, approval=self.signed(),
+                    fresh, opportunity=row, approval=self.signed(),
                     transport=self.transport(response))
-                attempt = self.s.applications.attempts(application.id)[-1]
+                attempt = self.s.applications.attempts(fresh.id)[-1]
                 self.assertTrue(attempt["response_digest"].startswith("sha256:"))
-                self.close()
-                self.setUp()
 
 
 class TheSeamAroundCredentials(Base):

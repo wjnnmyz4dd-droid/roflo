@@ -13,6 +13,7 @@ import os
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 from solvent import owner as owner_module
 from solvent import sourceaccess as access
@@ -37,9 +38,13 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
-        self._previous = os.environ.get(owner_module.KEY_ENV)
-        os.environ[owner_module.KEY_ENV] = TEST_ONLY_OWNER_KEY.decode()
-        self.addCleanup(self._restore)
+        # patch.dict restores the whole mapping on exit whatever happens, so
+        # there is no saved "previous" value to get out of step with reality --
+        # which is exactly how a signing key leaked out of this fixture once.
+        patcher = mock.patch.dict(
+            os.environ, {owner_module.KEY_ENV: TEST_ONLY_OWNER_KEY.decode()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.db = str(pathlib.Path(self.dir.name) / "solvent.db")
         self.s = Solvent(self.db)
         provision_capability(self.s, CSV_PROMOTION, owner_identity=OWNER)
@@ -49,12 +54,6 @@ class Base(unittest.TestCase):
             self.db, password_hash=web_auth.hash_password(PASSWORD),
             spool=str(pathlib.Path(self.dir.name) / "spool"))
         self.addCleanup(self.centre.read.close)
-
-    def _restore(self):
-        if self._previous is None:
-            os.environ.pop(owner_module.KEY_ENV, None)
-        else:
-            os.environ[owner_module.KEY_ENV] = self._previous
 
     def arrange(self):
         src = FixtureSource("freelancer", [POSTING])
