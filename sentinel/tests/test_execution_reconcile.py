@@ -234,3 +234,16 @@ def test_lease_stolen_while_locally_still_valid_is_detected(tmp_path):
     assert b.acquire()  # B believes A's lease expired
     with pytest.raises(LeaseLost, match="another instance"):
         a.assert_leader()  # A's own expiry has not passed, but it must notice it lost the lease
+
+
+def test_loss_streak_halt_is_operator_scoped_and_resets_at_resume(tmp_path, clock):
+    """Found by the holdout replay: a day-scoped streak halt re-fired every day for months because no
+    trade can happen while halted. It is now a manual halt and the streak restarts after RESUME."""
+    from sentinel.risk import RiskEngine, RiskLimits
+
+    r = RiskEngine(RiskLimits(), 100_000.0)
+    snap = SimBroker(str(tmp_path / "b.db"), clock=clock).account()
+    losses = [{"ts": NOW - 100 + i, "profit": -10.0, "commission": 0, "kind": "OUT:SL"} for i in range(5)]
+    d = r.account_check(snap, losses, NOW)
+    assert d.verdict.value == "HALT" and d.detail["scope"] == "manual"
+    assert r.account_check(snap, losses, NOW, streak_reset_ts=NOW - 1).verdict.value == "ALLOW"

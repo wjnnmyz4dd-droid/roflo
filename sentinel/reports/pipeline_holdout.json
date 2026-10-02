@@ -1,0 +1,328 @@
+{
+  "period": "holdout",
+  "start": 1759532400,
+  "end": 1790971198,
+  "cycles": 8733,
+  "elapsed_s": 136.7,
+  "data_sha256": {
+    "XAUUSD": "260a739983f35bf200f49df8817887f2cd9c57fe5925e69cc95ebd06c866db07",
+    "USOIL": "469376560291c7c79ac9176aecda45f6a347da869c12d809aa79a3b4dcda2e5e",
+    "USDJPY": "3addbcd5019fc4bf00dd4224369c4cdb21e9e26f5e7b3409d8d06fccf55b4642",
+    "BTCUSD": "3bdda117bc91f14e83b03c38e4163944746d2cdc54fadd62a34c21ac20be37e7"
+  },
+  "statuses": {
+    "OK": 3715,
+    "HALTED": 5018
+  },
+  "journal_verified": [
+    true,
+    "14608 events verified"
+  ],
+  "broker": {
+    "balance": 101080.94,
+    "equity": 101080.94,
+    "open_positions": 0,
+    "closed_trades": 30,
+    "net_pnl_after_commission": 1080.94,
+    "exit_kinds": {
+      "OUT:CLOSE": 26,
+      "OUT:SL": 4
+    }
+  },
+  "counterfactual_r_by_stage": {
+    "arbiter:INDETERMINATE": {
+      "n": 175,
+      "expectancy_r": 0.1089,
+      "t_stat": 1.069,
+      "profit_factor": 1.296,
+      "win_rate": 0.44,
+      "avg_win_r": 1.084,
+      "avg_loss_r": -0.657,
+      "max_drawdown_r": 27.64,
+      "total_r": 19.06,
+      "sharpe_per_trade": 0.0808,
+      "sortino_per_trade": 0.188
+    },
+    "arbiter:REJECT": {
+      "n": 914,
+      "expectancy_r": -0.0171,
+      "t_stat": -0.473,
+      "profit_factor": 0.962,
+      "win_rate": 0.419,
+      "avg_win_r": 1.035,
+      "avg_loss_r": -0.776,
+      "max_drawdown_r": 71.85,
+      "total_r": -15.63,
+      "sharpe_per_trade": -0.0157,
+      "sortino_per_trade": -0.0263
+    },
+    "execution:FILLED": {
+      "n": 30,
+      "expectancy_r": 0.1076,
+      "t_stat": 0.629,
+      "profit_factor": 1.308,
+      "win_rate": 0.567,
+      "avg_win_r": 0.806,
+      "avg_loss_r": -0.806,
+      "max_drawdown_r": 2.83,
+      "total_r": 3.23,
+      "sharpe_per_trade": 0.1149,
+      "sortino_per_trade": 0.1887
+    },
+    "news:BLOCK": {
+      "n": 3,
+      "expectancy_r": -0.049,
+      "t_stat": -0.072,
+      "profit_factor": 0.916,
+      "win_rate": 0.333,
+      "avg_win_r": 1.608,
+      "avg_loss_r": -0.877,
+      "max_drawdown_r": 1.75,
+      "total_r": -0.15,
+      "sharpe_per_trade": -0.0416,
+      "sortino_per_trade": -0.0675
+    },
+    "risk:BLOCK": {
+      "n": 109,
+      "expectancy_r": 0.1355,
+      "t_stat": 1.337,
+      "profit_factor": 1.365,
+      "win_rate": 0.532,
+      "avg_win_r": 0.952,
+      "avg_loss_r": -0.793,
+      "max_drawdown_r": 10.63,
+      "total_r": 14.77,
+      "sharpe_per_trade": 0.1281,
+      "sortino_per_trade": 0.2286
+    }
+  },
+  "top_reasons": [
+    [
+      "arbiter:REJECT",
+      "validator falsified the candidate: regime does not support continuation (choppy or extreme",
+      522
+    ],
+    [
+      "arbiter:REJECT",
+      "validator falsified the candidate: historical analogs do not survive costs with statistica",
+      359
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: history has too many gaps",
+      65
+    ],
+    [
+      "risk:BLOCK",
+      "margin level would fall below minimum",
+      57
+    ],
+    [
+      "risk:BLOCK",
+      "instrument already has a position",
+      49
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: signal is stale or market closed",
+      46
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (27)",
+      25
+    ],
+    [
+      "arbiter:REJECT",
+      "validator falsified the candidate: price jump inconsistent with volatility (bad tick?)",
+      17
+    ],
+    [
+      "arbiter:REJECT",
+      "validator falsified the candidate: signal explained by a single-bar spike",
+      16
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (28)",
+      13
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (25)",
+      11
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (29)",
+      10
+    ],
+    [
+      "risk:BLOCK",
+      "stale or invalid quote",
+      3
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (26)",
+      2
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T8b9748653749', 'filled_volume': 0.09}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T4abb7b48eb83', 'filled_volume': 0.08}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T99993b290a31', 'filled_volume': 0.08}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T63613e67e5ef', 'filled_volume': 0.09}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T0b55b4919468', 'filled_volume': 0.11}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T8caf7e0d3a12', 'filled_volume': 0.05}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T03141cd0835e', 'filled_volume': 0.09}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T8ed74797c890', 'filled_volume': 0.06}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T79676b1f3d2c', 'filled_volume': 0.07}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T551c55297452', 'filled_volume': 0.07}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T720a38aeddfb', 'filled_volume': 0.16}",
+      1
+    ]
+  ],
+  "halts": [
+    {
+      "day": "2026-03-07",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-08",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-09",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-10",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-11",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-12",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-13",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-14",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-15",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-16",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-17",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-18",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-19",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-20",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-21",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-22",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-23",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-24",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-25",
+      "reason": "loss streak 5",
+      "scope": "day"
+    },
+    {
+      "day": "2026-03-26",
+      "reason": "loss streak 5",
+      "scope": "day"
+    }
+  ]
+}

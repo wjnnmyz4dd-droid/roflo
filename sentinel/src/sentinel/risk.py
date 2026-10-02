@@ -58,7 +58,8 @@ class RiskEngine:
                          subject=subject)
         return self.signer.sign(d) if self.signer else d
 
-    def account_check(self, snap: AccountSnapshot | None, deals: list | None, now: int) -> GateDecision:
+    def account_check(self, snap: AccountSnapshot | None, deals: list | None, now: int, streak_reset_ts: int = 0) -> GateDecision:
+        """``streak_reset_ts``: time of the last operator RESUME; losses before it were already reviewed."""
         L = self.limits
         if snap is None or deals is None:
             return self._decide(GateVerdict.BLOCK, ["broker truth unavailable"], [now], now)
@@ -79,7 +80,7 @@ class RiskEngine:
             return self._decide(GateVerdict.HALT, [f"internal daily loss limit hit ({day_pnl:.2f})"], inputs, now, detail=detail | {"scope": "day"})
         if dd >= L.internal_drawdown_halt_pct:
             return self._decide(GateVerdict.HALT, [f"internal drawdown halt ({dd:.2%})"], inputs, now, detail=detail | {"scope": "manual"})
-        closed = [d for d in deals if str(d["kind"]).startswith("OUT")]
+        closed = [d for d in deals if str(d["kind"]).startswith("OUT") and (not streak_reset_ts or d["ts"] > streak_reset_ts)]
         streak = 0
         for d in reversed(closed):
             if (d.get("profit") or 0) - (d.get("commission") or 0) < 0:
@@ -87,13 +88,15 @@ class RiskEngine:
             else:
                 break
         if streak >= L.loss_streak_halt:
-            return self._decide(GateVerdict.HALT, [f"loss streak {streak}"], inputs, now, detail=detail | {"scope": "day"})
+            # A streak cannot clear itself (no trades while halted), so it needs an operator decision.
+            return self._decide(GateVerdict.HALT, [f"loss streak {streak}"], inputs, now, detail=detail | {"scope": "manual"})
         return self._decide(GateVerdict.ALLOW, ["account ok"], inputs, now, detail=detail)
 
     def evaluate(self, snap: AccountSnapshot | None, deals: list | None, specs: dict, spec: InstrumentSpec,
-                 quote: Quote | None, direction: Direction, entry: float, stop: float, now: int, subject: str = "") -> GateDecision:
+                 quote: Quote | None, direction: Direction, entry: float, stop: float, now: int, subject: str = "",
+                 streak_reset_ts: int = 0) -> GateDecision:
         L = self.limits
-        acct = self.account_check(snap, deals, now)
+        acct = self.account_check(snap, deals, now, streak_reset_ts)
         if acct.verdict is not GateVerdict.ALLOW:
             return acct
         if not all(isinstance(x, (int, float)) and math.isfinite(x) and x > 0 for x in (entry, stop)):

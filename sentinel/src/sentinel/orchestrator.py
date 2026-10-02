@@ -116,7 +116,7 @@ class Orchestrator:
         if comp_acct.verdict is GateVerdict.HALT:
             c.control.halt("compliance", "; ".join(comp_acct.reasons), scope="manual")
             return {"status": "HALTED", "reason": comp_acct.reasons}
-        risk_acct = c.risk.account_check(snap, deals, now)
+        risk_acct = c.risk.account_check(snap, deals, now, c.control.last_resume_ts())
         self._j("RISK_ACCOUNT", {"decision": risk_acct}, comp="risk")
         if risk_acct.verdict is GateVerdict.HALT:
             c.control.halt("risk", "; ".join(risk_acct.reasons), scope=risk_acct.detail.get("scope", "manual"))
@@ -206,7 +206,7 @@ class Orchestrator:
         except (BrokerUncertain, BrokerError) as e:
             return self._outcome(cand.candidate_id, "risk", "BLOCK", [f"broker truth unavailable: {e}"])
         rd = c.risk.evaluate(snap, deals, specs, spec, q, cand.direction, cand.entry_reference, cand.invalidation_price, now,
-                             subject=cand.candidate_id)
+                             subject=cand.candidate_id, streak_reset_ts=c.control.last_resume_ts())
         self._j("RISK_DECISION", {"decision": rd}, cand.candidate_id, comp="risk")
         crashpoint("after_risk")
         if rd.verdict not in (GateVerdict.ALLOW, GateVerdict.REDUCE):

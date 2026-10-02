@@ -1,0 +1,1 @@
+{"cycles": 8733, "elapsed_s": 136.7, "statuses": {"OK": 3715, "HALTED": 5018}, "broker": {"balance": 101080.94, "equity": 101080.94, "open_positions": 0, "closed_trades": 30, "net_pnl_after_commission": 1080.94, "exit_kinds": {"OUT:CLOSE": 26, "OUT:SL": 4}}}

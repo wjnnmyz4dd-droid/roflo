@@ -171,10 +171,11 @@ def test_risk_halts_on_impossible_account_and_drawdown_and_streak():
 
 
 def test_unprotected_or_unknown_position_blocks_new_risk():
-    naked = Position("t", "XAUUSD", Direction.LONG, 1.0, 2000, None, None, NOW, None, 0.0)
-    d = risk().evaluate(snap(positions=[naked]), [], DEFAULT_SPECS, DEFAULT_SPECS["USDJPY"],
-                        Quote("USDJPY", 150, 150.012, NOW), Direction.LONG, 150.012, 149.5, NOW)
-    assert d.verdict is GateVerdict.BLOCK
+    naked = Position("t", "XAUUSD", Direction.LONG, 0.01, 2000, None, None, NOW, None, 0.0)
+    args = ([], DEFAULT_SPECS, DEFAULT_SPECS["BTCUSD"], Quote("BTCUSD", 60000, 60010, NOW), Direction.LONG, 60010.0, 59000.0, NOW)
+    assert risk().evaluate(snap(), *args).verdict is GateVerdict.ALLOW  # control: same trade is fine without the naked position
+    d = risk().evaluate(snap(positions=[naked]), *args)
+    assert d.verdict is GateVerdict.BLOCK and "unbounded" in d.reasons[0]
 
 
 def test_correlated_usd_bucket_and_concentration():

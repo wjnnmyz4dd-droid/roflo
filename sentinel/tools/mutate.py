@@ -45,7 +45,7 @@ M = [
     ("news.py", "            ts = int(dt.astimezone(UTC).timestamp())", "            ts = int(dt.replace(tzinfo=UTC).timestamp())", "news: offset dropped (the audited repo's bug)"),
     ("news.py", "        if hits:", "        if False:", "news: blackout hits ignored"),
     ("news.py", "        if not (s.coverage_start <= now < s.coverage_end):", "        if False:", "news: query outside coverage accepted"),
-    ("execution.py", "                unique=[(\"permit\", permit.permit_id), (\"intent\", intent.intent_id)],", "                unique=[],",
+    ("execution.py", "                unique=[(\"permit\", permit.permit_id), (\"intent\", intent.intent_id),", "                unique=[",
      "execution: permit/intent uniqueness removed"),
     ("execution.py", "            self._control.halt(\"execution\", f\"order outcome unknown for {intent.intent_id}: {e}\", scope=\"reconcile\")",
      "            return self.submit(permit) if False else self._broker.send_order(intent.intent_id, intent.instrument, intent.direction, intent.volume, intent.stop_loss, intent.take_profit, intent.max_slippage_points, token)",

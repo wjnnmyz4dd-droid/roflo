@@ -29,6 +29,10 @@ class ControlState:
     def resume(self, operator: str, reason: str) -> None:
         self._j.append("RESUME", "operator", {"operator": operator, "reason": reason})
 
+    def last_resume_ts(self) -> int:
+        ev = self._j.last("RESUME")
+        return ev.ts if ev else 0
+
     def trading_permitted(self) -> tuple[bool, str]:
         today = trading_day_cet(self._clock.now())
         last_startup = None

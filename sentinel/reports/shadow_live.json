@@ -1,0 +1,61 @@
+{
+  "run_at_utc": 1790983736,
+  "mode": "shadow",
+  "execution_service_present": false,
+  "cycle_result": {
+    "status": "OK",
+    "exits": [],
+    "candidates": [
+      {
+        "instrument": "XAUUSD",
+        "stage": "market_closed"
+      },
+      {
+        "instrument": "USOIL",
+        "stage": "market_closed"
+      },
+      {
+        "instrument": "USDJPY",
+        "stage": "market_closed"
+      },
+      {
+        "instrument": "BTCUSD",
+        "stage": "no_setup"
+      }
+    ]
+  },
+  "calendar": {
+    "source": "forexfactory",
+    "events": 143,
+    "malformed": 0,
+    "coverage": [
+      1790467200,
+      1791072000
+    ]
+  },
+  "last_bar_ts": {
+    "XAUUSD": 1790974798,
+    "USOIL": 1790974799,
+    "USDJPY": 1790974800,
+    "BTCUSD": 1790983735
+  },
+  "data_sha256": {
+    "XAUUSD": "eb2a244be4e3bed532766ab24358ce4c1e419b05685428c7d2b0e06f00611e10",
+    "USOIL": "b3a21bca918630e51fb77ecefbe49ff62356574240bdc324cc5e4582a446c018",
+    "USDJPY": "e7989233b575257852826c1550d47660d95f6f0091a9fb3a3ecd86515f233584",
+    "BTCUSD": "69e393bd6f50000f87d2537f091703ba4ca0948e237417013b2699fddfc2b335"
+  },
+  "outcomes": [],
+  "news_decisions": [],
+  "broker_send_calls": [],
+  "journal_verified": [
+    true,
+    "4 events verified"
+  ],
+  "event_types": {
+    "STARTUP": 1,
+    "RECONCILED": 1,
+    "COMPLIANCE_ACCOUNT": 1,
+    "RISK_ACCOUNT": 1
+  }
+}

@@ -256,8 +256,12 @@ def test_decisions_are_bound_to_candidate_instrument_direction_and_stop(tmp_path
     cap, real = _capture(b)
     b.orch.cycle(NOW)
     i = cap["intent"]
-    for bad in (dataclasses.replace(i, candidate_id="cand-other"), dataclasses.replace(i, instrument="BTCUSD"),
-                dataclasses.replace(i, direction=Direction.SHORT), dataclasses.replace(i, stop_loss=i.stop_loss - 50)):
-        arb = cap["arb"] if bad.candidate_id == i.candidate_id else dataclasses.replace(cap["arb"], candidate_id=bad.candidate_id)
-        with pytest.raises(PermitError):
-            real(bad, arb, cap["comp"], cap["news"], cap["risk"], NOW)
+    # a GENUINELY signed arbiter approval for another candidate, paired with this candidate's gate decisions
+    other_arb = b.comps.arbiter.signer.sign(dataclasses.replace(cap["arb"], candidate_id="cand-other", signature=""))
+    with pytest.raises(PermitError, match="not this candidate"):
+        real(dataclasses.replace(i, candidate_id="cand-other"), other_arb, cap["comp"], cap["news"], cap["risk"], NOW)
+    for bad, msg in ((dataclasses.replace(i, instrument="BTCUSD"), "instrument"),
+                     (dataclasses.replace(i, direction=Direction.SHORT), "direction"),
+                     (dataclasses.replace(i, stop_loss=i.stop_loss - 50), "direction/stop")):
+        with pytest.raises(PermitError, match=msg):
+            real(bad, cap["arb"], cap["comp"], cap["news"], cap["risk"], NOW)

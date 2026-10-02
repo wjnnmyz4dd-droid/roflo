@@ -1,0 +1,10 @@
+{
+ "execution: ALL uniqueness keys removed (permit+intent+decisions+candidate)": {
+  "status": "KILLED",
+  "killed_by": "tests/test_authority_and_journal.py::test_permit_cannot_be_reused_or_altered_or_expire_silently"
+ },
+ "authority+compliance: both volume checks removed": {
+  "status": "KILLED",
+  "killed_by": "tests/test_authority_and_journal.py::test_issuer_refuses_volume_above_risk_approval_and_non_allow_gates"
+ }
+}

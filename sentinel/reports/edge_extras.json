@@ -1,0 +1,297 @@
+{
+  "leakage": {
+    "XAUUSD": {
+      "probes": 25,
+      "decisions_changed_by_future_data": 0
+    },
+    "USOIL": {
+      "probes": 25,
+      "decisions_changed_by_future_data": 0
+    },
+    "USDJPY": {
+      "probes": 25,
+      "decisions_changed_by_future_data": 0
+    },
+    "BTCUSD": {
+      "probes": 25,
+      "decisions_changed_by_future_data": 0
+    }
+  },
+  "null_random_entry": {
+    "XAUUSD": {
+      "n": 1986,
+      "expectancy_r": 0.0017,
+      "t_stat": 0.057,
+      "profit_factor": 1.003,
+      "win_rate": 0.43,
+      "avg_win_r": 1.164,
+      "avg_loss_r": -0.876,
+      "max_drawdown_r": 70.75,
+      "total_r": 3.29,
+      "sharpe_per_trade": 0.0013,
+      "sortino_per_trade": 0.0022
+    },
+    "USOIL": {
+      "n": 2000,
+      "expectancy_r": -0.0017,
+      "t_stat": -0.078,
+      "profit_factor": 0.996,
+      "win_rate": 0.468,
+      "avg_win_r": 0.861,
+      "avg_loss_r": -0.759,
+      "max_drawdown_r": 41.93,
+      "total_r": -3.39,
+      "sharpe_per_trade": -0.0017,
+      "sortino_per_trade": -0.0028
+    },
+    "USDJPY": {
+      "n": 1995,
+      "expectancy_r": -0.0038,
+      "t_stat": -0.167,
+      "profit_factor": 0.99,
+      "win_rate": 0.458,
+      "avg_win_r": 0.868,
+      "avg_loss_r": -0.741,
+      "max_drawdown_r": 32.07,
+      "total_r": -7.62,
+      "sharpe_per_trade": -0.0037,
+      "sortino_per_trade": -0.006
+    },
+    "BTCUSD": {
+      "n": 2000,
+      "expectancy_r": -0.1867,
+      "t_stat": -6.174,
+      "profit_factor": 0.685,
+      "win_rate": 0.36,
+      "avg_win_r": 1.129,
+      "avg_loss_r": -0.928,
+      "max_drawdown_r": 378.86,
+      "total_r": -373.45,
+      "sharpe_per_trade": -0.138,
+      "sortino_per_trade": -0.2233
+    }
+  },
+  "lookahead_positive_control": {
+    "XAUUSD": {
+      "honest_expectancy_r": -0.0168,
+      "leaky_expectancy_r": 0.8731
+    },
+    "USOIL": {
+      "honest_expectancy_r": -0.0298,
+      "leaky_expectancy_r": 0.7338
+    },
+    "USDJPY": {
+      "honest_expectancy_r": 0.0079,
+      "leaky_expectancy_r": 0.3275
+    },
+    "BTCUSD": {
+      "honest_expectancy_r": 0.1988,
+      "leaky_expectancy_r": 1.3351
+    }
+  },
+  "independence": {
+    "XAUUSD": {
+      "shared_feature_jaccard": 0.5,
+      "shared_data": true,
+      "error_phi": -1.0,
+      "validator_information_pbis": null,
+      "n": 919,
+      "valid_rate": 0.0,
+      "mean_r_valid": 0.0,
+      "mean_r_invalid": -0.0168,
+      "independence_score": 0.5
+    },
+    "USOIL": {
+      "shared_feature_jaccard": 0.5,
+      "shared_data": true,
+      "error_phi": -1.0,
+      "validator_information_pbis": null,
+      "n": 911,
+      "valid_rate": 0.0,
+      "mean_r_valid": 0.0,
+      "mean_r_invalid": -0.0298,
+      "independence_score": 0.5
+    },
+    "USDJPY": {
+      "shared_feature_jaccard": 0.5,
+      "shared_data": true,
+      "error_phi": -0.993,
+      "validator_information_pbis": -0.013,
+      "n": 599,
+      "valid_rate": 0.003,
+      "mean_r_valid": -0.2227,
+      "mean_r_invalid": 0.0087,
+      "independence_score": 0.5
+    },
+    "BTCUSD": {
+      "shared_feature_jaccard": 0.5,
+      "shared_data": true,
+      "error_phi": -0.705,
+      "validator_information_pbis": -0.006,
+      "n": 529,
+      "valid_rate": 0.146,
+      "mean_r_valid": 0.1707,
+      "mean_r_invalid": 0.2036,
+      "independence_score": 0.5
+    },
+    "pooled": {
+      "shared_feature_jaccard": 0.5,
+      "shared_data": true,
+      "error_phi": -0.946,
+      "validator_information_pbis": 0.018,
+      "n": 2958,
+      "valid_rate": 0.027,
+      "mean_r_valid": 0.1608,
+      "mean_r_invalid": 0.019,
+      "independence_score": 0.5
+    }
+  },
+  "cost_stress_full_sample": {
+    "XAUUSD": {
+      "0": 0.0556,
+      "1": 0.0285,
+      "2": 0.0006,
+      "3": -0.0268,
+      "5": -0.0788
+    },
+    "USOIL": {
+      "0": 0.0239,
+      "1": 0.0046,
+      "2": -0.014,
+      "3": -0.0322,
+      "5": -0.0672
+    },
+    "USDJPY": {
+      "0": 0.0117,
+      "1": -0.0035,
+      "2": -0.0183,
+      "3": -0.0329,
+      "5": -0.0614
+    },
+    "BTCUSD": {
+      "0": 0.6124,
+      "1": 0.1299,
+      "2": -0.0396,
+      "3": -0.1498,
+      "5": -0.3041
+    }
+  },
+  "parameter_sensitivity_full_sample": {
+    "XAUUSD": {
+      "ch10_stop1.5_h5": -0.0961,
+      "ch10_stop1.5_h10": 0.0273,
+      "ch10_stop1.5_h20": 0.0671,
+      "ch10_stop2.0_h5": -0.017,
+      "ch10_stop2.0_h10": 0.0196,
+      "ch10_stop2.0_h20": 0.0626,
+      "ch10_stop3.0_h5": -0.0022,
+      "ch10_stop3.0_h10": 0.0613,
+      "ch10_stop3.0_h20": 0.0725,
+      "ch20_stop1.5_h5": -0.0305,
+      "ch20_stop1.5_h10": 0.102,
+      "ch20_stop1.5_h20": 0.0922,
+      "ch20_stop2.0_h5": 0.03,
+      "ch20_stop2.0_h10": 0.0285,
+      "ch20_stop2.0_h20": 0.0419,
+      "ch20_stop3.0_h5": 0.019,
+      "ch20_stop3.0_h10": 0.0283,
+      "ch20_stop3.0_h20": -0.0003,
+      "ch55_stop1.5_h5": 0.246,
+      "ch55_stop1.5_h10": 0.4048,
+      "ch55_stop1.5_h20": 0.4883,
+      "ch55_stop2.0_h5": 0.1025,
+      "ch55_stop2.0_h10": 0.1605,
+      "ch55_stop2.0_h20": 0.188,
+      "ch55_stop3.0_h5": 0.0635,
+      "ch55_stop3.0_h10": 0.1242,
+      "ch55_stop3.0_h20": 0.0824
+    },
+    "USOIL": {
+      "ch10_stop1.5_h5": -0.0198,
+      "ch10_stop1.5_h10": -0.0458,
+      "ch10_stop1.5_h20": 0.0434,
+      "ch10_stop2.0_h5": -0.0148,
+      "ch10_stop2.0_h10": -0.0377,
+      "ch10_stop2.0_h20": 0.0596,
+      "ch10_stop3.0_h5": -0.0019,
+      "ch10_stop3.0_h10": 0.0025,
+      "ch10_stop3.0_h20": 0.0475,
+      "ch20_stop1.5_h5": 0.0363,
+      "ch20_stop1.5_h10": 0.0381,
+      "ch20_stop1.5_h20": 0.0824,
+      "ch20_stop2.0_h5": 0.0393,
+      "ch20_stop2.0_h10": 0.0046,
+      "ch20_stop2.0_h20": 0.1064,
+      "ch20_stop3.0_h5": 0.0301,
+      "ch20_stop3.0_h10": 0.0273,
+      "ch20_stop3.0_h20": 0.1056,
+      "ch55_stop1.5_h5": 0.0306,
+      "ch55_stop1.5_h10": 0.0342,
+      "ch55_stop1.5_h20": 0.0773,
+      "ch55_stop2.0_h5": 0.015,
+      "ch55_stop2.0_h10": -0.0205,
+      "ch55_stop2.0_h20": 0.0121,
+      "ch55_stop3.0_h5": 0.0221,
+      "ch55_stop3.0_h10": -0.0171,
+      "ch55_stop3.0_h20": -0.0054
+    },
+    "USDJPY": {
+      "ch10_stop1.5_h5": -0.0033,
+      "ch10_stop1.5_h10": 0.0317,
+      "ch10_stop1.5_h20": -0.0389,
+      "ch10_stop2.0_h5": -0.0089,
+      "ch10_stop2.0_h10": 0.0074,
+      "ch10_stop2.0_h20": -0.036,
+      "ch10_stop3.0_h5": 0.0009,
+      "ch10_stop3.0_h10": 0.0068,
+      "ch10_stop3.0_h20": -0.0321,
+      "ch20_stop1.5_h5": -0.0005,
+      "ch20_stop1.5_h10": 0.0275,
+      "ch20_stop1.5_h20": 0.0608,
+      "ch20_stop2.0_h5": -0.0057,
+      "ch20_stop2.0_h10": -0.0035,
+      "ch20_stop2.0_h20": -0.0286,
+      "ch20_stop3.0_h5": -0.0033,
+      "ch20_stop3.0_h10": 0.0093,
+      "ch20_stop3.0_h20": -0.0436,
+      "ch55_stop1.5_h5": 0.0405,
+      "ch55_stop1.5_h10": 0.052,
+      "ch55_stop1.5_h20": 0.2549,
+      "ch55_stop2.0_h5": 0.0522,
+      "ch55_stop2.0_h10": 0.0723,
+      "ch55_stop2.0_h20": 0.1843,
+      "ch55_stop3.0_h5": 0.0191,
+      "ch55_stop3.0_h10": 0.0167,
+      "ch55_stop3.0_h20": 0.0473
+    },
+    "BTCUSD": {
+      "ch10_stop1.5_h5": -0.1449,
+      "ch10_stop1.5_h10": -0.012,
+      "ch10_stop1.5_h20": 0.2052,
+      "ch10_stop2.0_h5": -0.1787,
+      "ch10_stop2.0_h10": -0.0446,
+      "ch10_stop2.0_h20": 0.1761,
+      "ch10_stop3.0_h5": -0.1755,
+      "ch10_stop3.0_h10": -0.0828,
+      "ch10_stop3.0_h20": 0.105,
+      "ch20_stop1.5_h5": -0.0399,
+      "ch20_stop1.5_h10": 0.2395,
+      "ch20_stop1.5_h20": 0.4766,
+      "ch20_stop2.0_h5": -0.0792,
+      "ch20_stop2.0_h10": 0.1299,
+      "ch20_stop2.0_h20": 0.3319,
+      "ch20_stop3.0_h5": -0.1145,
+      "ch20_stop3.0_h10": 0.0427,
+      "ch20_stop3.0_h20": 0.2197,
+      "ch55_stop1.5_h5": 0.0496,
+      "ch55_stop1.5_h10": 0.2957,
+      "ch55_stop1.5_h20": 0.6747,
+      "ch55_stop2.0_h5": -0.0211,
+      "ch55_stop2.0_h10": 0.1796,
+      "ch55_stop2.0_h20": 0.4534,
+      "ch55_stop3.0_h5": -0.063,
+      "ch55_stop3.0_h10": 0.1076,
+      "ch55_stop3.0_h20": 0.3012
+    }
+  }
+}
