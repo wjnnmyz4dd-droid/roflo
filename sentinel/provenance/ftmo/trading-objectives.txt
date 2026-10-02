@@ -1,0 +1,700 @@
+Trading Objectives | FTMO.com
+20% Off
+Special deal on $100K 1-Step Challenge
+{
+document.body.classList.toggle('no-scroll', value);
+});
+// Set scroll to true when we are scrolled 5.2% of viewport height on mobile or 6% on desktop.
+// Scroll variable is used to change navbar background from transparent to solid when scrolling.
+const checkScroll = () => {
+const isMobile = window.innerWidth
+threshold;
+};
+checkScroll();
+window.addEventListener('scroll', checkScroll);
+}
+}"
+@keydown.escape.prevent.stop="
+if (menuOpen || activeItem) {
+activeItem = null;
+menuOpen = false;
+}
+"
+>
+{ document.getElementById('first-mega-item-cfd')?.focus() })"
+@blur="hoveredItem = null"
+:class="{     'bg-background-hover':
+hoveredItem === 'cfd' ||
+activeItem === 'cfd',
+'text-content-primary':
+hoveredItem === 'cfd' ||
+activeItem === 'cfd' ||
+hoveredItem === null && !menuOpen,
+'text-gray-400':
+(hoveredItem !== null && hoveredItem !== 'cfd' && (activeItem === 'cfd' ? false : true)) ||
+(menuOpen && hoveredItem === null && (activeItem === 'cfd' ? false : true))
+}"
+class="flex items-center gap-1.5 py-3 px-2 xl:px-3 transition-colors duration-200 rounded-lg focus:outline-none">
+CFD
+{ document.getElementById('first-mega-item-futures')?.focus() })"
+@blur="hoveredItem = null"
+:class="{     'bg-background-hover':
+hoveredItem === 'futures' ||
+activeItem === 'futures',
+'text-content-primary':
+hoveredItem === 'futures' ||
+activeItem === 'futures' ||
+hoveredItem === null && !menuOpen,
+'text-gray-400':
+(hoveredItem !== null && hoveredItem !== 'futures' && (activeItem === 'futures' ? false : true)) ||
+(menuOpen && hoveredItem === null && (activeItem === 'futures' ? false : true))
+}"
+class="flex items-center gap-1.5 py-3 px-2 xl:px-3 transition-colors duration-200 rounded-lg focus:outline-none">
+Futures
+{ document.getElementById('first-mega-item-trading')?.focus() })"
+@blur="hoveredItem = null"
+:class="{     'bg-background-hover':
+hoveredItem === 'trading' ||
+activeItem === 'trading',
+'text-content-primary':
+hoveredItem === 'trading' ||
+activeItem === 'trading' ||
+hoveredItem === null && !menuOpen,
+'text-gray-400':
+(hoveredItem !== null && hoveredItem !== 'trading' && (activeItem === 'trading' ? false : true)) ||
+(menuOpen && hoveredItem === null && (activeItem === 'trading' ? false : true))
+}"
+class="flex items-center gap-1.5 py-3 px-2 xl:px-3 transition-colors duration-200 rounded-lg focus:outline-none">
+Trading
+{ document.getElementById('first-mega-item-about')?.focus() })"
+@blur="hoveredItem = null"
+:class="{     'bg-background-hover':
+hoveredItem === 'about' ||
+activeItem === 'about',
+'text-content-primary':
+hoveredItem === 'about' ||
+activeItem === 'about' ||
+hoveredItem === null && !menuOpen,
+'text-gray-400':
+(hoveredItem !== null && hoveredItem !== 'about' && (activeItem === 'about' ? false : true)) ||
+(menuOpen && hoveredItem === null && (activeItem === 'about' ? false : true))
+}"
+class="flex items-center gap-1.5 py-3 px-2 xl:px-3 transition-colors duration-200 rounded-lg focus:outline-none">
+About
+= 1024) && activeItem === 'cfd'"
+@mouseleave="activeItem = null; menuOpen = false;"
+@keydown.escape.window="
+if (activeItem || menuOpen) {
+activeItem = null;
+menuOpen = false;
+document.getElementById('mega-menu-button-cfd')?.focus();
+}
+"
+x-cloak     x-transition:enter="transition ease-out duration-200"
+x-transition:enter-start="opacity-0 transform translate-y-10"
+x-transition:enter-end="opacity-100 transform translate-y-0"
+x-transition:leave="transition ease-in duration-200"
+x-transition:leave-start="opacity-0 transform translate-y-0"
+x-transition:leave-end="opacity-0 transform translate-y-10"
+>
+Get started
+CFD Overview
+Your path to FTMO
+Pricing
+Choose your FTMO Challenge
+How It Works
+Become an FTMO Trader
+Free Trial
+Unlimited practice for your strategy
+Trading Objectives
+Key rules to pass each phase
+Grow
+Trading Psychology
+For stronger mindset
+Premium programme
+Join the top performers
+Scaling plan
+Grow up to $2M
+Start FTMO Challenge
+Start now
+= 1024) && activeItem === 'futures'"
+@mouseleave="activeItem = null; menuOpen = false;"
+@keydown.escape.window="
+if (activeItem || menuOpen) {
+activeItem = null;
+menuOpen = false;
+document.getElementById('mega-menu-button-futures')?.focus();
+}
+"
+x-cloak     x-transition:enter="transition ease-out duration-200"
+x-transition:enter-start="opacity-0 transform translate-y-10"
+x-transition:enter-end="opacity-100 transform translate-y-0"
+x-transition:leave="transition ease-in duration-200"
+x-transition:leave-start="opacity-0 transform translate-y-0"
+x-transition:leave-end="opacity-0 transform translate-y-10"
+>
+Get Started
+Futures Overview
+Enter FTMO Futures
+Pricing
+Fees and account options
+How Futures Work
+Your path to FTMO Futures
+Trading Objectives
+Evaluation rules explained
+Start Your Evaluation
+Start now
+= 1024) && activeItem === 'trading'"
+@mouseleave="activeItem = null; menuOpen = false;"
+@keydown.escape.window="
+if (activeItem || menuOpen) {
+activeItem = null;
+menuOpen = false;
+document.getElementById('mega-menu-button-trading')?.focus();
+}
+"
+x-cloak     x-transition:enter="transition ease-out duration-200"
+x-transition:enter-start="opacity-0 transform translate-y-10"
+x-transition:enter-end="opacity-100 transform translate-y-0"
+x-transition:leave="transition ease-in duration-200"
+x-transition:leave-start="opacity-0 transform translate-y-0"
+x-transition:leave-end="opacity-0 transform translate-y-10"
+>
+Trading Esssentials
+Economic Calendar
+Key market events in real time
+Trading Updates
+Latest changes and information
+Instruments
+List of symbols
+Trading Platforms
+Choose what suits you best
+Tools & Services
+Tools Overview
+Elevate your trading performance
+Leaderboard
+Live rankings of top FTMO Traders
+App Suite
+Discover App Suite by FX Blue
+Knowledge
+FAQ
+Answers to common questions
+Blog
+News, tips and trading stories
+Academy
+Free trading education
+= 1024) && activeItem === 'about'"
+@mouseleave="activeItem = null; menuOpen = false;"
+@keydown.escape.window="
+if (activeItem || menuOpen) {
+activeItem = null;
+menuOpen = false;
+document.getElementById('mega-menu-button-about')?.focus();
+}
+"
+x-cloak     x-transition:enter="transition ease-out duration-200"
+x-transition:enter-start="opacity-0 transform translate-y-10"
+x-transition:enter-end="opacity-100 transform translate-y-0"
+x-transition:leave="transition ease-in duration-200"
+x-transition:leave-start="opacity-0 transform translate-y-0"
+x-transition:leave-end="opacity-0 transform translate-y-10"
+>
+Company
+About Us
+Learn more about our company
+FTMO Group
+Learn more about FTMO Group
+FTMO Store
+Shop for trading accessories
+Connect
+Contact us
+24/7 Support
+Press Kit
+Brand assets and media resources
+Careers
+Join our team of professionals
+EN
+English
+Čeština
+Español
+Italiano
+Deutsch
+Português
+Tiếng Việt
+Français
+Log In
+Get Started
+Get Started
+CFD
+Get started
+CFD Overview
+Pricing
+How It Works
+Free Trial
+Trading Objectives
+Grow
+Trading Psychology
+Premium programme
+Scaling plan
+Futures
+Get Started
+Futures Overview
+Pricing
+How Futures Work
+Trading Objectives
+Trading
+Trading Esssentials
+Economic Calendar
+Trading Updates
+Instruments
+Trading Platforms
+Tools & Services
+Tools Overview
+Leaderboard
+App Suite
+Knowledge
+FAQ
+Blog
+Academy
+About
+Company
+About Us
+FTMO Group
+FTMO Store
+Connect
+Contact us
+Press Kit
+Careers
+Search
+EN
+English
+Čeština
+Español
+Italiano
+Deutsch
+Português
+Tiếng Việt
+Français
+Get Started
+Log In
+FTMO Trading Objectives
+Understand the key rules that apply to each trading phase and your FTMO Account.
+1-Step
+2-Step
+1-Step
+Single step to FTMO Account
+2-Step
+Standard 2-phase
+1-Step
+Single step to FTMO Account
+Show Trading Objectives
+2-Step
+Standard 2-phase
+Show Trading Objectives
+You must satisfy all applicable Trading Objectives concurrently to meet the Evaluation Process requirements. For FTMO Account, continuous compliance with applicable Trading Objectives is required at all times.
+Profit Target
+To complete the Profit Target rule, you must achieve a defined minimum profit above the Initial Simulated Capital on the assigned account.
+You will meet this objective once your account balance exceeds the Initial Simulated Capital by the required Profit Target with all positions closed.
+The Profit Target for the FTMO Challenge is calculated as
+10%
+of the Initial Simulated Capital.
+This rule only applies to the
+FTMO Challenge: 1-Step
+. There is no Profit Target on the subsequent FTMO Account (1-Step).
+Example for a $100,000 FTMO Challenge:
+Profit Target = $10,000
+Balance required for passing =
+$110,000
+Maximum Daily Loss
+The
+Maximum Daily Loss
+rule establishes a limit (the
+Maximum Daily Loss Limit
+) below which your account
+equity
+(i.e.,
+Balance
++ Open Positions P/L ± Swaps – Commissions) cannot drop. If the equity drops below this limit, the rule is considered violated.
+The
+Maximum Daily Loss Limit
+is recalculated daily at 00:00 CE(S)T as the difference between:
+the
+account balance
+recorded at 00:00 CE(S)T of the current day and
+the
+Maximum Daily Loss Amount
+, which is
+3%
+of the Initial Simulated Capital.
+On the first day, the account balance used for the limit calculation is the Initial Simulated Capital.
+This calculated limit remains in effect until the next recalculation at 00:00 CE(S)T of the following day.
+This rule applies to the
+FTMO Challenge: 1-Step
+as well as the
+FTMO Account (1-Step)
+.
+Example for a $100,000 account:
+Limit for
+Day 1
+:
+Initial Simulated Capital =
+$100,000
+Calculation = $100,000 – $3,000 = $97, 000
+Limit for Day 1 =
+$97,000
+Limit for
+Day 2
+:
+Balance at midnight CE(S)T between Day 1 and Day 2 = $102,000
+Calculation = $102,000 – $3,000 = $99,000
+Limit for Day 2 =
+$99,000
+Limit for
+Day 3
+:
+Balance at midnight CE(S)T between Day 1 and Day 2 = $101,000
+Calculation = $101,000 – $3,000 = $98,000
+Limit for Day 3 =
+$98,000
+Maximum Loss
+The
+Maximum Loss
+rule establishes an
+end-of-day trailing
+limit (the
+Maximum Loss Limit
+) below which your account
+equity
+(i.e.,
+Balance
++ Open Positions P/L ± Swaps – Commissions) cannot drop. If the equity drops below this limit, the rule is considered violated.
+The
+Maximum Loss Limit
+is recalculated daily at 00:00 CE(S)T as the difference between:
+the highest
+account balance
+achieved at 00:00 CE(S)T of any preceding trading day or, if higher, the amount of
+Initial Simulated Capital
+, and
+the
+Maximum Loss Amount
+, which is
+10%
+of the Initial Simulated Capital.
+This calculated limit remains in effect until the next recalculation at 00:00 CE(S)T of the following day.
+The limit can only increase, but never decrease. However, when a Reward is withdrawn and a new FTMO Account is provided, the Maximum Loss Limit fully resets, returning the first-day limit to 90% of the Initial Simulated Capital.
+This rule applies to the
+FTMO Challenge: 1-Step
+as well as the
+FTMO Account (1-Step)
+.
+Example for a $100,000 account:
+Limit for
+Day 1
+:
+Initial Simulated Capital =
+$100,000
+Calculation = $100,000 – $10,000 = $90,000
+Limit for Day 1 =
+$90,000
+Limit for
+Day 2
+:
+Balance at midnight CE(S)T between Day 1 and Day 2 = $104,000
+Calculation = $104,000 – $10,000 = $94,000
+Limit for Day 2 =
+$94,000
+Limit for
+Day 3
+:
+Balance at midnight CE(S)T between Day 2 and Day 3 = $103,000
+Calculation = $104,000 – $10,000 = $94,000 (Because the closing balance between Day 1 and Day 2 is higher than from Day 2 and Day 3, that is the balance used for the calculation of the limit)
+Limit for Day 3 =
+$94,000
+Best Day Rule
+To pass the
+FTMO Challenge: 1-Step
+or to be eligible for a Reward on an
+FTMO Account
+, the Best Day Rule requires that your
+Best Day
+does not represent more than
+50% of your Positive Days’ Profit
+.
+The
+Positive Days’ Profit
+is the sum of closed profits and losses from all profitable trading days, with each new trading day beginning at 00:00 CE(S)T.
+The
+Best Day
+is a single day with the highest profit, where the profit is calculated from closed trades:
+at the end of the trading day (00:00 CE(S)T), or
+when other Trading Objectives are fulfilled on FTMO Challenge: 1-Step or FTMO Account: 1-Step.
+Exceeding the Best Day limit is not treated as a rule breach. However, you need to continue trading to generate additional profit until your Best Day (the most profitable day) represents 50% or less of your Positive Days’ Profit on the account.
+For informative purposes, the Best Day Rule results are displayed in the Account MetriX.
+This rule applies to the
+FTMO Challenge: 1-Step
+as well as the
+FTMO Account (1-Step)
+.
+Example (account size does not play a role):
+P&L per Day:
+Day 1 = closed loss = $2,000
+Day 2 = closed
+profit = $10,000
+Day 3 = closed loss = $2,000
+Day 4 = closed loss = $2,000
+Day 5 = closed
+profit = $6,000
+Results at the end of Day 5:
+Positive Days’ Profit =
+$16,000
+The
+Best Day
+is
+Day 2
+. On this day, 62.5% of the Positive Days’ Profit was achieved ($10,000 of $16,000 = 62.5%).
+Because the profit achieved on Best Day exceeds the 50% allowed limit, the Best Day rule is not satisfied. If Day 2 remains your Best Day, your Positive Days’ Profit will have to be at least $20,000.
+You must satisfy all applicable Trading Objectives concurrently to meet the Evaluation Process requirements. For FTMO Account, continuous compliance with applicable Trading Objectives is required at all times.
+Profit Target
+To complete the Profit Target rule, you must achieve a defined minimum profit above the Initial Simulated Capital on the assigned account.
+You will meet this objective once your account balance exceeds the Initial Simulated Capital by the required Profit Target with all positions closed.
+The Profit Target is calculated as a percentage of your Initial Simulated Capital:
+10%
+for the
+FTMO Challenge
+5%
+for the
+Verification
+This rule applies to both phases (FTMO Challenge and Verification) of the
+FTMO Challenge: 2-Step
+. There is no Profit Target on the subsequent FTMO Account (2-Step).
+Example for a $100,000 account:
+FTMO Challenge:
+Profit Target = $10,000
+Balance required for passing =
+$110,000
+Verification:
+Profit Target = $5,000
+Balance required for passing =
+$105,000
+Maximum Daily Loss
+The
+Maximum Daily Loss
+rule establishes a limit (the
+Maximum Daily Loss Limit
+) below which your account
+equity
+(i.e.,
+Balance
++ Open Positions P/L ± Swaps – Commissions) cannot drop. If the equity drops below this limit, the rule is considered violated.
+The
+Maximum Daily Loss Limit
+is recalculated daily at 00:00 CE(S)T as the difference between:
+the
+account balance
+recorded at 00:00 CE(S)T of the current day and
+the
+Maximum Daily Loss Amount
+, which is
+5%
+of the Initial Simulated Capital.
+On the first day of trading, the account balance used for this calculation is the Initial Simulated Capital.
+This calculated limit remains in effect until the next recalculation at 00:00 CE(S)T of the following day.
+This rule applies to both phases (FTMO Challenge and Verification) of the
+FTMO Challenge: 2-Step
+as well as the subsequent
+FTMO Account (2-Step)
+.
+Example for a $100,000 account:
+Limit for
+Day 1
+:
+Initial Simulated Capital =
+$100,000
+Calculation = $100,000 – $5,000= $95,000
+Limit for Day 1 =
+$95,000
+Limit for
+Day 2
+:
+Balance at midnight CE(S)T between Day 1 and Day 2 = $102,000
+Calculation = $102,000 – $5,000 = $97,000
+Limit for Day 2 =
+$97,000
+Limit for
+Day 3
+:
+Balance at midnight CE(S)T between Day 2 and Day 3 = $101,000
+Calculation = $101,000 – $5,000 = $96,000
+Limit for Day 3 =
+$96,000
+Maximum Loss
+The
+Maximum Loss
+rule establishes a
+static
+limit (the
+Maximum Loss Limit
+) below which your account
+equity
+(i.e.,
+Balance
++ Open Positions P/L ± Swaps – Commissions) cannot drop. If the equity drops below this limit, the rule is considered violated.
+The
+Maximum Loss Limit
+is calculated as the difference between:
+the
+Initial Simulated Capital
+and
+the
+Maximum Loss Amount
+, which is
+10%
+of the Initial Simulated Capital.
+This rule applies to both phases (FTMO Challenge and Verification) of the
+FTMO Challenge: 2-Step
+as well as the subsequent
+FTMO Account (2-Step)
+.
+Example for a $100,000 account:
+Maximum Loss Amount = $10,000
+Limit =
+$90,000
+Minimum Trading Days
+The Minimum Trading Days rule requires the trader to achieve at least
+4
+Trading Days.
+A Trading Day is defined as any day –
+measured from 00:00:00 to 23:59:59 CE(S)T
+– during which at least one position is
+opened
+.
+This rule applies to both phases (FTMO Challenge and Verification) of the
+FTMO Challenge: 2-Step
+. There is no Minimum Trading Days rule on the subsequent FTMO Account (2-Step).
+Example (account size does not play a role):
+Position 1: Opened on
+12 Jan 2026
+and closed on
+14 Jan 2026
+Position 2: Opened on
+18 Jan 2026
+and closed on
+18 Jan 2026
+Position 3: Opened on
+18 Jan 2026
+and closed on
+19 Jan 2026
+Position 4: Opened on
+24 Jan 2026
+and closed on
+24 Jan 2026
+The Minimum Trading Days rule is not satisfied, as positions were opened only on
+3 Trading Days
+:
+12 Jan
+,
+18 Jan
+, and
+24 Jan
+. To pass the FTMO Challenge phase or Verification phase, you will have to continue trading one more day.
+Start Your FTMO Challenge Today
+As many Free Trials as you need
+Up to $200,000 account
+No time limit
+FTMO Challenge
+Free Trial
+Worldwide Reviews
+Prove Your Skills with a Trusted Firm
+We've been empowering traders since 2015. Join them now!
+4.5M+
+Customers worldwide
+$650M+
+Paid in rewards
+4.8/5
+Trustpilot
+Top Searches
+FAQ
+How it Works
+Affiliate Programme
+Trading Objectives
+FTMO Shop
+Support
+Chat with us
+Start the chat
+[email protected]
++420 910 920 310
+Follow FTMO
+Follow FTMO Futures
+CFD
+CFDs Overview
+Pricing
+How CFDs Work
+FTMO Free Trial
+Trading Objectives
+1-Step FTMO Challenge
+2-Step FTMO Challenge
+Comparison Table
+Forbidden Trading Practices
+Grow
+Premium Programme
+Scaling plan
+Futures
+Futures Overview
+Pricing
+How Futures Works
+Trading Objectives
+Comparison Table
+Forbidden Trading Practices
+Trading
+Economic Calendar
+Trading Updates
+Instruments
+Trading Platforms
+Tools & Services
+Tools Overview
+Performance Coaches
+Leaderboard
+App Suite
+Resources
+FAQ
+Blog
+Academy
+About
+About Us
+Careers
+Contact us
+Press Kit
+Press Releases
+Affiliate programme
+ADDRESS
+FTMO
+Quadrio offices
+Purkynova 2121/3
+110 00 Prague
+Czech Republic
+Get Exclusive FTMO Insights
+Expert Trading Insights
+Latest Updates
+Special Offers
+Subscribe
+You’re subscribed successfully.
+All information provided on this site is intended solely for educational purposes related to trading on financial markets and does not serve in any way as a specific investment recommendation, business recommendation, investment opportunity analysis or similar general recommendation regarding the trading of investment instruments. FTMO only provides services of simulated trading and educational tools for traders. The information on this site is not directed at residents in any country or jurisdiction where such distribution or use would be contrary to local laws or regulations. FTMO companies do not act as a broker and do not accept any deposits. The offered technical solution for the FTMO platforms and data feed is powered by liquidity providers.
+2026 © Copyright
+Cookie settings
+Cookies
+Imprint
+Terms & Conditions
+Privacy Policy
+Made with
+for trading
+FTMO + TradingView
+Learn more
+FTMO + TradingView
+Introducing TradingView
+Charts, indicators or alerts. All on one platform. Execute your FTMO simulated trades directly on TradingView via the OANDA Broker Profile.
+Start FTMO Challenge on TradingView
+Please note that all accounts we provide to our clients are demo accounts with fictitious funds and any trading is in a simulated environment only. For more information, please feel free to visit our
+FAQ
+section.
+Ok, I understand.

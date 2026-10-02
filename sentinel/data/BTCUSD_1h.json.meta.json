@@ -1,0 +1,9 @@
+{
+  "instrument": "BTCUSD",
+  "proxy_symbol": "BTC-USD",
+  "interval": "1h",
+  "url": "https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD?period1=1727996746&period2=1790982346&interval=1h",
+  "retrieved_at": 1790982349,
+  "sha256": "3bdda117bc91f14e83b03c38e4163944746d2cdc54fadd62a34c21ac20be37e7",
+  "file": "BTCUSD_1h.json"
+}

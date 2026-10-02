@@ -1,0 +1,9 @@
+{
+  "instrument": "XAUUSD",
+  "proxy_symbol": "GC=F",
+  "interval": "1d",
+  "url": "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?period1=946684800&period2=1790982346&interval=1d",
+  "retrieved_at": 1790982347,
+  "sha256": "fed92f77fbf358e1caa2ba90d0828aee9cbe2a2502ed267385d93301d9858597",
+  "file": "XAUUSD_1d.json"
+}

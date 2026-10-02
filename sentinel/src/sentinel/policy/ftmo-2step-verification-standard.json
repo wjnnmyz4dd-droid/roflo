@@ -1,0 +1,44 @@
+{
+  "account_type": "standard",
+  "phase": "verification",
+  "product": "FTMO Challenge: 2-Step",
+  "profile_id": "ftmo-2step-verification-standard",
+  "review": {
+    "note": "Extracted by automation from the cited pages. Human review required before any live or FTMO-account use.",
+    "reviewer": null,
+    "status": "UNREVIEWED"
+  },
+  "rules": {
+    "daily_base": "balance_at_midnight",
+    "daily_reset_tz": "Europe/Prague",
+    "equity_definition": "balance + open P/L +/- swaps - commissions",
+    "max_daily_loss_pct_of_initial": 0.05,
+    "max_loss_mode": "static",
+    "max_loss_pct_of_initial": 0.1,
+    "news_restriction": null,
+    "weekend_close_required": false
+  },
+  "sources": [
+    {
+      "file": "provenance/ftmo/trading-objectives.txt",
+      "retrieved_at": "2026-10-02",
+      "sha256": "540c439a59cb927da85a649f65b1816db4077ebfff8bfe67dc60728be7e3b94d",
+      "url": "https://ftmo.com/en/trading-objectives/"
+    },
+    {
+      "file": "provenance/ftmo/can-i-trade-news.txt",
+      "retrieved_at": "2026-10-02",
+      "sha256": "62bf03eac226dc10e6f6e2b8a8b2b5e46251486c9c212fb08fe26ecbe30dac26",
+      "url": "https://ftmo.com/en/faq/can-i-trade-news/"
+    },
+    {
+      "file": "provenance/ftmo/do-i-have-to-close-my-positions-overnight-or-before-the-weekend.txt",
+      "retrieved_at": "2026-10-02",
+      "sha256": "4f4a29e146f33e1b60b4210b30c8fe338fd6b996bd0df97d12bf9d6bacb3ba04",
+      "url": "https://ftmo.com/en/faq/do-i-have-to-close-my-positions-overnight-or-before-the-weekend/"
+    }
+  ],
+  "valid_from": "2026-10-02",
+  "valid_until": "2026-11-01",
+  "version": "2026-10-02.1"
+}

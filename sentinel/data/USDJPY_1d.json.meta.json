@@ -1,0 +1,9 @@
+{
+  "instrument": "USDJPY",
+  "proxy_symbol": "JPY=X",
+  "interval": "1d",
+  "url": "https://query1.finance.yahoo.com/v8/finance/chart/JPY=X?period1=946684800&period2=1790982346&interval=1d",
+  "retrieved_at": 1790982348,
+  "sha256": "ad76e3365244f340213652f52b0bf46b04e3090fe0cfa2bd0b51bf8f6d5bf9d5",
+  "file": "USDJPY_1d.json"
+}

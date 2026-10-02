@@ -1,0 +1,9 @@
+{
+  "instrument": "USOIL",
+  "proxy_symbol": "CL=F",
+  "interval": "1d",
+  "url": "https://query1.finance.yahoo.com/v8/finance/chart/CL=F?period1=946684800&period2=1790982346&interval=1d",
+  "retrieved_at": 1790982348,
+  "sha256": "bbf1f8848d87784a1e68081de8d663b7b5b25b7d37dd36b512512b45372ce646",
+  "file": "USOIL_1d.json"
+}
