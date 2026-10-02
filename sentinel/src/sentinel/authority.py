@@ -136,6 +136,17 @@ class PermitIssuer:
                 raise PermitError(f"decision from wrong authority: {d.authority} != {name}")
             if d.verdict not in (GateVerdict.ALLOW, GateVerdict.REDUCE):
                 raise PermitError(f"{name} did not allow: {d.verdict}")
+        for name, d in (("compliance", compliance), ("news", news), ("risk", risk)):
+            if d.subject != intent.candidate_id:
+                raise PermitError(f"{name} decision is about {d.subject!r}, not this candidate")
+        if risk.detail.get("instrument") != intent.instrument or news.detail.get("instrument") != intent.instrument \
+                or compliance.detail.get("instrument") != intent.instrument:
+            raise PermitError("a gate decision was made for a different instrument")
+        if risk.detail.get("direction") != intent.direction.value or risk.detail.get("stop") != intent.stop_loss \
+                or compliance.detail.get("stop") != intent.stop_loss:
+            raise PermitError("intent direction/stop differ from what risk and compliance evaluated")
+        if compliance.detail.get("volume", -1) + 1e-12 < intent.volume:
+            raise PermitError("intent volume exceeds the volume compliance evaluated")
         if risk.approved_volume is None or intent.volume > risk.approved_volume + 1e-12:
             raise PermitError("intent volume exceeds risk-approved volume")
         if compliance.verdict is GateVerdict.REDUCE or news.verdict is GateVerdict.REDUCE:

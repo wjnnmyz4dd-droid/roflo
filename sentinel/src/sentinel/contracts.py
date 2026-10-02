@@ -152,6 +152,7 @@ class GateDecision:
     created_at: int
     approved_volume: float | None = None
     detail: dict = field(default_factory=dict)
+    subject: str = ""  # candidate id the decision is about ("" = account-level)
     signature: str = ""
 
 

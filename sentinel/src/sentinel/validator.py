@@ -31,6 +31,7 @@ class CostModel:
 @dataclass(frozen=True)
 class ValidatorParams:
     lookback: int = 1500
+    min_history: int = 500
     min_analogs: int = 30
     min_t_stat: float = 1.0
     min_edge_r: float = 0.05
@@ -103,6 +104,9 @@ class Validator:
             return done(ValidationVerdict.INDETERMINATE, ["signal is stale or market closed"])
 
         window = hist[-(p.lookback + 1):]
+        if len(window) < p.min_history:
+            checks["cost_survival"] = {"passed": None, "detail": f"only {len(window)} bars of history"}
+            return done(ValidationVerdict.INDETERMINATE, [f"insufficient history ({len(window)} < {p.min_history} bars)"])
         gaps = [i for i in range(1, len(window))
                 if window[i].ts - window[i - 1].ts > p.max_gap_bars * bar_seconds
                 and not _weekend_gap(window[i - 1].ts, window[i].ts)]
@@ -138,8 +142,10 @@ class Validator:
         # regime -------------------------------------------------------------------------
         closes = [b.close for b in window]
         er = efficiency_ratio(closes, 30)
-        trs = true_ranges(window[-250:])
-        vr = percentile_rank(trs, trs[-1])
+        # volatility REGIME before the signal bar (the signal bar itself is judged by the spike check)
+        trs = true_ranges(window[-266:-1])
+        means = [sum(trs[i - 14:i]) / 14 for i in range(14, len(trs) + 1)]
+        vr = percentile_rank(means, means[-1]) if means else math.nan
         regime_ok = er >= p.min_efficiency and vr <= p.max_vol_rank
         checks["regime"] = {"passed": regime_ok, "detail": f"efficiency={er:.3f} vol_rank={vr:.3f}"}
         if not regime_ok:
@@ -169,7 +175,10 @@ class Validator:
         """Net R of past breakouts in the same direction, each fully resolved before the signal bar."""
         out = []
         N, H = self.channel, self.horizon
+        next_free = 0
         for i in range(max(N + 15, 30), len(bars) - H):
+            if i < next_free:
+                continue  # analogs must not overlap: overlapping outcomes are not independent samples
             win = bars[i - N : i]
             b = bars[i]
             if direction is Direction.LONG and not b.close > max(x.high for x in win):
@@ -192,4 +201,5 @@ class Validator:
                 exit_px = bars[i + H].close - direction.sign * (cost.spread / 2 + cost.slippage)
             r = ((exit_px - entry) * direction.sign - cost.commission_price) / stop_d
             out.append(r)
+            next_free = i + H
         return out

@@ -1,0 +1,226 @@
+{
+  "period": "dev",
+  "start": 1738364400,
+  "end": 1759532400,
+  "cycles": 5881,
+  "elapsed_s": 165.0,
+  "data_sha256": {
+    "XAUUSD": "260a739983f35bf200f49df8817887f2cd9c57fe5925e69cc95ebd06c866db07",
+    "USOIL": "469376560291c7c79ac9176aecda45f6a347da869c12d809aa79a3b4dcda2e5e",
+    "USDJPY": "3addbcd5019fc4bf00dd4224369c4cdb21e9e26f5e7b3409d8d06fccf55b4642",
+    "BTCUSD": "3bdda117bc91f14e83b03c38e4163944746d2cdc54fadd62a34c21ac20be37e7"
+  },
+  "statuses": {
+    "OK": 5881
+  },
+  "journal_verified": [
+    true,
+    "23011 events verified"
+  ],
+  "broker": {
+    "balance": 100448.8,
+    "equity": 100448.8,
+    "open_positions": 0,
+    "closed_trades": 54,
+    "net_pnl_after_commission": 448.8,
+    "exit_kinds": {
+      "OUT:CLOSE": 39,
+      "OUT:SL": 15
+    }
+  },
+  "counterfactual_r_by_stage": {
+    "arbiter:INDETERMINATE": {
+      "n": 329,
+      "expectancy_r": -0.117,
+      "t_stat": -2.045,
+      "profit_factor": 0.751,
+      "win_rate": 0.392,
+      "avg_win_r": 0.898,
+      "avg_loss_r": -0.772,
+      "max_drawdown_r": 54.37,
+      "total_r": -38.5,
+      "sharpe_per_trade": -0.1127,
+      "sortino_per_trade": -0.1753
+    },
+    "arbiter:REJECT": {
+      "n": 1601,
+      "expectancy_r": -0.0234,
+      "t_stat": -0.828,
+      "profit_factor": 0.949,
+      "win_rate": 0.415,
+      "avg_win_r": 1.048,
+      "avg_loss_r": -0.785,
+      "max_drawdown_r": 127.0,
+      "total_r": -37.53,
+      "sharpe_per_trade": -0.0207,
+      "sortino_per_trade": -0.0354
+    },
+    "execution:FILLED": {
+      "n": 54,
+      "expectancy_r": 0.0415,
+      "t_stat": 0.283,
+      "profit_factor": 1.101,
+      "win_rate": 0.481,
+      "avg_win_r": 0.944,
+      "avg_loss_r": -0.797,
+      "max_drawdown_r": 5.0,
+      "total_r": 2.24,
+      "sharpe_per_trade": 0.0384,
+      "sortino_per_trade": 0.066
+    },
+    "news:BLOCK": {
+      "n": 2,
+      "expectancy_r": -1.0209,
+      "t_stat": -208.687,
+      "profit_factor": 0.0,
+      "win_rate": 0.0,
+      "avg_win_r": 0.0,
+      "avg_loss_r": -1.021,
+      "max_drawdown_r": 2.04,
+      "total_r": -2.04,
+      "sharpe_per_trade": -147.5637,
+      "sortino_per_trade": -1.0
+    },
+    "risk:BLOCK": {
+      "n": 136,
+      "expectancy_r": 0.0972,
+      "t_stat": 1.05,
+      "profit_factor": 1.273,
+      "win_rate": 0.544,
+      "avg_win_r": 0.834,
+      "avg_loss_r": -0.782,
+      "max_drawdown_r": 13.16,
+      "total_r": 13.22,
+      "sharpe_per_trade": 0.0901,
+      "sortino_per_trade": 0.1673
+    }
+  },
+  "top_reasons": [
+    [
+      "arbiter:REJECT",
+      "validator falsified the candidate: regime does not support continuation (choppy or extreme",
+      878
+    ],
+    [
+      "arbiter:REJECT",
+      "validator falsified the candidate: historical analogs do not survive costs with statistica",
+      627
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: history has too many gaps",
+      273
+    ],
+    [
+      "risk:BLOCK",
+      "instrument already has a position",
+      79
+    ],
+    [
+      "arbiter:REJECT",
+      "validator falsified the candidate: price jump inconsistent with volatility (bad tick?)",
+      71
+    ],
+    [
+      "risk:BLOCK",
+      "margin level would fall below minimum",
+      54
+    ],
+    [
+      "arbiter:REJECT",
+      "validator falsified the candidate: signal explained by a single-bar spike",
+      26
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (29)",
+      19
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (19)",
+      10
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: signal is stale or market closed",
+      6
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (26)",
+      5
+    ],
+    [
+      "risk:BLOCK",
+      "stale or invalid quote",
+      3
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (18)",
+      3
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (24)",
+      3
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (27)",
+      3
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (23)",
+      2
+    ],
+    [
+      "arbiter:INDETERMINATE",
+      "validator could not decide: insufficient analogs (28)",
+      2
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T15b29d13e5dc', 'filled_volume': 0.04}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T1cf411557975', 'filled_volume': 0.16}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T5f7404895fa7', 'filled_volume': 0.15}",
+      1
+    ],
+    [
+      "news:BLOCK",
+      "USD HIGH 'Non-Farm Employment Change' at 1738935000",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T51cfab887a4b', 'filled_volume': 0.15}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T1d408ec59d6f', 'filled_volume': 0.15}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'T77da1f3e8388', 'filled_volume': 0.14}",
+      1
+    ],
+    [
+      "execution:FILLED",
+      "{'status': 'FILLED', 'ticket': 'Tf85fbcaec4e8', 'filled_volume': 0.29}",
+      1
+    ]
+  ],
+  "halts": []
+}

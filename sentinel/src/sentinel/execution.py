@@ -87,7 +87,8 @@ class ExecutionService:
                 "INTENT_PERSISTED", COMPONENT,
                 {"intent": intent, "permit_id": permit.permit_id, "decisions_hash": permit.decisions_hash, "fence": token},
                 correlation_id=intent.intent_id,
-                unique=[("permit", permit.permit_id), ("intent", intent.intent_id)],
+                unique=[("permit", permit.permit_id), ("intent", intent.intent_id),
+                        ("decisions", permit.decisions_hash), ("candidate", intent.candidate_id)],
             )
         except DuplicateKey as e:
             raise ExecutionRefused(f"duplicate submission refused: {e}") from e

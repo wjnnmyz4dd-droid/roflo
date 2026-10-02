@@ -1,0 +1,418 @@
+{
+  "period": "development",
+  "criteria_hash": "98a9f7919044e1477b0442c60fad29b8584db5bb38f210c5af07f4873dfe39ad",
+  "results": {
+    "daily": {
+      "finder": {
+        "per_instrument": {
+          "XAUUSD": {
+            "n": 230,
+            "expectancy_r": 0.0079,
+            "t_stat": 0.078,
+            "profit_factor": 1.014,
+            "win_rate": 0.443,
+            "avg_win_r": 1.266,
+            "avg_loss_r": -0.995,
+            "max_drawdown_r": 15.24,
+            "total_r": 1.83,
+            "sharpe_per_trade": 0.0051,
+            "sortino_per_trade": 0.0083,
+            "expectancy_2x_cost": -0.0267,
+            "data_sha256": "fed92f77fbf358e1caa2ba90d0828aee9cbe2a2502ed267385d93301d9858597"
+          },
+          "USOIL": {
+            "n": 246,
+            "expectancy_r": -0.0293,
+            "t_stat": -0.514,
+            "profit_factor": 0.925,
+            "win_rate": 0.476,
+            "avg_win_r": 0.758,
+            "avg_loss_r": -0.744,
+            "max_drawdown_r": 16.12,
+            "total_r": -7.2,
+            "sharpe_per_trade": -0.0328,
+            "sortino_per_trade": -0.0488,
+            "expectancy_2x_cost": -0.0489,
+            "data_sha256": "bbf1f8848d87784a1e68081de8d663b7b5b25b7d37dd36b512512b45372ce646"
+          },
+          "USDJPY": {
+            "n": 213,
+            "expectancy_r": 0.0097,
+            "t_stat": 0.134,
+            "profit_factor": 1.023,
+            "win_rate": 0.484,
+            "avg_win_r": 0.882,
+            "avg_loss_r": -0.807,
+            "max_drawdown_r": 18.14,
+            "total_r": 2.07,
+            "sharpe_per_trade": 0.0092,
+            "sortino_per_trade": 0.0141,
+            "expectancy_2x_cost": -0.0053,
+            "data_sha256": "ad76e3365244f340213652f52b0bf46b04e3090fe0cfa2bd0b51bf8f6d5bf9d5"
+          },
+          "BTCUSD": {
+            "n": 71,
+            "expectancy_r": -0.3267,
+            "t_stat": -1.603,
+            "profit_factor": 0.591,
+            "win_rate": 0.352,
+            "avg_win_r": 1.341,
+            "avg_loss_r": -1.233,
+            "max_drawdown_r": 39.63,
+            "total_r": -23.19,
+            "sharpe_per_trade": -0.1902,
+            "sortino_per_trade": -0.3079,
+            "expectancy_2x_cost": -0.6848,
+            "data_sha256": "37f462a8801d6d3d76eae9d750a1d3228f405a81a917155a119b1d0347e9e897"
+          }
+        },
+        "pooled": {
+          "n": 760,
+          "expectancy_r": -0.0349,
+          "t_stat": -0.765,
+          "profit_factor": 0.928,
+          "win_rate": 0.457,
+          "avg_win_r": 0.986,
+          "avg_loss_r": -0.893,
+          "max_drawdown_r": 57.71,
+          "total_r": -26.5,
+          "sharpe_per_trade": -0.0277,
+          "sortino_per_trade": -0.0439
+        },
+        "bootstrap_p5": -0.1276
+      },
+      "finder+validator": {
+        "per_instrument": {
+          "XAUUSD": {
+            "n": 0,
+            "expectancy_2x_cost": null,
+            "data_sha256": "fed92f77fbf358e1caa2ba90d0828aee9cbe2a2502ed267385d93301d9858597"
+          },
+          "USOIL": {
+            "n": 0,
+            "expectancy_2x_cost": null,
+            "data_sha256": "bbf1f8848d87784a1e68081de8d663b7b5b25b7d37dd36b512512b45372ce646"
+          },
+          "USDJPY": {
+            "n": 1,
+            "expectancy_r": 0.5612,
+            "t_stat": null,
+            "profit_factor": null,
+            "win_rate": 1.0,
+            "avg_win_r": 0.561,
+            "avg_loss_r": 0.0,
+            "max_drawdown_r": 0.0,
+            "total_r": 0.56,
+            "sharpe_per_trade": null,
+            "sortino_per_trade": null,
+            "expectancy_2x_cost": null,
+            "data_sha256": "ad76e3365244f340213652f52b0bf46b04e3090fe0cfa2bd0b51bf8f6d5bf9d5"
+          },
+          "BTCUSD": {
+            "n": 0,
+            "expectancy_2x_cost": null,
+            "data_sha256": "37f462a8801d6d3d76eae9d750a1d3228f405a81a917155a119b1d0347e9e897"
+          }
+        },
+        "pooled": {
+          "n": 1,
+          "expectancy_r": 0.5612,
+          "t_stat": null,
+          "profit_factor": null,
+          "win_rate": 1.0,
+          "avg_win_r": 0.561,
+          "avg_loss_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "total_r": 0.56,
+          "sharpe_per_trade": null,
+          "sortino_per_trade": null
+        },
+        "bootstrap_p5": NaN
+      },
+      "finder+validator+arbiter": {
+        "per_instrument": {
+          "XAUUSD": {
+            "n": 0,
+            "expectancy_2x_cost": null,
+            "data_sha256": "fed92f77fbf358e1caa2ba90d0828aee9cbe2a2502ed267385d93301d9858597"
+          },
+          "USOIL": {
+            "n": 0,
+            "expectancy_2x_cost": null,
+            "data_sha256": "bbf1f8848d87784a1e68081de8d663b7b5b25b7d37dd36b512512b45372ce646"
+          },
+          "USDJPY": {
+            "n": 1,
+            "expectancy_r": 0.5612,
+            "t_stat": null,
+            "profit_factor": null,
+            "win_rate": 1.0,
+            "avg_win_r": 0.561,
+            "avg_loss_r": 0.0,
+            "max_drawdown_r": 0.0,
+            "total_r": 0.56,
+            "sharpe_per_trade": null,
+            "sortino_per_trade": null,
+            "expectancy_2x_cost": null,
+            "data_sha256": "ad76e3365244f340213652f52b0bf46b04e3090fe0cfa2bd0b51bf8f6d5bf9d5"
+          },
+          "BTCUSD": {
+            "n": 0,
+            "expectancy_2x_cost": null,
+            "data_sha256": "37f462a8801d6d3d76eae9d750a1d3228f405a81a917155a119b1d0347e9e897"
+          }
+        },
+        "pooled": {
+          "n": 1,
+          "expectancy_r": 0.5612,
+          "t_stat": null,
+          "profit_factor": null,
+          "win_rate": 1.0,
+          "avg_win_r": 0.561,
+          "avg_loss_r": 0.0,
+          "max_drawdown_r": 0.0,
+          "total_r": 0.56,
+          "sharpe_per_trade": null,
+          "sortino_per_trade": null
+        },
+        "bootstrap_p5": NaN
+      }
+    },
+    "hourly": {
+      "finder": {
+        "per_instrument": {
+          "XAUUSD": {
+            "n": 280,
+            "expectancy_r": -0.0126,
+            "t_stat": -0.2,
+            "profit_factor": 0.97,
+            "win_rate": 0.45,
+            "avg_win_r": 0.918,
+            "avg_loss_r": -0.774,
+            "max_drawdown_r": 17.65,
+            "total_r": -3.52,
+            "sharpe_per_trade": -0.012,
+            "sortino_per_trade": -0.0195,
+            "expectancy_2x_cost": -0.0434,
+            "data_sha256": "260a739983f35bf200f49df8817887f2cd9c57fe5925e69cc95ebd06c866db07"
+          },
+          "USOIL": {
+            "n": 276,
+            "expectancy_r": -0.0687,
+            "t_stat": -1.043,
+            "profit_factor": 0.854,
+            "win_rate": 0.402,
+            "avg_win_r": 0.996,
+            "avg_loss_r": -0.785,
+            "max_drawdown_r": 32.43,
+            "total_r": -18.97,
+            "sharpe_per_trade": -0.0628,
+            "sortino_per_trade": -0.0988,
+            "expectancy_2x_cost": -0.1648,
+            "data_sha256": "469376560291c7c79ac9176aecda45f6a347da869c12d809aa79a3b4dcda2e5e"
+          },
+          "USDJPY": {
+            "n": 306,
+            "expectancy_r": 0.0144,
+            "t_stat": 0.237,
+            "profit_factor": 1.034,
+            "win_rate": 0.451,
+            "avg_win_r": 0.965,
+            "avg_loss_r": -0.766,
+            "max_drawdown_r": 16.9,
+            "total_r": 4.42,
+            "sharpe_per_trade": 0.0135,
+            "sortino_per_trade": 0.0225,
+            "expectancy_2x_cost": -0.0374,
+            "data_sha256": "3addbcd5019fc4bf00dd4224369c4cdb21e9e26f5e7b3409d8d06fccf55b4642"
+          },
+          "BTCUSD": {
+            "n": 449,
+            "expectancy_r": -0.0729,
+            "t_stat": -1.103,
+            "profit_factor": 0.863,
+            "win_rate": 0.347,
+            "avg_win_r": 1.324,
+            "avg_loss_r": -0.817,
+            "max_drawdown_r": 51.1,
+            "total_r": -32.74,
+            "sharpe_per_trade": -0.0521,
+            "sortino_per_trade": -0.1019,
+            "expectancy_2x_cost": -0.1446,
+            "data_sha256": "3bdda117bc91f14e83b03c38e4163944746d2cdc54fadd62a34c21ac20be37e7"
+          }
+        },
+        "pooled": {
+          "n": 1311,
+          "expectancy_r": -0.0388,
+          "t_stat": -1.175,
+          "profit_factor": 0.918,
+          "win_rate": 0.405,
+          "avg_win_r": 1.066,
+          "avg_loss_r": -0.791,
+          "max_drawdown_r": 72.02,
+          "total_r": -50.81,
+          "sharpe_per_trade": -0.0324,
+          "sortino_per_trade": -0.0571
+        },
+        "bootstrap_p5": -0.0904
+      },
+      "finder+validator": {
+        "per_instrument": {
+          "XAUUSD": {
+            "n": 42,
+            "expectancy_r": 0.0903,
+            "t_stat": 0.628,
+            "profit_factor": 1.257,
+            "win_rate": 0.571,
+            "avg_win_r": 0.772,
+            "avg_loss_r": -0.819,
+            "max_drawdown_r": 3.11,
+            "total_r": 3.79,
+            "sharpe_per_trade": 0.0969,
+            "sortino_per_trade": 0.1544,
+            "expectancy_2x_cost": 0.1107,
+            "data_sha256": "260a739983f35bf200f49df8817887f2cd9c57fe5925e69cc95ebd06c866db07"
+          },
+          "USOIL": {
+            "n": 1,
+            "expectancy_r": 0.1786,
+            "t_stat": null,
+            "profit_factor": null,
+            "win_rate": 1.0,
+            "avg_win_r": 0.179,
+            "avg_loss_r": 0.0,
+            "max_drawdown_r": 0.0,
+            "total_r": 0.18,
+            "sharpe_per_trade": null,
+            "sortino_per_trade": null,
+            "expectancy_2x_cost": null,
+            "data_sha256": "469376560291c7c79ac9176aecda45f6a347da869c12d809aa79a3b4dcda2e5e"
+          },
+          "USDJPY": {
+            "n": 23,
+            "expectancy_r": 0.1625,
+            "t_stat": 0.639,
+            "profit_factor": 1.422,
+            "win_rate": 0.565,
+            "avg_win_r": 0.968,
+            "avg_loss_r": -0.885,
+            "max_drawdown_r": 1.84,
+            "total_r": 3.74,
+            "sharpe_per_trade": 0.1332,
+            "sortino_per_trade": 0.2685,
+            "expectancy_2x_cost": -0.2951,
+            "data_sha256": "3addbcd5019fc4bf00dd4224369c4cdb21e9e26f5e7b3409d8d06fccf55b4642"
+          },
+          "BTCUSD": {
+            "n": 13,
+            "expectancy_r": -0.4002,
+            "t_stat": -1.249,
+            "profit_factor": 0.446,
+            "win_rate": 0.154,
+            "avg_win_r": 2.095,
+            "avg_loss_r": -0.854,
+            "max_drawdown_r": 5.22,
+            "total_r": -5.2,
+            "sharpe_per_trade": -0.3465,
+            "sortino_per_trade": -0.4797,
+            "expectancy_2x_cost": 0.1884,
+            "data_sha256": "3bdda117bc91f14e83b03c38e4163944746d2cdc54fadd62a34c21ac20be37e7"
+          }
+        },
+        "pooled": {
+          "n": 79,
+          "expectancy_r": 0.0317,
+          "t_stat": 0.262,
+          "profit_factor": 1.076,
+          "win_rate": 0.506,
+          "avg_win_r": 0.887,
+          "avg_loss_r": -0.846,
+          "max_drawdown_r": 5.99,
+          "total_r": 2.5,
+          "sharpe_per_trade": 0.0295,
+          "sortino_per_trade": 0.0499
+        },
+        "bootstrap_p5": -0.0077
+      },
+      "finder+validator+arbiter": {
+        "per_instrument": {
+          "XAUUSD": {
+            "n": 42,
+            "expectancy_r": 0.0903,
+            "t_stat": 0.628,
+            "profit_factor": 1.257,
+            "win_rate": 0.571,
+            "avg_win_r": 0.772,
+            "avg_loss_r": -0.819,
+            "max_drawdown_r": 3.11,
+            "total_r": 3.79,
+            "sharpe_per_trade": 0.0969,
+            "sortino_per_trade": 0.1544,
+            "expectancy_2x_cost": 0.1107,
+            "data_sha256": "260a739983f35bf200f49df8817887f2cd9c57fe5925e69cc95ebd06c866db07"
+          },
+          "USOIL": {
+            "n": 1,
+            "expectancy_r": 0.1786,
+            "t_stat": null,
+            "profit_factor": null,
+            "win_rate": 1.0,
+            "avg_win_r": 0.179,
+            "avg_loss_r": 0.0,
+            "max_drawdown_r": 0.0,
+            "total_r": 0.18,
+            "sharpe_per_trade": null,
+            "sortino_per_trade": null,
+            "expectancy_2x_cost": null,
+            "data_sha256": "469376560291c7c79ac9176aecda45f6a347da869c12d809aa79a3b4dcda2e5e"
+          },
+          "USDJPY": {
+            "n": 23,
+            "expectancy_r": 0.1625,
+            "t_stat": 0.639,
+            "profit_factor": 1.422,
+            "win_rate": 0.565,
+            "avg_win_r": 0.968,
+            "avg_loss_r": -0.885,
+            "max_drawdown_r": 1.84,
+            "total_r": 3.74,
+            "sharpe_per_trade": 0.1332,
+            "sortino_per_trade": 0.2685,
+            "expectancy_2x_cost": -0.2951,
+            "data_sha256": "3addbcd5019fc4bf00dd4224369c4cdb21e9e26f5e7b3409d8d06fccf55b4642"
+          },
+          "BTCUSD": {
+            "n": 13,
+            "expectancy_r": -0.4002,
+            "t_stat": -1.249,
+            "profit_factor": 0.446,
+            "win_rate": 0.154,
+            "avg_win_r": 2.095,
+            "avg_loss_r": -0.854,
+            "max_drawdown_r": 5.22,
+            "total_r": -5.2,
+            "sharpe_per_trade": -0.3465,
+            "sortino_per_trade": -0.4797,
+            "expectancy_2x_cost": 0.1884,
+            "data_sha256": "3bdda117bc91f14e83b03c38e4163944746d2cdc54fadd62a34c21ac20be37e7"
+          }
+        },
+        "pooled": {
+          "n": 79,
+          "expectancy_r": 0.0317,
+          "t_stat": 0.262,
+          "profit_factor": 1.076,
+          "win_rate": 0.506,
+          "avg_win_r": 0.887,
+          "avg_loss_r": -0.846,
+          "max_drawdown_r": 5.99,
+          "total_r": 2.5,
+          "sharpe_per_trade": 0.0295,
+          "sortino_per_trade": 0.0499
+        },
+        "bootstrap_p5": -0.0077
+      }
+    }
+  }
+}

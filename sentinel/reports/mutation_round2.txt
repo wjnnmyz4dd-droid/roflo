@@ -1,0 +1,51 @@
+KILLED       risk: per-instrument position cap removed                              tests/test_crash_matrix.py::test_crash_during_entry[exec_after_broker_ack_before_persist]
+KILLED       risk: internal daily-loss halt removed                                 tests/test_execution_reconcile.py::test_daily_loss_is_derived_from_broker_after_restart
+KILLED       risk: spread guard removed                                             tests/test_adversarial_components.py::test_risk_blocks_bad_inputs[kw5-spread]
+KILLED       risk: position size x10                                                tests/test_adversarial_components.py::test_risk_sizes_to_budget_and_uses_broker_spec
+KILLED       risk: loss-streak halt removed                                         tests/test_adversarial_components.py::test_risk_halts_on_impossible_account_and_drawdown_and_streak
+KILLED       risk: stale broker snapshot accepted                                   tests/test_adversarial_components.py::test_risk_blocks_bad_inputs[kw6-snapshot
+SURVIVED     risk: stop-less position treated as zero risk                          
+KILLED       compliance: daily base = current balance (not midnight CE(S)T)         tests/test_compliance_news.py::test_two_step_daily_limit_matches_ftmo_example
+KILLED       compliance: safety buffer removed                                      tests/test_compliance_news.py::test_equity_breach_halts_and_buffer_blocks
+KILLED       compliance: unreviewed profile allowed outside simulation              tests/test_compliance_news.py::test_no_profile_expired_profile_and_unreviewed_live_halt
+KILLED       compliance: expired profile accepted                                   tests/test_compliance_news.py::test_no_profile_expired_profile_and_unreviewed_live_halt
+KILLED       compliance: FTMO restricted-news window ignored                        tests/test_compliance_news.py::test_ftmo_account_restricted_window_blocks_open_and_close_but_challenge_does_not
+KILLED       compliance: trailing max-loss high-water mark not tracked              tests/test_compliance_news.py::test_one_step_trailing_max_loss_matches_ftmo_example
+KILLED       compliance: worst-case pre-trade check removed                         tests/test_compliance_news.py::test_trade_whose_worst_case_crosses_floor_is_blocked
+KILLED       news: stale calendar accepted                                          tests/test_chaos.py::test_calendar_source_outage_keeps_old_snapshot_then_fails_closed
+KILLED       news: naive timestamps guessed as UTC                                  tests/test_compliance_news.py::test_record_without_timezone_is_rejected_not_guessed
+KILLED       news: offset dropped (the audited repo's bug)                          tests/test_compliance_news.py::test_live_feed_snapshot_parses_to_correct_utc
+KILLED       news: blackout hits ignored                                            tests/test_compliance_news.py::test_high_impact_and_central_bank_windows
+KILLED       news: query outside coverage accepted                                  tests/test_compliance_news.py::test_query_outside_coverage_with_fresh_fetch_is_unknown
+NOT_APPLIED  execution: permit/intent uniqueness removed                            
+KILLED       execution: blind resend on timeout                                     tests/test_chaos.py::test_worst_possible_moment_compound_failure
+KILLED       execution: permit not verified                                         tests/test_authority_and_journal.py::test_permit_cannot_be_reused_or_altered_or_expire_silently
+KILLED       execution: control state ignored                                       tests/test_authority_and_journal.py::test_execution_refuses_when_not_reconciled_or_halted
+KILLED       reconcile: resolution inverted                                         tests/test_crash_matrix.py::test_crash_during_entry[exec_after_intent_persisted]
+KILLED       reconcile: foreign exposure not blocking                               tests/test_execution_reconcile.py::test_foreign_position_halts_until_operator
+KILLED       reconcile: missing positions ignored                                   tests/test_execution_reconcile.py::test_local_position_missing_at_broker_without_deal_halts
+KILLED       arbiter: INVALID approved                                              tests/test_adversarial_components.py::test_validator_rejects_corrupted_inputs[<lambda>-INVALID0]
+KILLED       arbiter: incomplete validator checks accepted                          tests/test_adversarial_components.py::test_arbiter_rules_each_fire
+KILLED       arbiter: expired candidates accepted                                   tests/test_adversarial_components.py::test_arbiter_rules_each_fire
+KILLED       arbiter: data mismatch accepted                                        tests/test_adversarial_components.py::test_arbiter_rules_each_fire
+KILLED       authority: decision signatures not checked                             tests/test_authority_and_journal.py::test_forged_decisions_cannot_mint_a_permit
+KILLED       authority: expired permits accepted                                    tests/test_authority_and_journal.py::test_unused_expired_permit_is_refused
+SURVIVED     authority: volume above risk approval accepted                         
+KILLED       control: trading without reconcile after restart                       tests/test_crash_matrix.py::test_crash_after_timeout_that_actually_filled
+KILLED       control: manual halts ignored (1st check)                              tests/test_authority_and_journal.py::test_execution_refuses_when_not_reconciled_or_halted
+KILLED       lease: lost leadership not detected                                    tests/test_execution_reconcile.py::test_lease_stolen_while_locally_still_valid_is_detected
+KILLED       validator: future bars accepted                                        tests/test_adversarial_components.py::test_validator_rejects_corrupted_inputs[<lambda>-INVALID5]
+KILLED       validator: overlapping analogs counted                                 tests/test_adversarial_components.py::test_validator_analogs_do_not_overlap
+KILLED       validator: corrupted data accepted                                     tests/test_adversarial_components.py::test_validator_rejects_corrupted_inputs[<lambda>-INVALID3]
+KILLED       finder: unfinished bars used (look-ahead)                              tests/test_adversarial_components.py::test_finder_never_uses_unfinished_bar
+KILLED       orchestrator: clock drift ignored                                      tests/test_execution_reconcile.py::test_clock_drift_vs_broker_halts
+KILLED       startup: journal integrity not enforced                                tests/test_chaos.py::test_tampered_journal_halts_at_startup
+KILLED       learning: FACT injectable directly                                     tests/test_adversarial_components.py::test_fact_only_from_verified_broker_truth
+KILLED       learning: tampered journal accepted                                    tests/test_adversarial_components.py::test_tampered_journal_blocks_fact_creation
+KILLED       promotion: holdout reuse allowed                                       tests/test_adversarial_components.py::test_promotion_requires_ordered_stages_registered_criteria_single_holdout_and_operator
+SURVIVED     authority: decisions not bound to candidate                            
+KILLED       authority: direction/stop binding removed                              tests/test_authority_and_journal.py::test_decisions_are_bound_to_candidate_instrument_direction_and_stop
+KILLED       execution: one-decision-set-one-intent removed                         tests/test_authority_and_journal.py::test_one_decision_set_cannot_mint_two_positions
+KILLED       journal: append-only trigger removed                                   tests/test_adversarial_components.py::test_tampered_journal_blocks_fact_creation
+
+killed 45/48 applied mutations (1 not applied)

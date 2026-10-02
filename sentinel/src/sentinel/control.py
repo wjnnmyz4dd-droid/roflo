@@ -46,6 +46,9 @@ class ControlState:
                 resumes.append(ev.seq)
         if last_startup is None:
             return False, "no STARTUP recorded"
+        for h in halts:
+            if h.payload["scope"] == "manual" and not any(r > h.seq for r in resumes):
+                return False, f"manual halt: {h.payload['reason']}"
         if last_clean_reconcile is None or last_clean_reconcile < last_startup:
             return False, "not reconciled since startup"
         for h in halts:
@@ -54,6 +57,4 @@ class ControlState:
                 return False, f"halted pending reconcile: {h.payload['reason']}"
             if scope == "day" and h.payload["day"] == today:
                 return False, f"halted for trading day {today}: {h.payload['reason']}"
-            if scope == "manual" and not any(r > h.seq for r in resumes):
-                return False, f"manual halt: {h.payload['reason']}"
         return True, "OK"

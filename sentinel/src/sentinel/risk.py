@@ -53,8 +53,9 @@ class RiskEngine:
             total += math.inf if spec is None else self.position_risk(p, spec)
         return total
 
-    def _decide(self, verdict, reasons, inputs, now, volume=None, detail=None) -> GateDecision:
-        d = GateDecision("risk", verdict, tuple(reasons), content_hash(inputs), now, approved_volume=volume, detail=detail or {})
+    def _decide(self, verdict, reasons, inputs, now, volume=None, detail=None, subject="") -> GateDecision:
+        d = GateDecision("risk", verdict, tuple(reasons), content_hash(inputs), now, approved_volume=volume, detail=detail or {},
+                         subject=subject)
         return self.signer.sign(d) if self.signer else d
 
     def account_check(self, snap: AccountSnapshot | None, deals: list | None, now: int) -> GateDecision:
@@ -64,7 +65,8 @@ class RiskEngine:
         age = now - snap.taken_at
         if age > L.max_snapshot_age_s or age < -5:
             return self._decide(GateVerdict.BLOCK, [f"account snapshot age {age}s invalid"], [snap.snapshot_hash, now], now)
-        if not (math.isfinite(snap.equity) and math.isfinite(snap.balance)) or snap.balance <= 0 or snap.equity <= 0:
+        if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in (snap.equity, snap.balance, snap.margin)) \
+                or snap.balance <= 0 or snap.equity <= 0:
             return self._decide(GateVerdict.HALT, ["impossible account values"], [snap.snapshot_hash], now)
         midnight = cet_midnight_utc(now)
         day_flow = sum((d.get("profit") or 0) - (d.get("commission") or 0) for d in deals if d["ts"] >= midnight)
@@ -89,11 +91,13 @@ class RiskEngine:
         return self._decide(GateVerdict.ALLOW, ["account ok"], inputs, now, detail=detail)
 
     def evaluate(self, snap: AccountSnapshot | None, deals: list | None, specs: dict, spec: InstrumentSpec,
-                 quote: Quote | None, direction: Direction, entry: float, stop: float, now: int) -> GateDecision:
+                 quote: Quote | None, direction: Direction, entry: float, stop: float, now: int, subject: str = "") -> GateDecision:
         L = self.limits
         acct = self.account_check(snap, deals, now)
         if acct.verdict is not GateVerdict.ALLOW:
             return acct
+        if not all(isinstance(x, (int, float)) and math.isfinite(x) and x > 0 for x in (entry, stop)):
+            return self._decide(GateVerdict.BLOCK, ["invalid entry/stop"], [snap.snapshot_hash, spec.instrument, now], now)
         inputs = [snap.snapshot_hash, spec.instrument, direction.value, entry, stop, now]
         if quote is None or now - quote.ts > L.max_quote_age_s or quote.bid <= 0 or quote.ask < quote.bid:
             return self._decide(GateVerdict.BLOCK, ["stale or invalid quote"], inputs, now)
@@ -138,7 +142,9 @@ class RiskEngine:
             return self._decide(GateVerdict.BLOCK, ["margin level would fall below minimum"], inputs, now)
         verdict = GateVerdict.REDUCE if budget_total < budget_trade else GateVerdict.ALLOW
         return self._decide(verdict, [f"approved {vol} lots (budget {budget:.2f})"], inputs, now, volume=vol,
-                            detail={"open_risk": round(open_r, 2), "loss_per_lot": round(loss_per_lot, 4), "fill_ref": fill})
+                            detail={"open_risk": round(open_r, 2), "loss_per_lot": round(loss_per_lot, 4), "fill_ref": fill,
+                                    "instrument": spec.instrument, "direction": direction.value, "stop": stop},
+                            subject=subject)
 
 
 def _usd_exposure(spec: InstrumentSpec, direction: Direction) -> int:

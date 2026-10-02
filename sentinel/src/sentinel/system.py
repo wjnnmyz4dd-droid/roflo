@@ -69,7 +69,8 @@ class Built:
 
 def build(workdir: str, clock, market, instruments, mode="paper", profile_id="ftmo-2step-challenge-standard",
           initial_capital=100_000.0, account_start_utc=0, instance="A", news_snapshot=None, risk_limits=None,
-          broker: SimBroker | None = None, independence: float | None = None, lease_ttl: float = 30.0) -> Built:
+          broker: SimBroker | None = None, independence: float | None = None, lease_ttl: float = 30.0,
+          wall_clock=None, simulation: bool = True) -> Built:
     os.makedirs(workdir, exist_ok=True)
     journal = Journal(os.path.join(workdir, f"journal-{instance}.db"), clock=clock)
     broker = broker or SimBroker(os.path.join(workdir, "broker.db"), initial_balance=initial_capital, clock=clock,
@@ -78,14 +79,17 @@ def build(workdir: str, clock, market, instruments, mode="paper", profile_id="ft
     lease.acquire()
     control = ControlState(journal, clock)
     control.startup(instance, VERSIONS)
+    ok, why = journal.verify()
+    if not ok:  # tampered / corrupted history: nothing derived from it can be trusted
+        control.halt("orchestrator", f"journal integrity failure: {why}", scope="manual")
 
     keys = {name: DecisionSigner(name) for name in ("arbiter", "compliance", "news", "risk")}
     permit_key = PermitKey()
     news = NewsEngine(signer=keys["news"])
     if news_snapshot is not None:
         news.load(news_snapshot)
-    cfg = AccountConfig(profile_id, initial_capital, account_start_utc, simulation=True)
-    compliance = ComplianceEngine(cfg, load_profile(profile_id), news, signer=keys["compliance"])
+    cfg = AccountConfig(profile_id, initial_capital, account_start_utc, simulation=simulation)
+    compliance = ComplianceEngine(cfg, load_profile(profile_id), news, signer=keys["compliance"], wall_clock=wall_clock)
     risk = RiskEngine(risk_limits or RiskLimits(), initial_capital, signer=keys["risk"])
     issuer = PermitIssuer(permit_key, {k: v.key for k, v in keys.items()})
     execution = ExecutionService(broker, journal, permit_key, lease, clock, control) if mode == "paper" else None

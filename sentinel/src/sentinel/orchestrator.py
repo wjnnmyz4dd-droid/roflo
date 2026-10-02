@@ -62,6 +62,20 @@ class Orchestrator:
         return self.c.journal.append(type_, comp, payload, correlation_id=corr)
 
     def cycle(self, now: int) -> dict:
+        """Any unexpected exception fails CLOSED: journal it, halt pending reconcile."""
+        try:
+            return self._cycle(now)
+        except LeaseLost as e:
+            return {"status": "STANDBY", "reason": str(e)}
+        except Exception as e:  # noqa: BLE001
+            try:
+                self.c.journal.append("ERROR", "orchestrator", {"error": repr(e)[:500]})
+                self.c.control.halt("orchestrator", f"unexpected exception: {e!r}"[:300], scope="reconcile")
+            except Exception:  # noqa: BLE001 - journal itself unavailable: nothing can trade without it anyway
+                pass
+            return {"status": "HALTED", "reason": f"exception: {e!r}"[:300]}
+
+    def _cycle(self, now: int) -> dict:
         c = self.c
         crashpoint("cycle_start")
         try:
@@ -153,6 +167,8 @@ class Orchestrator:
             except ExecutionRefused as e:
                 r = {"status": "REFUSED", "error": str(e)}
             out.append({"ticket": p.ticket, "reason": reason, "result": r})
+        if out:
+            c.reconciler.run(record_if_clean=False)  # record realised P&L from broker deals immediately
         return out
 
     def _outcome(self, cand_id, stage, verdict, reasons):
@@ -170,7 +186,7 @@ class Orchestrator:
         self._j("CANDIDATE", {"candidate": cand}, cand.candidate_id, comp="finder")
         crashpoint("after_candidate")
         spec = specs[inst]
-        nd = c.news.evaluate(inst, spec.currencies, now, horizon_s=0)
+        nd = c.news.evaluate(inst, spec.currencies, now, horizon_s=0, subject=cand.candidate_id)
         self._j("NEWS_DECISION", {"decision": nd}, cand.candidate_id, comp="news")
         if nd.verdict is not GateVerdict.ALLOW:
             return self._outcome(cand.candidate_id, "news", nd.verdict.value, nd.reasons)
@@ -189,7 +205,8 @@ class Orchestrator:
             q = c.broker.quote(inst)
         except (BrokerUncertain, BrokerError) as e:
             return self._outcome(cand.candidate_id, "risk", "BLOCK", [f"broker truth unavailable: {e}"])
-        rd = c.risk.evaluate(snap, deals, specs, spec, q, cand.direction, cand.entry_reference, cand.invalidation_price, now)
+        rd = c.risk.evaluate(snap, deals, specs, spec, q, cand.direction, cand.entry_reference, cand.invalidation_price, now,
+                             subject=cand.candidate_id)
         self._j("RISK_DECISION", {"decision": rd}, cand.candidate_id, comp="risk")
         crashpoint("after_risk")
         if rd.verdict not in (GateVerdict.ALLOW, GateVerdict.REDUCE):
@@ -199,13 +216,14 @@ class Orchestrator:
         fill = rd.detail["fill_ref"]
         open_risk = c.risk.open_risk(snap, specs)
         cd = c.compliance.evaluate_trade(snap, deals, now, spec, rd.approved_volume, fill, cand.invalidation_price,
-                                         c.commission_per_lot, open_risk if math.isfinite(open_risk) else 1e18)
+                                         c.commission_per_lot, open_risk if math.isfinite(open_risk) else 1e18,
+                                         subject=cand.candidate_id)
         self._j("COMPLIANCE_DECISION", {"decision": cd}, cand.candidate_id, comp="compliance")
         if cd.verdict is not GateVerdict.ALLOW:
             if cd.verdict is GateVerdict.HALT:
                 c.control.halt("compliance", "; ".join(cd.reasons), scope="manual")
             return self._outcome(cand.candidate_id, "compliance", cd.verdict.value, cd.reasons)
-        nd2 = c.news.evaluate(inst, spec.currencies, now)
+        nd2 = c.news.evaluate(inst, spec.currencies, now, subject=cand.candidate_id)
         if nd2.verdict is not GateVerdict.ALLOW:
             self._j("NEWS_DECISION", {"decision": nd2, "recheck": True}, cand.candidate_id, comp="news")
             return self._outcome(cand.candidate_id, "news_recheck", nd2.verdict.value, nd2.reasons)

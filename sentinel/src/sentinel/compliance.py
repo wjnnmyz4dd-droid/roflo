@@ -143,8 +143,8 @@ class ComplianceEngine:
             return False, "initial capital not configured"
         return True, "OK"
 
-    def _decision(self, verdict, reasons, inputs, now, detail=None) -> GateDecision:
-        d = GateDecision("compliance", verdict, tuple(reasons), content_hash(inputs), now, detail=detail or {})
+    def _decision(self, verdict, reasons, inputs, now, detail=None, subject="") -> GateDecision:
+        d = GateDecision("compliance", verdict, tuple(reasons), content_hash(inputs), now, detail=detail or {}, subject=subject)
         return self.signer.sign(d) if self.signer else d
 
     def evaluate_account(self, snap: AccountSnapshot | None, deals: list | None, now: int) -> GateDecision:
@@ -168,7 +168,8 @@ class ComplianceEngine:
         return dist * spec.tick_value * volume
 
     def evaluate_trade(self, snap: AccountSnapshot | None, deals: list | None, now: int, spec: InstrumentSpec,
-                       volume: float, entry: float, stop: float, commission_per_lot: float, open_risk: float) -> GateDecision:
+                       volume: float, entry: float, stop: float, commission_per_lot: float, open_risk: float,
+                       subject: str = "") -> GateDecision:
         acct = self.evaluate_account(snap, deals, now)
         if acct.verdict is not GateVerdict.ALLOW:
             return acct
@@ -186,7 +187,8 @@ class ComplianceEngine:
         wb = self._weekend_block(now, opening=True)
         if wb:
             return self._decision(GateVerdict.BLOCK, [wb], inputs, now, lim)
-        return self._decision(GateVerdict.ALLOW, ["trade within FTMO profile"], inputs, now, lim)
+        return self._decision(GateVerdict.ALLOW, ["trade within FTMO profile"], inputs + [subject], now,
+                              dict(lim, instrument=spec.instrument, volume=volume, stop=stop), subject=subject)
 
     def evaluate_close(self, spec: InstrumentSpec, now: int) -> GateDecision:
         ok, why = self._profile_ok(now)

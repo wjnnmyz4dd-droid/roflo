@@ -180,6 +180,21 @@ class NewsEngine:
     def load(self, snap: CalendarSnapshot) -> None:
         self.snapshot = snap
 
+    def refresh(self, fetch, now: int) -> tuple[bool, str]:
+        """Try a source refresh. On any failure keep the previous snapshot; staleness then
+        decides (fail closed once it exceeds ``max_staleness_s``)."""
+        try:
+            snap = fetch(now)
+        except Exception as e:  # noqa: BLE001 - outage, rate limit, malformed payload
+            self.last_error = repr(e)[:200]
+            return False, self.last_error
+        if not snap.events and self.snapshot is not None:
+            self.last_error = "source returned no events; keeping previous snapshot"
+            return False, self.last_error
+        self.snapshot = snap
+        self.last_error = None
+        return True, "OK"
+
     def health(self, now: int) -> tuple[bool, str]:
         s = self.snapshot
         p = self.policy
@@ -210,8 +225,11 @@ class NewsEngine:
             return p.medium_before_s, p.medium_after_s
         return 0, 0
 
-    def evaluate(self, instrument: str, currencies: tuple, now: int, horizon_s: int = 0) -> GateDecision:
-        d = self._evaluate(instrument, currencies, now, horizon_s)
+    def evaluate(self, instrument: str, currencies: tuple, now: int, horizon_s: int = 0, subject: str = "") -> GateDecision:
+        import dataclasses
+
+        raw = self._evaluate(instrument, currencies, now, horizon_s)
+        d = dataclasses.replace(raw, subject=subject, detail={**raw.detail, "instrument": instrument})
         return self.signer.sign(d) if self.signer else d
 
     def _evaluate(self, instrument: str, currencies: tuple, now: int, horizon_s: int = 0) -> GateDecision:

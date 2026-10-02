@@ -1,0 +1,343 @@
+[
+  {
+    "mutation": "risk: per-instrument position cap removed",
+    "file": "risk.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_crash_matrix.py::test_crash_during_entry[exec_after_broker_ack_before_persist]",
+    "seconds": 5.9
+  },
+  {
+    "mutation": "risk: internal daily-loss halt removed",
+    "file": "risk.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_execution_reconcile.py::test_daily_loss_is_derived_from_broker_after_restart",
+    "seconds": 11.0
+  },
+  {
+    "mutation": "risk: spread guard removed",
+    "file": "risk.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_risk_blocks_bad_inputs[kw5-spread]",
+    "seconds": 0.7
+  },
+  {
+    "mutation": "risk: position size x10",
+    "file": "risk.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_risk_sizes_to_budget_and_uses_broker_spec",
+    "seconds": 0.6
+  },
+  {
+    "mutation": "risk: loss-streak halt removed",
+    "file": "risk.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_risk_halts_on_impossible_account_and_drawdown_and_streak",
+    "seconds": 0.6
+  },
+  {
+    "mutation": "risk: stale broker snapshot accepted",
+    "file": "risk.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_risk_blocks_bad_inputs[kw6-snapshot",
+    "seconds": 0.6
+  },
+  {
+    "mutation": "risk: stop-less position treated as zero risk",
+    "file": "risk.py",
+    "status": "SURVIVED",
+    "killed_by": "",
+    "seconds": 11.6
+  },
+  {
+    "mutation": "compliance: daily base = current balance (not midnight CE(S)T)",
+    "file": "compliance.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_two_step_daily_limit_matches_ftmo_example",
+    "seconds": 1.8
+  },
+  {
+    "mutation": "compliance: safety buffer removed",
+    "file": "compliance.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_equity_breach_halts_and_buffer_blocks",
+    "seconds": 1.6
+  },
+  {
+    "mutation": "compliance: unreviewed profile allowed outside simulation",
+    "file": "compliance.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_no_profile_expired_profile_and_unreviewed_live_halt",
+    "seconds": 1.7
+  },
+  {
+    "mutation": "compliance: expired profile accepted",
+    "file": "compliance.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_no_profile_expired_profile_and_unreviewed_live_halt",
+    "seconds": 1.6
+  },
+  {
+    "mutation": "compliance: FTMO restricted-news window ignored",
+    "file": "compliance.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_ftmo_account_restricted_window_blocks_open_and_close_but_challenge_does_not",
+    "seconds": 1.7
+  },
+  {
+    "mutation": "compliance: trailing max-loss high-water mark not tracked",
+    "file": "compliance.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_one_step_trailing_max_loss_matches_ftmo_example",
+    "seconds": 1.7
+  },
+  {
+    "mutation": "compliance: worst-case pre-trade check removed",
+    "file": "compliance.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_trade_whose_worst_case_crosses_floor_is_blocked",
+    "seconds": 1.8
+  },
+  {
+    "mutation": "news: stale calendar accepted",
+    "file": "news.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_chaos.py::test_calendar_source_outage_keeps_old_snapshot_then_fails_closed",
+    "seconds": 1.8
+  },
+  {
+    "mutation": "news: naive timestamps guessed as UTC",
+    "file": "news.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_record_without_timezone_is_rejected_not_guessed",
+    "seconds": 1.7
+  },
+  {
+    "mutation": "news: offset dropped (the audited repo's bug)",
+    "file": "news.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_live_feed_snapshot_parses_to_correct_utc",
+    "seconds": 1.7
+  },
+  {
+    "mutation": "news: blackout hits ignored",
+    "file": "news.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_high_impact_and_central_bank_windows",
+    "seconds": 1.7
+  },
+  {
+    "mutation": "news: query outside coverage accepted",
+    "file": "news.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_compliance_news.py::test_query_outside_coverage_with_fresh_fetch_is_unknown",
+    "seconds": 1.7
+  },
+  {
+    "mutation": "execution: permit/intent uniqueness removed",
+    "file": "execution.py",
+    "status": "NOT_APPLIED"
+  },
+  {
+    "mutation": "execution: blind resend on timeout",
+    "file": "execution.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_chaos.py::test_worst_possible_moment_compound_failure",
+    "seconds": 1.8
+  },
+  {
+    "mutation": "execution: permit not verified",
+    "file": "execution.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_authority_and_journal.py::test_permit_cannot_be_reused_or_altered_or_expire_silently",
+    "seconds": 1.1
+  },
+  {
+    "mutation": "execution: control state ignored",
+    "file": "execution.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_authority_and_journal.py::test_execution_refuses_when_not_reconciled_or_halted",
+    "seconds": 1.1
+  },
+  {
+    "mutation": "reconcile: resolution inverted",
+    "file": "reconcile.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_crash_matrix.py::test_crash_during_entry[exec_after_intent_persisted]",
+    "seconds": 5.2
+  },
+  {
+    "mutation": "reconcile: foreign exposure not blocking",
+    "file": "reconcile.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_execution_reconcile.py::test_foreign_position_halts_until_operator",
+    "seconds": 11.5
+  },
+  {
+    "mutation": "reconcile: missing positions ignored",
+    "file": "reconcile.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_execution_reconcile.py::test_local_position_missing_at_broker_without_deal_halts",
+    "seconds": 11.5
+  },
+  {
+    "mutation": "arbiter: INVALID approved",
+    "file": "arbiter.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_validator_rejects_corrupted_inputs[<lambda>-INVALID0]",
+    "seconds": 0.4
+  },
+  {
+    "mutation": "arbiter: incomplete validator checks accepted",
+    "file": "arbiter.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_arbiter_rules_each_fire",
+    "seconds": 0.6
+  },
+  {
+    "mutation": "arbiter: expired candidates accepted",
+    "file": "arbiter.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_arbiter_rules_each_fire",
+    "seconds": 0.5
+  },
+  {
+    "mutation": "arbiter: data mismatch accepted",
+    "file": "arbiter.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_arbiter_rules_each_fire",
+    "seconds": 0.5
+  },
+  {
+    "mutation": "authority: decision signatures not checked",
+    "file": "authority.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_authority_and_journal.py::test_forged_decisions_cannot_mint_a_permit",
+    "seconds": 1.0
+  },
+  {
+    "mutation": "authority: expired permits accepted",
+    "file": "authority.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_authority_and_journal.py::test_unused_expired_permit_is_refused",
+    "seconds": 1.2
+  },
+  {
+    "mutation": "authority: volume above risk approval accepted",
+    "file": "authority.py",
+    "status": "SURVIVED",
+    "killed_by": "",
+    "seconds": 11.9
+  },
+  {
+    "mutation": "control: trading without reconcile after restart",
+    "file": "control.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_crash_matrix.py::test_crash_after_timeout_that_actually_filled",
+    "seconds": 8.5
+  },
+  {
+    "mutation": "control: manual halts ignored (1st check)",
+    "file": "control.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_authority_and_journal.py::test_execution_refuses_when_not_reconciled_or_halted",
+    "seconds": 1.1
+  },
+  {
+    "mutation": "lease: lost leadership not detected",
+    "file": "lease.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_execution_reconcile.py::test_lease_stolen_while_locally_still_valid_is_detected",
+    "seconds": 11.3
+  },
+  {
+    "mutation": "validator: future bars accepted",
+    "file": "validator.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_validator_rejects_corrupted_inputs[<lambda>-INVALID5]",
+    "seconds": 0.4
+  },
+  {
+    "mutation": "validator: overlapping analogs counted",
+    "file": "validator.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_validator_analogs_do_not_overlap",
+    "seconds": 0.9
+  },
+  {
+    "mutation": "validator: corrupted data accepted",
+    "file": "validator.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_validator_rejects_corrupted_inputs[<lambda>-INVALID3]",
+    "seconds": 0.4
+  },
+  {
+    "mutation": "finder: unfinished bars used (look-ahead)",
+    "file": "finder.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_finder_never_uses_unfinished_bar",
+    "seconds": 0.5
+  },
+  {
+    "mutation": "orchestrator: clock drift ignored",
+    "file": "orchestrator.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_execution_reconcile.py::test_clock_drift_vs_broker_halts",
+    "seconds": 11.7
+  },
+  {
+    "mutation": "startup: journal integrity not enforced",
+    "file": "system.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_chaos.py::test_tampered_journal_halts_at_startup",
+    "seconds": 1.3
+  },
+  {
+    "mutation": "learning: FACT injectable directly",
+    "file": "learning.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_fact_only_from_verified_broker_truth",
+    "seconds": 0.6
+  },
+  {
+    "mutation": "learning: tampered journal accepted",
+    "file": "learning.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_tampered_journal_blocks_fact_creation",
+    "seconds": 0.6
+  },
+  {
+    "mutation": "promotion: holdout reuse allowed",
+    "file": "promotion.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_promotion_requires_ordered_stages_registered_criteria_single_holdout_and_operator",
+    "seconds": 0.8
+  },
+  {
+    "mutation": "authority: decisions not bound to candidate",
+    "file": "authority.py",
+    "status": "SURVIVED",
+    "killed_by": "",
+    "seconds": 11.3
+  },
+  {
+    "mutation": "authority: direction/stop binding removed",
+    "file": "authority.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_authority_and_journal.py::test_decisions_are_bound_to_candidate_instrument_direction_and_stop",
+    "seconds": 1.2
+  },
+  {
+    "mutation": "execution: one-decision-set-one-intent removed",
+    "file": "execution.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_authority_and_journal.py::test_one_decision_set_cannot_mint_two_positions",
+    "seconds": 1.2
+  },
+  {
+    "mutation": "journal: append-only trigger removed",
+    "file": "journal.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_adversarial_components.py::test_tampered_journal_blocks_fact_creation",
+    "seconds": 0.7
+  }
+]
