@@ -1,0 +1,364 @@
+{
+ "provenance": "PROXY / RESEARCH-ONLY (Yahoo proxies); calendar: federalreserve.gov FOMC pages, point-in-time",
+ "scope": "FOMC only; NFP/CPI/other releases NOT covered (sources blocked)",
+ "results": {
+  "daily/development/finder": {
+   "baseline": {
+    "n": 760,
+    "expectancy_r": -0.0349,
+    "t_stat": -0.765,
+    "profit_factor": 0.928,
+    "win_rate": 0.457,
+    "avg_win_r": 0.986,
+    "avg_loss_r": -0.893,
+    "max_drawdown_r": 48.61,
+    "total_r": -26.5,
+    "sharpe_per_trade": -0.0277,
+    "sortino_per_trade": -0.0439
+   },
+   "with_fomc_gate": {
+    "n": 758,
+    "expectancy_r": -0.0335,
+    "t_stat": -0.734,
+    "profit_factor": 0.931,
+    "win_rate": 0.458,
+    "avg_win_r": 0.986,
+    "avg_loss_r": -0.894,
+    "max_drawdown_r": 47.51,
+    "total_r": -25.4,
+    "sharpe_per_trade": -0.0266,
+    "sortino_per_trade": -0.0422
+   },
+   "removed_by_gate": {
+    "n": 2,
+    "mean_r": -0.5477,
+    "sum_r": -1.095
+   },
+   "held_through_fomc_not_gated": {
+    "n": 144,
+    "expectancy_r": -0.0343,
+    "t_stat": -0.273,
+    "profit_factor": 0.933,
+    "win_rate": 0.458,
+    "avg_win_r": 1.044,
+    "avg_loss_r": -0.946,
+    "max_drawdown_r": 15.88,
+    "total_r": -4.94,
+    "sharpe_per_trade": -0.0228,
+    "sortino_per_trade": -0.034
+   }
+  },
+  "daily/development/finder+validator+arbiter": {
+   "baseline": {
+    "n": 1,
+    "expectancy_r": 0.5612,
+    "t_stat": null,
+    "profit_factor": null,
+    "win_rate": 1.0,
+    "avg_win_r": 0.561,
+    "avg_loss_r": 0.0,
+    "max_drawdown_r": 0.0,
+    "total_r": 0.56,
+    "sharpe_per_trade": null,
+    "sortino_per_trade": null
+   },
+   "with_fomc_gate": {
+    "n": 1,
+    "expectancy_r": 0.5612,
+    "t_stat": null,
+    "profit_factor": null,
+    "win_rate": 1.0,
+    "avg_win_r": 0.561,
+    "avg_loss_r": 0.0,
+    "max_drawdown_r": 0.0,
+    "total_r": 0.56,
+    "sharpe_per_trade": null,
+    "sortino_per_trade": null
+   },
+   "removed_by_gate": {
+    "n": 0,
+    "mean_r": null,
+    "sum_r": 0
+   },
+   "held_through_fomc_not_gated": {
+    "n": 0
+   }
+  },
+  "daily/holdout_info_only/finder": {
+   "baseline": {
+    "n": 390,
+    "expectancy_r": 0.1639,
+    "t_stat": 2.333,
+    "profit_factor": 1.398,
+    "win_rate": 0.467,
+    "avg_win_r": 1.233,
+    "avg_loss_r": -0.771,
+    "max_drawdown_r": 10.05,
+    "total_r": 63.93,
+    "sharpe_per_trade": 0.1181,
+    "sortino_per_trade": 0.2641
+   },
+   "with_fomc_gate": {
+    "n": 390,
+    "expectancy_r": 0.1639,
+    "t_stat": 2.333,
+    "profit_factor": 1.398,
+    "win_rate": 0.467,
+    "avg_win_r": 1.233,
+    "avg_loss_r": -0.771,
+    "max_drawdown_r": 10.05,
+    "total_r": 63.93,
+    "sharpe_per_trade": 0.1181,
+    "sortino_per_trade": 0.2641
+   },
+   "removed_by_gate": {
+    "n": 0,
+    "mean_r": null,
+    "sum_r": 0
+   },
+   "held_through_fomc_not_gated": {
+    "n": 81,
+    "expectancy_r": -0.0025,
+    "t_stat": -0.016,
+    "profit_factor": 0.995,
+    "win_rate": 0.42,
+    "avg_win_r": 1.197,
+    "avg_loss_r": -0.87,
+    "max_drawdown_r": 12.51,
+    "total_r": -0.2,
+    "sharpe_per_trade": -0.0018,
+    "sortino_per_trade": -0.0035
+   }
+  },
+  "daily/holdout_info_only/finder+validator+arbiter": {
+   "baseline": {
+    "n": 36,
+    "expectancy_r": 0.2169,
+    "t_stat": 0.957,
+    "profit_factor": 1.527,
+    "win_rate": 0.472,
+    "avg_win_r": 1.331,
+    "avg_loss_r": -0.78,
+    "max_drawdown_r": 7.85,
+    "total_r": 7.81,
+    "sharpe_per_trade": 0.1595,
+    "sortino_per_trade": 0.3507
+   },
+   "with_fomc_gate": {
+    "n": 36,
+    "expectancy_r": 0.2169,
+    "t_stat": 0.957,
+    "profit_factor": 1.527,
+    "win_rate": 0.472,
+    "avg_win_r": 1.331,
+    "avg_loss_r": -0.78,
+    "max_drawdown_r": 7.85,
+    "total_r": 7.81,
+    "sharpe_per_trade": 0.1595,
+    "sortino_per_trade": 0.3507
+   },
+   "removed_by_gate": {
+    "n": 0,
+    "mean_r": null,
+    "sum_r": 0
+   },
+   "held_through_fomc_not_gated": {
+    "n": 4,
+    "expectancy_r": 0.4078,
+    "t_stat": 0.558,
+    "profit_factor": 2.034,
+    "win_rate": 0.5,
+    "avg_win_r": 1.604,
+    "avg_loss_r": -0.789,
+    "max_drawdown_r": 1.58,
+    "total_r": 1.63,
+    "sharpe_per_trade": 0.2789,
+    "sortino_per_trade": 0.7055
+   }
+  },
+  "hourly/development/finder": {
+   "baseline": {
+    "n": 1311,
+    "expectancy_r": -0.0388,
+    "t_stat": -1.175,
+    "profit_factor": 0.918,
+    "win_rate": 0.405,
+    "avg_win_r": 1.066,
+    "avg_loss_r": -0.791,
+    "max_drawdown_r": 62.82,
+    "total_r": -50.81,
+    "sharpe_per_trade": -0.0324,
+    "sortino_per_trade": -0.0571
+   },
+   "with_fomc_gate": {
+    "n": 1306,
+    "expectancy_r": -0.0361,
+    "t_stat": -1.09,
+    "profit_factor": 0.923,
+    "win_rate": 0.407,
+    "avg_win_r": 1.067,
+    "avg_loss_r": -0.792,
+    "max_drawdown_r": 59.12,
+    "total_r": -47.12,
+    "sharpe_per_trade": -0.0302,
+    "sortino_per_trade": -0.0531
+   },
+   "removed_by_gate": {
+    "n": 5,
+    "mean_r": -0.6273,
+    "sum_r": -3.136
+   },
+   "held_through_fomc_not_gated": {
+    "n": 21,
+    "expectancy_r": -0.2534,
+    "t_stat": -1.038,
+    "profit_factor": 0.586,
+    "win_rate": 0.238,
+    "avg_win_r": 1.508,
+    "avg_loss_r": -0.804,
+    "max_drawdown_r": 7.28,
+    "total_r": -5.32,
+    "sharpe_per_trade": -0.2265,
+    "sortino_per_trade": -0.3289
+   }
+  },
+  "hourly/development/finder+validator+arbiter": {
+   "baseline": {
+    "n": 79,
+    "expectancy_r": 0.0317,
+    "t_stat": 0.262,
+    "profit_factor": 1.076,
+    "win_rate": 0.506,
+    "avg_win_r": 0.887,
+    "avg_loss_r": -0.846,
+    "max_drawdown_r": 5.76,
+    "total_r": 2.5,
+    "sharpe_per_trade": 0.0295,
+    "sortino_per_trade": 0.0499
+   },
+   "with_fomc_gate": {
+    "n": 79,
+    "expectancy_r": 0.0317,
+    "t_stat": 0.262,
+    "profit_factor": 1.076,
+    "win_rate": 0.506,
+    "avg_win_r": 0.887,
+    "avg_loss_r": -0.846,
+    "max_drawdown_r": 5.76,
+    "total_r": 2.5,
+    "sharpe_per_trade": 0.0295,
+    "sortino_per_trade": 0.0499
+   },
+   "removed_by_gate": {
+    "n": 0,
+    "mean_r": null,
+    "sum_r": 0
+   },
+   "held_through_fomc_not_gated": {
+    "n": 1,
+    "expectancy_r": -1.0218,
+    "t_stat": null,
+    "profit_factor": 0.0,
+    "win_rate": 0.0,
+    "avg_win_r": 0.0,
+    "avg_loss_r": -1.022,
+    "max_drawdown_r": 1.02,
+    "total_r": -1.02,
+    "sharpe_per_trade": null,
+    "sortino_per_trade": -1.0
+   }
+  },
+  "hourly/holdout_info_only/finder": {
+   "baseline": {
+    "n": 1169,
+    "expectancy_r": -0.0258,
+    "t_stat": -0.743,
+    "profit_factor": 0.945,
+    "win_rate": 0.421,
+    "avg_win_r": 1.06,
+    "avg_loss_r": -0.815,
+    "max_drawdown_r": 58.65,
+    "total_r": -30.14,
+    "sharpe_per_trade": -0.0217,
+    "sortino_per_trade": -0.038
+   },
+   "with_fomc_gate": {
+    "n": 1168,
+    "expectancy_r": -0.0245,
+    "t_stat": -0.706,
+    "profit_factor": 0.948,
+    "win_rate": 0.421,
+    "avg_win_r": 1.06,
+    "avg_loss_r": -0.814,
+    "max_drawdown_r": 58.65,
+    "total_r": -28.63,
+    "sharpe_per_trade": -0.0207,
+    "sortino_per_trade": -0.0362
+   },
+   "removed_by_gate": {
+    "n": 1,
+    "mean_r": -1.0063,
+    "sum_r": -1.006
+   },
+   "held_through_fomc_not_gated": {
+    "n": 26,
+    "expectancy_r": 0.026,
+    "t_stat": 0.092,
+    "profit_factor": 1.046,
+    "win_rate": 0.308,
+    "avg_win_r": 1.933,
+    "avg_loss_r": -0.821,
+    "max_drawdown_r": 7.59,
+    "total_r": 0.68,
+    "sharpe_per_trade": 0.018,
+    "sortino_per_trade": 0.0352
+   }
+  },
+  "hourly/holdout_info_only/finder+validator+arbiter": {
+   "baseline": {
+    "n": 68,
+    "expectancy_r": 0.1852,
+    "t_stat": 1.597,
+    "profit_factor": 1.631,
+    "win_rate": 0.574,
+    "avg_win_r": 0.834,
+    "avg_loss_r": -0.688,
+    "max_drawdown_r": 3.71,
+    "total_r": 12.59,
+    "sharpe_per_trade": 0.1936,
+    "sortino_per_trade": 0.3671
+   },
+   "with_fomc_gate": {
+    "n": 68,
+    "expectancy_r": 0.1852,
+    "t_stat": 1.597,
+    "profit_factor": 1.631,
+    "win_rate": 0.574,
+    "avg_win_r": 0.834,
+    "avg_loss_r": -0.688,
+    "max_drawdown_r": 3.71,
+    "total_r": 12.59,
+    "sharpe_per_trade": 0.1936,
+    "sortino_per_trade": 0.3671
+   },
+   "removed_by_gate": {
+    "n": 0,
+    "mean_r": null,
+    "sum_r": 0
+   },
+   "held_through_fomc_not_gated": {
+    "n": 1,
+    "expectancy_r": 1.119,
+    "t_stat": null,
+    "profit_factor": null,
+    "win_rate": 1.0,
+    "avg_win_r": 1.119,
+    "avg_loss_r": 0.0,
+    "max_drawdown_r": 0.0,
+    "total_r": 1.12,
+    "sharpe_per_trade": null,
+    "sortino_per_trade": null
+   }
+  }
+ }
+}

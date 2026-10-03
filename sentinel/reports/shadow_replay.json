@@ -1,0 +1,30 @@
+{
+ "mode": "replay",
+ "provenance": "PROXY / RESEARCH-ONLY",
+ "days": 3,
+ "start": 1790726743,
+ "end": 1790985943,
+ "step_statuses": {
+  "DECIDED": 72
+ },
+ "news_scope": "FOMC only (point-in-time); other releases not covered",
+ "ops_events": {
+  "SHADOW_CYCLE": 72,
+  "SHADOW_RESULT": 72
+ },
+ "candidates": 22,
+ "outcomes_by_stage": {
+  "arbiter:REJECT": 21,
+  "arbiter:INDETERMINATE": 1
+ },
+ "counterfactual_summary": {
+  "arbiter:REJECT": {
+   "n": 18,
+   "mean_r": -0.5127
+  }
+ },
+ "order_events_in_journal": 0,
+ "journal_verified": true,
+ "ops_verified": true,
+ "cf_verified": true
+}

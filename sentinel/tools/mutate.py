@@ -54,7 +54,7 @@ M = [
     ("execution.py", "        ok, why = self._control.trading_permitted()\n        if not ok:", "        ok, why = True, 'mut'\n        if not ok:",
      "execution: control state ignored"),
     ("reconcile.py", "            if ins:", "            if not ins:", "reconcile: resolution inverted"),
-    ("reconcile.py", "                                 \"blocking\": self._policy == \"halt\"})", "                                 \"blocking\": False})",
+    ("reconcile.py", "                                 \"blocking\": self._policy == \"halt\",", "                                 \"blocking\": False,",
      "reconcile: foreign exposure not blocking"),
     ("reconcile.py", "                findings.append({\"kind\": \"LOCAL_POSITION_MISSING_AT_BROKER\", \"ticket\": ticket, \"blocking\": True})", "                pass",
      "reconcile: missing positions ignored"),
@@ -90,6 +90,37 @@ M = [
      "execution: one-decision-set-one-intent removed"),
     ("journal.py", "CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events\nBEGIN SELECT RAISE(ABORT, 'journal is append-only'); END;", "",
      "journal: append-only trigger removed"),
+    # ---- round 4 (phase 2 additions)
+    ("broker/mt5.py", "        elif info.trade_mode != self.mt5.ACCOUNT_TRADE_MODE_DEMO:", "        elif False:", "mt5: non-DEMO (REAL) account accepted"),
+    ("broker/mt5.py", "        elif info.login not in a.allowed_logins:", "        elif False:", "mt5: login allow-list ignored"),
+    ("broker/mt5.py", "        self._evaluate_guard()  # re-check every time", "        pass  # re-check every time", "mt5: demo guard not re-checked before send"),
+    ("broker/mt5.py", "        if live and not [d for d in hits if d[\"kind\"] == \"IN\"]:", "        if False:", "mt5: history lag treated as absence"),
+    ("broker/mt5.py", "        if res.retcode in (m.TRADE_RETCODE_TIMEOUT, m.TRADE_RETCODE_CONNECTION):\n            return \"UNCERTAIN\"",
+     "        if res.retcode in (m.TRADE_RETCODE_TIMEOUT, m.TRADE_RETCODE_CONNECTION):\n            return \"REJECTED\"", "mt5: timeout retcode treated as rejected"),
+    ("broker/mt5.py", "        if res is None:\n            return \"UNCERTAIN\"", "        if res is None:\n            return \"REJECTED\"", "mt5: None result treated as rejected"),
+    ("broker/mt5.py", "        if self._offset is not None and off != self._offset:", "        if False:", "mt5: server offset change (DST) ignored"),
+    ("execution.py", "            token = self._lease.record_send(intent.intent_id)  # fenced: refuses if leadership was lost meanwhile",
+     "            token = token  # fenced: refuses if leadership was lost meanwhile", "execution: fenced send ledger bypassed"),
+    ("lease.py", "            if owner != self.owner or token != self.token or expires <= now + self.guard:", "            if False:", "lease: record_send fence removed"),
+    ("reconcile.py", "            scope = \"reconcile\" if all(f.get(\"retry\") for f in blocking) else \"manual\"", "            scope = \"reconcile\"",
+     "reconcile: every blocking finding auto-retryable (no operator)"),
+    ("reconcile.py", "                if not seen:\n                    findings.append({\"kind\": \"IN_FLIGHT_SEND_BY_OTHER_INSTANCE\"",
+     "                if False:\n                    findings.append({\"kind\": \"IN_FLIGHT_SEND_BY_OTHER_INSTANCE\"", "reconcile: other instance's in-flight send ignored"),
+    ("reconcile.py", "                lagging = True\n                findings.append({\"kind\": \"INTENT_UNRESOLVED_RETRY\", \"intent_id\": u[\"intent_id\"], \"detail\": str(e),\n                                 \"blocking\": True, \"retry\": True})",
+     "                lagging = True\n                findings.append({\"kind\": \"INTENT_UNRESOLVED_RETRY\", \"intent_id\": u[\"intent_id\"], \"detail\": str(e),\n                                 \"blocking\": False, \"retry\": True})",
+     "reconcile: unresolvable intent not blocking"),
+    ("risk.py", "        day_flow = sum((d.get(\"profit\") or 0) - (d.get(\"commission\") or 0) + (d.get(\"swap\") or 0)",
+     "        day_flow = sum((d.get(\"profit\") or 0) - (d.get(\"commission\") or 0)", "risk: swaps excluded from daily P&L"),
+    ("compliance.py", "        flow = sum((d.get(\"profit\") or 0.0) - (d.get(\"commission\") or 0.0) + (d.get(\"swap\") or 0.0)",
+     "        flow = sum((d.get(\"profit\") or 0.0) - (d.get(\"commission\") or 0.0)", "compliance: swaps excluded from balance reconstruction"),
+    ("compliance.py", "        wc = self.worst_case_loss(spec, volume, entry, stop) + 2 * commission_per_lot * volume",
+     "        wc = self.worst_case_loss(spec, volume, entry, stop)", "compliance: commission excluded from worst case"),
+    ("dataquality.py", "    elif prov.source_kind == \"PROXY\" or spreads is None or not spec_present:", "    elif False:", "data quality: proxy data passes as broker-grade"),
+    ("dataquality.py", "    if checks[\"missing_fraction\"] > max_gap_fraction:", "    if False:", "data quality: gaps ignored"),
+    ("research/calendar_hist.py", "        if r[\"known_from\"] > as_of:\n            continue", "        if False:\n            continue", "news replay: point-in-time filter removed (leakage)"),
+    ("shadow_runner.py", "                            unique=[(\"shadow_bar\", str(decision_bar))])", "                            unique=[])", "shadow: same bar decided twice"),
+    ("shadow_runner.py", "            if i + H >= len(bars):\n                continue", "            if False:\n                continue", "shadow: counterfactual resolved on partial data"),
+    ("shadow_runner.py", "        if stale:", "        if False:", "shadow: stale feed accepted"),
 ]
 
 
@@ -101,6 +132,7 @@ def run_one(mut) -> dict:
         shutil.copytree(ROOT / "tests", td / "tests")
         shutil.copytree(ROOT / "tools", td / "tools")
         shutil.copytree(ROOT / "provenance", td / "provenance")
+        shutil.copytree(ROOT / "data" / "calendar", td / "data" / "calendar")
         shutil.copy(ROOT / "pyproject.toml", td / "pyproject.toml")
         target = td / "src" / "sentinel" / fname
         text = target.read_text()
@@ -123,7 +155,11 @@ def run_one(mut) -> dict:
 
 
 def main():
-    out = [run_one(m) for m in M]
+    sel = M
+    if "--from" in sys.argv:  # e.g. --from 'mt5: non-DEMO' to run only a later round
+        start = next(k for k, m in enumerate(M) if m[3].startswith(sys.argv[sys.argv.index("--from") + 1]))
+        sel = M[start:]
+    out = [run_one(m) for m in sel]
     for r in out:
         print(f"{r['status']:12} {r['mutation']:70} {r.get('killed_by', '')}")
     killed = sum(r["status"] == "KILLED" for r in out)

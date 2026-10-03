@@ -1,0 +1,4258 @@
+{
+ "source": "Board of Governors of the Federal Reserve System, FOMC meeting calendars (public web pages)",
+ "built_at": 1791002319,
+ "count": 250,
+ "schema": "see sentinel.research.calendar_hist (point-in-time known_from; release-time bracket)",
+ "records": [
+  {
+   "event_id": "5c3ff3fbf8fbc0e5e16a",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2000-02-02",
+   "window_utc": [
+    949518900,
+    949518900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 946684800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2000.htm",
+   "source_sha256": "4d3ef3c9e09397fc41f0c6386f933c64578ddfff0614e4cd2562fecc20e33071"
+  },
+  {
+   "event_id": "090e862ec4aad4733486",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2000-03-21",
+   "window_utc": [
+    953666100,
+    953666100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 946684800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2000.htm",
+   "source_sha256": "4d3ef3c9e09397fc41f0c6386f933c64578ddfff0614e4cd2562fecc20e33071"
+  },
+  {
+   "event_id": "1a631437dd3b087969bc",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2000-05-16",
+   "window_utc": [
+    958500900,
+    958500900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 946684800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2000.htm",
+   "source_sha256": "4d3ef3c9e09397fc41f0c6386f933c64578ddfff0614e4cd2562fecc20e33071"
+  },
+  {
+   "event_id": "d0978c60752cb7f4469c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2000-06-28",
+   "window_utc": [
+    962216100,
+    962216100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 946684800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2000.htm",
+   "source_sha256": "4d3ef3c9e09397fc41f0c6386f933c64578ddfff0614e4cd2562fecc20e33071"
+  },
+  {
+   "event_id": "1990ea7ea988aa1d2c7f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2000-08-22",
+   "window_utc": [
+    966968100,
+    966968100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 946684800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2000.htm",
+   "source_sha256": "4d3ef3c9e09397fc41f0c6386f933c64578ddfff0614e4cd2562fecc20e33071"
+  },
+  {
+   "event_id": "ae5a041c122eed4306ea",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2000-10-03",
+   "window_utc": [
+    970596900,
+    970596900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 946684800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2000.htm",
+   "source_sha256": "4d3ef3c9e09397fc41f0c6386f933c64578ddfff0614e4cd2562fecc20e33071"
+  },
+  {
+   "event_id": "b06bf51538397d8c7ac1",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2000-11-15",
+   "window_utc": [
+    974315700,
+    974315700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 946684800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2000.htm",
+   "source_sha256": "4d3ef3c9e09397fc41f0c6386f933c64578ddfff0614e4cd2562fecc20e33071"
+  },
+  {
+   "event_id": "30c59324c9f3726cff3e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2000-12-19",
+   "window_utc": [
+    977253300,
+    977253300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 946684800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2000.htm",
+   "source_sha256": "4d3ef3c9e09397fc41f0c6386f933c64578ddfff0614e4cd2562fecc20e33071"
+  },
+  {
+   "event_id": "205c848b7af0fbea716c",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2001-01-03",
+   "window_utc": [
+    978498000,
+    978584340
+   ],
+   "time_precision": "day_only",
+   "known_from": 978584340,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "87d017f8e3e1a452cc5a",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2001-01-31",
+   "window_utc": [
+    980968500,
+    980968500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 978307200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "ccfcecb054bad1d37ec3",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2001-03-20",
+   "window_utc": [
+    985115700,
+    985115700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 978307200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "e2af0f518ee5fe2ab0a1",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2001-04-11",
+   "window_utc": [
+    986961600,
+    987047940
+   ],
+   "time_precision": "day_only",
+   "known_from": 987047940,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "31b09ff780d35884c167",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2001-04-18",
+   "window_utc": [
+    987566400,
+    987652740
+   ],
+   "time_precision": "day_only",
+   "known_from": 987652740,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "eadcf2d117e9d6a5f4fe",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2001-05-15",
+   "window_utc": [
+    989950500,
+    989950500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 978307200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "8448bb37c83c57ca6f19",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2001-06-27",
+   "window_utc": [
+    993665700,
+    993665700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 978307200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "2496268087fcf8e8b1b6",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2001-08-21",
+   "window_utc": [
+    998417700,
+    998417700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 978307200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "3457da4d0a2260a78092",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2001-09-13",
+   "window_utc": [
+    1000353600,
+    1000439940
+   ],
+   "time_precision": "day_only",
+   "known_from": 1000439940,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "67241b935bda3c58001e",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2001-09-17",
+   "window_utc": [
+    1000699200,
+    1000785540
+   ],
+   "time_precision": "day_only",
+   "known_from": 1000785540,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "62a4804d088730b6cd4a",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2001-10-02",
+   "window_utc": [
+    1002046500,
+    1002046500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 978307200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "f1189bb32f83b9dc837e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2001-11-06",
+   "window_utc": [
+    1005074100,
+    1005074100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 978307200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "60c8b405873c15884f38",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2001-12-11",
+   "window_utc": [
+    1008098100,
+    1008098100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 978307200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2001.htm",
+   "source_sha256": "a7a25fd410d0df8b086351d1b1b4994bb62bba108eab66b721daa96f8d3ad133"
+  },
+  {
+   "event_id": "80757cb1a7d3b448a2be",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2002-01-30",
+   "window_utc": [
+    1012418100,
+    1012418100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1009843200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2002.htm",
+   "source_sha256": "4d369fcc13ea03d7f9d2b0dd8e3b86acc449b7abcd4bbe39a417220ff98595a1"
+  },
+  {
+   "event_id": "49b5faa7ae505d41a0f0",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2002-03-19",
+   "window_utc": [
+    1016565300,
+    1016565300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1009843200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2002.htm",
+   "source_sha256": "4d369fcc13ea03d7f9d2b0dd8e3b86acc449b7abcd4bbe39a417220ff98595a1"
+  },
+  {
+   "event_id": "f6253fecd388e3bc0a8c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2002-05-07",
+   "window_utc": [
+    1020795300,
+    1020795300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1009843200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2002.htm",
+   "source_sha256": "4d369fcc13ea03d7f9d2b0dd8e3b86acc449b7abcd4bbe39a417220ff98595a1"
+  },
+  {
+   "event_id": "287dbef2a9e143cecb8d",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2002-06-26",
+   "window_utc": [
+    1025115300,
+    1025115300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1009843200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2002.htm",
+   "source_sha256": "4d369fcc13ea03d7f9d2b0dd8e3b86acc449b7abcd4bbe39a417220ff98595a1"
+  },
+  {
+   "event_id": "81a58e70865c2be38095",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2002-08-13",
+   "window_utc": [
+    1029262500,
+    1029262500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1009843200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2002.htm",
+   "source_sha256": "4d369fcc13ea03d7f9d2b0dd8e3b86acc449b7abcd4bbe39a417220ff98595a1"
+  },
+  {
+   "event_id": "ba21274219ad99e8950f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2002-09-24",
+   "window_utc": [
+    1032891300,
+    1032891300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1009843200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2002.htm",
+   "source_sha256": "4d369fcc13ea03d7f9d2b0dd8e3b86acc449b7abcd4bbe39a417220ff98595a1"
+  },
+  {
+   "event_id": "991efe35e2c76c71560e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2002-11-06",
+   "window_utc": [
+    1036610100,
+    1036610100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1009843200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2002.htm",
+   "source_sha256": "4d369fcc13ea03d7f9d2b0dd8e3b86acc449b7abcd4bbe39a417220ff98595a1"
+  },
+  {
+   "event_id": "477073f3e135e2aa1030",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2002-12-10",
+   "window_utc": [
+    1039547700,
+    1039547700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1009843200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2002.htm",
+   "source_sha256": "4d369fcc13ea03d7f9d2b0dd8e3b86acc449b7abcd4bbe39a417220ff98595a1"
+  },
+  {
+   "event_id": "47da7054ed3014ff2915",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2003-01-29",
+   "window_utc": [
+    1043867700,
+    1043867700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1041379200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "e3b5ea41c890adedfd94",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2003-03-18",
+   "window_utc": [
+    1048014900,
+    1048014900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1041379200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "6a43a2349bcede92558a",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2003-03-25",
+   "window_utc": [
+    1048568400,
+    1048654740
+   ],
+   "time_precision": "day_only",
+   "known_from": 1048654740,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "8f95e4e2fceb44ae1ce5",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2003-04-01",
+   "window_utc": [
+    1049173200,
+    1049259540
+   ],
+   "time_precision": "day_only",
+   "known_from": 1049259540,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "401eeec55ba09b4edfcd",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2003-04-08",
+   "window_utc": [
+    1049774400,
+    1049860740
+   ],
+   "time_precision": "day_only",
+   "known_from": 1049860740,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "a1c666d5f31d09bedfb4",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2003-04-16",
+   "window_utc": [
+    1050465600,
+    1050551940
+   ],
+   "time_precision": "day_only",
+   "known_from": 1050551940,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "4bd9df484b292d05d0f4",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2003-05-06",
+   "window_utc": [
+    1052244900,
+    1052244900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1041379200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "3b027d88ac99ccb4b1a2",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2003-06-25",
+   "window_utc": [
+    1056564900,
+    1056564900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1041379200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "a9a677945cf0ae8dc6db",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2003-08-12",
+   "window_utc": [
+    1060712100,
+    1060712100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1041379200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "1f6cd73e77e31add745e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2003-09-16",
+   "window_utc": [
+    1063649700,
+    1063736100
+   ],
+   "time_precision": "bracket_multi_day",
+   "known_from": 1041379200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "40b029e0340fef2edd57",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2003-10-28",
+   "window_utc": [
+    1067368500,
+    1067368500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1041379200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "354b82494acab880f686",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2003-12-09",
+   "window_utc": [
+    1070997300,
+    1070997300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1041379200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2003.htm",
+   "source_sha256": "29fa6c44338f652339e751d19d15ed88fdac2f27886ce0aadbc8500cc2a95bc7"
+  },
+  {
+   "event_id": "9ee536df09c0f2d76f0a",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2004-01-28",
+   "window_utc": [
+    1075317300,
+    1075317300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1072915200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2004.htm",
+   "source_sha256": "d24bc32d646137ab410dd9609fdccaae098eb938d84711ece47c890af5dc5774"
+  },
+  {
+   "event_id": "61b82aa09c577a7db0f2",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2004-03-16",
+   "window_utc": [
+    1079464500,
+    1079464500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1072915200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2004.htm",
+   "source_sha256": "d24bc32d646137ab410dd9609fdccaae098eb938d84711ece47c890af5dc5774"
+  },
+  {
+   "event_id": "58abe822fafe2bc2d4a1",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2004-05-04",
+   "window_utc": [
+    1083694500,
+    1083694500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1072915200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2004.htm",
+   "source_sha256": "d24bc32d646137ab410dd9609fdccaae098eb938d84711ece47c890af5dc5774"
+  },
+  {
+   "event_id": "b8fc38487cd78bfe70d5",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2004-06-30",
+   "window_utc": [
+    1088619300,
+    1088619300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1072915200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2004.htm",
+   "source_sha256": "d24bc32d646137ab410dd9609fdccaae098eb938d84711ece47c890af5dc5774"
+  },
+  {
+   "event_id": "72149051755cc62e3c65",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2004-08-10",
+   "window_utc": [
+    1092161700,
+    1092161700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1072915200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2004.htm",
+   "source_sha256": "d24bc32d646137ab410dd9609fdccaae098eb938d84711ece47c890af5dc5774"
+  },
+  {
+   "event_id": "6ee8c19e2c9d24481cff",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2004-09-21",
+   "window_utc": [
+    1095790500,
+    1095790500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1072915200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2004.htm",
+   "source_sha256": "d24bc32d646137ab410dd9609fdccaae098eb938d84711ece47c890af5dc5774"
+  },
+  {
+   "event_id": "69192dadf04b02faebf6",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2004-11-10",
+   "window_utc": [
+    1100114100,
+    1100114100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1072915200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2004.htm",
+   "source_sha256": "d24bc32d646137ab410dd9609fdccaae098eb938d84711ece47c890af5dc5774"
+  },
+  {
+   "event_id": "b6bcc1f403eb30e9b2fd",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2004-12-14",
+   "window_utc": [
+    1103051700,
+    1103051700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1072915200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2004.htm",
+   "source_sha256": "d24bc32d646137ab410dd9609fdccaae098eb938d84711ece47c890af5dc5774"
+  },
+  {
+   "event_id": "09ef81509df8364e4ad0",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2005-02-02",
+   "window_utc": [
+    1107371700,
+    1107371700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1104537600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2005.htm",
+   "source_sha256": "c4c04efb7aad4f67ccca9e82dd4a1687f1e27aee304db40af0e0a44ff0784010"
+  },
+  {
+   "event_id": "30b4c3c07b9633fff492",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2005-03-22",
+   "window_utc": [
+    1111518900,
+    1111518900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1104537600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2005.htm",
+   "source_sha256": "c4c04efb7aad4f67ccca9e82dd4a1687f1e27aee304db40af0e0a44ff0784010"
+  },
+  {
+   "event_id": "a0f6f2e11b4b28316ec1",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2005-05-03",
+   "window_utc": [
+    1115144100,
+    1115144100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1104537600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2005.htm",
+   "source_sha256": "c4c04efb7aad4f67ccca9e82dd4a1687f1e27aee304db40af0e0a44ff0784010"
+  },
+  {
+   "event_id": "50484e658570d37bd23c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2005-06-30",
+   "window_utc": [
+    1120155300,
+    1120155300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1104537600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2005.htm",
+   "source_sha256": "c4c04efb7aad4f67ccca9e82dd4a1687f1e27aee304db40af0e0a44ff0784010"
+  },
+  {
+   "event_id": "3d05155a9cac83330bae",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2005-08-09",
+   "window_utc": [
+    1123611300,
+    1123611300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1104537600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2005.htm",
+   "source_sha256": "c4c04efb7aad4f67ccca9e82dd4a1687f1e27aee304db40af0e0a44ff0784010"
+  },
+  {
+   "event_id": "ca6c55f608dfe88c9b2f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2005-09-20",
+   "window_utc": [
+    1127240100,
+    1127240100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1104537600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2005.htm",
+   "source_sha256": "c4c04efb7aad4f67ccca9e82dd4a1687f1e27aee304db40af0e0a44ff0784010"
+  },
+  {
+   "event_id": "46359fea6846196cf657",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2005-11-01",
+   "window_utc": [
+    1130872500,
+    1130872500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1104537600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2005.htm",
+   "source_sha256": "c4c04efb7aad4f67ccca9e82dd4a1687f1e27aee304db40af0e0a44ff0784010"
+  },
+  {
+   "event_id": "e4de50ddeb396c7c93f1",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2005-12-13",
+   "window_utc": [
+    1134501300,
+    1134501300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1104537600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2005.htm",
+   "source_sha256": "c4c04efb7aad4f67ccca9e82dd4a1687f1e27aee304db40af0e0a44ff0784010"
+  },
+  {
+   "event_id": "ced0bfffb1680f1e63f6",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2006-01-31",
+   "window_utc": [
+    1138734900,
+    1138734900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1136073600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2006.htm",
+   "source_sha256": "8f2bb10b3db79a461015ed7abdeba60add5585b1cf00c8075832e9f59ce7e0ca"
+  },
+  {
+   "event_id": "2cb57fe2a2de97244716",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2006-03-28",
+   "window_utc": [
+    1143573300,
+    1143573300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1136073600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2006.htm",
+   "source_sha256": "8f2bb10b3db79a461015ed7abdeba60add5585b1cf00c8075832e9f59ce7e0ca"
+  },
+  {
+   "event_id": "96691f9bde0671c38840",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2006-05-10",
+   "window_utc": [
+    1147284900,
+    1147284900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1136073600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2006.htm",
+   "source_sha256": "8f2bb10b3db79a461015ed7abdeba60add5585b1cf00c8075832e9f59ce7e0ca"
+  },
+  {
+   "event_id": "07b8b64f84d301144c5a",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2006-06-29",
+   "window_utc": [
+    1151604900,
+    1151604900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1136073600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2006.htm",
+   "source_sha256": "8f2bb10b3db79a461015ed7abdeba60add5585b1cf00c8075832e9f59ce7e0ca"
+  },
+  {
+   "event_id": "46695453944dc3ef623d",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2006-08-08",
+   "window_utc": [
+    1155060900,
+    1155060900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1136073600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2006.htm",
+   "source_sha256": "8f2bb10b3db79a461015ed7abdeba60add5585b1cf00c8075832e9f59ce7e0ca"
+  },
+  {
+   "event_id": "b74adb95abccf6b9e290",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2006-09-20",
+   "window_utc": [
+    1158776100,
+    1158776100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1136073600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2006.htm",
+   "source_sha256": "8f2bb10b3db79a461015ed7abdeba60add5585b1cf00c8075832e9f59ce7e0ca"
+  },
+  {
+   "event_id": "505f7b291ae47b19b9e9",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2006-10-25",
+   "window_utc": [
+    1161800100,
+    1161800100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1136073600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2006.htm",
+   "source_sha256": "8f2bb10b3db79a461015ed7abdeba60add5585b1cf00c8075832e9f59ce7e0ca"
+  },
+  {
+   "event_id": "dc9d554d28d485e33d73",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2006-12-12",
+   "window_utc": [
+    1165950900,
+    1165950900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1136073600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2006.htm",
+   "source_sha256": "8f2bb10b3db79a461015ed7abdeba60add5585b1cf00c8075832e9f59ce7e0ca"
+  },
+  {
+   "event_id": "f417ba1bbd700ac064f1",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2007-01-31",
+   "window_utc": [
+    1170270900,
+    1170270900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1167609600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "1bb1e3262b47b0aa9f08",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2007-03-21",
+   "window_utc": [
+    1174500900,
+    1174500900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1167609600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "4b26f11edc68bae4da2c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2007-05-09",
+   "window_utc": [
+    1178734500,
+    1178734500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1167609600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "6220374647d2f4c68fb7",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2007-06-28",
+   "window_utc": [
+    1183054500,
+    1183054500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1167609600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "384f9344e902d7629f34",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2007-08-07",
+   "window_utc": [
+    1186510500,
+    1186510500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1167609600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "540c3d3d5dc8c85c1eb7",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2007-08-10",
+   "window_utc": [
+    1186718400,
+    1186804740
+   ],
+   "time_precision": "day_only",
+   "known_from": 1186804740,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "d5c87bd55e7de80343d8",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2007-08-16",
+   "window_utc": [
+    1187236800,
+    1187323140
+   ],
+   "time_precision": "day_only",
+   "known_from": 1187323140,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "4f8e95a301788bb3e959",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2007-09-18",
+   "window_utc": [
+    1190139300,
+    1190139300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1167609600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "4e1c8ff15ce4b40dd8e8",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2007-10-31",
+   "window_utc": [
+    1193854500,
+    1193854500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1167609600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "1c641d13f84f7140308d",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2007-12-06",
+   "window_utc": [
+    1196917200,
+    1197003540
+   ],
+   "time_precision": "day_only",
+   "known_from": 1197003540,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "ca29748d0100d104028c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2007-12-11",
+   "window_utc": [
+    1197400500,
+    1197400500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1167609600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2007.htm",
+   "source_sha256": "89298e08e0e3c07293747c4a4fd4622308db560a1c7f9eedc4a714905c27c4de"
+  },
+  {
+   "event_id": "3f55eb92b30ba5afa9cd",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2008-01-09",
+   "window_utc": [
+    1199854800,
+    1199941140
+   ],
+   "time_precision": "day_only",
+   "known_from": 1199941140,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "8aa64ea09bf90f34aef8",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2008-01-21",
+   "window_utc": [
+    1200891600,
+    1200977940
+   ],
+   "time_precision": "day_only",
+   "known_from": 1200977940,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "8f02ca4da729492b5514",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2008-01-30",
+   "window_utc": [
+    1201720500,
+    1201720500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1199145600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "5ac399163f9c95d07c4a",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2008-03-10",
+   "window_utc": [
+    1205121600,
+    1205207940
+   ],
+   "time_precision": "day_only",
+   "known_from": 1205207940,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "b7533532234abf231266",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2008-03-18",
+   "window_utc": [
+    1205864100,
+    1205864100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1199145600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "b3b53b455d56ea0ed740",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2008-04-30",
+   "window_utc": [
+    1209579300,
+    1209579300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1199145600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "cecf225aa65aa628b80e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2008-06-25",
+   "window_utc": [
+    1214417700,
+    1214417700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1199145600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "300d3e3948ca811e17da",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2008-07-24",
+   "window_utc": [
+    1216872000,
+    1216958340
+   ],
+   "time_precision": "day_only",
+   "known_from": 1216958340,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "3dbf9fc91b78d5540500",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2008-08-05",
+   "window_utc": [
+    1217960100,
+    1217960100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1199145600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "62f85e94dc1613bf7edd",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2008-09-16",
+   "window_utc": [
+    1221588900,
+    1221588900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1199145600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "d628c19da3aa00b3f9b4",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2008-09-29",
+   "window_utc": [
+    1222660800,
+    1222747140
+   ],
+   "time_precision": "day_only",
+   "known_from": 1222747140,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "f89dca15a1d7e2d6ed31",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2008-10-07",
+   "window_utc": [
+    1223352000,
+    1223438340
+   ],
+   "time_precision": "day_only",
+   "known_from": 1223438340,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "943d333fde8af110ee27",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2008-10-29",
+   "window_utc": [
+    1225304100,
+    1225304100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1199145600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "4d9168b1242e02f486bb",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2008-12-16",
+   "window_utc": [
+    1229454900,
+    1229454900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1199145600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2008.htm",
+   "source_sha256": "e1558ff17887c721eef9022fc5908e950f549f479f358595feb8297f35e64c30"
+  },
+  {
+   "event_id": "87ce27666fdcdd476200",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2009-01-16",
+   "window_utc": [
+    1232082000,
+    1232168340
+   ],
+   "time_precision": "day_only",
+   "known_from": 1232168340,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "fb91f6ef4e0a4dffa986",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2009-01-28",
+   "window_utc": [
+    1233170100,
+    1233170100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1230768000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "a898e1002f55e36c9eba",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2009-02-07",
+   "window_utc": [
+    1233982800,
+    1234069140
+   ],
+   "time_precision": "day_only",
+   "known_from": 1234069140,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "93135d5733b7985f4d6f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2009-03-18",
+   "window_utc": [
+    1237400100,
+    1237400100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1230768000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "5bbf1d10dd8f675bc235",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2009-04-29",
+   "window_utc": [
+    1241028900,
+    1241028900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1230768000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "953d96528a82b6019f4f",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2009-06-03",
+   "window_utc": [
+    1244001600,
+    1244087940
+   ],
+   "time_precision": "day_only",
+   "known_from": 1244087940,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "b952ccba1fd3e0fecdfc",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2009-06-24",
+   "window_utc": [
+    1245867300,
+    1245867300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1230768000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "b816ca805bea0d359b4a",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2009-08-12",
+   "window_utc": [
+    1250100900,
+    1250100900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1230768000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "d12e8b5b4733e9acbec5",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2009-09-23",
+   "window_utc": [
+    1253729700,
+    1253729700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1230768000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "08874d57c800c0c3c3fd",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2009-11-04",
+   "window_utc": [
+    1257362100,
+    1257362100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1230768000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "e144bafbf404b2331e4b",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2009-12-16",
+   "window_utc": [
+    1260990900,
+    1260990900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1230768000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2009.htm",
+   "source_sha256": "c09c5aca0238ec573191b1cabf632358013d8759d3fb0a67b4809bbf8c9d6988"
+  },
+  {
+   "event_id": "3a679716238fb71636c8",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2010-01-27",
+   "window_utc": [
+    1264619700,
+    1264619700
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1262304000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "ac54414044eb858b15af",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2010-03-16",
+   "window_utc": [
+    1268763300,
+    1268763300
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1262304000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "f029b0c4bcdfb045dc36",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2010-04-28",
+   "window_utc": [
+    1272478500,
+    1272478500
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1262304000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "638c6b1bcd1e2e726562",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2010-05-09",
+   "window_utc": [
+    1273377600,
+    1273463940
+   ],
+   "time_precision": "day_only",
+   "known_from": 1273463940,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "d200a4705f05fbd3b701",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2010-06-23",
+   "window_utc": [
+    1277316900,
+    1277316900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1262304000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "cd76ca3fbe8789e707ac",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2010-08-10",
+   "window_utc": [
+    1281464100,
+    1281464100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1262304000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "694188b7ef007fe09188",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2010-09-21",
+   "window_utc": [
+    1285092900,
+    1285092900
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1262304000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "4ffd4132afcd9eebf2bf",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2010-10-15",
+   "window_utc": [
+    1287115200,
+    1287201540
+   ],
+   "time_precision": "day_only",
+   "known_from": 1287201540,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "0ec49fdbc06ee74cfbb9",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2010-11-03",
+   "window_utc": [
+    1288808100,
+    1288808100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1262304000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "e64f76698527b89bcd1e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2010-12-14",
+   "window_utc": [
+    1292354100,
+    1292354100
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1262304000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2010.htm",
+   "source_sha256": "7c98a54313663e052a0e92a5f31888f7ecfae254a646e053642302a04d52dc12"
+  },
+  {
+   "event_id": "0d2e9615141f57bd18b6",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2011-01-26",
+   "window_utc": [
+    1296063000,
+    1296069300
+   ],
+   "time_precision": "bracket",
+   "known_from": 1293840000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "586c50383515117bec7c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2011-03-15",
+   "window_utc": [
+    1300206600,
+    1300212900
+   ],
+   "time_precision": "bracket",
+   "known_from": 1293840000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "88d1dabb1a6fa9e7c926",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2011-04-27",
+   "window_utc": [
+    1303921800,
+    1303928100
+   ],
+   "time_precision": "bracket",
+   "known_from": 1293840000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "fd50cae256b799f5c0ac",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2011-06-22",
+   "window_utc": [
+    1308760200,
+    1308766500
+   ],
+   "time_precision": "bracket",
+   "known_from": 1293840000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "aeb495cfae423383e82c",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2011-08-01",
+   "window_utc": [
+    1312171200,
+    1312257540
+   ],
+   "time_precision": "day_only",
+   "known_from": 1312257540,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "915a8b5a005824fa420d",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2011-08-09",
+   "window_utc": [
+    1312907400,
+    1312913700
+   ],
+   "time_precision": "bracket",
+   "known_from": 1293840000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "1bd9c8f76c7fa2a8bcbf",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2011-09-21",
+   "window_utc": [
+    1316622600,
+    1316628900
+   ],
+   "time_precision": "bracket",
+   "known_from": 1293840000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "d212840da2dd0369f33a",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2011-11-02",
+   "window_utc": [
+    1320251400,
+    1320257700
+   ],
+   "time_precision": "bracket",
+   "known_from": 1293840000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "2cebdf9a0d913338eca5",
+   "title": "FOMC conference call",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "conference_call",
+   "decision_date": "2011-11-28",
+   "window_utc": [
+    1322456400,
+    1322542740
+   ],
+   "time_precision": "day_only",
+   "known_from": 1322542740,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "44d96441b567a53d117c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2011-12-13",
+   "window_utc": [
+    1323797400,
+    1323803700
+   ],
+   "time_precision": "bracket",
+   "known_from": 1293840000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2011.htm",
+   "source_sha256": "d96db31e2c6ad8ae9fb6b4a6b86107f184138d367fe10091a0be57dd01fc71cc"
+  },
+  {
+   "event_id": "808ae37d724c7a4dd859",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2012-01-25",
+   "window_utc": [
+    1327512600,
+    1327518900
+   ],
+   "time_precision": "bracket",
+   "known_from": 1325376000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2012.htm",
+   "source_sha256": "2f1248c34bfe1ea7ea5da0b39c82867654bbb02190b33acbf1e1aeb3d03d1285"
+  },
+  {
+   "event_id": "853c10bf6562f4d1541b",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2012-03-13",
+   "window_utc": [
+    1331656200,
+    1331662500
+   ],
+   "time_precision": "bracket",
+   "known_from": 1325376000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2012.htm",
+   "source_sha256": "2f1248c34bfe1ea7ea5da0b39c82867654bbb02190b33acbf1e1aeb3d03d1285"
+  },
+  {
+   "event_id": "944abbffc29e6be760e4",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2012-04-25",
+   "window_utc": [
+    1335371400,
+    1335377700
+   ],
+   "time_precision": "bracket",
+   "known_from": 1325376000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2012.htm",
+   "source_sha256": "2f1248c34bfe1ea7ea5da0b39c82867654bbb02190b33acbf1e1aeb3d03d1285"
+  },
+  {
+   "event_id": "b8200eb033d578087cdb",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2012-06-20",
+   "window_utc": [
+    1340209800,
+    1340216100
+   ],
+   "time_precision": "bracket",
+   "known_from": 1325376000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2012.htm",
+   "source_sha256": "2f1248c34bfe1ea7ea5da0b39c82867654bbb02190b33acbf1e1aeb3d03d1285"
+  },
+  {
+   "event_id": "44c23e6664a23f5e86f1",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2012-08-01",
+   "window_utc": [
+    1343838600,
+    1343844900
+   ],
+   "time_precision": "bracket",
+   "known_from": 1325376000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2012.htm",
+   "source_sha256": "2f1248c34bfe1ea7ea5da0b39c82867654bbb02190b33acbf1e1aeb3d03d1285"
+  },
+  {
+   "event_id": "21e992ffbcbde1554074",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2012-09-13",
+   "window_utc": [
+    1347553800,
+    1347560100
+   ],
+   "time_precision": "bracket",
+   "known_from": 1325376000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2012.htm",
+   "source_sha256": "2f1248c34bfe1ea7ea5da0b39c82867654bbb02190b33acbf1e1aeb3d03d1285"
+  },
+  {
+   "event_id": "d01ea3d6bf1c16ed74c9",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2012-10-24",
+   "window_utc": [
+    1351096200,
+    1351102500
+   ],
+   "time_precision": "bracket",
+   "known_from": 1325376000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2012.htm",
+   "source_sha256": "2f1248c34bfe1ea7ea5da0b39c82867654bbb02190b33acbf1e1aeb3d03d1285"
+  },
+  {
+   "event_id": "7a36f40de9ab4722015c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2012-12-12",
+   "window_utc": [
+    1355333400,
+    1355339700
+   ],
+   "time_precision": "bracket",
+   "known_from": 1325376000,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2012.htm",
+   "source_sha256": "2f1248c34bfe1ea7ea5da0b39c82867654bbb02190b33acbf1e1aeb3d03d1285"
+  },
+  {
+   "event_id": "a2f8635e9f9d0fe69436",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2013-01-30",
+   "window_utc": [
+    1359572400,
+    1359572400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1356998400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2013.htm",
+   "source_sha256": "048a1e883ea2a2fa52028bf32927bb775e076cc0c3c81e1d42d981a1086044f0"
+  },
+  {
+   "event_id": "ba459fcc2e4450b6918d",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2013-03-20",
+   "window_utc": [
+    1363802400,
+    1363802400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1356998400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2013.htm",
+   "source_sha256": "048a1e883ea2a2fa52028bf32927bb775e076cc0c3c81e1d42d981a1086044f0"
+  },
+  {
+   "event_id": "4a5c5d873573e50ec111",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2013-05-01",
+   "window_utc": [
+    1367431200,
+    1367431200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1356998400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2013.htm",
+   "source_sha256": "048a1e883ea2a2fa52028bf32927bb775e076cc0c3c81e1d42d981a1086044f0"
+  },
+  {
+   "event_id": "c1131d7f691d4b26f1f0",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2013-06-19",
+   "window_utc": [
+    1371664800,
+    1371664800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1356998400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2013.htm",
+   "source_sha256": "048a1e883ea2a2fa52028bf32927bb775e076cc0c3c81e1d42d981a1086044f0"
+  },
+  {
+   "event_id": "f166d4e81c641d8a8075",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2013-07-31",
+   "window_utc": [
+    1375293600,
+    1375293600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1356998400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2013.htm",
+   "source_sha256": "048a1e883ea2a2fa52028bf32927bb775e076cc0c3c81e1d42d981a1086044f0"
+  },
+  {
+   "event_id": "58fa70a173d9877b744d",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2013-09-18",
+   "window_utc": [
+    1379527200,
+    1379527200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1356998400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2013.htm",
+   "source_sha256": "048a1e883ea2a2fa52028bf32927bb775e076cc0c3c81e1d42d981a1086044f0"
+  },
+  {
+   "event_id": "73ee66aa56a5d2c37fe7",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2013-10-30",
+   "window_utc": [
+    1383156000,
+    1383156000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1356998400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2013.htm",
+   "source_sha256": "048a1e883ea2a2fa52028bf32927bb775e076cc0c3c81e1d42d981a1086044f0"
+  },
+  {
+   "event_id": "a07009bb455cba39670f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2013-12-18",
+   "window_utc": [
+    1387393200,
+    1387393200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1356998400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2013.htm",
+   "source_sha256": "048a1e883ea2a2fa52028bf32927bb775e076cc0c3c81e1d42d981a1086044f0"
+  },
+  {
+   "event_id": "1d4a6472ee82290d4060",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2014-01-29",
+   "window_utc": [
+    1391022000,
+    1391022000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1388534400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2014.htm",
+   "source_sha256": "78273c11b4659576e29b2a0993df56ec0d8fe273baadffe97dfb200544ae109f"
+  },
+  {
+   "event_id": "bf884aabf848cce387f8",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2014-03-19",
+   "window_utc": [
+    1395252000,
+    1395252000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1388534400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2014.htm",
+   "source_sha256": "78273c11b4659576e29b2a0993df56ec0d8fe273baadffe97dfb200544ae109f"
+  },
+  {
+   "event_id": "a100696cf0c04e6c91c9",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2014-04-30",
+   "window_utc": [
+    1398880800,
+    1398880800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1388534400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2014.htm",
+   "source_sha256": "78273c11b4659576e29b2a0993df56ec0d8fe273baadffe97dfb200544ae109f"
+  },
+  {
+   "event_id": "34ecb8e11567ccd0bd77",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2014-06-18",
+   "window_utc": [
+    1403114400,
+    1403114400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1388534400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2014.htm",
+   "source_sha256": "78273c11b4659576e29b2a0993df56ec0d8fe273baadffe97dfb200544ae109f"
+  },
+  {
+   "event_id": "d2ce2918df69cd832e2f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2014-07-30",
+   "window_utc": [
+    1406743200,
+    1406743200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1388534400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2014.htm",
+   "source_sha256": "78273c11b4659576e29b2a0993df56ec0d8fe273baadffe97dfb200544ae109f"
+  },
+  {
+   "event_id": "7b5034395b824bd2fd2c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2014-09-17",
+   "window_utc": [
+    1410976800,
+    1410976800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1388534400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2014.htm",
+   "source_sha256": "78273c11b4659576e29b2a0993df56ec0d8fe273baadffe97dfb200544ae109f"
+  },
+  {
+   "event_id": "2d6aacd351a4be3c524c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2014-10-29",
+   "window_utc": [
+    1414605600,
+    1414605600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1388534400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2014.htm",
+   "source_sha256": "78273c11b4659576e29b2a0993df56ec0d8fe273baadffe97dfb200544ae109f"
+  },
+  {
+   "event_id": "2b99ab07ac5cde28a346",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2014-12-17",
+   "window_utc": [
+    1418842800,
+    1418842800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1388534400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2014.htm",
+   "source_sha256": "78273c11b4659576e29b2a0993df56ec0d8fe273baadffe97dfb200544ae109f"
+  },
+  {
+   "event_id": "90bc122e0ecce9e3c924",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2015-01-28",
+   "window_utc": [
+    1422471600,
+    1422471600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1420070400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2015.htm",
+   "source_sha256": "2dcf91b5f60a071f69fd5ff79fc1652d0252f6f4f15e90b5a3bdc7c43ef1ba8c"
+  },
+  {
+   "event_id": "338ebcfcef982f3fb388",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2015-03-18",
+   "window_utc": [
+    1426701600,
+    1426701600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1420070400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2015.htm",
+   "source_sha256": "2dcf91b5f60a071f69fd5ff79fc1652d0252f6f4f15e90b5a3bdc7c43ef1ba8c"
+  },
+  {
+   "event_id": "a4991fad1e9ae49cbf20",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2015-04-29",
+   "window_utc": [
+    1430330400,
+    1430330400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1420070400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2015.htm",
+   "source_sha256": "2dcf91b5f60a071f69fd5ff79fc1652d0252f6f4f15e90b5a3bdc7c43ef1ba8c"
+  },
+  {
+   "event_id": "a410e689e9f3fd2606a6",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2015-06-17",
+   "window_utc": [
+    1434564000,
+    1434564000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1420070400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2015.htm",
+   "source_sha256": "2dcf91b5f60a071f69fd5ff79fc1652d0252f6f4f15e90b5a3bdc7c43ef1ba8c"
+  },
+  {
+   "event_id": "1b7b24d60d7ad8000252",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2015-07-29",
+   "window_utc": [
+    1438192800,
+    1438192800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1420070400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2015.htm",
+   "source_sha256": "2dcf91b5f60a071f69fd5ff79fc1652d0252f6f4f15e90b5a3bdc7c43ef1ba8c"
+  },
+  {
+   "event_id": "a1226ebf2164a6d489c8",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2015-09-17",
+   "window_utc": [
+    1442512800,
+    1442512800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1420070400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2015.htm",
+   "source_sha256": "2dcf91b5f60a071f69fd5ff79fc1652d0252f6f4f15e90b5a3bdc7c43ef1ba8c"
+  },
+  {
+   "event_id": "a4432e143e4c7dcf45b7",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2015-10-28",
+   "window_utc": [
+    1446055200,
+    1446055200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1420070400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2015.htm",
+   "source_sha256": "2dcf91b5f60a071f69fd5ff79fc1652d0252f6f4f15e90b5a3bdc7c43ef1ba8c"
+  },
+  {
+   "event_id": "415877ce6b96dcaa8229",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2015-12-16",
+   "window_utc": [
+    1450292400,
+    1450292400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1420070400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2015.htm",
+   "source_sha256": "2dcf91b5f60a071f69fd5ff79fc1652d0252f6f4f15e90b5a3bdc7c43ef1ba8c"
+  },
+  {
+   "event_id": "00423510112f566b6507",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2016-01-27",
+   "window_utc": [
+    1453921200,
+    1453921200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1451606400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2016.htm",
+   "source_sha256": "2eda7f501078348350484c6bf57832da4a48de0d63414c3c5d4b18a7652139f8"
+  },
+  {
+   "event_id": "1a47fad3f33c9b96b5b2",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2016-03-16",
+   "window_utc": [
+    1458151200,
+    1458151200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1451606400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2016.htm",
+   "source_sha256": "2eda7f501078348350484c6bf57832da4a48de0d63414c3c5d4b18a7652139f8"
+  },
+  {
+   "event_id": "d4ebe5b808fffac823ee",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2016-04-27",
+   "window_utc": [
+    1461780000,
+    1461780000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1451606400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2016.htm",
+   "source_sha256": "2eda7f501078348350484c6bf57832da4a48de0d63414c3c5d4b18a7652139f8"
+  },
+  {
+   "event_id": "0a0cc5c185fbd2cbb73e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2016-06-15",
+   "window_utc": [
+    1466013600,
+    1466013600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1451606400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2016.htm",
+   "source_sha256": "2eda7f501078348350484c6bf57832da4a48de0d63414c3c5d4b18a7652139f8"
+  },
+  {
+   "event_id": "2f1a04c12d67ee602c33",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2016-07-27",
+   "window_utc": [
+    1469642400,
+    1469642400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1451606400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2016.htm",
+   "source_sha256": "2eda7f501078348350484c6bf57832da4a48de0d63414c3c5d4b18a7652139f8"
+  },
+  {
+   "event_id": "b41109bc883cffaa94c2",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2016-09-21",
+   "window_utc": [
+    1474480800,
+    1474480800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1451606400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2016.htm",
+   "source_sha256": "2eda7f501078348350484c6bf57832da4a48de0d63414c3c5d4b18a7652139f8"
+  },
+  {
+   "event_id": "baf2fdf9d1414e4d9dc9",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2016-11-02",
+   "window_utc": [
+    1478109600,
+    1478109600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1451606400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2016.htm",
+   "source_sha256": "2eda7f501078348350484c6bf57832da4a48de0d63414c3c5d4b18a7652139f8"
+  },
+  {
+   "event_id": "a8f205ddf6459ce7b803",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2016-12-14",
+   "window_utc": [
+    1481742000,
+    1481742000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1451606400,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2016.htm",
+   "source_sha256": "2eda7f501078348350484c6bf57832da4a48de0d63414c3c5d4b18a7652139f8"
+  },
+  {
+   "event_id": "da2d72f97c11bca2a2b3",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2017-02-01",
+   "window_utc": [
+    1485975600,
+    1485975600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1483228800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2017.htm",
+   "source_sha256": "0c8006e7626b4161984ce6910a7a797c939d5a0cbe27cc3e0f92037b1d259bf3"
+  },
+  {
+   "event_id": "6f53e756676fb0393992",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2017-03-15",
+   "window_utc": [
+    1489600800,
+    1489600800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1483228800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2017.htm",
+   "source_sha256": "0c8006e7626b4161984ce6910a7a797c939d5a0cbe27cc3e0f92037b1d259bf3"
+  },
+  {
+   "event_id": "e6b20da04b7750158710",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2017-05-03",
+   "window_utc": [
+    1493834400,
+    1493834400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1483228800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2017.htm",
+   "source_sha256": "0c8006e7626b4161984ce6910a7a797c939d5a0cbe27cc3e0f92037b1d259bf3"
+  },
+  {
+   "event_id": "2a2affdddfe2306e7ae2",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2017-06-14",
+   "window_utc": [
+    1497463200,
+    1497463200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1483228800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2017.htm",
+   "source_sha256": "0c8006e7626b4161984ce6910a7a797c939d5a0cbe27cc3e0f92037b1d259bf3"
+  },
+  {
+   "event_id": "997b7525d4141b211fd6",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2017-07-26",
+   "window_utc": [
+    1501092000,
+    1501092000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1483228800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2017.htm",
+   "source_sha256": "0c8006e7626b4161984ce6910a7a797c939d5a0cbe27cc3e0f92037b1d259bf3"
+  },
+  {
+   "event_id": "bda72932c2e17c05af48",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2017-09-20",
+   "window_utc": [
+    1505930400,
+    1505930400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1483228800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2017.htm",
+   "source_sha256": "0c8006e7626b4161984ce6910a7a797c939d5a0cbe27cc3e0f92037b1d259bf3"
+  },
+  {
+   "event_id": "cc3d3d69373f9770274b",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2017-11-01",
+   "window_utc": [
+    1509559200,
+    1509559200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1483228800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2017.htm",
+   "source_sha256": "0c8006e7626b4161984ce6910a7a797c939d5a0cbe27cc3e0f92037b1d259bf3"
+  },
+  {
+   "event_id": "f3048c0ee579f9932762",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2017-12-13",
+   "window_utc": [
+    1513191600,
+    1513191600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1483228800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2017.htm",
+   "source_sha256": "0c8006e7626b4161984ce6910a7a797c939d5a0cbe27cc3e0f92037b1d259bf3"
+  },
+  {
+   "event_id": "771867a77aae7cdea2fd",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2018-01-31",
+   "window_utc": [
+    1517425200,
+    1517425200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1514764800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2018.htm",
+   "source_sha256": "53136596d41458282e858f35e07b8c58a2d10ac886d8dd0f3a434d6b0572561c"
+  },
+  {
+   "event_id": "67ff66e17ded48bce6b8",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2018-03-21",
+   "window_utc": [
+    1521655200,
+    1521655200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1514764800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2018.htm",
+   "source_sha256": "53136596d41458282e858f35e07b8c58a2d10ac886d8dd0f3a434d6b0572561c"
+  },
+  {
+   "event_id": "5f50acfff48374aaaeaa",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2018-05-02",
+   "window_utc": [
+    1525284000,
+    1525284000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1514764800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2018.htm",
+   "source_sha256": "53136596d41458282e858f35e07b8c58a2d10ac886d8dd0f3a434d6b0572561c"
+  },
+  {
+   "event_id": "648a24011db973f83bc1",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2018-06-13",
+   "window_utc": [
+    1528912800,
+    1528912800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1514764800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2018.htm",
+   "source_sha256": "53136596d41458282e858f35e07b8c58a2d10ac886d8dd0f3a434d6b0572561c"
+  },
+  {
+   "event_id": "597f5546d132eaaf9867",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2018-08-01",
+   "window_utc": [
+    1533146400,
+    1533146400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1514764800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2018.htm",
+   "source_sha256": "53136596d41458282e858f35e07b8c58a2d10ac886d8dd0f3a434d6b0572561c"
+  },
+  {
+   "event_id": "f2c889e16b7872168569",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2018-09-26",
+   "window_utc": [
+    1537984800,
+    1537984800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1514764800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2018.htm",
+   "source_sha256": "53136596d41458282e858f35e07b8c58a2d10ac886d8dd0f3a434d6b0572561c"
+  },
+  {
+   "event_id": "4712cf7fcf2c40aa1f5f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2018-11-08",
+   "window_utc": [
+    1541703600,
+    1541703600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1514764800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2018.htm",
+   "source_sha256": "53136596d41458282e858f35e07b8c58a2d10ac886d8dd0f3a434d6b0572561c"
+  },
+  {
+   "event_id": "e4a6d2aefbfde1d096f5",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2018-12-19",
+   "window_utc": [
+    1545246000,
+    1545246000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1514764800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2018.htm",
+   "source_sha256": "53136596d41458282e858f35e07b8c58a2d10ac886d8dd0f3a434d6b0572561c"
+  },
+  {
+   "event_id": "781d85dd7ff1fdfd8971",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2019-01-30",
+   "window_utc": [
+    1548874800,
+    1548874800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1546300800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm",
+   "source_sha256": "9c71d4ea57aa45d42e172241b4159acf2cb75da72aab97c4503b06b460431974"
+  },
+  {
+   "event_id": "5cef513001e4a78522d5",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2019-03-20",
+   "window_utc": [
+    1553104800,
+    1553104800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1546300800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm",
+   "source_sha256": "9c71d4ea57aa45d42e172241b4159acf2cb75da72aab97c4503b06b460431974"
+  },
+  {
+   "event_id": "36fcb331380ec250fce8",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2019-05-01",
+   "window_utc": [
+    1556733600,
+    1556733600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1546300800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm",
+   "source_sha256": "9c71d4ea57aa45d42e172241b4159acf2cb75da72aab97c4503b06b460431974"
+  },
+  {
+   "event_id": "6228a0d8d490c75705e4",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2019-06-19",
+   "window_utc": [
+    1560967200,
+    1560967200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1546300800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm",
+   "source_sha256": "9c71d4ea57aa45d42e172241b4159acf2cb75da72aab97c4503b06b460431974"
+  },
+  {
+   "event_id": "b718156ef06f5241aeff",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2019-07-31",
+   "window_utc": [
+    1564596000,
+    1564596000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1546300800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm",
+   "source_sha256": "9c71d4ea57aa45d42e172241b4159acf2cb75da72aab97c4503b06b460431974"
+  },
+  {
+   "event_id": "609104577c7c28b531a0",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2019-09-18",
+   "window_utc": [
+    1568829600,
+    1568829600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1546300800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm",
+   "source_sha256": "9c71d4ea57aa45d42e172241b4159acf2cb75da72aab97c4503b06b460431974"
+  },
+  {
+   "event_id": "f795e59e497bbb6453e7",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2019-10-30",
+   "window_utc": [
+    1572458400,
+    1572458400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1546300800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm",
+   "source_sha256": "9c71d4ea57aa45d42e172241b4159acf2cb75da72aab97c4503b06b460431974"
+  },
+  {
+   "event_id": "146a44257e8567700cb3",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2019-12-11",
+   "window_utc": [
+    1576090800,
+    1576090800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1546300800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm",
+   "source_sha256": "9c71d4ea57aa45d42e172241b4159acf2cb75da72aab97c4503b06b460431974"
+  },
+  {
+   "event_id": "450baceea8310edaaeaf",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2020-01-29",
+   "window_utc": [
+    1580324400,
+    1580324400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1577836800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "6873a37e246639a8c9b2",
+   "title": "FOMC unscheduled",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "unscheduled",
+   "decision_date": "2020-03-02",
+   "window_utc": [
+    1583125200,
+    1583211540
+   ],
+   "time_precision": "day_only",
+   "known_from": 1583211540,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "04e4b309afe0909e2958",
+   "title": "FOMC unscheduled",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "unscheduled",
+   "decision_date": "2020-03-15",
+   "window_utc": [
+    1584244800,
+    1584331140
+   ],
+   "time_precision": "day_only",
+   "known_from": 1584331140,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "f6ea609716ef00c22cd8",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2020-04-29",
+   "window_utc": [
+    1588183200,
+    1588183200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1577836800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "47d8dd8e8fd9beea8335",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2020-06-10",
+   "window_utc": [
+    1591812000,
+    1591812000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1577836800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "e2e184f9eead91727d97",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2020-07-29",
+   "window_utc": [
+    1596045600,
+    1596045600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1577836800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "c58f380dc268a9f21b49",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2020-09-16",
+   "window_utc": [
+    1600279200,
+    1600279200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1577836800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "f955f286019ef53c4e48",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2020-11-05",
+   "window_utc": [
+    1604602800,
+    1604602800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1577836800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "70d51a9efa81cc839fa5",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2020-12-16",
+   "window_utc": [
+    1608145200,
+    1608145200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1577836800,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm",
+   "source_sha256": "2dbd92206cad34056587d5b59a7e6966e43ae74bc8772110b85cee12fd6a42b6"
+  },
+  {
+   "event_id": "986ce1c439d9d8e5fe00",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2021-01-27",
+   "window_utc": [
+    1611774000,
+    1611774000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1609459200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "98ce0075d40b581892b2",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2021-03-17",
+   "window_utc": [
+    1616004000,
+    1616004000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1609459200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "57c347281d75d5064270",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2021-04-28",
+   "window_utc": [
+    1619632800,
+    1619632800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1609459200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "bf7b5ef16d363cf3ab40",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2021-06-16",
+   "window_utc": [
+    1623866400,
+    1623866400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1609459200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "571cd742ecdc7fe50213",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2021-07-28",
+   "window_utc": [
+    1627495200,
+    1627495200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1609459200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "0fd13a5f56793caae916",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2021-09-22",
+   "window_utc": [
+    1632333600,
+    1632333600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1609459200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "ce0312cdbed3c34e9ef2",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2021-11-03",
+   "window_utc": [
+    1635962400,
+    1635962400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1609459200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "b3a23b00aa6d0c1df0e6",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2021-12-15",
+   "window_utc": [
+    1639594800,
+    1639594800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1609459200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "d3d939b110baf3de561f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2022-01-26",
+   "window_utc": [
+    1643223600,
+    1643223600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1640995200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "de0b071ff3df4e0f3ad3",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2022-03-16",
+   "window_utc": [
+    1647453600,
+    1647453600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1640995200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "a088d1751dcfc6883ddb",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2022-05-04",
+   "window_utc": [
+    1651687200,
+    1651687200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1640995200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "3dd62d7505cff3ecafb3",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2022-06-15",
+   "window_utc": [
+    1655316000,
+    1655316000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1640995200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "38f89c13b5d4d97aff03",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2022-07-27",
+   "window_utc": [
+    1658944800,
+    1658944800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1640995200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "343c1d752a6b5c795e30",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2022-09-21",
+   "window_utc": [
+    1663783200,
+    1663783200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1640995200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "b596b54346e63ef62934",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2022-11-02",
+   "window_utc": [
+    1667412000,
+    1667412000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1640995200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "e964a7c164ac956c118c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2022-12-14",
+   "window_utc": [
+    1671044400,
+    1671044400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1640995200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "3c2392ed910789a8c57c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2023-02-01",
+   "window_utc": [
+    1675278000,
+    1675278000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1672531200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "77c4fe1e860c04451ff0",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2023-03-22",
+   "window_utc": [
+    1679508000,
+    1679508000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1672531200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "d56a4c5bbaa74228ea2b",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2023-05-03",
+   "window_utc": [
+    1683136800,
+    1683136800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1672531200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "bfcdd0b314f664598431",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2023-06-14",
+   "window_utc": [
+    1686765600,
+    1686765600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1672531200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "1d9b34f17b224e01f1f2",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2023-07-26",
+   "window_utc": [
+    1690394400,
+    1690394400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1672531200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "6da42e41bce56183e6cb",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2023-09-20",
+   "window_utc": [
+    1695232800,
+    1695232800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1672531200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "ddd1db10403519d3ddf7",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2023-11-01",
+   "window_utc": [
+    1698861600,
+    1698861600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1672531200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "f92c94290954686c36f1",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2023-12-13",
+   "window_utc": [
+    1702494000,
+    1702494000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1672531200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "b3605672ec75af3bc49c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2024-01-31",
+   "window_utc": [
+    1706727600,
+    1706727600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1704067200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "1e86582e6227b11c0ab9",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2024-03-20",
+   "window_utc": [
+    1710957600,
+    1710957600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1704067200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "8de3b9a832e9e547a41a",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2024-05-01",
+   "window_utc": [
+    1714586400,
+    1714586400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1704067200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "d5fae0bc3d274bc5d8ea",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2024-06-12",
+   "window_utc": [
+    1718215200,
+    1718215200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1704067200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "906ad38e234492223aa4",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2024-07-31",
+   "window_utc": [
+    1722448800,
+    1722448800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1704067200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "c83557f4be327ad7956e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2024-09-18",
+   "window_utc": [
+    1726682400,
+    1726682400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1704067200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "a78150240b78ac216a16",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2024-11-07",
+   "window_utc": [
+    1731006000,
+    1731006000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1704067200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "3e2ee299950f0bfe134f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2024-12-18",
+   "window_utc": [
+    1734548400,
+    1734548400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1704067200,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "9f267ca6e51e854dd2c7",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2025-01-29",
+   "window_utc": [
+    1738177200,
+    1738177200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1735689600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "fd8240e1521f59998943",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2025-03-19",
+   "window_utc": [
+    1742407200,
+    1742407200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1735689600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "e2ea657641f92c29c10c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2025-05-07",
+   "window_utc": [
+    1746640800,
+    1746640800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1735689600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "8d6340cdbd9f45533580",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2025-06-18",
+   "window_utc": [
+    1750269600,
+    1750269600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1735689600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "615eefb71187bc5d8745",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2025-07-30",
+   "window_utc": [
+    1753898400,
+    1753898400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1735689600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "2fae27b606c661cf9870",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2025-09-17",
+   "window_utc": [
+    1758132000,
+    1758132000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1735689600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "a39b0f01174b029c0db5",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2025-10-29",
+   "window_utc": [
+    1761760800,
+    1761760800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1735689600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "da70232c508435acd7bc",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2025-12-10",
+   "window_utc": [
+    1765393200,
+    1765393200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1735689600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "5ea714de827190a8625f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2026-01-28",
+   "window_utc": [
+    1769626800,
+    1769626800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1767225600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "589b03b3f2357b9889b0",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2026-03-18",
+   "window_utc": [
+    1773856800,
+    1773856800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1767225600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "32dab7200f38e171bc39",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2026-04-29",
+   "window_utc": [
+    1777485600,
+    1777485600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1767225600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "cedfe7d835d15bcf7aa8",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2026-06-17",
+   "window_utc": [
+    1781719200,
+    1781719200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1767225600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "47bcb2add8715b26f0a4",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2026-07-29",
+   "window_utc": [
+    1785348000,
+    1785348000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1767225600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "a5927086548cab63b800",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2026-09-16",
+   "window_utc": [
+    1789581600,
+    1789581600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1767225600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "14500744e71bc55b6ab0",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2026-10-28",
+   "window_utc": [
+    1793210400,
+    1793210400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1767225600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "b67eebac9fdc5216bb62",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2026-12-09",
+   "window_utc": [
+    1796842800,
+    1796842800
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1767225600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "7f89ac68877c93cb2f2c",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2027-01-27",
+   "window_utc": [
+    1801076400,
+    1801076400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1798761600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "db0c604500516c073126",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2027-03-17",
+   "window_utc": [
+    1805306400,
+    1805306400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1798761600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "b673ab09783e931d16ec",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2027-04-28",
+   "window_utc": [
+    1808935200,
+    1808935200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1798761600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "122e79f7473f8bf456c5",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2027-06-09",
+   "window_utc": [
+    1812564000,
+    1812564000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1798761600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "a3d6c2907a9e7861389e",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2027-07-28",
+   "window_utc": [
+    1816797600,
+    1816797600
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1798761600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "090593934b6058bb862f",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2027-09-15",
+   "window_utc": [
+    1821031200,
+    1821031200
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1798761600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "27970f78a06c6f0ae219",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2027-10-27",
+   "window_utc": [
+    1824660000,
+    1824660000
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1798761600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  },
+  {
+   "event_id": "d5cd4690b7f90c8acfd3",
+   "title": "FOMC Statement",
+   "currency": "USD",
+   "impact": "HIGH",
+   "is_central_bank": true,
+   "kind": "scheduled",
+   "decision_date": "2027-12-08",
+   "window_utc": [
+    1828292400,
+    1828292400
+   ],
+   "time_precision": "approx_15min",
+   "known_from": 1798761600,
+   "source_url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+   "source_sha256": "0668b1a8e81979d0cce095b2e889fcf845cbaeb608fe8faed9ce7ab4b1f3e6b3"
+  }
+ ]
+}

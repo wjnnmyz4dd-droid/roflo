@@ -84,7 +84,8 @@ def simulate(bars: list[Bar], i: int, d: int, stop: float, H: int, cost: CostMod
 
 def run(bars: list[Bar], instrument: str, cost: CostModel, p: FinderParams | None = None, use_validator=False,
         use_arbiter=False, independence=0.8, start_ts: int | None = None, end_ts: int | None = None, bar_seconds=86400,
-        validator_params=None) -> list[Trade]:
+        validator_params=None, skip=None) -> list[Trade]:
+    """``skip(decision_ts) -> bool`` vetoes a signal at decision time (attribution of a gate, e.g. news)."""
     p = p or FinderParams()
     v = Validator({instrument: cost}, validator_params, channel=p.channel, horizon=p.horizon_bars, stop_atr=p.stop_atr) if use_validator else None
     arb = Arbiter(measured_independence=independence)
@@ -94,6 +95,8 @@ def run(bars: list[Bar], instrument: str, cost: CostModel, p: FinderParams | Non
     for i, d, stop in signals(bars, p):
         ts = bars[i].ts
         if (start_ts and ts < start_ts) or (end_ts and ts >= end_ts) or i <= busy_until:
+            continue
+        if skip is not None and skip(ts + bar_seconds):
             continue
         vv = av = None
         if use_validator:
