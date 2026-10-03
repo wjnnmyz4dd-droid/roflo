@@ -1,0 +1,2 @@
+REFUSED: L2 failed its validation gate; holdout stays closed (pre-registered)
+REFUSED: L3 failed its validation gate; holdout stays closed (pre-registered)

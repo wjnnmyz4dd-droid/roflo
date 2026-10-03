@@ -70,7 +70,8 @@ class RiskEngine:
                 or snap.balance <= 0 or snap.equity <= 0:
             return self._decide(GateVerdict.HALT, ["impossible account values"], [snap.snapshot_hash], now)
         midnight = cet_midnight_utc(now)
-        day_flow = sum((d.get("profit") or 0) - (d.get("commission") or 0) for d in deals if d["ts"] >= midnight)
+        day_flow = sum((d.get("profit") or 0) - (d.get("commission") or 0) + (d.get("swap") or 0)
+                       for d in deals if d["ts"] >= midnight)  # swaps are cash flows too (consistent with compliance)
         day_start_balance = snap.balance - day_flow
         day_pnl = snap.equity - day_start_balance  # realised + unrealised since midnight CE(S)T
         dd = (self.initial - snap.equity) / self.initial
@@ -83,7 +84,7 @@ class RiskEngine:
         closed = [d for d in deals if str(d["kind"]).startswith("OUT") and (not streak_reset_ts or d["ts"] > streak_reset_ts)]
         streak = 0
         for d in reversed(closed):
-            if (d.get("profit") or 0) - (d.get("commission") or 0) < 0:
+            if (d.get("profit") or 0) - (d.get("commission") or 0) + (d.get("swap") or 0) < 0:
                 streak += 1
             else:
                 break

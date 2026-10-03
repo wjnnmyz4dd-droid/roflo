@@ -204,7 +204,8 @@ def test_bypass_surfaces_inventory():
     builder hold a broker handle. A new surface (webhook, REST, scheduler) would have to go through
     ExecutionService.submit, which requires a signed permit."""
     holders = sorted(p.name for p in SRC.rglob("*.py") if "_broker" in p.read_text() or "broker." in p.read_text())
-    assert set(holders) <= {"execution.py", "reconcile.py", "orchestrator.py", "system.py", "base.py", "sim.py", "replay.py"}, holders
+    # broker port implementations (sim.py, mt5.py) are the broker itself, not callers of it
+    assert set(holders) <= {"execution.py", "reconcile.py", "orchestrator.py", "system.py", "base.py", "sim.py", "mt5.py", "replay.py"}, holders
     assert not os.path.exists(SRC / "api.py") and not os.path.exists(SRC / "webhook.py")
 
 

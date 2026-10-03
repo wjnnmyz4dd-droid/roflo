@@ -1,0 +1,526 @@
+{
+  "XAUUSD_1d": {
+    "verdict": "FAIL",
+    "reasons": [
+      "missing bars 7.11% > 2% outside weekends"
+    ],
+    "checks": {
+      "invalid_prices": 0,
+      "ohlc_inconsistent": 0,
+      "out_of_order_or_duplicate": 0,
+      "duplicate_timestamps": 0,
+      "missing_period_count": 259,
+      "missing_bars_outside_weekends": 677,
+      "missing_fraction": 0.07105,
+      "weekend_gaps": 1260,
+      "scheduled_session_breaks": 0,
+      "largest_gaps": [
+        [
+          1151553600,
+          1152763200,
+          13
+        ],
+        [
+          1072760400,
+          1073883600,
+          12
+        ],
+        [
+          1057723200,
+          1058760000,
+          11
+        ],
+        [
+          1132290000,
+          1133240400,
+          10
+        ],
+        [
+          1150689600,
+          1151553600,
+          9
+        ]
+      ],
+      "saturday_bars": 0,
+      "return_outliers": 0,
+      "distinct_bar_times_utc": 6,
+      "dst_shifted_session_stamps": true,
+      "spreads": "UNAVAILABLE (no bid/ask)",
+      "symbol_spec": "UNAVAILABLE (not broker metadata)"
+    },
+    "provenance": {
+      "source": "yahoo-chart-api",
+      "source_kind": "PROXY",
+      "server": null,
+      "symbol": "XAUUSD",
+      "broker_symbol": "GC=F",
+      "asset_class": "metal",
+      "timeframe": "1d",
+      "timezone": "UTC (epoch)",
+      "first_ts": 967608000,
+      "last_ts": 1790913600,
+      "bar_count": 6107,
+      "tick_count": null,
+      "download_ts": 1790982347,
+      "data_hash": "fed92f77fbf358e1caa2ba90d0828aee9cbe2a2502ed267385d93301d9858597",
+      "corrections": [
+        "dropped 524 rows at load (null / non-positive / OHLC-inconsistent / duplicate)"
+      ],
+      "label": "PROXY / RESEARCH-ONLY"
+    }
+  },
+  "XAUUSD_1h": {
+    "verdict": "FAIL",
+    "reasons": [
+      "missing bars 2.01% > 2% outside weekends"
+    ],
+    "checks": {
+      "invalid_prices": 0,
+      "ohlc_inconsistent": 0,
+      "out_of_order_or_duplicate": 0,
+      "duplicate_timestamps": 0,
+      "missing_period_count": 19,
+      "missing_bars_outside_weekends": 352,
+      "missing_fraction": 0.02012,
+      "weekend_gaps": 104,
+      "scheduled_session_breaks": 389,
+      "largest_gaps": [
+        [
+          1735063200,
+          1735189200,
+          34
+        ],
+        [
+          1766599200,
+          1766725200,
+          34
+        ],
+        [
+          1732766400,
+          1732890600,
+          33
+        ],
+        [
+          1764216000,
+          1764340200,
+          33
+        ],
+        [
+          1735678800,
+          1735794000,
+          31
+        ]
+      ],
+      "saturday_bars": 0,
+      "return_outliers": 1,
+      "distinct_bar_times_utc": "n/a (intraday)",
+      "spreads": "UNAVAILABLE (no bid/ask)",
+      "symbol_spec": "UNAVAILABLE (not broker metadata)"
+    },
+    "provenance": {
+      "source": "yahoo-chart-api",
+      "source_kind": "PROXY",
+      "server": null,
+      "symbol": "XAUUSD",
+      "broker_symbol": "GC=F",
+      "asset_class": "metal",
+      "timeframe": "1h",
+      "timezone": "UTC (epoch)",
+      "first_ts": 1727996400,
+      "last_ts": 1790974798,
+      "bar_count": 11439,
+      "tick_count": null,
+      "download_ts": 1790982347,
+      "data_hash": "260a739983f35bf200f49df8817887f2cd9c57fe5925e69cc95ebd06c866db07",
+      "corrections": [
+        "dropped 3057 rows at load (null / non-positive / OHLC-inconsistent / duplicate)"
+      ],
+      "label": "PROXY / RESEARCH-ONLY"
+    }
+  },
+  "USOIL_1d": {
+    "verdict": "PROXY_ONLY",
+    "reasons": [
+      "not broker data: no bid/ask spreads and/or no symbol specification"
+    ],
+    "checks": {
+      "invalid_prices": 0,
+      "ohlc_inconsistent": 0,
+      "out_of_order_or_duplicate": 0,
+      "duplicate_timestamps": 0,
+      "missing_period_count": 70,
+      "missing_bars_outside_weekends": 96,
+      "missing_fraction": 0.01007,
+      "weekend_gaps": 1348,
+      "scheduled_session_breaks": 0,
+      "largest_gaps": [
+        [
+          974869200,
+          975301200,
+          4
+        ],
+        [
+          1006318800,
+          1006750800,
+          4
+        ],
+        [
+          1008910800,
+          1009342800,
+          4
+        ],
+        [
+          1025668800,
+          1026100800,
+          4
+        ],
+        [
+          1038373200,
+          1038805200,
+          4
+        ]
+      ],
+      "saturday_bars": 0,
+      "return_outliers": 0,
+      "distinct_bar_times_utc": 6,
+      "dst_shifted_session_stamps": true,
+      "spreads": "UNAVAILABLE (no bid/ask)",
+      "symbol_spec": "UNAVAILABLE (not broker metadata)"
+    },
+    "provenance": {
+      "source": "yahoo-chart-api",
+      "source_kind": "PROXY",
+      "server": null,
+      "symbol": "USOIL",
+      "broker_symbol": "CL=F",
+      "asset_class": "energy",
+      "timeframe": "1d",
+      "timezone": "UTC (epoch)",
+      "first_ts": 967003200,
+      "last_ts": 1790913600,
+      "bar_count": 6547,
+      "tick_count": null,
+      "download_ts": 1790982348,
+      "data_hash": "bbf1f8848d87784a1e68081de8d663b7b5b25b7d37dd36b512512b45372ce646",
+      "corrections": [
+        "dropped 89 rows at load (null / non-positive / OHLC-inconsistent / duplicate)"
+      ],
+      "label": "PROXY / RESEARCH-ONLY"
+    }
+  },
+  "USOIL_1h": {
+    "verdict": "FAIL",
+    "reasons": [
+      "missing bars 2.82% > 2% outside weekends"
+    ],
+    "checks": {
+      "invalid_prices": 0,
+      "ohlc_inconsistent": 0,
+      "out_of_order_or_duplicate": 0,
+      "duplicate_timestamps": 0,
+      "missing_period_count": 50,
+      "missing_bars_outside_weekends": 493,
+      "missing_fraction": 0.02818,
+      "weekend_gaps": 104,
+      "scheduled_session_breaks": 377,
+      "largest_gaps": [
+        [
+          1735063200,
+          1735189200,
+          34
+        ],
+        [
+          1766599200,
+          1766725200,
+          34
+        ],
+        [
+          1732766400,
+          1732890600,
+          33
+        ],
+        [
+          1764216000,
+          1764340200,
+          33
+        ],
+        [
+          1735678800,
+          1735794000,
+          31
+        ]
+      ],
+      "saturday_bars": 0,
+      "return_outliers": 4,
+      "distinct_bar_times_utc": "n/a (intraday)",
+      "spreads": "UNAVAILABLE (no bid/ask)",
+      "symbol_spec": "UNAVAILABLE (not broker metadata)"
+    },
+    "provenance": {
+      "source": "yahoo-chart-api",
+      "source_kind": "PROXY",
+      "server": null,
+      "symbol": "USOIL",
+      "broker_symbol": "CL=F",
+      "asset_class": "energy",
+      "timeframe": "1h",
+      "timezone": "UTC (epoch)",
+      "first_ts": 1727996400,
+      "last_ts": 1790974799,
+      "bar_count": 11301,
+      "tick_count": null,
+      "download_ts": 1790982348,
+      "data_hash": "469376560291c7c79ac9176aecda45f6a347da869c12d809aa79a3b4dcda2e5e",
+      "corrections": [
+        "dropped 3195 rows at load (null / non-positive / OHLC-inconsistent / duplicate)"
+      ],
+      "label": "PROXY / RESEARCH-ONLY"
+    }
+  },
+  "USDJPY_1d": {
+    "verdict": "FAIL",
+    "reasons": [
+      "missing bars 2.37% > 2% outside weekends"
+    ],
+    "checks": {
+      "invalid_prices": 0,
+      "ohlc_inconsistent": 0,
+      "out_of_order_or_duplicate": 0,
+      "duplicate_timestamps": 0,
+      "missing_period_count": 157,
+      "missing_bars_outside_weekends": 231,
+      "missing_fraction": 0.02365,
+      "weekend_gaps": 1377,
+      "scheduled_session_breaks": 0,
+      "largest_gaps": [
+        [
+          1218150000,
+          1219705200,
+          17
+        ],
+        [
+          1217458800,
+          1218150000,
+          7
+        ],
+        [
+          1380841200,
+          1381359600,
+          5
+        ],
+        [
+          1493334000,
+          1493852400,
+          5
+        ],
+        [
+          1309474800,
+          1309906800,
+          4
+        ]
+      ],
+      "saturday_bars": 0,
+      "return_outliers": 2,
+      "distinct_bar_times_utc": 3,
+      "dst_shifted_session_stamps": true,
+      "spreads": "UNAVAILABLE (no bid/ask)",
+      "symbol_spec": "UNAVAILABLE (not broker metadata)"
+    },
+    "provenance": {
+      "source": "yahoo-chart-api",
+      "source_kind": "PROXY",
+      "server": null,
+      "symbol": "USDJPY",
+      "broker_symbol": "JPY=X",
+      "asset_class": "forex",
+      "timeframe": "1d",
+      "timezone": "UTC (epoch)",
+      "first_ts": 946857600,
+      "last_ts": 1790974885,
+      "bar_count": 6685,
+      "tick_count": null,
+      "download_ts": 1790982348,
+      "data_hash": "ad76e3365244f340213652f52b0bf46b04e3090fe0cfa2bd0b51bf8f6d5bf9d5",
+      "corrections": [
+        "dropped 296 rows at load (null / non-positive / OHLC-inconsistent / duplicate)"
+      ],
+      "label": "PROXY / RESEARCH-ONLY"
+    }
+  },
+  "USDJPY_1h": {
+    "verdict": "PROXY_ONLY",
+    "reasons": [
+      "not broker data: no bid/ask spreads and/or no symbol specification"
+    ],
+    "checks": {
+      "invalid_prices": 0,
+      "ohlc_inconsistent": 0,
+      "out_of_order_or_duplicate": 0,
+      "duplicate_timestamps": 0,
+      "missing_period_count": 9,
+      "missing_bars_outside_weekends": 64,
+      "missing_fraction": 0.00366,
+      "weekend_gaps": 104,
+      "scheduled_session_breaks": 0,
+      "largest_gaps": [
+        [
+          1735678800,
+          1735754400,
+          20
+        ],
+        [
+          1767214800,
+          1767290400,
+          20
+        ],
+        [
+          1735110000,
+          1735146000,
+          9
+        ],
+        [
+          1766660400,
+          1766685600,
+          6
+        ],
+        [
+          1758002400,
+          1758016800,
+          3
+        ]
+      ],
+      "saturday_bars": 0,
+      "return_outliers": 0,
+      "distinct_bar_times_utc": "n/a (intraday)",
+      "spreads": "UNAVAILABLE (no bid/ask)",
+      "symbol_spec": "UNAVAILABLE (not broker metadata)"
+    },
+    "provenance": {
+      "source": "yahoo-chart-api",
+      "source_kind": "PROXY",
+      "server": null,
+      "symbol": "USDJPY",
+      "broker_symbol": "JPY=X",
+      "asset_class": "forex",
+      "timeframe": "1h",
+      "timezone": "UTC (epoch)",
+      "first_ts": 1727996400,
+      "last_ts": 1790974800,
+      "bar_count": 12228,
+      "tick_count": null,
+      "download_ts": 1790982348,
+      "data_hash": "3addbcd5019fc4bf00dd4224369c4cdb21e9e26f5e7b3409d8d06fccf55b4642",
+      "corrections": [
+        "dropped 276 rows at load (null / non-positive / OHLC-inconsistent / duplicate)"
+      ],
+      "label": "PROXY / RESEARCH-ONLY"
+    }
+  },
+  "BTCUSD_1d": {
+    "verdict": "PROXY_ONLY",
+    "reasons": [
+      "not broker data: no bid/ask spreads and/or no symbol specification"
+    ],
+    "checks": {
+      "invalid_prices": 0,
+      "ohlc_inconsistent": 0,
+      "out_of_order_or_duplicate": 0,
+      "duplicate_timestamps": 0,
+      "missing_period_count": 0,
+      "missing_bars_outside_weekends": 0,
+      "missing_fraction": 0.0,
+      "weekend_gaps": 0,
+      "scheduled_session_breaks": 0,
+      "largest_gaps": [],
+      "saturday_bars": "n/a (24/7 market)",
+      "return_outliers": 0,
+      "distinct_bar_times_utc": 1,
+      "spreads": "UNAVAILABLE (no bid/ask)",
+      "symbol_spec": "UNAVAILABLE (not broker metadata)"
+    },
+    "provenance": {
+      "source": "yahoo-chart-api",
+      "source_kind": "PROXY",
+      "server": null,
+      "symbol": "BTCUSD",
+      "broker_symbol": "BTC-USD",
+      "asset_class": "crypto",
+      "timeframe": "1d",
+      "timezone": "UTC (epoch)",
+      "first_ts": 1410912000,
+      "last_ts": 1790899200,
+      "bar_count": 4399,
+      "tick_count": null,
+      "download_ts": 1790982349,
+      "data_hash": "37f462a8801d6d3d76eae9d750a1d3228f405a81a917155a119b1d0347e9e897",
+      "corrections": [
+        "dropped 0 rows at load (null / non-positive / OHLC-inconsistent / duplicate)"
+      ],
+      "label": "PROXY / RESEARCH-ONLY"
+    }
+  },
+  "BTCUSD_1h": {
+    "verdict": "PROXY_ONLY",
+    "reasons": [
+      "not broker data: no bid/ask spreads and/or no symbol specification"
+    ],
+    "checks": {
+      "invalid_prices": 0,
+      "ohlc_inconsistent": 0,
+      "out_of_order_or_duplicate": 0,
+      "duplicate_timestamps": 0,
+      "missing_period_count": 4,
+      "missing_bars_outside_weekends": 33,
+      "missing_fraction": 0.00189,
+      "weekend_gaps": 0,
+      "scheduled_session_breaks": 0,
+      "largest_gaps": [
+        [
+          1764367200,
+          1764442800,
+          20
+        ],
+        [
+          1761616800,
+          1761660000,
+          11
+        ],
+        [
+          1735822800,
+          1735830000,
+          1
+        ],
+        [
+          1778202000,
+          1778209200,
+          1
+        ]
+      ],
+      "saturday_bars": "n/a (24/7 market)",
+      "return_outliers": 0,
+      "distinct_bar_times_utc": "n/a (intraday)",
+      "spreads": "UNAVAILABLE (no bid/ask)",
+      "symbol_spec": "UNAVAILABLE (not broker metadata)"
+    },
+    "provenance": {
+      "source": "yahoo-chart-api",
+      "source_kind": "PROXY",
+      "server": null,
+      "symbol": "BTCUSD",
+      "broker_symbol": "BTC-USD",
+      "asset_class": "crypto",
+      "timeframe": "1h",
+      "timezone": "UTC (epoch)",
+      "first_ts": 1727996400,
+      "last_ts": 1790982343,
+      "bar_count": 17465,
+      "tick_count": null,
+      "download_ts": 1790982349,
+      "data_hash": "3bdda117bc91f14e83b03c38e4163944746d2cdc54fadd62a34c21ac20be37e7",
+      "corrections": [
+        "dropped 33 rows at load (null / non-positive / OHLC-inconsistent / duplicate)"
+      ],
+      "label": "PROXY / RESEARCH-ONLY"
+    }
+  }
+}

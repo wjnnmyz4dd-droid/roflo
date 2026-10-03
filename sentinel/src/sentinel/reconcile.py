@@ -48,8 +48,15 @@ class Reconciler:
             return {"clean": False, "findings": findings}
 
         # 1. unresolved order intents
+        lagging = False
         for u in unresolved_intents(self._j):
-            deals = self._b.find_by_client_id(u["intent_id"])
+            try:
+                deals = self._b.find_by_client_id(u["intent_id"])
+            except BrokerUncertain as e:  # e.g. MT5 history not yet synchronised: NOT knowable yet
+                lagging = True
+                findings.append({"kind": "INTENT_UNRESOLVED_RETRY", "intent_id": u["intent_id"], "detail": str(e),
+                                 "blocking": True, "retry": True})
+                continue
             ins = [d for d in deals if d["kind"] == "IN"]
             if ins:
                 d = ins[0]
@@ -100,12 +107,15 @@ class Reconciler:
             if t not in known:
                 findings.append({"kind": "FOREIGN_POSITION", "ticket": t, "instrument": p.instrument,
                                  "volume": p.volume, "client_id": p.client_id,
-                                 "blocking": self._policy == "halt"})
+                                 "blocking": self._policy == "halt",
+                                 # while an intent is unresolved, an unattributed position may be that intent
+                                 "retry": lagging})
 
         clean = not any(f.get("blocking") for f in findings)
         if record_if_clean or not clean or findings:
             self._j.append("RECONCILED", COMPONENT, {"clean": clean, "findings": findings, "snapshot_hash": snap.snapshot_hash})
         if not clean and self._control:
-            self._control.halt(COMPONENT, "unreconciled exposure: " + ",".join(f["kind"] for f in findings if f.get("blocking")),
-                               scope="manual")
+            blocking = [f for f in findings if f.get("blocking")]
+            scope = "reconcile" if all(f.get("retry") for f in blocking) else "manual"
+            self._control.halt(COMPONENT, "unreconciled exposure: " + ",".join(f["kind"] for f in blocking), scope=scope)
         return {"clean": clean, "findings": findings}
