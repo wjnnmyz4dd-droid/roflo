@@ -181,11 +181,15 @@ class MT5Broker:
                         "ts": self.to_utc(d.time)})
         return out
 
-    def find_by_client_id(self, client_id: str) -> list[dict]:
-        """Look an intent up in deal history by (magic, comment). Ambiguity -> UNCERTAIN."""
+    def find_by_client_id(self, client_id: str, since_ts: int | None = None) -> list[dict]:
+        """Look an intent up in deal history by (magic, comment). Ambiguity -> UNCERTAIN.
+
+        ``since_ts`` = when the intent was persisted: history is searched from one day before it, so an
+        intent is never declared NOT_EXECUTED merely because its deals fell outside a fixed window."""
         comment = intent_comment(client_id)
         self.calls.append(f"find:{client_id}")
-        hits = [d for d in self.deals_since(int(self._wall.time()) - 7 * 86400) if d["client_id"] == comment]
+        start = since_ts - 86400 if since_ts is not None else int(self._wall.time()) - 7 * 86400
+        hits = [d for d in self.deals_since(start) if d["client_id"] == comment]
         for d in hits:
             d["client_id"] = client_id
         live = [p for p in (self.mt5.positions_get() or []) if p.comment == comment]

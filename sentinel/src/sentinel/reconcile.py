@@ -54,7 +54,7 @@ class Reconciler:
         lagging = False
         for u in unresolved_intents(self._j):
             try:
-                deals = self._b.find_by_client_id(u["intent_id"])
+                deals = self._b.find_by_client_id(u["intent_id"], since_ts=u["persisted_ts"])
             except BrokerUncertain as e:  # e.g. MT5 history not yet synchronised: NOT knowable yet
                 lagging = True
                 findings.append({"kind": "INTENT_UNRESOLVED_RETRY", "intent_id": u["intent_id"], "detail": str(e),
@@ -83,7 +83,7 @@ class Reconciler:
             now = snap.taken_at
             for intent_id, owner, token, ts in self._lease.sends_by_others(since=now - self._inflight_window):
                 try:
-                    seen = [d for d in self._b.find_by_client_id(intent_id) if d["kind"] == "IN"]
+                    seen = [d for d in self._b.find_by_client_id(intent_id, since_ts=int(ts)) if d["kind"] == "IN"]
                 except BrokerUncertain:
                     seen = []
                 if not seen:

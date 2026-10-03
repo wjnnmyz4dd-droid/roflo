@@ -121,6 +121,10 @@ M = [
     ("shadow_runner.py", "                            unique=[(\"shadow_bar\", str(decision_bar))])", "                            unique=[])", "shadow: same bar decided twice"),
     ("shadow_runner.py", "            if i + H >= len(bars):\n                continue", "            if False:\n                continue", "shadow: counterfactual resolved on partial data"),
     ("shadow_runner.py", "        if stale:", "        if False:", "shadow: stale feed accepted"),
+    ("broker/mt5.py", "        start = since_ts - 86400 if since_ts is not None else int(self._wall.time()) - 7 * 86400",
+     "        start = int(self._wall.time()) - 7 * 86400", "mt5: intent lookup ignores intent age (fixed 7-day window)"),
+    ("shadow_runner.py", "                self.bars = {i: [b for b in v if b.ts % bs == 0 and b.ts + bs <= now] for i, v in fresh.items()}",
+     "                self.bars = fresh", "shadow: in-progress / unaligned bars kept"),
 ]
 
 
@@ -159,6 +163,9 @@ def main():
     if "--from" in sys.argv:  # e.g. --from 'mt5: non-DEMO' to run only a later round
         start = next(k for k, m in enumerate(M) if m[3].startswith(sys.argv[sys.argv.index("--from") + 1]))
         sel = M[start:]
+    if "--only" in sys.argv:  # comma-separated description prefixes
+        pre = sys.argv[sys.argv.index("--only") + 1].split(",")
+        sel = [m for m in M if any(m[3].startswith(x) for x in pre)]
     out = [run_one(m) for m in sel]
     for r in out:
         print(f"{r['status']:12} {r['mutation']:70} {r.get('killed_by', '')}")

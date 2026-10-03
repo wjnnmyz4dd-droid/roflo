@@ -54,7 +54,7 @@ def unresolved_intents(journal: Journal) -> list[dict]:
         iid = ev.payload["intent"]["intent_id"]
         st = intent_state(journal, iid)
         if st not in TERMINAL:
-            out.append({"intent_id": iid, "state": st, "intent": ev.payload["intent"]})
+            out.append({"intent_id": iid, "state": st, "intent": ev.payload["intent"], "persisted_ts": ev.ts})
     return out
 
 

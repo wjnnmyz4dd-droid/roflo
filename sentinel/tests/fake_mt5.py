@@ -47,6 +47,7 @@ class FakeTerminal:
         self.deals: list[NS] = []
         self.faults: list[str] = []
         self.history_lag = 0
+        self.history_unavailable = False  # history_deals_get returns None (terminal error)
         self.comment_rewrite = None  # e.g. lambda c: c[:16]
         self.order_send_calls = 0
         self._ids = itertools.count(1000)
@@ -97,6 +98,9 @@ class FakeTerminal:
         return tuple(out)
 
     def history_deals_get(self, *args, ticket=None, **kw):
+        if self.history_unavailable:
+            self.err = (-1, "history request failed")
+            return None
         if self.history_lag > 0:
             self.history_lag -= 1
             return ()  # history not yet synchronised (documented terminal behaviour)

@@ -158,3 +158,39 @@ def test_shadow_with_real_account_reads_but_cannot_trade(tmp_path, clock):
               account_start_utc=NOW - 30 * 86400, news_snapshot=fixture_calendar(), independence=0.8, broker=br, wall_clock=WALL)
     r = b.orch.cycle(NOW)
     assert r["candidates"][0]["verdict"] == "WOULD_EXECUTE" and term.order_send_calls == 0
+
+
+def test_old_unknown_intent_is_found_in_history_after_long_outage(tmp_path, clock):
+    """D3 regression: an intent whose position opened AND closed while Sentinel was down for 8 days must
+    resolve CONFIRMED from broker history, not NOT_EXECUTED (the old fixed 7-day window)."""
+    term, br = make(clock)
+    b = pipeline(tmp_path, clock, term, br)
+    term.faults.append("none_result_after_fill")
+    b.orch.cycle(NOW)
+    iid = next(b.journal.events(type_="INTENT_PERSISTED")).payload["intent"]["intent_id"]
+    pid, p = next(iter(term.positions.items()))
+    term.order_send({"action": F.TRADE_ACTION_DEAL, "symbol": "XAUUSD", "position": pid, "magic": p.magic,
+                     "comment": p.comment, "volume": p.volume})  # broker closes it while Sentinel is down
+    clock.advance(8 * 86400)
+    b.comps.reconciler.run()
+    assert intent_state(b.journal, iid) == "RESOLVED_CONFIRMED"
+    assert term.order_send_calls == 2  # the original send + the broker-side close; nothing re-sent
+
+
+def test_unknown_intent_with_history_unavailable_keeps_reconcile_unclean(tmp_path, clock):
+    """Mutation round 4 survivor: an intent whose history cannot be read (and no position to flag) must
+    keep reconciliation unclean - never 'clean' with an intent still UNKNOWN."""
+    term, br = make(clock)
+    b = pipeline(tmp_path, clock, term, br)
+    term.faults.append("none_result_no_fill")
+    b.orch.cycle(NOW)
+    iid = next(b.journal.events(type_="INTENT_PERSISTED")).payload["intent"]["intent_id"]
+    term.history_unavailable = True
+    clock.advance(60)
+    res = b.comps.reconciler.run()
+    assert not res["clean"] and any(f["kind"] == "INTENT_UNRESOLVED_RETRY" for f in res["findings"])
+    assert not b.comps.control.trading_permitted()[0] and intent_state(b.journal, iid) == "UNKNOWN"
+    term.history_unavailable = False
+    clock.advance(60)
+    assert b.comps.reconciler.run()["clean"]
+    assert intent_state(b.journal, iid) == "RESOLVED_NOT_EXECUTED" and term.order_send_calls == 1

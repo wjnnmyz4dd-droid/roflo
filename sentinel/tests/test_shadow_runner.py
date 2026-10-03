@@ -77,3 +77,23 @@ def test_counterfactual_resolved_once_only_after_full_horizon_and_never_touches_
     assert cf["verdict"] == "WOULD_EXECUTE" and isinstance(cf["r"], float) and cf["provenance"].startswith("PROXY")
     assert len(list(prod.events())) == n_prod
     assert r.counterfactual_summary()
+
+
+def test_in_progress_unaligned_bar_does_not_create_new_decisions(tmp_path, clock):
+    """D4 regression (found in the live shadow run): Yahoo appends an in-progress bar stamped at the
+    latest minute; each poll must still map to the same closed bar."""
+    import dataclasses
+
+    base = trending_bars()
+    state = {"k": 0}
+
+    def fetch():
+        state["k"] += 1
+        partial = dataclasses.replace(base[-1], ts=int(clock.now()) - 60)  # "now"-stamped partial bar
+        return {"XAUUSD": base + [partial]}
+
+    r = runner(tmp_path, clock, bars_fn=fetch)
+    assert r.step()["status"] == "DECIDED"
+    for _ in range(3):
+        clock.advance(300)
+        assert r.step()["status"] == "ALREADY_DECIDED"

@@ -1,0 +1,6 @@
+SURVIVED     authority: volume above risk approval accepted                         
+KILLED       reconcile: unresolvable intent not blocking                            tests/test_mt5_adapter.py::test_unknown_intent_with_history_unavailable_keeps_reconcile_unclean
+KILLED       mt5: intent lookup ignores intent age (fixed 7-day window)             tests/test_mt5_adapter.py::test_old_unknown_intent_is_found_in_history_after_long_outage
+KILLED       shadow: in-progress / unaligned bars kept                              tests/test_shadow_runner.py::test_in_progress_unaligned_bar_does_not_create_new_decisions
+
+killed 3/4 applied mutations (0 not applied)

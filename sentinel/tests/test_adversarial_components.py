@@ -340,3 +340,17 @@ def test_validator_analogs_do_not_overlap():
     v = Validator(DEFAULT_COSTS)
     rs = v.analog_returns(bars[-1501:-1], c.direction, DEFAULT_COSTS["XAUUSD"])
     assert 0 < len(rs) <= 1500 // v.horizon + 1
+
+
+def test_risk_daily_loss_includes_swaps(tmp_path, clock):
+    """D1 regression: swap charges are cash flows; the internal daily-loss halt must see them."""
+    from sentinel.risk import RiskEngine, RiskLimits
+    from sentinel.runtime import cet_midnight_utc
+
+    L = RiskLimits()
+    r = RiskEngine(L, 100_000.0)
+    x = L.internal_daily_loss_pct * 100_000.0 + 1
+    snap = AccountSnapshot(NOW, NOW, 100_000.0 - x, 100_000.0 - x, 0.0, 100_000.0 - x, "USD", (), ()).with_hash()
+    swap_only = [{"ts": cet_midnight_utc(NOW) + 60, "profit": 0.0, "commission": 0.0, "swap": -x, "kind": "SWAP"}]
+    d = r.account_check(snap, swap_only, NOW)
+    assert d.verdict.value == "HALT" and "daily" in d.reasons[0]

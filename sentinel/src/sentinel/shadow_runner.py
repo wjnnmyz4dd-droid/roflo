@@ -53,8 +53,11 @@ class ShadowRunner:
     # ------------------------------------------------------------------ one iteration
     def step(self) -> dict:
         now = int(self.clock.now())
+        bs = self.cfg.bar_seconds
         try:
-            self.bars = self.fetch_bars() or self.bars
+            fresh = self.fetch_bars()
+            if fresh:  # keep only bar-aligned, fully CLOSED bars (feeds append an in-progress bar stamped "now")
+                self.bars = {i: [b for b in v if b.ts % bs == 0 and b.ts + bs <= now] for i, v in fresh.items()}
         except Exception as e:  # noqa: BLE001 - feed outage: keep previous bars, staleness decides
             self.ops.append("FEED_ERROR", COMPONENT, {"error": repr(e)[:300], "now": now})
         try:
@@ -64,7 +67,6 @@ class ShadowRunner:
         if not self.bars or any(i not in self.bars or not self.bars[i] for i in self.cfg.instruments):
             self.ops.append("NO_DECISION", COMPONENT, {"reason": "no bars", "now": now})
             return {"status": "NO_DATA"}
-        bs = self.cfg.bar_seconds
         last_close = {i: self.bars[i][-1].ts + bs for i in self.cfg.instruments}
         stale = {i: now - t for i, t in last_close.items() if now - t > self.cfg.max_feed_age_s and self._open(i, now)}
         if stale:

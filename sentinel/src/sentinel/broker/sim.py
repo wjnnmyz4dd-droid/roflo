@@ -264,7 +264,7 @@ class SimBroker:
             elif tp is not None and ((d == "LONG" and px >= tp) or (d == "SHORT" and px <= tp)):
                 self._close(t, tp, None, "TP")
 
-    def find_by_client_id(self, client_id: str) -> list[dict]:
+    def find_by_client_id(self, client_id: str, since_ts: int | None = None) -> list[dict]:  # full history kept
         with self._lock:
             self._check_conn()
             self.calls.append(f"find:{client_id}")

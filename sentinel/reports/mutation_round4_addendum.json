@@ -1,0 +1,30 @@
+[
+  {
+    "mutation": "authority: volume above risk approval accepted",
+    "file": "authority.py",
+    "status": "SURVIVED",
+    "killed_by": "",
+    "seconds": 49.9
+  },
+  {
+    "mutation": "reconcile: unresolvable intent not blocking",
+    "file": "reconcile.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_mt5_adapter.py::test_unknown_intent_with_history_unavailable_keeps_reconcile_unclean",
+    "seconds": 11.8
+  },
+  {
+    "mutation": "mt5: intent lookup ignores intent age (fixed 7-day window)",
+    "file": "broker/mt5.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_mt5_adapter.py::test_old_unknown_intent_is_found_in_history_after_long_outage",
+    "seconds": 11.6
+  },
+  {
+    "mutation": "shadow: in-progress / unaligned bars kept",
+    "file": "shadow_runner.py",
+    "status": "KILLED",
+    "killed_by": "tests/test_shadow_runner.py::test_in_progress_unaligned_bar_does_not_create_new_decisions",
+    "seconds": 11.6
+  }
+]
