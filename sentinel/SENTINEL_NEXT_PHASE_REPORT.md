@@ -271,7 +271,7 @@ Real OS processes on one host, real wall clock, SimBroker with **fencing disable
 | Coordination store unavailable (partition: exclusive lock held, 0.3 s busy timeout) | No send; the actor fails at startup or every cycle errors | EXECUTED |
 | Clock disagreement ±5 s between processes | Takeovers can happen early; stale attempts are refused by the token check; invariants hold | EXECUTED |
 | Simultaneous creation of the coordination store by 12 processes ×10 rounds (D5) | All start (failed before the fix) | EXECUTED |
-| Stability | Early runs exposed three harness issues, all fixed in the *test/actor*: re-pausing after the first pause, a fail-at-startup partition outcome, and reading the ledger before its schema existed. Then 6 consecutive clean runs of the 9-test suite | EXECUTED |
+| Stability | Early runs exposed three harness issues, all fixed in the *test/actor*: re-pausing after the first pause, a fail-at-startup partition outcome, and reading the ledger before its schema existed. Then 6 consecutive clean runs of the 9-test suite. After the D5 fix: 5 more consecutive clean runs of split-brain + stress (18 tests) | EXECUTED |
 | Two hosts / network-filesystem coordination | — | **NOT EXECUTED** (single container) |
 
 **Residual risk, stated plainly:** with MT5 the window between the fenced record and `order_send`
