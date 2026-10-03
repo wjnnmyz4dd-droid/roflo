@@ -19,7 +19,10 @@ COMPONENT = "reconciler"
 
 
 class Reconciler:
-    def __init__(self, broker, journal: Journal, control=None, foreign_position_policy: str = "halt"):
+    def __init__(self, broker, journal: Journal, control=None, foreign_position_policy: str = "halt", lease=None,
+                 inflight_window_s: float = 600.0):
+        self._lease = lease
+        self._inflight_window = inflight_window_s
         self._control = control
         self._b = broker
         self._j = journal
@@ -72,6 +75,20 @@ class Reconciler:
                 findings.append({"kind": "INTENT_NOT_EXECUTED", "intent_id": u["intent_id"]})
 
         broker_tickets = {p.ticket: p for p in snap.positions}
+
+        # 1b. sends recorded by ANOTHER instance (split-brain residue): if the broker has no record yet, the send
+        # may still be in flight from a paused stale leader -> not knowable yet (retry). If the broker does have
+        # it, the resulting position is unattributed and is caught below as FOREIGN (operator review).
+        if self._lease is not None:
+            now = snap.taken_at
+            for intent_id, owner, token, ts in self._lease.sends_by_others(since=now - self._inflight_window):
+                try:
+                    seen = [d for d in self._b.find_by_client_id(intent_id) if d["kind"] == "IN"]
+                except BrokerUncertain:
+                    seen = []
+                if not seen:
+                    findings.append({"kind": "IN_FLIGHT_SEND_BY_OTHER_INSTANCE", "intent_id": intent_id, "owner": owner,
+                                     "token": token, "blocking": True, "retry": True})
 
         # 2. unknown close attempts
         for ev in self._j.events(type_="CLOSE_PERSISTED"):

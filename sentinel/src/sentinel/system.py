@@ -95,7 +95,7 @@ def build(workdir: str, clock, market, instruments, mode="paper", profile_id="ft
     execution = ExecutionService(broker, journal, permit_key, lease, clock, control) if mode == "paper" else None
     comps = Components(
         journal=journal, broker=broker, lease=lease, control=control,
-        reconciler=Reconciler(broker, journal, control), compliance=compliance, news=news, risk=risk,
+        reconciler=Reconciler(broker, journal, control, lease=lease), compliance=compliance, news=news, risk=risk,
         finder=Finder(source=market.source), validator=Validator(DEFAULT_COSTS),
         arbiter=Arbiter(measured_independence=independence, signer=keys["arbiter"]),
         issuer=issuer, execution=execution, market=market, instruments=list(instruments),

@@ -17,7 +17,7 @@ from sentinel.authority import Permit, PermitError, PermitKey, verify_permit
 from sentinel.broker.base import BrokerError, BrokerUncertain
 from sentinel.contracts import GateDecision, GateVerdict
 from sentinel.journal import DuplicateKey, Journal
-from sentinel.lease import Lease
+from sentinel.lease import Lease, LeaseLost
 from sentinel.runtime import crashpoint, log
 
 COMPONENT = "execution"
@@ -96,6 +96,13 @@ class ExecutionService:
         self._journal.append("ORDER_SENT", COMPONENT, {"intent_id": intent.intent_id, "fence": token},
                              correlation_id=intent.intent_id)
         crashpoint("exec_before_broker_send")
+        try:
+            token = self._lease.record_send(intent.intent_id)  # fenced: refuses if leadership was lost meanwhile
+        except LeaseLost as e:
+            self._journal.append("ORDER_REJECTED", COMPONENT, {"intent_id": intent.intent_id, "error": f"fence: {e}"},
+                                 correlation_id=intent.intent_id)
+            return {"status": "REJECTED", "error": f"fence: {e}"}
+        crashpoint("exec_after_fenced_record_before_send")
         try:
             ack = self._broker.send_order(
                 intent.intent_id, intent.instrument, intent.direction, intent.volume, intent.stop_loss,

@@ -15,7 +15,7 @@ SCEN = ROOT / "tools" / "crash_scenario.py"
 
 OPEN_POINTS = [
     "cycle_start", "after_candidate", "during_validation", "after_arbiter", "before_risk", "after_risk",
-    "before_permit", "exec_after_intent_persisted", "exec_before_broker_send",
+    "before_permit", "exec_after_intent_persisted", "exec_before_broker_send", "exec_after_fenced_record_before_send",
     "exec_after_broker_ack_before_persist", "after_submit_before_outcome",
 ]
 EXIT_POINTS = ["exit_before_close", "exec_close_before_send", "exec_close_after_send_before_persist"]

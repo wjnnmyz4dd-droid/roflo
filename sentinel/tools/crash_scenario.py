@@ -19,11 +19,44 @@ from sentinel.execution import unresolved_intents  # noqa: E402
 from sentinel.journal import Journal  # noqa: E402
 from sentinel.runtime import FakeClock  # noqa: E402
 
+# MEMORY PRESSURE: SENTINEL_MEM_PRESSURE_AT=<crashpoint label> caps the address space (RLIMIT_AS) and
+# fills it with ballast at that boundary, so everything after it runs at (or over) the memory limit.
+_PRESSURE_AT = os.environ.get("SENTINEL_MEM_PRESSURE_AT")
+_ballast: list = []
+
+
+def _install_pressure():
+    import resource
+
+    import sentinel.runtime as rt
+
+    real = rt.crashpoint
+
+    def hooked(label):
+        if label == _PRESSURE_AT and not _ballast:
+            used = int(open("/proc/self/statm").read().split()[0]) * resource.getpagesize()
+            resource.setrlimit(resource.RLIMIT_AS, (used + 48 * 2**20, resource.RLIM_INFINITY))
+            for chunk in (2**20, 2**16, 2**12, 2**9):  # exhaust down to sub-page granularity
+                try:
+                    while True:
+                        _ballast.append(bytearray(chunk))
+                except MemoryError:
+                    pass
+            print("PRESSURE_APPLIED", label, len(_ballast), flush=True)
+        real(label)
+
+    for mod in list(sys.modules.values()):
+        if getattr(mod, "__name__", "").startswith("sentinel") and getattr(mod, "crashpoint", None) is real:
+            mod.crashpoint = hooked
+
+
 wd, phase = pathlib.Path(sys.argv[1]), sys.argv[2]
 fault = sys.argv[3] if len(sys.argv) > 3 else ""
 T = {"restart_early": NOW + 2 * 3600, "open": NOW, "exit": NOW + 11 * 3600, "restart": NOW + 12 * 3600, "learn": NOW + 13 * 3600, "promote": NOW + 13 * 3600}[phase]
 clock = FakeClock(T)
 b = make_system(wd, clock)
+if _PRESSURE_AT:
+    _install_pressure()
 if phase == "restart_early":
     phase = "restart"
 if phase in ("exit", "restart", "learn"):
@@ -35,6 +68,7 @@ if fault:
     b.broker.arm_fault("send" if phase == "open" else "close", kind, arg)
 if phase in ("open", "exit", "restart"):
     res = b.orch.cycle(T)
+    _ballast.clear()
     print("CYCLE", json.dumps(res, default=str))
 if phase == "learn":
     from sentinel.learning import Memory

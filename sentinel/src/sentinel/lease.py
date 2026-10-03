@@ -22,19 +22,22 @@ class LeaseLost(RuntimeError):
 
 
 class Lease:
-    def __init__(self, path: str, owner: str, ttl: float = 10.0, guard: float = 2.0, clock=None):
+    def __init__(self, path: str, owner: str, ttl: float = 10.0, guard: float = 2.0, clock=None, busy_timeout: float = 30.0):
         self.owner = owner
         self.ttl = ttl
         self.guard = guard
         self._clock = clock
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        self._db = sqlite3.connect(path, isolation_level=None, timeout=30)
+        self._db = sqlite3.connect(path, isolation_level=None, timeout=busy_timeout)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=FULL")
         self._db.execute(
             "CREATE TABLE IF NOT EXISTS lease (id INTEGER PRIMARY KEY CHECK (id=1), owner TEXT, expires REAL, token INTEGER)"
         )
         self._db.execute("INSERT OR IGNORE INTO lease VALUES (1, NULL, 0, 0)")
+        self._db.execute(
+            "CREATE TABLE IF NOT EXISTS sends (intent_id TEXT PRIMARY KEY, owner TEXT, token INTEGER, ts REAL)"
+        )
         self.token: int | None = None
         self.expires: float = 0.0
 
@@ -82,6 +85,39 @@ class Lease:
             self.token = None
             raise LeaseLost("lease taken by another instance")
         return self.token
+
+    def record_send(self, intent_id: str) -> int:
+        """Fenced send ledger: atomically verify we STILL hold the current token and record the send.
+
+        MT5 cannot reject a stale writer, so this compare-and-insert in the shared coordination store is
+        the fence. A paused leader that wakes after losing the lease fails here and never reaches MT5.
+        A leader paused AFTER this commit can still send late; the new leader's reconciliation
+        sees this ledger row (another owner's unresolved send) and halts for operator review.
+        """
+        now = self._now()
+        cur = self._db.cursor()
+        cur.execute("BEGIN IMMEDIATE")
+        try:
+            owner, expires, token = cur.execute("SELECT owner, expires, token FROM lease WHERE id=1").fetchone()
+            if owner != self.owner or token != self.token or expires <= now + self.guard:
+                cur.execute("ROLLBACK")
+                mine, self.token = self.token, None
+                raise LeaseLost(f"fenced send refused (owner={owner}, token={token}, mine={mine})")
+            cur.execute("INSERT INTO sends VALUES (?,?,?,?)", (intent_id, self.owner, token, now))
+            cur.execute("COMMIT")
+            return token
+        except LeaseLost:
+            raise
+        except BaseException:
+            try:
+                cur.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+            raise
+
+    def sends_by_others(self, since: float = 0.0) -> list[tuple]:
+        return self._db.execute("SELECT intent_id, owner, token, ts FROM sends WHERE owner != ? AND ts >= ?",
+                                (self.owner, since)).fetchall()
 
     def release(self) -> None:
         if self.token is None:
