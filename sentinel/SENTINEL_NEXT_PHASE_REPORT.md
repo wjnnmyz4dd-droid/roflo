@@ -25,7 +25,7 @@ Evidence labels used throughout:
    strengthening (§2–§3). No new authority was introduced.
    - Tests: **241** passing. All 144 phase-1 test IDs are still present and passing; two were
      *extended*, none weakened (§1).
-   - Mutation round 4: 68/70 killed in the full run. Both survivors were analysed: one is the known phase-1 layered guard; the other was a real test gap, now closed. One kill was for the wrong reason and led to defect D5. After the fixes, 74 mutants are applied in total and only the layered guard survives (§29).
+   - Mutation round 4: 68/70 killed in the full run. Both survivors were analysed: one is the known phase-1 layered guard; the other was a real test gap, now closed. One kill was for the wrong reason and led to defect D5. After the fixes, 73 distinct mutants are applied in total and only the layered guard survives (§29).
 2. **MT5:** a demo-only adapter is written and contract-tested against a fake terminal (**SIMULATED**).
    - Real MT5 is **BLOCKED**: the `MetaTrader5` package is Windows-only, there is no terminal in
      this Linux container, and there are no demo credentials. **Execution stays DISABLED.**
@@ -54,7 +54,7 @@ Evidence labels used throughout:
    - **MEMORY PRESSURE** and **CPU STARVATION** were executed. Every memory-exhaustion point failed
      closed (HALT); restart invariants held. The fence held under 4× CPU oversubscription.
 8. **Continuous Shadow:**
-   - **EXECUTED** live on proxy data for {{LIVE_MIN}} minutes. It is a Saturday, so only BTC trades.
+   - **EXECUTED** live on proxy data for 120 minutes. It is a Saturday, so only BTC trades.
    - A 120-day SIMULATED shadow replay produced 870 candidates, 0 order events and verified journals.
    - **Broker-demo paper: BLOCKED** (no MT5, no demo account), and the Shadow prerequisites are not
      met anyway (§34).
@@ -380,8 +380,8 @@ Per step:
 | Run | Result | Label |
 |---|---|---|
 | Unit tests | 5/5 PASS: one decision per bar; feed outage → `FEED_STALE`; calendar outage → news BLOCK; restart does not re-decide; counterfactual written once, only after the full horizon, and the production journal is unchanged | EXECUTED |
-| **Live**, real clock, Yahoo hourly proxy + live Forex Factory calendar, {{LIVE_MIN}} min, poll 300 s | {{LIVE_RESULT}} | EXECUTED on PROXY data (Saturday: only BTCUSD open) |
-| **Replay**, 120 days to 2026-10-02, hourly FakeClock, point-in-time FOMC calendar | 2,823 decisions, 57 `FEED_STALE` (gaps), 870 candidates: 801 Arbiter REJECT, 65 INDETERMINATE, 1 news BLOCK, **3 WOULD_EXECUTE**. 0 order events; all three journals verify | SIMULATED |
+| **Live**, real clock, Yahoo hourly proxy + live Forex Factory calendar, 120 min, poll 300 s | Run on the D4-fixed code, 04:59–06:59 UTC. 25 polls → **3 decisions**, one per closed hourly bar (04:00, 05:00, 06:00 closes); 22 `ALREADY_DECIDED`. 0 `FEED_STALE` / `FEED_ERROR` / `LOOP_ERROR`. 0 candidates (no BTC setup; other markets closed). **0 order events**; all three journals verify. `reports/shadow_continuous_live.{json,log}`. The earlier pre-fix attempt is `reports/shadow_live_pre_d4.log` (D4) | EXECUTED on PROXY data (Saturday: only BTCUSD open) |
+| **Replay**, 120 days to 2026-10-02, hourly FakeClock, point-in-time FOMC calendar | 2,823 decisions, 57 `FEED_STALE` (gaps), 870 candidates: 801 Arbiter REJECT, 65 INDETERMINATE, 1 news BLOCK, **3 WOULD_EXECUTE**. 0 order events; all three journals verify | SIMULATED (`reports/shadow_continuous_replay.json`) |
 
 The replay window lies inside the phase-1 hourly holdout year. It replays the frozen pipeline for
 operational evidence only; nothing was selected from it.
@@ -631,7 +631,7 @@ New round-4 mutants cover:
 - point-in-time news leakage;
 - Shadow: duplicate decision, partial-horizon counterfactual, stale feed.
 
-Kill rate on applied mutants: 73/74 after the fixes (98.6 %). The single survivor is explained.
+Kill rate on the 73 distinct mutants after the fixes: 72/73 (98.6 %). The single survivor is explained.
 Reports:
 - `reports/mutation_round4.{txt,json}`;
 - `reports/mutation_round4_addendum.{txt,json}`.

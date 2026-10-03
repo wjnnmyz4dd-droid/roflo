@@ -1,0 +1,25 @@
+{"t": 1791003570, "status": "DECIDED", "counterfactuals_resolved": 0, "cycle": "OK"}
+{"t": 1791003871, "status": "DECIDED", "counterfactuals_resolved": 0, "cycle": "OK"}
+{"t": 1791004176, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791004477, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791004779, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791005080, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791005381, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791005682, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791005984, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791006285, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791006586, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791006887, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791007188, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}
+{"t": 1791007490, "status": "DECIDED", "counterfactuals_resolved": 0, "cycle": "OK"}
+{"t": 1791007791, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791008092, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791008393, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791008695, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791008996, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791009297, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791009598, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791009899, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791010201, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"t": 1791010502, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}
+{"mode": "live", "provenance": "PROXY / RESEARCH-ONLY", "minutes": 120.0, "poll_s": 300.0, "steps": [{"t": 1791003570, "status": "DECIDED", "counterfactuals_resolved": 0, "cycle": "OK"}, {"t": 1791003871, "status": "DECIDED", "counterfactuals_resolved": 0, "cycle": "OK"}, {"t": 1791004176, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791004477, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791004779, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791005080, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791005381, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791005682, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791005984, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791006285, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791006586, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791006887, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791007188, "status": "ALREADY_DECIDED", "bar_close": 1791003600, "cycle": null}, {"t": 1791007490, "status": "DECIDED", "counterfactuals_resolved": 0, "cycle": "OK"}, {"t": 1791007791, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null}, {"t": 1791008092, "status": "ALREADY_DECIDED", "bar_close": 1791007200, "cycle": null

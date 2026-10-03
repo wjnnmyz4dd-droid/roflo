@@ -4,7 +4,7 @@
                                        EXECUTED on PROXY / RESEARCH-ONLY data (no broker feed available).
   replay <workdir> <days>              FakeClock stepping hourly through stored proxy bars (last <days>),
                                        point-in-time FOMC calendar (federalreserve.gov). SIMULATED shadow.
-Writes reports/shadow_<mode>.json.
+Writes reports/shadow_continuous_<mode>.json.
 """
 import bisect
 import collections
@@ -36,7 +36,7 @@ def report(r, wd, mode, extra):
            "counterfactual_summary": r.counterfactual_summary(),
            "order_events_in_journal": sum(1 for _ in j.events_of_types(("INTENT_PERSISTED", "ORDER_SENT"))),
            "journal_verified": j.verify()[0], "ops_verified": r.ops.verify()[0], "cf_verified": r.cf.verify()[0]}
-    (ROOT / "reports" / f"shadow_{mode}.json").write_text(json.dumps(out, indent=1, default=str))
+    (ROOT / "reports" / f"shadow_continuous_{mode}.json").write_text(json.dumps(out, indent=1, default=str))
     print(json.dumps(out, default=str)[:1500])
 
 
