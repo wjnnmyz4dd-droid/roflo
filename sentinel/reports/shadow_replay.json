@@ -1,26 +1,42 @@
 {
  "mode": "replay",
  "provenance": "PROXY / RESEARCH-ONLY",
- "days": 3,
- "start": 1790726743,
+ "days": 120,
+ "start": 1780617943,
  "end": 1790985943,
  "step_statuses": {
-  "DECIDED": 72
+  "DECIDED": 2823,
+  "FEED_STALE": 57
  },
  "news_scope": "FOMC only (point-in-time); other releases not covered",
  "ops_events": {
-  "SHADOW_CYCLE": 72,
-  "SHADOW_RESULT": 72
+  "SHADOW_CYCLE": 2823,
+  "SHADOW_RESULT": 2823,
+  "FEED_STALE": 57
  },
- "candidates": 22,
+ "candidates": 870,
  "outcomes_by_stage": {
-  "arbiter:REJECT": 21,
-  "arbiter:INDETERMINATE": 1
+  "arbiter:REJECT": 801,
+  "arbiter:INDETERMINATE": 65,
+  "news:BLOCK": 1,
+  "shadow:WOULD_EXECUTE": 3
  },
  "counterfactual_summary": {
+  "arbiter:INDETERMINATE": {
+   "n": 64,
+   "mean_r": -0.3432
+  },
   "arbiter:REJECT": {
-   "n": 18,
-   "mean_r": -0.5127
+   "n": 798,
+   "mean_r": -0.0505
+  },
+  "news:BLOCK": {
+   "n": 1,
+   "mean_r": -1.0063
+  },
+  "shadow:WOULD_EXECUTE": {
+   "n": 3,
+   "mean_r": -0.2547
   }
  },
  "order_events_in_journal": 0,
