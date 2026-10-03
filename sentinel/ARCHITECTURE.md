@@ -64,7 +64,7 @@ The matrix is data in `authority.py`, and tests enforce it against the code:
 | Risk | broker snapshot + deals + spec + quote | `GateDecision` with approved volume (signed) | BLOCK / HALT | derived from broker each call; halts journaled | test_adversarial_components, test_execution_reconcile |
 | Execution | `Permit` | journal events, broker order | UNKNOWN ⇒ halt pending reconcile | no resend; reconciler resolves | test_execution_reconcile, test_crash_matrix |
 | Reconciler | broker truth + journal | RESOLVED / POSITION_CLOSED / RECONCILED | not clean ⇒ halt | rerun when broker reachable | test_execution_reconcile |
-| Lease | coordination DB | fencing token | LeaseLost ⇒ STANDBY | wait for expiry, re-acquire | test_execution_reconcile |
+| Lease | coordination DB | fencing token; fenced send ledger (`record_send`) immediately before every broker send | LeaseLost ⇒ STANDBY / send refused | wait for expiry, re-acquire; new leader halts on another owner's in-flight ledger row | test_execution_reconcile, test_split_brain |
 | Journal | events | hash-chained rows | integrity failure ⇒ manual halt | operator | test_authority_and_journal, test_chaos |
 | Learning | journal (read), own store | FACT / OBSERVATION / INFERENCE / HYPOTHESIS / LESSON / proposals | MemoryRejected | idempotent post-mortem | test_adversarial_components, test_crash_matrix |
 | Promotion | proposals, criteria, stage artifacts | STAGE_RESULT, PROMOTED (operator) | PromotionRefused | — | test_adversarial_components |
@@ -88,9 +88,13 @@ The matrix is data in `authority.py`, and tests enforce it against the code:
 
 - In-process key separation is logical, not cryptographic. Code running inside the same process
   could read the keys. Process isolation would be needed to harden this.
-- MetaTrader 5 has no fencing tokens. Single-leader execution relies on the lease check before every
-  send; the simulator's fence models a gateway that does not exist yet.
-- Only one calendar source (Forex Factory weekly JSON) is implemented. There is no historical
-  calendar for replay.
-- No live MT5 adapter: order filling modes, broker server time, symbol specs and the history-lag
-  behaviour of a real broker are all unverified.
+- MetaTrader 5 has no fencing tokens. Phase 2 added a fenced send ledger (compare-and-insert in the
+  coordination DB right before `order_send`), which refuses a leader that lost the lease before
+  that point. A leader paused *after* the record can still send late. The new leader detects it
+  (in-flight ledger row, then FOREIGN → manual halt) but cannot prevent it; a single execution
+  gateway is still required.
+- Calendars: live Forex Factory weekly JSON, and a historical point-in-time FOMC calendar from
+  federalreserve.gov (`research/calendar_hist.py`, research/replay only). There is no historical
+  NFP/CPI source (blocked).
+- The MT5 adapter (`broker/mt5.py`, demo-only guard) is qualified only against a fake terminal.
+  Filling modes, server time, symbol specs and the history lag of a real broker are unverified.

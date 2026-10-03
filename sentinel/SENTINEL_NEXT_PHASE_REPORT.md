@@ -23,9 +23,9 @@ Evidence labels used throughout:
 1. **Safety architecture: frozen and re-qualified.** Every change to a safety component in this
    phase is a documented, reproduced defect fix or the explicitly requested split-brain
    strengthening (§2–§3). No new authority was introduced.
-   - Tests: **{{TESTS}}** passing. All 144 phase-1 test IDs are still present and passing; two were
+   - Tests: **241** passing. All 144 phase-1 test IDs are still present and passing; two were
      *extended*, none weakened (§1).
-   - Mutation round 4: {{MUT_HEADLINE}} (§29).
+   - Mutation round 4: 68/70 killed in the full run. Both survivors were analysed: one is the known phase-1 layered guard; the other was a real test gap, now closed. One kill was for the wrong reason and led to defect D5. After the fixes, 74 mutants are applied in total and only the layered guard survives (§29).
 2. **MT5:** a demo-only adapter is written and contract-tested against a fake terminal (**SIMULATED**).
    - Real MT5 is **BLOCKED**: the `MetaTrader5` package is Windows-only, there is no terminal in
      this Linux container, and there are no demo credentials. **Execution stays DISABLED.**
@@ -84,7 +84,7 @@ The two extended phase-1 tests:
 ## 2. Changes made
 
 Commits since phase 1: `5ac0993` (pre-registration, before any computation), `d236076`, `aac4576`,
-`062f0a4`{{LATER_COMMITS}}.
+`062f0a4`, `c5b51e6`, `3c8be9f`, `496dbae` and the final report commit.
 
 | Area | Change | Kind |
 |---|---|---|
@@ -93,11 +93,13 @@ Commits since phase 1: `5ac0993` (pre-registration, before any computation), `d2
 | `lease.py`, `execution.py`, `reconcile.py`, `system.py` | Fenced send ledger (`Lease.record_send`), in-flight-send detection by the new leader | Requested split-brain strengthening (S1) |
 | `broker/mt5.py` | Demo-only MT5 adapter (new broker port implementation) | New integration (W2) |
 | `broker/mt5.py`, `reconcile.py` | Intent lookup window bound to the intent's age, not a fixed 7 days | Defect fix D3 (found in this phase's source review) |
+| `shadow_runner.py` | Only bar-aligned, fully closed bars drive decisions and staleness | Defect fix D4 (found by the live shadow run) |
+| `lease.py` | Bounded retry of store setup when instances create it simultaneously | Defect fix D5 (found via a wrong-reason mutation kill) |
 | `dataquality.py` | Provenance + data-quality gate (FAIL / PROXY_ONLY / BROKER_GRADE) | New gate on research inputs (W1) |
 | `research/calendar_hist.py` | Point-in-time FOMC calendar → `CalendarSnapshot` for `NewsEngine` | New data source (W3) |
 | `research/lineages.py`, `research/edge.py` (`skip=` hook) | L2/L3 lineages; gate-attribution hook | Research (W6) |
 | `shadow_runner.py` | Continuous shadow loop + separate counterfactual journal | W5 |
-| Tests | `test_mt5_adapter` (18), `test_split_brain` (9), `test_stress` (8), `test_calendar_hist` (40), `test_ftmo_adversarial` (7), `test_shadow_runner` (5), `test_dataquality` (4){{EXTRA_TESTS}} | — |
+| Tests | `test_mt5_adapter` (18), `test_split_brain` (10), `test_stress` (8), `test_calendar_hist` (40), `test_ftmo_adversarial` (7), `test_shadow_runner` (5), `test_dataquality` (4); plus regression tests `test_risk_daily_loss_includes_swaps` (D1), `test_old_unknown_intent_is_found_in_history_after_long_outage` (D3), `test_in_progress_unaligned_bar_does_not_create_new_decisions` (D4), `test_mp_simultaneous_creation_of_coordination_store` (D5) and `test_unknown_intent_with_history_unavailable_keeps_reconcile_unclean` (mutation gap) | — |
 | Tools | `run_phase2`, `data_quality`, `fence_actor`, `build_fomc_calendar`, `news_attribution`, `shadow_continuous`; `crash_scenario` gains memory pressure; `mutate` gains round 4 | — |
 
 ## 3. Why each change was necessary
@@ -112,7 +114,7 @@ Safety-component changes follow the freeze protocol.
 - *Why the design fails:* two authorities disagree about the same broker truth; the internal daily
   limit under-counts carry costs on multi-day holds (L2 holds a month).
 - *Minimum change:* add `+ swap` in two expressions.
-- *Regression test:* {{D1_TEST}}.
+- *Regression test:* `test_risk_daily_loss_includes_swaps` (a swap-only day crossing the internal 1.5 % limit must HALT).
 - *Adversarial:* mutation "risk: swaps excluded from daily P&L" (§29).
 
 **D2. Reconciler could not express "not knowable yet".**
@@ -136,8 +138,23 @@ Safety-component changes follow the freeze protocol.
 - *Why the design fails:* "absent from a window" was treated as "never executed".
 - *Minimum change:* the reconciler passes the intent's persisted timestamp. The adapter searches
   from there (minus 1 day). `SimBroker` ignores the argument.
-- *Regression:* {{D3_TEST}}.
+- *Regression:* `test_old_unknown_intent_is_found_in_history_after_long_outage` (CONFIRMED; `order_send_calls == 2`: the original send plus the broker-side close, nothing re-sent).
 - *Adversarial:* mutation round 4 addendum (§29).
+
+**D4. Shadow runner re-decided every poll (non-safety; found live).**
+- *Defect:* Yahoo appends an in-progress bar stamped at the latest minute (e.g. `04:54`). The
+  runner keyed "one decision per bar" on the last bar's timestamp, so every 5-minute poll was a new
+  decision.
+- *Reproduction:* `reports/shadow_live_pre_d4.log` shows 4 DECIDED in 4 polls within one hour.
+- *Minimum change:* keep only bar-aligned, fully closed bars.
+- *Regression:* `test_in_progress_unaligned_bar_does_not_create_new_decisions`.
+- *Impact:* none on trading. Shadow only; the Finder already ignored unclosed bars. Decisions were
+  duplicated, not wrong.
+
+**D5. Lease store creation race (availability).**
+- *Defect, reproduction and fix:* see §29.
+- *Why the design failed:* SQLite's busy timeout does not cover the WAL switch.
+- *Minimum change:* retry setup on "locked" until `busy_timeout`, then raise (still fails closed).
 
 **S1. Split-brain strengthening (explicitly requested).**
 - *Defect:* a leader frozen (GC, VM pause, SIGSTOP) between its last lease check and the broker
@@ -234,7 +251,7 @@ name. Real-terminal behaviours not covered:
 | Crash matrix: 13 entry points + 3 exit points + 4 scenario tests, real `os._exit` kills, restart invariants (no duplicate, no unauthorized fill, no unresolved intent, no orphan, P&L = broker) | 20/20 PASS, including the new `exec_after_fenced_record_before_send` | EXECUTED (real processes, SimBroker) |
 | UNKNOWN through MT5 → reconciled via (magic, comment), `order_send_calls == 1` | PASS | SIMULATED |
 | UNKNOWN + history lag → HALT(reconcile), resolved once history arrives | PASS | SIMULATED |
-| UNKNOWN + 8-day outage + broker closed the position (D3) | {{D3_RESULT}} | SIMULATED |
+| UNKNOWN + 8-day outage + broker closed the position (D3) | Before the fix: wrongly `RESOLVED_NOT_EXECUTED`. After: `RESOLVED_CONFIRMED`, no resend | SIMULATED |
 | Against a real MT5 demo | — | **BLOCKED** |
 
 ## 8. Split-brain
@@ -253,6 +270,7 @@ Real OS processes on one host, real wall clock, SimBroker with **fencing disable
 | Leader frozen **after** the fenced record, B takes over, A resumed | **Residual:** A's order lands late (no broker-side fence). B sees A's in-flight ledger row at once (`sends_by_others`); its reconciler halts (`IN_FLIGHT_SEND_BY_OTHER_INSTANCE`, retry), then classifies the late fill as FOREIGN → **manual** halt | EXECUTED (late send) + SIMULATED (reconciler path, in-process) |
 | Coordination store unavailable (partition: exclusive lock held, 0.3 s busy timeout) | No send; the actor fails at startup or every cycle errors | EXECUTED |
 | Clock disagreement ±5 s between processes | Takeovers can happen early; stale attempts are refused by the token check; invariants hold | EXECUTED |
+| Simultaneous creation of the coordination store by 12 processes ×10 rounds (D5) | All start (failed before the fix) | EXECUTED |
 | Stability | Early runs exposed three harness issues, all fixed in the *test/actor*: re-pausing after the first pause, a fail-at-startup partition outcome, and reading the ledger before its schema existed. Then 6 consecutive clean runs of the 9-test suite | EXECUTED |
 | Two hosts / network-filesystem coordination | — | **NOT EXECUTED** (single container) |
 
@@ -295,7 +313,7 @@ Point-in-time rules (`snapshot_at(records, as_of)`):
   The snapshot emits enough points that the 60/30-min central-bank blackout covers the whole
   bracket.
 
-Tests (`test_calendar_hist.py`, 40, **EXECUTED**):
+Tests (`test_calendar_hist.py`, 40 incl. parametrized, **EXECUTED**):
 - known decisions at correct UTC (EST/EDT);
 - cross-month meetings;
 - no record visible before `known_from` (sampled leakage probe);
@@ -574,7 +592,49 @@ Frozen L1, point-in-time FOMC gate (60 min before .. 30 min after), `tools/news_
 
 `tools/mutate.py`, every mutation on a fresh copy, full suite (`-x`).
 
-{{MUTATION_SECTION}}
+| Round | Applied | Killed | Survivors |
+|---|---|---|---|
+| 3 (phase 1) | 49 | 47 | 2 layered guards |
+| **4 (phase 2, full run)** | **70** (49 old + 21 new) | **68** | (a) `authority: volume above risk approval accepted`: the known layered guard (the issuer check plus Risk sizing); killing both together is verified (`reports/mutation_combined.json`). (b) `reconcile: unresolvable intent not blocking`: a **real test gap**. With MT5 history unavailable and no position to flag, reconcile would report "clean" while an intent is still UNKNOWN. Closed by `test_unknown_intent_with_history_unavailable_keeps_reconcile_unclean` |
+| 4 addendum | 6 | 5 | Only the layered guard |
+
+Round-4 addendum detail:
+- *Closed gap:* `reconcile: unresolvable intent not blocking` is now KILLED by its new test.
+- *New mutants for this phase's fixes, all KILLED by their regression tests:*
+  - `mt5: intent lookup ignores intent age` (D3);
+  - `shadow: in-progress / unaligned bars kept` (D4);
+  - `lease: concurrent store creation not retried` (D5).
+- *Wrong-reason kill re-run:* `risk: swaps excluded from daily P&L` is now KILLED by
+  `test_risk_daily_loss_includes_swaps`.
+
+**Wrong-reason kill (disclosed).** In the full run, the risk-swap mutant was "killed" by
+`test_mp_clock_disagreement[5.0]`, which has nothing to do with swaps:
+1. There was no swap regression test yet; D1 had been fixed without one. The test was added and
+   the mutant re-run (row above).
+2. The unrelated failure was investigated. It reproduced as **D5**: two processes creating the
+   coordination store simultaneously, so `PRAGMA journal_mode=WAL` fails immediately with
+   "database is locked" because the busy handler does not apply. It fails closed (the instance
+   dies at startup) but is an availability defect. It was fixed with a bounded retry inside
+   `busy_timeout`.
+3. The regression test releases 12 processes at the same instant over 10 rounds. It fails on the
+   old code and passes on the new.
+
+New round-4 mutants cover:
+- the demo guard: REAL account, allow-list, re-check before send;
+- retcode classification: timeout and `None`;
+- DST offset change;
+- history lag;
+- the fenced send ledger: execution bypass, lease check;
+- reconciler: in-flight detection, retry vs. manual scope, unresolvable-intent blocking;
+- swaps in risk and compliance; commission in the worst case;
+- the data-quality gate: proxy as broker, gaps;
+- point-in-time news leakage;
+- Shadow: duplicate decision, partial-horizon counterfactual, stale feed.
+
+Kill rate on applied mutants: 73/74 after the fixes (98.6 %). The single survivor is explained.
+Reports:
+- `reports/mutation_round4.{txt,json}`;
+- `reports/mutation_round4_addendum.{txt,json}`.
 
 ## 30. K-LEAN
 
@@ -590,6 +650,8 @@ This is my review using its frame, **not** K-LEAN output.
 |---|---|---|---|
 | HIGH | `broker/mt5.py` `find_by_client_id` | Fixed 7-day history window resolves an old executed intent as NOT_EXECUTED | **D3: reproduced, fixed, tested** |
 | HIGH (residual) | `lease.record_send` → `order_send` | The window after the fenced record cannot be fenced at MT5 | Detected (new-leader halt); documented; gateway recommended (§8) |
+| MEDIUM | `lease.py` store setup | Concurrent creation fails with "database is locked" (surfaced by mutation testing, not by the review) | **D5: reproduced, fixed, tested** |
+| MEDIUM | `shadow_runner.step` | Bar dedupe keyed on in-progress proxy bars (surfaced by the live run) | **D4: reproduced, fixed, tested** |
 | MEDIUM | `reconcile.py` in-flight window 600 s | A dead leader's recorded-but-unsent intent blocks the new leader (retry halt) for up to 10 min | Accepted availability cost; fail-closed |
 | MEDIUM | `shadow_runner._build` | Rebuilding within the 30 s lease TTL of a previous build would give STANDBY (new Lease object, same owner) | Not reachable at hourly cadence; fail-closed; noted |
 | LOW | `calendar_hist` | Known-from = 1 January is conservative but approximate; mid-year reschedules not reconstructable | Documented (§10) |
