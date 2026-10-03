@@ -48,7 +48,12 @@ def pause_point(label):
 
 
 lease = Lease(str(wd / "coord.db"), owner, ttl=2.0, guard=0.5, clock=Clock(), busy_timeout=float(os.environ.get("SENTINEL_DB_TIMEOUT", "30")))
-broker = SimBroker(str(wd / "broker.db"), enforce_fencing=False)
+for _ in range(100):  # the simulator's DB has the same concurrent-creation race; retry (test harness only)
+    try:
+        broker = SimBroker(str(wd / "broker.db"), enforce_fencing=False)
+        break
+    except Exception:  # noqa: BLE001
+        time.sleep(0.05)
 broker.set_quote("XAUUSD", 2000.0, 2000.3)
 end = time.time() + seconds
 n = 0

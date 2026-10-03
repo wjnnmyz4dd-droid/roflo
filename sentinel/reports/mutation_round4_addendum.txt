@@ -4,3 +4,8 @@ KILLED       mt5: intent lookup ignores intent age (fixed 7-day window)         
 KILLED       shadow: in-progress / unaligned bars kept                              tests/test_shadow_runner.py::test_in_progress_unaligned_bar_does_not_create_new_decisions
 
 killed 3/4 applied mutations (0 not applied)
+
+# addendum 2 (after D1 regression test and D5 fix)
+KILLED       risk: swaps excluded from daily P&L                                    tests/test_adversarial_components.py::test_risk_daily_loss_includes_swaps
+             (round 4 had killed it for the WRONG reason: test_mp_clock_disagreement[5.0] failing on the D5 startup race)
+KILLED       lease: concurrent store creation not retried                           tests/test_split_brain.py::test_mp_simultaneous_creation_of_coordination_store

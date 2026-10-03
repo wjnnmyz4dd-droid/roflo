@@ -125,6 +125,8 @@ M = [
      "        start = int(self._wall.time()) - 7 * 86400", "mt5: intent lookup ignores intent age (fixed 7-day window)"),
     ("shadow_runner.py", "                self.bars = {i: [b for b in v if b.ts % bs == 0 and b.ts + bs <= now] for i, v in fresh.items()}",
      "                self.bars = fresh", "shadow: in-progress / unaligned bars kept"),
+    ("lease.py", "                if \"locked\" not in str(e) or time.monotonic() > deadline:", "                if True:",
+     "lease: concurrent store creation not retried"),
 ]
 
 

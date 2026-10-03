@@ -29,15 +29,25 @@ class Lease:
         self._clock = clock
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self._db = sqlite3.connect(path, isolation_level=None, timeout=busy_timeout)
-        self._db.execute("PRAGMA journal_mode=WAL")
-        self._db.execute("PRAGMA synchronous=FULL")
-        self._db.execute(
-            "CREATE TABLE IF NOT EXISTS lease (id INTEGER PRIMARY KEY CHECK (id=1), owner TEXT, expires REAL, token INTEGER)"
-        )
-        self._db.execute("INSERT OR IGNORE INTO lease VALUES (1, NULL, 0, 0)")
-        self._db.execute(
-            "CREATE TABLE IF NOT EXISTS sends (intent_id TEXT PRIMARY KEY, owner TEXT, token INTEGER, ts REAL)"
-        )
+        # Two instances creating the store at the same instant: switching to WAL is not covered by the busy
+        # handler and fails immediately with "database is locked". Retry setup within busy_timeout, then fail.
+        deadline = time.monotonic() + busy_timeout
+        while True:
+            try:
+                self._db.execute("PRAGMA journal_mode=WAL")
+                self._db.execute("PRAGMA synchronous=FULL")
+                self._db.execute(
+                    "CREATE TABLE IF NOT EXISTS lease (id INTEGER PRIMARY KEY CHECK (id=1), owner TEXT, expires REAL, token INTEGER)"
+                )
+                self._db.execute("INSERT OR IGNORE INTO lease VALUES (1, NULL, 0, 0)")
+                self._db.execute(
+                    "CREATE TABLE IF NOT EXISTS sends (intent_id TEXT PRIMARY KEY, owner TEXT, token INTEGER, ts REAL)"
+                )
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" not in str(e) or time.monotonic() > deadline:
+                    raise
+                time.sleep(0.05)
         self.token: int | None = None
         self.expires: float = 0.0
 

@@ -129,13 +129,22 @@ def assert_fence_invariants(wd):
     return rows
 
 
+def _sent_vs_ledger(evs, rows):
+    """Every send was fenced; a ledger row without SENT is an in-flight attempt whose broker call errored
+    (e.g. the shared sim-broker DB was busy under load) - legitimate, and it must have been reported."""
+    sent = {e["intent"] for e in evs if e["event"] == "SENT"}
+    recorded = {r[0] for r in rows}
+    assert sent <= recorded
+    assert len(recorded - sent) <= sum(e["event"] == "ERROR" for e in evs), (recorded - sent, evs[-5:])
+
+
 def test_mp_two_processes_racing(tmp_path):
     pa, pb = spawn(tmp_path, "A", 5), spawn(tmp_path, "B", 5)
     ea, eb = events(pa), events(pb)
     rows = assert_fence_invariants(tmp_path)
     owners = {r[1] for r in rows}
     assert len(owners) >= 1 and rows
-    assert sum(e["event"] == "SENT" for e in ea + eb) == len(rows)
+    _sent_vs_ledger(ea + eb, rows)
 
 
 def test_mp_leader_kill9_then_standby_takes_over_after_ttl(tmp_path):
@@ -215,5 +224,21 @@ def test_mp_clock_disagreement(tmp_path, skew):
     ea, eb = events(pa), events(pb)
     assert_fence_invariants(tmp_path)
     # with a skewed clock a takeover can happen early, but every stale attempt is refused by the fence
-    sent = {e["intent"] for e in ea + eb if e["event"] == "SENT"}
-    assert sent == {r[0] for r in ledger(tmp_path)}
+    _sent_vs_ledger(ea + eb, ledger(tmp_path))
+
+
+def test_mp_simultaneous_creation_of_coordination_store(tmp_path):
+    """D5 regression: N processes creating the lease store at the same instant must all start."""
+    code = ("import sys, time; sys.path.insert(0, %r); from sentinel.lease import Lease; t0 = float(sys.argv[3]); "
+            "time.sleep(max(0, t0 - time.time())); "
+            "Lease(sys.argv[1] + '/coord.db', sys.argv[2], ttl=2, busy_timeout=10); print('OK')") % str(ROOT / "src")
+    failures = []
+    for rnd in range(10):
+        wd = tmp_path / f"r{rnd}"
+        wd.mkdir()
+        t0 = time.time() + 1.0  # all processes released at the same instant
+        ps = [subprocess.Popen([sys.executable, "-c", code, str(wd), f"o{k}", str(t0)], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True) for k in range(12)]
+        outs = [p.communicate(timeout=60) for p in ps]
+        failures += [e[-200:] for o, e in outs if o.strip() != "OK"]
+    assert not failures, failures[:3]
