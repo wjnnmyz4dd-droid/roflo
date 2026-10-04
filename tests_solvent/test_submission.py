@@ -622,9 +622,10 @@ class Deadlines(Base):
     def test_the_exact_boundary_is_treated_as_passed(self):
         """At the stroke of the deadline, the safe reading is that it is gone."""
         application, row = self.prepared_for("2026-09-29T12:00:00+00:00")
-        ok, _ = self.s.applications.verify(
+        ok, problems = self.s.applications.verify(
             application, row, now="2026-09-29T12:00:00+00:00")
         self.assertFalse(ok)
+        self.assertTrue(any("has passed" in p for p in problems), problems)
 
     def test_a_deadline_in_another_timezone_is_respected(self):
         """17:00 in New York is 21:00 UTC, so 20:00 UTC is still in time. A
@@ -636,9 +637,10 @@ class Deadlines(Base):
 
     def test_the_same_deadline_is_late_after_it_passes_there(self):
         application, row = self.prepared_for("2026-09-29T17:00:00-04:00")
-        ok, _ = self.s.applications.verify(
+        ok, problems = self.s.applications.verify(
             application, row, now="2026-09-29T22:00:00+00:00")
         self.assertFalse(ok)
+        self.assertTrue(any("has passed" in p for p in problems), problems)
 
     def test_a_zoneless_deadline_far_off_is_accepted(self):
         application, row = self.prepared_for("2027-06-01")
@@ -680,6 +682,10 @@ class Deadlines(Base):
             application, opportunity=row, transport=self.transport(),
             approval=self.signed())
         self.assertFalse(sent)
+        # §23. Permission is granted and the Gate is open, so the refusal has
+        # to be the deadline's own -- and it has to say so, or this test would
+        # still pass if some unrelated guard were doing the work.
+        self.assertIn("has passed", why)
         self.assertEqual(self.sent, [])
 
 

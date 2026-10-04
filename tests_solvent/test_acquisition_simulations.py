@@ -243,7 +243,9 @@ class ABadOpportunityIsRefusedForTheStatedReason(Lifecycle):
         application = self.s.applications.prepare(
             row, price_cents=10_000, capability_version=CSV_PROMOTION.version,
             deliverables=["x"], timeline_days=2, scope="x")
-        self.assertFalse(self.s.applications.submit(application)[0])
+        sent, why = self.s.applications.submit(application)
+        self.assertFalse(sent)
+        self.assertIn("prepare and verify", why)
 
 
 # --------------------------------------------------------------------- §75
@@ -413,7 +415,9 @@ class AnApplicationCannotPromiseWhatNobodyAuthorised(Lifecycle):
     def test_preparing_is_not_sending(self):
         application = self.draft()
         self.assertEqual(application.state, "PREPARED")
-        self.assertFalse(self.s.applications.submit(application)[0])
+        sent, why = self.s.applications.submit(application)
+        self.assertFalse(sent)
+        self.assertIn("prepare and verify", why)
 
 
 if __name__ == "__main__":

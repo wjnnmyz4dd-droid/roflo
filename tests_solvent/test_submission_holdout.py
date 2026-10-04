@@ -178,11 +178,13 @@ class TheSeamBetweenApprovalAndArtifact(Base):
             capability_version=CSV_PROMOTION.version,
             deliverables=["clean.csv", "and a report nobody agreed to"],
             timeline_days=3, scope="Deduplicate the supplied CSV.")
-        sent, _ = self.s.applications.submit(
+        sent, why = self.s.applications.submit(
             changed, opportunity=row, approval=self.signed(),
             transport=self.transport({"status_code": 200,
                                       "result": {"id": 1}}))
         self.assertFalse(sent)
+        self.assertIn("approved", why)
+        self.assertEqual(self.sent, [])
 
     def test_re_pointing_an_approved_application_at_another_opportunity_voids_it(self):
         """The nastiest shape: same application, different client. The digest

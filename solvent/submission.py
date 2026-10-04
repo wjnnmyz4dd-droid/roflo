@@ -224,9 +224,25 @@ class ManualSubmissionClient(SubmissionClient):
         The destination comes from the opportunity's own recorded routing where
         it has any, never from text inside the posting (§32): a listing that
         could name its own submission address could name anywhere.
+
+        That routing field is still the source's data, so it is checked by the
+        same authority that governs any other destination before the owner is
+        shown it. A package is read by a person who will then go there, which
+        makes an unsafe address a phishing instruction rather than a failed
+        fetch -- so an unsafe one is named as a problem and not repeated as
+        somewhere to go.
         """
         destination = self._destination or str(
             (opportunity or {}).get("external_url") or "")
+        problem = access.url_problem(destination) if destination else ""
+        if problem:
+            routing = (" This opportunity's recorded destination was not "
+                       f"usable and is withheld: {problem}. Find the "
+                       "submission address in the solicitation itself.")
+        elif destination:
+            routing = f" Destination of record: {destination}"
+        else:
+            routing = ""
         return Result(
             outcome=MANUAL_REQUIRED,
             detail=(f"{self.source} requires a person to submit. The "
@@ -236,7 +252,7 @@ class ManualSubmissionClient(SubmissionClient):
                 or ("Follow the submission instructions in the opportunity "
                     "itself. They vary per solicitation and are not something "
                     "DeskPilot may infer."))
-            + (f" Destination of record: {destination}" if destination else ""))
+            + routing)
 
 
 class FreelancerBidClient(SubmissionClient):
