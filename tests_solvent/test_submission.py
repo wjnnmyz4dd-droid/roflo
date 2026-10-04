@@ -11,6 +11,7 @@ so every response shape -- success, refusal, silence, garbage, a crash mid-send
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import pathlib
 import tempfile
@@ -339,6 +340,33 @@ class OwnerApprovalAuthorisesOneExactApplication(Base):
         self.assertIn("not been approved", why)
         self.assertEqual(self.sent, [])
 
+    def test_an_application_that_diverges_from_its_record_says_so(self):
+        """§23. submit() asks two different questions a step apart: is this
+        the artifact on record, and did the owner authorise *that* artifact.
+        For a tampered object both refuse, so the first one's refusal was
+        never asserted and a mutation removing it changed nothing visible.
+
+        The case above hands submit() a *different* application, with its own
+        id and its own record, so the integrity check has nothing to object to
+        and the approval check is the one that answers. This hands it the same
+        application, altered -- the record says one thing and the object says
+        another. Both checks would refuse, and the integrity one answers
+        first, because "this is not the artifact on record" and "the owner did
+        not authorise this artifact" are different findings: one is tampering
+        or a bug, the other is ordinary.
+        """
+        application, row = self.authorised()
+        self.open_the_gate()
+        tampered = dataclasses.replace(
+            application, scope="and also rebuild their website")
+        sent, why = self.s.applications.submit(
+            tampered, opportunity=row, transport=self.transport(),
+            approval=self.signed())
+        self.assertFalse(sent)
+        self.assertIn("changed since it was recorded", why)
+        self.assertNotIn("has not been approved", why)
+        self.assertEqual(self.sent, [])
+
     def test_a_stale_digest_in_an_approval_is_refused(self):
         row = self.discover()
         application = self.prepared(row)
@@ -366,6 +394,29 @@ class OwnerApprovalAuthorisesOneExactApplication(Base):
         application = self.prepared(row)
         self.assertNotEqual(self.s.applications.digest(application, row),
                             self.s.applications.digest(application, other))
+
+    def test_the_digest_covers_which_opportunity_it_is_aimed_at(self):
+        """The case above differs in the opportunity's *external reference*,
+        so it would still pass if the digest covered nothing else about the
+        opportunity. Two sources can use the same reference for unrelated
+        work, and the internal id is what makes one row this row -- so the
+        identity the application names is pinned here, separately.
+        """
+        row = self.discover()
+        application = self.prepared(row)
+        elsewhere = dataclasses.replace(application,
+                                        opportunity_id="opp_somewhere_else")
+        self.assertNotEqual(self.s.applications.digest(application, row),
+                            self.s.applications.digest(elsewhere, row))
+
+    def test_the_digest_covers_the_source(self):
+        """An approval that survived being re-pointed at another source would
+        authorise a promise to a different platform's client."""
+        row = self.discover()
+        application = self.prepared(row)
+        elsewhere = dataclasses.replace(application, source="somewhere_else")
+        self.assertNotEqual(self.s.applications.digest(application, row),
+                            self.s.applications.digest(elsewhere, row))
 
 
 # --------------------------------------------------------------------- §49
