@@ -367,6 +367,41 @@ class OwnerApprovalAuthorisesOneExactApplication(Base):
         self.assertNotIn("has not been approved", why)
         self.assertEqual(self.sent, [])
 
+    def test_a_capability_restricted_after_drafting_stops_the_submission(self):
+        """§23. Preparation and verification ask the same question about the
+        capability claim, and for every application prepared through
+        DeskPilot's own path, preparation has already answered it -- so
+        verification's copy of the question never changes an outcome and a
+        mutation to it is invisible.
+
+        This is the case where only verification can answer. The claim was
+        true when the application was drafted; the owner has since pulled the
+        capability back to development-only. What is being promised now is no
+        longer something DeskPilot may offer, and the application must not go.
+        """
+        application, row = self.authorised()
+        self.open_the_gate()
+        ok, problems = self.s.applications.verify(application, row)
+        self.assertTrue(ok, problems)       # a canary: it was fine a moment ago
+
+        name = CSV_PROMOTION.version.split("/")[0]
+        self.s.capability.decide(
+            name=name, decision=self.s.capability.LIMITED,
+            owner_identity=OWNER,
+            why="pulled back to testing after a bad result",
+            scope="internal fixtures only")
+
+        ok, problems = self.s.applications.verify(application, row)
+        self.assertFalse(ok, "a restricted capability still verified")
+        self.assertTrue(any("may not be offered to a client" in p
+                            for p in problems), problems)
+        sent, why = self.s.applications.submit(
+            application, opportunity=row, transport=self.transport(),
+            approval=self.signed())
+        self.assertFalse(sent)
+        self.assertIn("may not be offered to a client", why)
+        self.assertEqual(self.sent, [])
+
     def test_a_stale_digest_in_an_approval_is_refused(self):
         row = self.discover()
         application = self.prepared(row)

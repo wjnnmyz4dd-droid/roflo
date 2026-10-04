@@ -122,18 +122,13 @@ class Applications:
                 "work; claiming unspecified competence is how a system "
                 "promises what it cannot deliver")
 
-        # §25. The claim is checked against the registry, not accepted.
-        name = capability_version.split("/")[0]
-        registered = {c.version for c in self._s.capability.capabilities()
-                      if c.name == name and c.proven}
-        if capability_version not in registered:
-            raise FailClosed(
-                f"{capability_version} is not registered as proven, so it may "
-                "not be claimed to a client")
-        permitted, why = self._s.capability.may_deploy(name)
-        if not permitted:
-            raise FailClosed(
-                f"{capability_version} may not be offered to a client: {why}")
+        # §25. The claim is checked against the registry, not accepted. The
+        # check itself lives in one place: it was written out twice, here and
+        # in verify(), and a mutation removing either copy changed nothing
+        # because the other still refused.
+        problem = self._capability_problem(capability_version)
+        if problem:
+            raise FailClosed(problem)
 
         if estimated_days is not None and timeline_days < estimated_days:
             raise FailClosed(
@@ -191,6 +186,25 @@ class Applications:
             "deliverables": list(application.deliverables),
         })
 
+    def _capability_problem(self, capability_version: str) -> str:
+        """Why this capability claim may not be made to a client, or ``""``.
+
+        The one owner of that question. Preparation raises on it and
+        verification collects it, but neither decides it: two copies of a
+        decision are two chances to drift, and while they agree a mutation to
+        either one is invisible.
+        """
+        name = (capability_version or "").split("/")[0]
+        registered = {c.version for c in self._s.capability.capabilities()
+                      if c.name == name and c.proven}
+        if capability_version not in registered:
+            return (f"{capability_version} is not registered as proven, so it "
+                    "may not be claimed to a client")
+        permitted, why = self._s.capability.may_deploy(name)
+        if not permitted:
+            return f"{capability_version} may not be offered to a client: {why}"
+        return ""
+
     def verify(self, application: Application, opportunity: dict, *,
                now: str = "") -> tuple[bool, list[str]]:
         """Everything that must be true before the Gate is even asked (§15).
@@ -220,17 +234,12 @@ class Applications:
 
         # The capability must be real, proven and cleared to deploy -- a
         # candidate is not a capability and a recommendation is not either.
-        name = (application.capability_version or "").split("/")[0]
-        registered = {c.version for c in self._s.capability.capabilities()
-                      if c.name == name and c.proven}
-        if application.capability_version not in registered:
-            problems.append(
-                f"{application.capability_version} is not registered as "
-                "proven, so it may not be claimed to a client")
-        else:
-            permitted, why = self._s.capability.may_deploy(name)
-            if not permitted:
-                problems.append(f"{name} may not be offered: {why}")
+        # Asked again here, and not only at preparation, because an owner can
+        # restrict a capability after an application was drafted and before it
+        # is sent: what was true then is not what is being promised now.
+        problem = self._capability_problem(application.capability_version)
+        if problem:
+            problems.append(problem)
 
         if application.price_cents <= 0:
             problems.append("there is no authorised price")
