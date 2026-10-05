@@ -22,7 +22,7 @@ from solvent.cli import main
 #: while the running service carried on. Tests must therefore say which
 #: database they mean, rather than relying on a default that was wrong.
 STATEFUL = {"metrics", "status", "readiness", "health", "recover", "halt",
-            "resume", "state", "relay", "run"}
+            "resume", "state", "relay", "run", "doctor"}
 
 
 def run(*argv: str) -> tuple[int, str]:
@@ -125,11 +125,84 @@ class TheDefaultDatabaseIsTheRealOne(unittest.TestCase):
         parser = build_parser()
         choices = parser._subparsers._group_actions[0].choices
         for name in ("readiness", "status", "health", "halt", "resume",
-                     "recover", "metrics", "state", "relay"):
+                     "recover", "metrics", "state", "relay", "doctor"):
             with self.subTest(command=name):
                 sub = choices[name]
                 db = next(a for a in sub._actions if a.dest == "db")
                 self.assertEqual(db.default, rt.DEFAULT_DB)
+
+    def test_no_command_may_offer_a_db_that_defaults_elsewhere(self):
+        """The list above is maintained by hand, and that is how `doctor` sat
+        outside it while opening an in-memory database for months. This asks
+        the parser instead of a human: whatever subcommands exist, any that
+        take --db must point at the deployment by default."""
+        from solvent import runtime as rt
+        from solvent.cli import build_parser
+
+        parser = build_parser()
+        choices = parser._subparsers._group_actions[0].choices
+        checked = []
+        for name, sub in choices.items():
+            nested = getattr(sub, "_subparsers", None)
+            group = [("", sub)] if nested is None else [
+                (f"{name} {n}", p)
+                for n, p in nested._group_actions[0].choices.items()]
+            for label, target in group:
+                db = next((a for a in target._actions if a.dest == "db"), None)
+                if db is None:
+                    continue
+                checked.append(label or name)
+                with self.subTest(command=label or name):
+                    self.assertEqual(
+                        db.default, rt.DEFAULT_DB,
+                        f"{label or name} --db defaults to {db.default!r}")
+        self.assertGreater(len(checked), 10, checked)
+
+    def test_every_command_that_opens_a_database_offers_db(self):
+        """Derived the other way round: a command whose implementation opens a
+        Solvent, but which has no --db, is unreachable on any host whose
+        database is not at the compiled-in POSIX default -- which is every
+        Windows host. That is precisely how this defect was found."""
+        import inspect
+        import re
+
+        from solvent import cli as cli_module
+        from solvent.cli import build_parser
+
+        source = inspect.getsource(cli_module)
+        opens = set()
+        for match in re.finditer(r"^def (cmd_\w+)\(", source, re.M):
+            name = match.group(1)
+            body = source[match.end():]
+            end = re.search(r"^def ", body, re.M)
+            body = body[:end.start()] if end else body
+            if re.search(r"_open\(args\)|_owner_solvent\(args\)|Solvent\(", body):
+                opens.add(name)
+        self.assertIn("cmd_doctor", opens, "the probe stopped finding doctor")
+
+        parser = build_parser()
+        choices = parser._subparsers._group_actions[0].choices
+        funcs = {}
+        for name, sub in choices.items():
+            nested = getattr(sub, "_subparsers", None)
+            targets = [(name, sub)] if nested is None else [
+                (f"{name} {n}", p)
+                for n, p in nested._group_actions[0].choices.items()]
+            for label, target in targets:
+                func = target.get_default("func")
+                if func is not None:
+                    funcs[label] = func
+        for label, func in sorted(funcs.items()):
+            if func.__name__ not in opens:
+                continue
+            with self.subTest(command=label):
+                sub = choices[label.split(" ")[0]]
+                nested = getattr(sub, "_subparsers", None)
+                target = sub if nested is None else \
+                    nested._group_actions[0].choices[label.split(" ")[1]]
+                self.assertIsNotNone(
+                    next((a for a in target._actions if a.dest == "db"), None),
+                    f"{label} opens a database but cannot be told which one")
 
     def test_the_setup_commands_use_the_same_default(self):
         from solvent import runtime as rt

@@ -25,8 +25,37 @@ from .types import OperatingMode
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """Report measured enforcement, not intentions."""
-    solvent = Solvent()
+    """Report measured enforcement, not intentions.
+
+    This opened ``Solvent()`` with no path for a long time, which meant an
+    in-memory database: every run created an empty DeskPilot and then reported
+    its governance and evidence as though they were the deployment's. The
+    numbers looked right because a fresh database seeds the same safe defaults,
+    which is exactly what makes it the wrong kind of mistake -- a report whose
+    subject is not the thing anybody wanted reported.
+
+    So the database is named like it is for every other operational command,
+    through the same ``--db`` and the same opener.
+    """
+    # ``:memory:`` is sqlite's own sentinel rather than a path, and asking for
+    # it is a deliberate request for a throwaway -- which is a different thing
+    # from naming a database that is not there.
+    if args.db != ":memory:" and not pathlib.Path(args.db).exists():
+        # Refusing rather than letting sqlite create one. Every other command
+        # would make an empty database here and carry on, and for most of them
+        # that only shows an empty business. For this command it would print
+        # measured enforcement for a database that did not exist a moment ago,
+        # which is the defect above wearing a different hat -- and a mistyped
+        # path is the likeliest way to arrive here.
+        print(f"no database at {args.db}", file=sys.stderr)
+        print("doctor reports what a deployment is actually enforcing, so it "
+              "will not create one to report on. Check the path, or run "
+              "`solvent setup capability --db <path>` to provision it.",
+              file=sys.stderr)
+        return 1
+    solvent = _open(args)
+    if solvent is None:
+        return 1
     print(f"{PRODUCT} readiness")
     print("=" * 60)
 
@@ -938,8 +967,9 @@ def build_parser() -> argparse.ArgumentParser:
                     f"Engine: {ENGINE}.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("doctor", help="report measured enforcement").set_defaults(
-        func=cmd_doctor)
+    doctor = sub.add_parser("doctor", help="report measured enforcement")
+    doctor.add_argument("--db", default=rt.DEFAULT_DB)
+    doctor.set_defaults(func=cmd_doctor)
     sub.add_parser("laws", help="print the mission, laws, and where each is enforced"
                    ).set_defaults(func=cmd_laws)
     sub.add_parser("acquire", help="run one acquisition cycle (fixtures only)"
