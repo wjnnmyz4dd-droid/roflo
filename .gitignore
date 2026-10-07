@@ -21,3 +21,10 @@ build/
 models/
 *.gguf
 *.safetensors
+
+# Build output for the Windows installer. The compiled DeskPilot-Setup.exe and
+# the payload it carries are both reproducible from `windows/installer/build.py`
+# at a given commit, so the binaries do not belong in history -- and a 1 MB
+# executable committed per build would grow the repository without adding
+# anything that cannot be rebuilt.
+windows/installer/dist/
