@@ -46,6 +46,21 @@ from .layout import Layout, WEB_PORT
 from .probe import Settings
 from .report import Failure, Level, Outcome, Report, Row, Secret
 
+#: The owner identity used for governance records.
+#:
+#: Deliberately *not* the name the owner types into the wizard. Solvent's
+#: capability authority accepts only a registered owner -- ``is_owner`` requires
+#: the ``owner:`` prefix *and* membership of a policy-held list -- and refuses
+#: anything else with "only a registered owner decides capability growth". An
+#: installer that passed a free-text business name was refused on every run.
+#:
+#: Left empty on purpose: the installer omits ``--owner`` entirely and lets
+#: Solvent apply its own registered default. Choosing an identity here would
+#: make the installer a second authority on who the owner is, which is exactly
+#: the thing it must not become. The typed name is recorded where it belongs,
+#: as a contracting legal name.
+GOVERNANCE_OWNER_OMITTED = True
+
 #: Recorded in the install state so a later installer knows what it is looking at.
 STATE_VERSION = 1
 
@@ -338,25 +353,74 @@ class Engine:
                           facts={"env_file": self.layout.env_file})
 
     def step_database(self) -> StepResult:
-        """Create the real database by asking the application to read it."""
-        result = self.solvent_cli("doctor", "--db", self.layout.db)
-        if not result.ok:
-            raise StepFailed(f"the DeskPilot database at {self.layout.db} could "
-                             f"not be created: {result.output.strip()[:300]}")
+        """Create the real database, using a command that will create one.
+
+        ``setup check`` and not ``doctor``. ``doctor`` deliberately refuses to
+        open a database that does not exist -- "doctor reports what a
+        deployment is actually enforcing, so it will not create one to report
+        on" -- which is correct of it and made this step fail on every fresh
+        installation. The refusal was invisible to a test double whose handler
+        returned success and created the file; it took running the real command
+        to see it.
+        """
+        result = self.solvent_cli("setup", "check", "--db", self.layout.db)
+        # Its exit code is deliberately ignored. ``setup check`` is a *view*:
+        # it reports whether the owner's configuration is complete, and on a
+        # fresh installation it is not -- no work source approved, no payment
+        # rail, activation blocked pending owner decisions -- so it exits
+        # non-zero every time. That is correct of it and says nothing about
+        # whether the command worked. The success criterion for this step is
+        # the one thing the step is for: a database now exists.
         if not self.host.exists(self.layout.db):
-            raise StepFailed(f"DeskPilot reported success but no database "
-                             f"exists at {self.layout.db}")
+            raise StepFailed(
+                f"the DeskPilot database at {self.layout.db} was not created. "
+                f"DeskPilot said: {result.output.strip()[:300] or '(nothing)'}")
+        # Then ask ``doctor``, whose exit code *is* meaningful now that the
+        # file exists: it refuses only an absent database, and fails on one it
+        # cannot open. Each command is used for what its exit code actually
+        # means -- ``setup check`` to create, ``doctor`` to confirm the result
+        # is a database rather than merely a file at the right path.
+        opened = self.solvent_cli("doctor", "--db", self.layout.db)
+        if not opened.ok:
+            raise StepFailed(
+                f"a file exists at {self.layout.db} but DeskPilot could not "
+                f"open it as a database: "
+                f"{opened.output.strip()[:300] or '(no detail)'}. It has not "
+                f"been replaced or deleted.")
         self._note(f"created the database at {self.layout.db}")
         return StepResult("database", "Creating persistent database", True,
                           self.layout.db, facts={"db": self.layout.db})
+
+    def step_contracting(self) -> StepResult:
+        """Record the owner's name and email as a contracting identity.
+
+        This is where the name typed into the wizard belongs. It is a legal
+        name for a client agreement, not a governance identity -- and keeping
+        the two apart is what lets the capability step use Solvent's registered
+        owner instead of being refused.
+        """
+        if not self.answers.owner_identity.strip():
+            return StepResult("contracting", "Recording owner details", True,
+                              "no name given", skipped=True)
+        args = ["setup", "contracting", "--db", self.layout.db,
+                "--structure", "INDIVIDUAL",
+                "--legal-name", self.answers.owner_identity]
+        if self.answers.business_email:
+            args += ["--email", self.answers.business_email]
+        result = self.solvent_cli(*args)
+        if not result.ok:
+            raise StepFailed(f"the owner's contracting details could not be "
+                             f"recorded: {result.output.strip()[:300]}")
+        self._note("recorded the owner's contracting identity")
+        return StepResult("contracting", "Recording owner details", True,
+                          (result.output.strip().splitlines() or ["recorded"])[0])
 
     def step_capability(self) -> StepResult:
         """Ask Solvent to promote csv-cleanup. It re-runs the verifier itself."""
         env = {secrets_env.OWNER_KEY_ENV: self.owner_key.reveal()} \
             if self.owner_key else {}
         argv = [self.python_exe, "-I", "-m", "solvent.cli", "setup",
-                "capability", "--db", self.layout.db,
-                "--owner", self.answers.owner_identity]
+                "capability", "--db", self.layout.db]
         result = self.host.run(argv, cwd=self.layout.app, env=env, timeout=900.0)
         self.log.command(argv, result.returncode, result.output)
         if not result.ok:
@@ -395,7 +459,7 @@ class Engine:
         env = {secrets_env.OWNER_KEY_ENV: self.owner_key.reveal()} \
             if self.owner_key else {}
         argv = [self.python_exe, "-I", "-m", "solvent.cli", "setup", "model",
-                "--db", self.layout.db, "--owner", self.answers.owner_identity,
+                "--db", self.layout.db,
                 "--tag", option.tag, "--digest", option.verified_digest,
                 "--provider", self.answers.ai_kind]
         result = self.host.run(argv, cwd=self.layout.app, env=env, timeout=600.0)
@@ -423,7 +487,7 @@ class Engine:
         env = {secrets_env.OWNER_KEY_ENV: self.owner_key.reveal()} \
             if self.owner_key else {}
         argv = [self.python_exe, "-I", "-m", "solvent.cli", "setup", "firewall",
-                "--db", self.layout.db, "--owner", self.answers.owner_identity,
+                "--db", self.layout.db,
                 "--default-deny", "--note",
                 "Windows Firewall, inbound default deny. DeskPilot binds "
                 "loopback only; one scoped block rule added by the installer."]
@@ -507,6 +571,7 @@ class Engine:
             ("Creating isolated Python environment", self.step_venv),
             ("Creating owner credentials", self.step_secrets),
             ("Creating persistent database", self.step_database),
+            ("Recording owner details", self.step_contracting),
             ("Registering certified capabilities", self.step_capability),
             ("Configuring AI", self.step_model_rights),
             ("Configuring web control centre", self.step_firewall),
@@ -608,15 +673,30 @@ class Engine:
         rows.append(Row("Database", Outcome.PASS, self.layout.db,
                         facts={"db": self.layout.db}))
 
-        for title, args in (("Health", ("health",)),
-                            ("Readiness", ("readiness",)),
-                            ("Diagnostics", ("doctor",)),
-                            ("Owner configuration", ("setup", "check"))):
+        # ``health``, ``readiness`` and ``doctor`` report state and exit zero;
+        # a non-zero from one of them is a real failure. ``setup check`` is
+        # different: it exits non-zero whenever the owner's configuration is
+        # incomplete, which it always is immediately after an installation --
+        # the work source, the payment rail and the activation decisions are
+        # the owner's to make later. Treating that as a failed verification
+        # would make every successful installation report NOT READY.
+        for title, args, informational in (
+                ("Health", ("health",), False),
+                ("Readiness", ("readiness",), False),
+                ("Diagnostics", ("doctor",), False),
+                ("Owner configuration", ("setup", "check"), True)):
             result = self.solvent_cli(*args, "--db", self.layout.db)
-            rows.append(Row(title,
-                            Outcome.PASS if result.ok else Outcome.FAIL,
-                            (result.output.strip().splitlines() or
-                             ["no output"])[0][:200],
+            if result.ok:
+                outcome = Outcome.PASS
+            elif informational:
+                outcome = Outcome.WARN
+            else:
+                outcome = Outcome.FAIL
+            detail = (result.output.strip().splitlines() or ["no output"])[0][:200]
+            if informational and not result.ok:
+                detail = (f"{detail} - items remain for you to decide; this "
+                          f"does not block the installation")
+            rows.append(Row(title, outcome, detail,
                             facts={"exit": result.returncode,
                                    "output": result.output.strip()[:4000],
                                    "db": self.layout.db}))
@@ -630,7 +710,7 @@ class Engine:
         """Read the capability back. The installer never certifies it itself."""
         script = (
             "import json,sys\n"
-            "from solvent.services import Solvent\n"
+            "from solvent.harness import Solvent\n"
             "s = Solvent(sys.argv[1])\n"
             "out = []\n"
             "for c in s.capability.capabilities():\n"

@@ -67,6 +67,79 @@ A structural test asserts this: the installer package may not define
 `certify`, `promote_capability`, `compute_readiness` or `approve`, and may not
 contain `pbkdf2_hmac`.
 
+### How the engine is launched, and why that was wrong twice
+
+The wizard used to run `python -I deskpilot_installer\cli.py`. That cannot
+work and never did. `cli.py` is a module inside a package and uses relative
+imports, so executed as a script it has no parent package and raises
+`ImportError: attempted relative import with no known parent package` on its
+first import line. Every unit test passed throughout, because they imported the
+module rather than executing the file — so the install phase had never actually
+run on any machine.
+
+The obvious repair does not work either. `python -I -m deskpilot_installer.cli`
+fails with `ModuleNotFoundError`, because `-I` is isolated mode and in isolated
+mode `sys.path` contains **neither the script's directory, nor the current
+working directory, nor anything from `PYTHONPATH`**. There is nothing for `-m`
+to find and no environment variable that can add it. Verified, not assumed:
+
+| Invocation | Result |
+|---|---|
+| `python -I script.py` | the script's directory is not on `sys.path` |
+| `python -I -m pkg.mod`, cwd = parent | `ModuleNotFoundError` |
+| `python -I -c "sys.path.insert(...)"` | works |
+
+So `deskpilot-engine.py` sits **beside** the package, not inside it. It is a
+plain script with no relative imports, and it puts exactly one directory — its
+own — on `sys.path` before importing the engine. Isolation is kept: a planted
+`json.py` in whatever directory the installer was launched from still cannot be
+imported, which is the whole reason `-I` was chosen.
+
+The same class of mistake was present in two more places and both are fixed:
+`hash_web_password` passed `PYTHONPATH` to an isolated interpreter, where it is
+ignored (it worked only because the `.pth` carried it), and the engine was
+staged **only** into the installer's temporary directory, which Windows deletes
+on exit — so the uninstaller pointed at `$INSTDIR\App\deskpilot_installer`,
+a path that had never existed. The engine is now installed to
+`C:\DeskPilot\Engine` as well, which is what repair and uninstall run.
+
+### What the application's commands actually do
+
+Four defects came from assuming how `solvent` behaves instead of running it.
+Each is now pinned by a test that executes the real CLI against a real
+database, and each assumption was encoded in a test double that answered the
+way its author expected:
+
+| Assumption | Reality |
+|---|---|
+| `doctor --db X` creates the database | It **refuses**: *"doctor reports what a deployment is actually enforcing, so it will not create one to report on."* Provisioning is `setup check`. |
+| `setup check` exits 0 on success | It exits **1** whenever the owner's configuration is incomplete — which it always is immediately after installing. The database file, not the exit code, is the criterion; and in verification this is reported, never fatal, or every successful install would read NOT READY. |
+| `--owner <the name the owner typed>` is accepted | **Refused.** `is_owner` requires the `owner:` prefix *and* membership of a policy-held list. The installer now omits `--owner` entirely and lets Solvent apply its own registered identity; the typed name is recorded as a contracting legal name, which is what it is. |
+| `Solvent` lives in `solvent.services` | It lives in `solvent.harness`. The capability read-back would have failed. |
+
+Provisioning now uses each command for what its exit code actually means:
+`setup check` to create, then `doctor` to confirm the result is a database
+rather than merely a file at the right path.
+
+### The preinstallation self-check
+
+Before anything on the machine is modified, the installer proves it can do the
+job — and the wizard aborts if it cannot:
+
+1. **Python detected and compatible** — the interpreter *running the engine*,
+   which is stronger than "one was found".
+2. **The engine launches** — demonstrated by reaching the check at all.
+3. **Required imports succeed** — all 23 modules, imported now rather than
+   eight steps into an installation.
+4. **Payload integrity** — the fail-closed digest check, run early.
+5. **Installation paths valid** — writable, not forbidden, enough room.
+6. **Existing DeskPilot data preservable** — a database already there is
+   readable, is a real SQLite file, and will be kept.
+7. **MetaTrader protected** — detected, fingerprinted, no port conflict.
+
+A damaged engine exits 3 with a readable diagnostic rather than a traceback,
+which is what lets the wizard stop before touching anything.
+
 ### No pip, and how the application gets on the import path
 
 DeskPilot imports nothing outside the standard library — its whole suite passes

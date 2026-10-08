@@ -45,6 +45,23 @@ class Layout:
         """DeskPilot's own Python environment. Never another application's."""
         return self._join("venv")
 
+    @property
+    def engine(self) -> str:
+        """The installation engine, kept for repair, upgrade and uninstall.
+
+        Separate from ``App``, which the payload replaces wholesale on every
+        install and upgrade. The engine used to live only in the installer's
+        temporary directory, which Windows deletes when the installer exits --
+        so the uninstaller pointed at a path that had never existed and the
+        clean uninstall path could not run.
+        """
+        return self._join("Engine")
+
+    @property
+    def engine_launcher(self) -> str:
+        """The script the uninstaller and a repair run."""
+        return ntpath.join(self.engine, "deskpilot-engine.py")
+
     # -- the owner's -----------------------------------------------------
     @property
     def data(self) -> str:
@@ -98,7 +115,7 @@ class Layout:
     @property
     def replaceable_dirs(self) -> tuple[str, ...]:
         """Directories an upgrade or uninstall may remove outright."""
-        return (self.app, self.venv)
+        return (self.app, self.venv, self.engine)
 
     @property
     def all_dirs(self) -> tuple[str, ...]:

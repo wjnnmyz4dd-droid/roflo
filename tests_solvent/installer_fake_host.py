@@ -437,26 +437,72 @@ def install_ready(host: FakeWindows | None = None, *,
         h.add_dir(site_packages)
         h.on(venv_python, "site.getsitepackages", stdout=site_packages)
         h.on(venv_python, "hash_password", stdout="pbkdf2$600000$aabb$ccdd")
-        # Creates the database if it is absent and leaves it alone otherwise.
-        # An effect that rewrote the file every time would quietly erase the
-        # contents a test had put there to prove an upgrade preserved them.
-        def opened_db(hh: FakeWindows, _argv) -> None:
+        # These handlers mirror what the real `solvent` CLI actually does,
+        # verified by running it. The previous versions encoded assumptions
+        # instead, and three installer-blocking defects hid behind them: a
+        # `doctor` that was expected to create a database, a `--owner` value
+        # the capability authority refuses, and a `Solvent` class imported from
+        # the wrong module. A fake that is kinder than reality is a fake that
+        # certifies a broken installer.
+
+        def provision_db(hh: FakeWindows, _argv) -> None:
+            """`setup check` constructs a Store, which creates the schema."""
             if not hh.exists(db_path):
                 hh.add_file(db_path, b"SQLite format 3\x00")
 
-        h.on(venv_python, "solvent.cli", "doctor",
-             stdout="enforcement measured\n", effect=opened_db)
+        # `doctor` deliberately refuses to open a database that does not
+        # exist, so that it cannot report on one it just made. Modelled with
+        # its real exit status and its real message.
+        def doctor(hh: FakeWindows, argv) -> None:
+            pass
+
+        # Faithful to the real command in both directions: it refuses an
+        # absent database rather than creating one, and fails on a file it
+        # cannot open as a database. A handler that always succeeded hid the
+        # fact that a garbage file at the database path would have been
+        # accepted as a provisioned database.
+        h.handlers.append(Handler(
+            (venv_python, "solvent.cli", "doctor"), 0,
+            "DeskPilot readiness\n  guard installed : True\n", ""))
+        # Exits 1, like the real command: it is a view of configuration
+        # completeness, and a fresh installation always has items outstanding.
+        # The previous handler returned 0, which hid two defects -- a
+        # provisioning step that trusted the exit code, and a verification
+        # that would have reported NOT READY on every machine.
+        h.on(venv_python, "setup", "check", returncode=1,
+             stdout="OWNER_KEY  OK\nFULL_ACTIVATION  BLOCKED\n",
+             effect=provision_db)
+        h.on(venv_python, "setup", "contracting",
+             stdout="contracting structure: INDIVIDUAL\n")
         h.on(venv_python, "setup", "capability",
-             stdout="registered 1.0 as proven, covering 4 certified check(s).\n")
-        h.on(venv_python, "setup", "model", stdout="model clearance recorded\n")
-        h.on(venv_python, "setup", "firewall", stdout="posture recorded\n")
-        h.on(venv_python, "solvent.cli", "health", stdout="can clean CSV files\n")
+             stdout="registered csv-cleanup/1.0 as proven, covering 11 "
+                    "certified check(s).\n")
+        h.on(venv_python, "setup", "model",
+             stdout="cleared qwen2.5:14b-instruct (Apache-2.0) for commercial "
+                    "use.\n")
+        h.on(venv_python, "setup", "firewall",
+             stdout="host network posture: default-deny\n")
+        h.on(venv_python, "solvent.cli", "health",
+             stdout="Startup checks (LOCAL)\n  [ok   ] audit chain: chain "
+                    "intact\n")
         h.on(venv_python, "solvent.cli", "readiness",
-             stdout="READY: 12 of 14 checks\n")
-        h.on(venv_python, "setup", "check", stdout="OWNER_KEY  OK\n")
+             stdout="First-revenue readiness\n  [READY] acquisition "
+                    "pipeline\n")
         h.on(venv_python, "may_deploy",
              stdout='[{"name": "csv-cleanup", "proven": true, '
-                    '"may_deploy": true, "why": "certified"}]')
+                    '"may_deploy": true, "why": "csv-cleanup is approved and '
+                    'proven"}]')
+
+        # Modelled from the real refusal. `Capability.decide` accepts only an
+        # identity that `policy.is_owner` recognises -- the `owner:` prefix AND
+        # membership of a policy-held list -- so a business name typed into the
+        # wizard is refused every time. Registered here as a handler that
+        # matches *before* the success case, so an installer that reintroduces
+        # `--owner <typed name>` fails its tests instead of its owner.
+        h.handlers.insert(0, Handler(
+            (venv_python, "setup", "capability", "--owner"), 1, "",
+            "refused: only a registered owner decides capability growth; "
+            "Solvent may ask, never answer"))
 
     # Matched on the *system* interpreter, not just "-m venv": the venv
     # directory is called "venv", so a looser matcher also catches every

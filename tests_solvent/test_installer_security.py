@@ -303,6 +303,13 @@ class CodeExecutionIsRefused(unittest.TestCase):
         self.assertEqual(host.commands[-1], ("tool.exe", hostile))
 
     def test_an_owner_name_containing_quotes_survives_as_one_argument(self):
+        """The typed name travels as a contracting legal name.
+
+        It is deliberately *not* passed as ``--owner``: Solvent's capability
+        authority accepts only a registered governance identity and refuses a
+        free-text name. So the injection attempt is checked where the name
+        actually goes.
+        """
         data, digest = certified_payload()
         host = install_ready(package=data, digest=digest)
         hostile = 'Jo" --owner "attacker'
@@ -312,12 +319,15 @@ class CodeExecutionIsRefused(unittest.TestCase):
         report = engine.install()
         self.assertTrue(report.may_continue,
                         [r.detail for r in report.blockers])
-        owner_args = [argv for argv in host.commands if "--owner" in argv]
-        self.assertTrue(owner_args)
-        for argv in owner_args:
-            value = argv[argv.index("--owner") + 1]
+        named = [argv for argv in host.commands if "--legal-name" in argv]
+        self.assertTrue(named, "the owner's name must be recorded somewhere")
+        for argv in named:
+            value = argv[argv.index("--legal-name") + 1]
             self.assertEqual(value, hostile,
                              "the name must arrive as exactly one argument")
+        self.assertEqual(
+            [argv for argv in host.commands if "--owner" in argv], [],
+            "the installer must not pass a governance identity at all")
 
     def test_a_tampered_python_download_is_not_executed(self):
         from tests_solvent.installer_fake_host import _bootstrap_bytes

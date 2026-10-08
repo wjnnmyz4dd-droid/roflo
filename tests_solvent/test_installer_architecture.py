@@ -222,6 +222,65 @@ class TheInstallerIsNotASecondAuthority(unittest.TestCase):
                       "one solvent.web.auth enforces")
 
 
+class ThePackagedEntryPointIsTestedSeparately(unittest.TestCase):
+    """The subprocess suite exists, is real, and names its own command.
+
+    Those tests cannot run in a combined interpreter: DeskPilot's egress guard
+    denies ``subprocess.Popen`` once installed, and an audit hook cannot be
+    removed. Rather than weaken the guard, that suite skips with the command
+    to run it on its own -- and these tests make sure it cannot quietly become
+    an empty suite that always "passes" by being skipped.
+    """
+
+    SUITE = (pathlib.Path(__file__).resolve().parent
+             / "test_installer_packaged_entrypoint.py")
+
+    def test_the_suite_exists(self):
+        self.assertTrue(self.SUITE.is_file(),
+                        "the packaged entry point must be tested by execution")
+
+    def test_it_declares_how_to_run_it(self):
+        text = self.SUITE.read_text()
+        self.assertIn("RUN_SEPARATELY", text)
+        self.assertIn("test_installer_packaged_entrypoint", text)
+
+    def test_it_actually_starts_subprocesses(self):
+        """A suite that stopped executing anything would prove nothing."""
+        text = self.SUITE.read_text()
+        self.assertIn("subprocess.run", text)
+        self.assertIn('"-I"', text)
+
+    def test_it_covers_the_launcher_and_the_real_application(self):
+        text = self.SUITE.read_text()
+        for required in ("deskpilot-engine.py", "solvent.cli",
+                          "attempted relative import", "selfcheck"):
+            self.assertIn(required, text,
+                          f"the suite no longer covers {required}")
+
+    def test_it_does_not_open_an_egress_window(self):
+        """Impersonating the Action Gate would be weakening a control.
+
+        Checked against the parsed syntax tree, not the text: the suite
+        explains in prose why it does not call ``egress.window()``, and a
+        substring search cannot tell an explanation from a call.
+        """
+        tree = ast.parse(self.SUITE.read_text())
+        forbidden = {"window", "posix_spawn", "execv", "execvp", "fork",
+                     "addaudithook"}
+        called = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                target = node.func
+                if isinstance(target, ast.Attribute):
+                    called.add(target.attr)
+                elif isinstance(target, ast.Name):
+                    called.add(target.id)
+        leaked = called & forbidden
+        self.assertEqual(leaked, set(),
+                         f"the suite must not bypass the egress guard: "
+                         f"{sorted(leaked)}")
+
+
 class TheWizardDelegatesToTheEngine(unittest.TestCase):
     """The native script must not grow its own copy of a decision."""
 
@@ -229,7 +288,14 @@ class TheWizardDelegatesToTheEngine(unittest.TestCase):
         self.nsi = (INSTALLER / "DeskPilot-Setup.nsi").read_text()
 
     def test_the_wizard_exists_and_is_built_from_the_engine(self):
-        self.assertIn("deskpilot_installer\\cli.py", self.nsi)
+        """It runs the launcher beside the package, never a module inside it.
+
+        This assertion used to require the opposite, and that is precisely the
+        invocation that could never work: a package module run as a script has
+        no parent package, so its relative imports fail immediately.
+        """
+        self.assertIn("deskpilot-engine.py", self.nsi)
+        self.assertNotIn("deskpilot_installer\\cli.py", self.nsi)
 
     def test_the_wizard_does_not_choose_a_model(self):
         """Model sizing lives in ``ai.py``. A copy in the wizard would be a

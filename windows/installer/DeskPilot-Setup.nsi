@@ -519,6 +519,12 @@ Function SystemCheckPage
   CreateDirectory "$EngineDir"
   SetOutPath "$EngineDir"
   File /r "${ENGINE_DIR}"
+  ; The launcher sits beside the package, never inside it. Running a module
+  ; from inside a package as a script cannot work: it has no parent package,
+  ; so its relative imports raise ImportError on the first one. And `-m` is no
+  ; help either, because `-I` keeps the script directory, the current
+  ; directory and PYTHONPATH off sys.path -- there is nothing for it to find.
+  File "${ENGINE_LAUNCHER}"
   StrCpy $PayloadFile "$PLUGINSDIR\${PAYLOAD_NAME}"
   SetOutPath "$PLUGINSDIR"
   File "${PAYLOAD_FILE}"
@@ -780,8 +786,23 @@ Section "-Install"
   Pop $R5
   System::Call 'kernel32::SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t r5)i.r0'
 
+  ; -- Preinstallation self-check. Nothing on this machine has been modified
+  ;    at this point, and nothing will be if this does not pass.
+  DetailPrint "Checking the installer before changing anything..."
+  nsExec::ExecToLog '"$PythonExe" -I "$EngineDir\deskpilot-engine.py" selfcheck --package "$PayloadFile" --expect-sha256 "${PAYLOAD_SHA256}" --root "$INSTDIR" --out "$ReportFile"'
+  Pop $R2
+  ${If} $R2 != "0"
+    SetDetailsPrint both
+    DetailPrint ""
+    DetailPrint "INSTALLATION STOPPED BEFORE ANY CHANGE WAS MADE."
+    DetailPrint "The lines above say which check failed and why. Your computer"
+    DetailPrint "is exactly as it was: nothing installed, no database touched,"
+    DetailPrint "MetaTrader not touched."
+    Abort "DeskPilot was not installed."
+  ${EndIf}
+
   DetailPrint "Installing DeskPilot..."
-  nsExec::ExecToLog '"$PythonExe" -I "$EngineDir\deskpilot_installer\cli.py" install --package "$PayloadFile" --expect-sha256 "${PAYLOAD_SHA256}" --root "$INSTDIR" --out "$ReportFile"'
+  nsExec::ExecToLog '"$PythonExe" -I "$EngineDir\deskpilot-engine.py" install --package "$PayloadFile" --expect-sha256 "${PAYLOAD_SHA256}" --root "$INSTDIR" --out "$ReportFile"'
   Pop $R1
 
   ; Clear the answers from this process so nothing started later inherits them.
@@ -797,6 +818,13 @@ Section "-Install"
     DetailPrint "changed and what was not. MetaTrader was not touched."
     Abort "DeskPilot was not installed."
   ${EndIf}
+
+  ; -- Keep the engine. It used to live only in the installer's temporary
+  ;    directory, which Windows deletes on exit, so the uninstaller pointed at
+  ;    a path that had never existed.
+  SetOutPath "$INSTDIR\Engine"
+  File /r "${ENGINE_DIR}"
+  File "${ENGINE_LAUNCHER}"
 
   ; -- Add/Remove Programs.
   WriteUninstaller "$INSTDIR\Uninstall-DeskPilot.exe"
@@ -920,6 +948,12 @@ FunctionEnd
 Section "Uninstall"
   SetDetailsPrint both
   Call un.FindPython
+  ${If} ${FileExists} "$INSTDIR\Engine\deskpilot-engine.py"
+  ${Else}
+    ; No engine on disk: fall through to the limited path below rather than
+    ; running a command whose target does not exist.
+    StrCpy $PythonExe ""
+  ${EndIf}
   ${If} $PythonExe == ""
     ; Without Python the engine cannot run, so do the parts NSIS can do and
     ; say plainly what was left. Deleting the owner's database with a blunt
@@ -940,7 +974,7 @@ Section "Uninstall"
     ${If} $KeepOwnerData == "0"
       StrCpy $R1 "--purge-owner-data"
     ${EndIf}
-    nsExec::ExecToLog '"$PythonExe" -I "$INSTDIR\App\deskpilot_installer\cli.py" uninstall --root "$INSTDIR" $R1'
+    nsExec::ExecToLog '"$PythonExe" -I "$INSTDIR\Engine\deskpilot-engine.py" uninstall --root "$INSTDIR" $R1'
     Pop $R0
     ${If} $R0 != "0"
       DetailPrint "DeskPilot's own uninstall reported a problem; see the lines above."

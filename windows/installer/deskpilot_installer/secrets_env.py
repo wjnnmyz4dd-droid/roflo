@@ -169,8 +169,13 @@ def hash_web_password(host: Host, python_exe: str, app_dir: str,
         "from solvent.web.auth import hash_password\n"
         "sys.stdout.write(hash_password(sys.stdin.read().rstrip('\\n')))\n"
     )
+    # No ``PYTHONPATH``: ``-I`` ignores it, along with the current directory
+    # and user site-packages. Passing it implied a mechanism that was not
+    # operative. ``solvent`` is importable because the installer put a ``.pth``
+    # naming the application directory into this interpreter's own
+    # environment, which site processing honours even in isolated mode.
     result = host.run([python_exe, "-I", "-c", script], stdin=password,
-                      cwd=app_dir, env={"PYTHONPATH": app_dir}, timeout=120.0)
+                      cwd=app_dir, timeout=120.0)
     if not result.ok or not result.stdout.strip():
         raise ValueError(f"the password could not be hashed: "
                          f"{result.output.strip()[:200]}")

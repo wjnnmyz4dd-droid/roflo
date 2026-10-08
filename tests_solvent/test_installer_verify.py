@@ -91,12 +91,28 @@ class VerificationTargetsTheRealDatabase(unittest.TestCase):
             self.assertNotIn(SOLVENT_DEFAULT_DB, " ".join(argv))
 
     def test_health_readiness_and_doctor_are_all_reported(self):
-        for name in ("Health", "Readiness", "Diagnostics",
-                     "Owner configuration"):
+        for name in ("Health", "Readiness", "Diagnostics"):
             row = self.report.row(name)
             self.assertIsNotNone(row, f"{name} was not reported")
             self.assertEqual(row.outcome, Outcome.PASS)
             self.assertEqual(row.facts.get("db"), self.layout.db)
+
+    def test_owner_configuration_is_informational_not_a_gate(self):
+        """`setup check` exits non-zero until the owner finishes deciding.
+
+        Work source, payment rail and activation are the owner's decisions to
+        make after installing, so an incomplete configuration is the normal
+        state of a freshly installed DeskPilot. Reported, never fatal --
+        otherwise every successful installation would verify as NOT READY.
+        """
+        row = self.report.row("Owner configuration")
+        self.assertIsNotNone(row)
+        self.assertEqual(row.outcome, Outcome.WARN)
+        self.assertIn("does not block", row.detail)
+        self.assertEqual(row.facts.get("db"), self.layout.db)
+        self.assertTrue(self.report.may_continue,
+                        "an incomplete owner configuration must not fail "
+                        "verification")
 
     def test_a_non_default_install_root_is_followed_too(self):
         """The path must come from the layout, not from a constant."""

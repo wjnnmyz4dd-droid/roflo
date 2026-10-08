@@ -187,9 +187,16 @@ class TheCredentialStep(FaultInjection):
 
 
 class TheDatabaseStep(FaultInjection):
+    """Faults at `setup check`, the command that provisions the database.
+
+    Not `doctor`. `doctor` refuses to open a database that does not exist --
+    deliberately, so it cannot report on one it just created -- which is why
+    using it to provision failed on every fresh machine. These tests inject at
+    the command that actually does the work.
+    """
 
     def test_the_application_failing_to_open_the_database_is_reported(self):
-        self.inject(VENV_PYTHON, "solvent.cli", "doctor",
+        self.inject(VENV_PYTHON, "setup", "check",
                     stderr="sqlite3.DatabaseError: file is not a database")
         engine, report, _log = self.install()
         self.assertStoppedCleanly(engine, report,
@@ -197,11 +204,11 @@ class TheDatabaseStep(FaultInjection):
 
     def test_a_silent_success_with_no_database_is_caught(self):
         """Exit zero and no file is the lie this check exists for."""
-        self.inject(VENV_PYTHON, "solvent.cli", "doctor", returncode=0,
+        self.inject(VENV_PYTHON, "setup", "check", returncode=0,
                     stdout="all good")
         engine, report, _log = self.install()
         self.assertStoppedCleanly(engine, report,
-                                  expect_in_why="no database exists")
+                                  expect_in_why="was not created")
 
     def test_an_existing_database_is_not_destroyed_by_a_later_failure(self):
         self.host.add_file(Layout().db, b"SQLite format 3\x00RECORDS")
@@ -218,7 +225,8 @@ class TheDatabaseStep(FaultInjection):
         original = self.host.run
 
         def timeout(argv, **kwargs):
-            if any("doctor" in str(a) for a in argv):
+            if "check" in [str(a) for a in argv] and "setup" in [
+                    str(a) for a in argv]:
                 self.host.commands.append(tuple(str(a) for a in argv))
                 return CommandResult(tuple(str(a) for a in argv), 1, "",
                                      "timed out", timed_out=True)

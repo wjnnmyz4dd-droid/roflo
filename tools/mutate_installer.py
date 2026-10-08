@@ -191,16 +191,8 @@ MUTANTS: tuple[Mutant, ...] = (
            "tests_solvent.test_installer_verify.TheEnvironmentRebuildGuard",
            "venv rebuild guard"),
     Mutant("verify-uses-the-default-database", "engine.py",
-           '''        for title, args in (("Health", ("health",)),
-                            ("Readiness", ("readiness",)),
-                            ("Diagnostics", ("doctor",)),
-                            ("Owner configuration", ("setup", "check"))):
-            result = self.solvent_cli(*args, "--db", self.layout.db)''',
-           '''        for title, args in (("Health", ("health",)),
-                            ("Readiness", ("readiness",)),
-                            ("Diagnostics", ("doctor",)),
-                            ("Owner configuration", ("setup", "check"))):
-            result = self.solvent_cli(*args)''',
+           '            result = self.solvent_cli(*args, "--db", self.layout.db)',
+           '            result = self.solvent_cli(*args)',
            "tests_solvent.test_installer_verify.VerificationTargetsTheRealDatabase",
            "doctor runs against the real database"),
     Mutant("capability-failure-ignored", "engine.py",
@@ -255,6 +247,42 @@ MUTANTS: tuple[Mutant, ...] = (
            "tests_solvent.test_installer_python_discovery"
            ".EachRouteWorksOnItsOwn.test_every_supported_minor_version_is_searched",
            "every supported minor version is searched"),
+    # The packaging and execution defects found on the real VPS. Each guards
+    # a control that a function-level test cannot reach, because the failures
+    # were in how the engine is *launched* and how the application's commands
+    # actually behave -- not in any function's logic.
+    Mutant("provisioning-trusts-the-exit-code", "engine.py",
+           '        if not self.host.exists(self.layout.db):\n            raise StepFailed(\n                f"the DeskPilot database at {self.layout.db} was not created. "',
+           '        if not result.ok:\n            raise StepFailed(\n                f"the DeskPilot database at {self.layout.db} was not created. "',
+           "tests_solvent.test_installer_matrix.ExistingInstallations"
+           ".test_09_upgrade_an_existing_installation",
+           "database provisioning judged by the database, not an exit code"),
+    Mutant("provisioning-skips-the-open-check", "engine.py",
+           '        opened = self.solvent_cli("doctor", "--db", self.layout.db)',
+           '        opened = self.solvent_cli("health", "--db", self.layout.db)',
+           "tests_solvent.test_installer_matrix.InterruptionScenarios"
+           ".test_29_a_corrupt_database_is_reported_not_overwritten",
+           "a file at the database path is confirmed to be a database"),
+    Mutant("owner-configuration-fails-verification", "engine.py",
+           '                ("Owner configuration", ("setup", "check"), True)):',
+           '                ("Owner configuration", ("setup", "check"), False)):',
+           "tests_solvent.test_installer_verify"
+           ".VerificationTargetsTheRealDatabase"
+           ".test_owner_configuration_is_informational_not_a_gate",
+           "an incomplete owner configuration does not fail verification"),
+    Mutant("typed-name-used-as-a-governance-identity", "engine.py",
+           '                "capability", "--db", self.layout.db]',
+           '                "capability", "--db", self.layout.db,\n                "--owner", self.answers.owner_identity]',
+           "tests_solvent.test_installer_security.CodeExecutionIsRefused"
+           ".test_an_owner_name_containing_quotes_survives_as_one_argument",
+           "the owner's typed name is never a governance identity"),
+    Mutant("capability-read-from-the-wrong-module", "engine.py",
+           '            "from solvent.harness import Solvent\\n"',
+           '            "from solvent.services import Solvent\\n"',
+           "tests_solvent.test_installer_packaged_entrypoint"
+           ".TheRealApplicationCommandsWork"
+           ".test_08_the_engines_capability_script_uses_the_right_module",
+           "the capability read-back imports Solvent from where it lives"),
     Mutant("metatraders-python-adopted", "python_runtime.py",
            "    for fragment in _FOREIGN:\n        if fragment in low:",
            "    for fragment in _FOREIGN:\n        if False:",

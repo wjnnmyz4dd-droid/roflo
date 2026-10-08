@@ -30,7 +30,7 @@ import json
 import os
 import sys
 
-from . import lifecycle
+from . import lifecycle, selfcheck
 from .engine import Components, Engine, OwnerAnswers, readiness_headline
 from .host import Host, WindowsHost
 from .installlog import Log
@@ -113,8 +113,9 @@ def build_parser() -> argparse.ArgumentParser:
                     "DeskPilot-Setup.exe; every decision it reports is made "
                     "by DeskPilot's own authorities.")
     parser.add_argument("phase",
-                        choices=["check", "install", "verify", "repair",
-                                 "upgrade", "uninstall", "plan-uninstall"])
+                        choices=["selfcheck", "check", "install", "verify",
+                                 "repair", "upgrade", "uninstall",
+                                 "plan-uninstall"])
     parser.add_argument("--package", default="",
                         help="path to the certified DeskPilot package")
     parser.add_argument("--expect-sha256", default="",
@@ -148,7 +149,10 @@ def main(argv: list[str] | None = None, host: Host | None = None) -> int:
     answers = read_answers(args.answers_env, args.answers_file, host)
     log = Log(host)
 
-    if args.phase == "check":
+    if args.phase == "selfcheck":
+        # Runs before anything is modified. Its exit code is the wizard's gate.
+        report = selfcheck.preinstall(host, settings)
+    elif args.phase == "check":
         report = system_check(host, settings)
     elif args.phase == "install":
         report = Engine(host, settings, answers, log).install()

@@ -393,12 +393,16 @@ class InterruptionScenarios(Scenario):
         """Stop partway, then install again. The second attempt completes."""
         data, digest = certified_payload()
         host = install_ready(package=data, digest=digest)
-        host.handlers.insert(0, Handler((VENV_PYTHON, "setup", "capability"),
-                                        1, "", "interrupted"))
+        interrupted = Handler((VENV_PYTHON, "setup", "capability"), 1, "",
+                              "interrupted")
+        host.handlers.insert(0, interrupted)
         engine, first, _log = self.install(host, digest)
         self.assertFalse(first.may_continue)
 
-        host.handlers.pop(0)
+        # Removed by identity, not by index. The scenario builder also inserts
+        # at the front, so popping position zero removed whichever handler
+        # happened to be there and left this one in place.
+        host.handlers.remove(interrupted)
         engine2, second, _log2 = self.install(host, digest)
         self.assertTrue(second.may_continue,
                         [r.detail for r in second.blockers])
@@ -434,14 +438,26 @@ class InterruptionScenarios(Scenario):
                          b"SQLite format 3\x00YEARS-OF-RECORDS")
 
     def test_29_a_corrupt_database_is_reported_not_overwritten(self):
+        """Injected at `setup check`, which is what provisions the database.
+
+        It used to be injected at `doctor`. That was wrong twice over: doctor
+        is not the provisioning step, and doctor refuses to open a database
+        that does not exist rather than creating one -- which is why the
+        original installer failed on every fresh machine.
+        """
         data, digest = certified_payload()
         host = install_ready(package=data, digest=digest)
         host.add_file(Layout().db, b"this is not a database at all")
+        # `setup check` provisions and its non-zero exit is normal; it is
+        # `doctor` that reports a file it cannot open as a database, so that is
+        # where the fault belongs. Injecting only at `setup check` let the
+        # install proceed, because a file did exist at the path -- which was a
+        # real gap in the provisioning step, now closed.
         host.handlers.insert(0, Handler((VENV_PYTHON, "solvent.cli", "doctor"),
                                         1, "", "file is not a database"))
         engine, report, _log = self.install(host, digest)
         self.assertFalse(report.may_continue)
-        self.assertIn("not a database", report.failure.why)
+        self.assertIn("file is not a database", report.failure.why)
         self.assertEqual(host.read_bytes(Layout().db),
                          b"this is not a database at all",
                          "a database that could not be opened must be left as "

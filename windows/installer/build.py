@@ -114,6 +114,9 @@ def stage_engine(stage: pathlib.Path) -> int:
     for path in sorted(ENGINE.glob("*.py")):
         shutil.copy2(path, target / path.name)
         count += 1
+    # The launcher sits beside the package, not inside it: it must be runnable
+    # as a plain script, and a module inside the package cannot be.
+    shutil.copy2(HERE / "deskpilot-engine.py", stage / "deskpilot-engine.py")
     return count
 
 
@@ -156,6 +159,7 @@ def main() -> int:
         f"-DPAYLOAD_BYTES={size}",
         f"-DPAYLOAD_COMMIT={commit}",
         f"-DENGINE_DIR={stage / 'deskpilot_installer'}",
+        f"-DENGINE_LAUNCHER={stage / 'deskpilot-engine.py'}",
         f"-DPYTHON_SEARCH_NSH={stage / 'python-search.nsh'}",
         f"-DSETUP_VERSION={__version__}",
         f"-DOUT_FILE={exe}",
