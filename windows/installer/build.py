@@ -13,11 +13,22 @@ compares against is in its own code section rather than in a file beside it
 that an attacker could edit. If the payload changes, the installer must be
 rebuilt, and rebuilding is what produces a new digest to publish.
 
-Deterministic where it can be: ``git archive`` is given a fixed mtime so two
-builds of the same commit produce the same payload bytes, and therefore the
-same digest. The installer executable itself is not byte-reproducible --
-makensis embeds a build timestamp -- so its digest is published per build
-rather than claimed to be derivable.
+Deterministic where it can be: ``git archive <commit>`` stamps every entry
+with that commit's committer date, so two builds of one commit produce the same
+payload bytes and therefore the same digest. (An earlier version of this note
+claimed a ``--mtime`` flag was passed for the purpose. None is: the property is
+real but it comes from the commit date, and a comment describing a mechanism
+that is not there is worse than no comment.) The installer executable itself is
+not byte-reproducible -- makensis embeds a build timestamp -- so its digest is
+published per build rather than claimed to be derivable.
+
+**The payload and the engine come from different places**, and the recorded
+HEAD has to mean both. The payload is ``git archive`` of a commit; the engine
+is copied from the working tree, because it is the installer's own code and not
+part of the application being installed. If the tree carried uncommitted engine
+changes, "source HEAD" would describe the payload while the engine shipped was
+something no commit contains. :func:`require_clean_engine` refuses to build in
+that state, so the recorded commit describes the whole artifact.
 """
 
 from __future__ import annotations
@@ -50,6 +61,27 @@ def run(argv: list[str], cwd: pathlib.Path | None = None) -> str:
 
 def head_commit() -> str:
     return run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO).strip()
+
+
+def require_clean_engine(allow_dirty: bool = False) -> None:
+    """Refuse to build a release whose engine is not in the recorded commit.
+
+    The payload is archived from a commit, but the engine is copied from the
+    working tree. A dirty tree therefore produces an artifact whose recorded
+    HEAD is true of its payload and false of its installer code -- which is
+    exactly the sort of half-true provenance a hash is supposed to prevent.
+    """
+    dirty = run(["git", "status", "--porcelain", "--",
+                 "windows/installer"], cwd=REPO).strip()
+    if not dirty:
+        return
+    message = ("the installer source has uncommitted changes, so the build's "
+               "recorded commit would not describe the engine it ships:\n"
+               + dirty + "\n\nCommit them, or pass --allow-dirty for a "
+               "throwaway build that must not be published.")
+    if not allow_dirty:
+        raise SystemExit(message)
+    print("WARNING: " + message)
 
 
 def build_payload(out: pathlib.Path, commit: str) -> tuple[str, int]:
@@ -125,15 +157,20 @@ def main() -> int:
     parser.add_argument("--commit", default="")
     parser.add_argument("--out-dir", default=str(HERE / "dist"))
     parser.add_argument("--payload-only", action="store_true")
+    parser.add_argument("--allow-dirty", action="store_true",
+                        help="build despite uncommitted installer changes. "
+                             "The result must not be published.")
     args = parser.parse_args()
 
     commit = args.commit or head_commit()
+    require_clean_engine(args.allow_dirty)
     out_dir = pathlib.Path(args.out_dir)
     stage = out_dir / "stage"
     stage.mkdir(parents=True, exist_ok=True)
 
     payload = stage / f"DeskPilot-certified-{commit}.zip"
-    digest, size = build_payload(payload, commit)
+    digest_of_payload, size = build_payload(payload, commit)
+    digest = digest_of_payload
     print(f"payload : {payload.name}")
     print(f"  commit: {commit}")
     print(f"  bytes : {size:,}")
@@ -170,10 +207,41 @@ def main() -> int:
     if not exe.exists():
         raise SystemExit("makensis reported success but produced no installer")
     data = exe.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
     print(f"installer: {exe}")
     print(f"  version: {__version__}")
     print(f"  bytes  : {len(data):,}")
-    print(f"  sha256 : {hashlib.sha256(data).hexdigest()}")
+    print(f"  sha256 : {digest}")
+
+    # Written beside the executable rather than into a committed document.
+    # An installer's own hash cannot be recorded in a file that is part of the
+    # commit it is built from: adding the record changes the commit, which
+    # changes the build. The register in ARTIFACTS.md therefore holds the facts
+    # that are stable -- the source commit and the payload digest -- and points
+    # here for the one fact that is not.
+    provenance = out_dir / "BUILD.txt"
+    provenance.write_text(
+        "DeskPilot Windows installer — build provenance\n"
+        "=" * 46 + "\n\n"
+        f"file                : {exe.name}\n"
+        f"installer version   : {__version__}\n"
+        f"source HEAD         : {commit}\n"
+        f"size (bytes)        : {len(data)}\n"
+        f"installer SHA-256   : {digest}\n"
+        f"payload             : {payload.name}\n"
+        f"payload SHA-256     : {digest_of_payload}\n"
+        f"payload size        : {size}\n"
+        f"engine source       : the working tree at {commit}, verified clean\n"
+        f"                      (payload is git archive of that commit)\n\n"
+        "code signature      : NONE. No Windows code-signing certificate\n"
+        "                      exists in the build environment. Windows will\n"
+        "                      warn that the publisher is unknown.\n"
+        "windows execution   : NOT VERIFIED. Built and tested on Linux; the\n"
+        "                      compiled wizard has not been run on Windows.\n\n"
+        "Verify this file against the executable before installing:\n"
+        "    certutil -hashfile DeskPilot-Setup.exe SHA256\n",
+        encoding="utf-8")
+    print(f"  provenance: {provenance}")
     return 0
 
 
