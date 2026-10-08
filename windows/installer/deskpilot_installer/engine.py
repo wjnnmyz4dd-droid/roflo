@@ -572,8 +572,9 @@ class Engine:
 
     def _untouched(self) -> tuple[str, ...]:
         """What is certainly unchanged. MetaTrader is always on this list."""
-        out = ["MetaTrader was not touched: no process was stopped, no file "
-               "changed, no firewall rule of its altered"]
+        out = ["MetaTrader was not touched: no process of its was stopped, "
+               "none of its files changed, and none of its firewall rules "
+               "altered"]
         if not any("database" in c for c in self.changed):
             out.append("no DeskPilot database was created or modified")
         if not any("firewall" in c for c in self.changed):

@@ -218,6 +218,43 @@ MUTANTS: tuple[Mutant, ...] = (
            "tests_solvent.test_installer_matrix.FreshAndPython"
            ".test_04b_a_same_size_python_download_is_still_refused",
            "Python download integrity"),
+    # The detection defect, guarded one route at a time. Each route is removed
+    # on its own: a mutant that removed them all together would be killed by
+    # any single surviving route and would prove nothing about the others.
+    Mutant("registry-not-consulted", "python_runtime.py",
+           "                  + registry_candidates(host)\n", "",
+           "tests_solvent.test_installer_python_discovery"
+           ".EachRouteWorksOnItsOwn.test_the_registry_alone_is_enough",
+           "PEP 514 registry discovery"),
+    Mutant("per-user-locations-not-searched", "python_runtime.py",
+           "                  + profile_candidates(host))", ")",
+           "tests_solvent.test_installer_python_discovery"
+           ".TheOwnersMachineAsReported"
+           ".test_it_is_found_without_the_registry_entry_too",
+           "per-user install discovery (the reported defect)"),
+    Mutant("path-not-consulted", "python_runtime.py",
+           "                  + path_candidates(host)\n", "",
+           "tests_solvent.test_installer_python_discovery"
+           ".EachRouteWorksOnItsOwn.test_path_alone_is_enough",
+           "PATH discovery"),
+    Mutant("py-launcher-not-consulted", "python_runtime.py",
+           "                  + launcher_candidates(host)\n", "",
+           "tests_solvent.test_installer_python_discovery"
+           ".EachRouteWorksOnItsOwn.test_the_py_launcher_alone_is_enough",
+           "py launcher discovery"),
+    Mutant("only-the-current-profile-is-swept", "python_runtime.py",
+           "        for entry in host.listdir(users_dir):",
+           '        for entry in [ntpath.basename(\n'
+           '                host.environ().get("USERPROFILE", ""))]:',
+           "tests_solvent.test_installer_python_discovery"
+           ".EachRouteWorksOnItsOwn.test_another_users_profile_is_searched_too",
+           "every profile is swept, not just the elevated one"),
+    Mutant("older-minor-versions-not-searched", "python_runtime.py",
+           'MINORS = ("313", "314", "312", "311")',
+           'MINORS = ("313",)',
+           "tests_solvent.test_installer_python_discovery"
+           ".EachRouteWorksOnItsOwn.test_every_supported_minor_version_is_searched",
+           "every supported minor version is searched"),
     Mutant("metatraders-python-adopted", "python_runtime.py",
            "    for fragment in _FOREIGN:\n        if fragment in low:",
            "    for fragment in _FOREIGN:\n        if False:",
@@ -266,9 +303,8 @@ MUTANTS: tuple[Mutant, ...] = (
            ".test_31_a_crashed_process_is_restarted_by_the_task",
            "process recovery after failure"),
     Mutant("failure-omits-metatrader-reassurance", "engine.py",
-           '''        out = ["MetaTrader was not touched: no process was stopped, no file "
-               "changed, no firewall rule of its altered"]''',
-           '''        out = []''',
+           '        out = ["MetaTrader was not touched: no process of its was stopped, "\n               "none of its files changed, and none of its firewall rules "\n               "altered"]',
+           '        out = []',
            "tests_solvent.test_installer_security"
            ".AFailureReportStatesWhatSurvived"
            ".test_the_failure_says_metatrader_was_untouched",

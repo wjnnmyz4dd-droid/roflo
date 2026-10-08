@@ -19,6 +19,11 @@
 Unicode true
 ManifestDPIAware true
 
+; Set before any !include: StrFunc's ${...} declarations emit real
+; functions, and NSIS refuses a compressor change once the header has
+; been written.
+SetCompressor /SOLID lzma
+
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
@@ -26,6 +31,8 @@ ManifestDPIAware true
 !include "x64.nsh"
 !include "StrFunc.nsh"
 ${StrRep}
+${StrCase}
+${StrLoc}
 
 ; MUI2 defines .onGUIInit itself and offers this hook for ours.
 !define MUI_CUSTOMFUNCTION_GUIINIT InitDefaults
@@ -43,7 +50,6 @@ InstallDir "C:\DeskPilot"
 RequestExecutionLevel admin
 ShowInstDetails show
 ShowUninstDetails show
-SetCompressor /SOLID lzma
 
 VIProductVersion "${SETUP_VERSION}.0"
 VIAddVersionKey "ProductName" "DeskPilot"
@@ -53,9 +59,13 @@ VIAddVersionKey "ProductVersion" "${SETUP_VERSION}"
 VIAddVersionKey "LegalCopyright" "DeskPilot"
 
 !define REGKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\DeskPilot"
-!define PYTHON_VERSION "3.13.9"
-!define PYTHON_URL "https://www.python.org/ftp/python/3.13.9/python-3.13.9-amd64.exe"
-!define PYTHON_SHA256 "200ddff856bbff949d2cc1be42e8807c07538abd6b6966d5113a094cf628c5c5"
+
+; Generated from deskpilot_installer/python_runtime.py by build.py, so the
+; wizard's Python search and the engine's cannot drift apart.
+!include "${PYTHON_SEARCH_NSH}"
+!define PYTHON_VERSION "${DP_PYTHON_BOOTSTRAP_VERSION}"
+!define PYTHON_URL "${DP_PYTHON_BOOTSTRAP_URL}"
+!define PYTHON_SHA256 "${DP_PYTHON_BOOTSTRAP_SHA256}"
 
 Var PythonExe          ; a usable interpreter, or ""
 Var PythonNeedsInstall
@@ -133,6 +143,31 @@ Function ProbePython
   Pop $0
   StrCpy $1 "0"
   IfFileExists "$0" 0 probe_done
+
+  ; Refuse an interpreter that belongs to MetaTrader, by path, before running
+  ; it. A trading terminal often ships its own Python, and it sits on exactly
+  ; the kind of path a search finds. Building DeskPilot's environment from it
+  ; would tie a back-office tool to the terminal's interpreter -- and removing
+  ; or upgrading MetaTrader would then break DeskPilot. The engine refuses the
+  ; same paths; this is the wizard's copy of that refusal, for the interpreter
+  ; it picks to run the engine with in the first place.
+  ${StrCase} $5 "$0" "L"
+  ${StrLoc} $6 "$5" "metatrader" ">"
+  ${If} $6 != ""
+    Goto probe_done
+  ${EndIf}
+  ${StrLoc} $6 "$5" "metaquotes" ">"
+  ${If} $6 != ""
+    Goto probe_done
+  ${EndIf}
+  ${StrLoc} $6 "$5" "\mt4\" ">"
+  ${If} $6 != ""
+    Goto probe_done
+  ${EndIf}
+  ${StrLoc} $6 "$5" "\mt5\" ">"
+  ${If} $6 != ""
+    Goto probe_done
+  ${EndIf}
   nsExec::ExecToStack '"$0" -I -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,11) and sys.maxsize > 2**32 else 1)"'
   Pop $2
   Pop $3
@@ -143,28 +178,39 @@ probe_done:
   Push $1
 FunctionEnd
 
-; Find a usable Python, skipping any that belongs to MetaTrader.
-Function FindPython
-  StrCpy $PythonExe ""
-  StrCpy $R9 "C:\Program Files\Python313\python.exe"
-  Call TryOne
-  ${If} $PythonExe != ""
-    Return
-  ${EndIf}
-  StrCpy $R9 "C:\Program Files\Python312\python.exe"
-  Call TryOne
-  ${If} $PythonExe != ""
-    Return
-  ${EndIf}
-  StrCpy $R9 "C:\Program Files\Python311\python.exe"
-  Call TryOne
-  ${If} $PythonExe != ""
-    Return
-  ${EndIf}
-  StrCpy $R9 "C:\Python313\python.exe"
-  Call TryOne
-FunctionEnd
+; Find a usable Python. This is the search that decides whether the owner is
+; told to install one, so it is the search that must not miss theirs.
+;
+; The order is deliberate. The registry is first because PEP 514 is the
+; authoritative record on Windows: python.org's installer registers itself
+; there whether it installed for one user or all of them, wherever it put
+; itself, and whether or not "Add python.exe to PATH" was ever ticked -- and
+; that box is unticked by default. An earlier version of this installer
+; searched four fixed directories and nothing else, so a per-user install (the
+; python.org default, into AppData\Local\Programs\Python) was invisible and the
+; owner was told to install a Python they already had.
+;
+; The fallback path list is generated from the engine's own by build.py, so the
+; two searches cannot drift apart.
 
+!macro DP_TRY_PATH _candidate
+  ${If} $PythonExe == ""
+    StrCpy $R9 "${_candidate}"
+    Call TryOne
+  ${EndIf}
+!macroend
+
+!macro DP_TRY_MINOR_IN_R2 _minor
+  ${If} $PythonExe == ""
+    StrCpy $R9 "$R2\Python${_minor}\python.exe"
+    Call TryOne
+  ${EndIf}
+!macroend
+
+; Probe $R9 and adopt it as $PythonExe if it is usable. The MetaTrader
+; exclusion lives in ProbePython, which refuses an interpreter under a
+; MetaTrader directory before running it: sharing a trading terminal's Python
+; would mean sharing its site-packages.
 Function TryOne
   Push $R9
   Call ProbePython
@@ -172,6 +218,231 @@ Function TryOne
   ${If} $R8 == "1"
     StrCpy $PythonExe $R9
   ${EndIf}
+FunctionEnd
+
+Function FindPython
+  StrCpy $PythonExe ""
+
+  ; 1. PEP 514, both hives and both registry views.
+  SetRegView 64
+  StrCpy $R5 "HKCU"
+  Call ScanRegistryHive
+  ${If} $PythonExe != ""
+    SetRegView Default
+    Return
+  ${EndIf}
+  StrCpy $R5 "HKLM"
+  Call ScanRegistryHive
+  ${If} $PythonExe != ""
+    SetRegView Default
+    Return
+  ${EndIf}
+  SetRegView 32
+  StrCpy $R5 "HKCU"
+  Call ScanRegistryHive
+  ${If} $PythonExe == ""
+    StrCpy $R5 "HKLM"
+    Call ScanRegistryHive
+  ${EndIf}
+  SetRegView Default
+  ${If} $PythonExe != ""
+    Return
+  ${EndIf}
+
+  ; 2. Whatever "python" means on this process's PATH.
+  SearchPath $R9 "python.exe"
+  ${If} $R9 != ""
+    Call TryOne
+  ${EndIf}
+  ${If} $PythonExe != ""
+    Return
+  ${EndIf}
+
+  ; 3. The per-machine launcher, which knows every registered install.
+  ${If} ${FileExists} "$WINDIR\py.exe"
+    nsExec::ExecToStack '"$WINDIR\py.exe" -0p'
+    Pop $R6
+    Pop $R7
+    ${If} $R6 == "0"
+      Push $R7
+      Call FirstPythonPathIn
+      Pop $R9
+      ${If} $R9 != ""
+        Call TryOne
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ${If} $PythonExe != ""
+    Return
+  ${EndIf}
+
+  ; 4. All-users locations, generated from the engine's list.
+  !insertmacro DP_EACH_MACHINE_PATH DP_TRY_PATH
+  ${If} $PythonExe != ""
+    Return
+  ${EndIf}
+
+  ; 5. Per-user locations, for every profile on this machine. Every profile,
+  ;    because the installer is elevated and $LOCALAPPDATA may be the
+  ;    administrator's while the owner's Python sits in theirs.
+  Call ScanUserProfiles
+FunctionEnd
+
+; Enumerate Software\Python\<Company>\<Tag>\InstallPath in the hive named by $R5.
+Function ScanRegistryHive
+  StrCpy $R0 0
+reg_company_loop:
+  ${If} $R5 == "HKCU"
+    EnumRegKey $R1 HKCU "Software\Python" $R0
+  ${Else}
+    EnumRegKey $R1 HKLM "Software\Python" $R0
+  ${EndIf}
+  ${If} $R1 == ""
+    Return
+  ${EndIf}
+  IntOp $R0 $R0 + 1
+  ; PyLauncher has no InstallPath; skip it rather than probing a missing key.
+  ${If} $R1 == "PyLauncher"
+    Goto reg_company_loop
+  ${EndIf}
+  StrCpy $R2 0
+reg_tag_loop:
+  ${If} $R5 == "HKCU"
+    EnumRegKey $R3 HKCU "Software\Python\$R1" $R2
+  ${Else}
+    EnumRegKey $R3 HKLM "Software\Python\$R1" $R2
+  ${EndIf}
+  ${If} $R3 == ""
+    Goto reg_company_loop
+  ${EndIf}
+  IntOp $R2 $R2 + 1
+
+  ; ExecutablePath is preferred: PEP 514 allows the executable to sit outside
+  ; the installation directory, and the value exists to say where.
+  ${If} $R5 == "HKCU"
+    ReadRegStr $R4 HKCU "Software\Python\$R1\$R3\InstallPath" "ExecutablePath"
+  ${Else}
+    ReadRegStr $R4 HKLM "Software\Python\$R1\$R3\InstallPath" "ExecutablePath"
+  ${EndIf}
+  ${If} $R4 == ""
+    ${If} $R5 == "HKCU"
+      ReadRegStr $R4 HKCU "Software\Python\$R1\$R3\InstallPath" ""
+    ${Else}
+      ReadRegStr $R4 HKLM "Software\Python\$R1\$R3\InstallPath" ""
+    ${EndIf}
+    ${If} $R4 != ""
+      StrCpy $R8 $R4 "" -1
+      ${If} $R8 == "\"
+        StrCpy $R4 "$R4python.exe"
+      ${Else}
+        StrCpy $R4 "$R4\python.exe"
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ${If} $R4 != ""
+    StrCpy $R9 $R4
+    Call TryOne
+    ${If} $PythonExe != ""
+      Return
+    ${EndIf}
+  ${EndIf}
+  Goto reg_tag_loop
+FunctionEnd
+
+; Look under every user profile for a per-user python.org installation.
+Function ScanUserProfiles
+  FindFirst $R0 $R1 "C:\Users\*"
+profile_loop:
+  ${If} $R1 == ""
+    FindClose $R0
+    Return
+  ${EndIf}
+  ${If} $R1 != "."
+  ${AndIf} $R1 != ".."
+    StrCpy $R2 "C:\Users\$R1\${DP_PYTHON_USER_SUFFIX}"
+    ${If} ${FileExists} "$R2\*"
+      !insertmacro DP_EACH_MINOR DP_TRY_MINOR_IN_R2
+    ${EndIf}
+  ${EndIf}
+  ${If} $PythonExe != ""
+    FindClose $R0
+    Return
+  ${EndIf}
+  FindNext $R0 $R1
+  Goto profile_loop
+FunctionEnd
+
+; Pull the first path ending in python.exe out of `py -0p` output.
+Function FirstPythonPathIn
+  Exch $0
+  StrCpy $1 ""
+  StrCpy $2 0
+  StrCpy $3 ""
+scan_char:
+  StrCpy $4 $0 1 $2
+  ${If} $4 == ""
+  ${OrIf} $4 == "$\n"
+  ${OrIf} $4 == "$\r"
+    StrLen $5 $3
+    ${If} $5 > 10
+      StrCpy $6 $3 "" -10
+      ${If} $6 == "python.exe"
+        ; Keep what follows the last run of two spaces: `py -0p` pads the
+        ; version column, so the path is the tail of the line.
+        StrCpy $1 $3
+      ${EndIf}
+    ${EndIf}
+    ${If} $1 != ""
+      Goto scan_done
+    ${EndIf}
+    ${If} $4 == ""
+      Goto scan_done
+    ${EndIf}
+    StrCpy $3 ""
+    IntOp $2 $2 + 1
+    Goto scan_char
+  ${EndIf}
+  StrCpy $3 "$3$4"
+  IntOp $2 $2 + 1
+  Goto scan_char
+scan_done:
+  ${If} $1 != ""
+    Push $1
+    Call TrimLeadingColumns
+    Pop $1
+  ${EndIf}
+  StrCpy $0 $1
+  Exch $0
+FunctionEnd
+
+; Drop everything up to and including the last double space on a line.
+Function TrimLeadingColumns
+  Exch $0
+  StrCpy $1 0
+  StrCpy $2 -1
+trim_scan:
+  StrCpy $3 $0 2 $1
+  ${If} $3 == ""
+    Goto trim_done
+  ${EndIf}
+  ${If} $3 == "  "
+    StrCpy $2 $1
+  ${EndIf}
+  IntOp $1 $1 + 1
+  Goto trim_scan
+trim_done:
+  ${If} $2 >= 0
+    IntOp $2 $2 + 2
+    StrCpy $0 $0 "" $2
+  ${EndIf}
+  ; Strip any remaining leading spaces.
+strip_space:
+  StrCpy $3 $0 1
+  ${If} $3 == " "
+    StrCpy $0 $0 "" 1
+    Goto strip_space
+  ${EndIf}
+  Exch $0
 FunctionEnd
 
 ; SHA-256 of the file at the top of the stack, lowercase, no spaces.

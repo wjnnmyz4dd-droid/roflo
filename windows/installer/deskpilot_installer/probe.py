@@ -178,7 +178,7 @@ def system_check(host: Host, settings: Settings) -> Report:
 
     found = python_runtime.discover(host)
     chosen = python_runtime.choose(found)
-    rows.append(python_runtime.row(found, chosen))
+    rows.append(python_runtime.row(found, chosen, host))
 
     verdict = payload.verify(host, settings.package_path, settings.expected_digest)
     rows.append(payload.row(verdict))

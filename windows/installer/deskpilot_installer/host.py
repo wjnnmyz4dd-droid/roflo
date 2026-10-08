@@ -30,6 +30,7 @@ to simulate its own environment, however carefully it is named.
 from __future__ import annotations
 
 import abc
+import ntpath
 import os
 import pathlib
 import shutil
@@ -39,6 +40,44 @@ from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
 from .report import Secret
+
+
+def _subkeys(winreg, key) -> list[str]:
+    """Names of a registry key's immediate children. Never raises."""
+    names: list[str] = []
+    index = 0
+    while True:
+        try:
+            names.append(winreg.EnumKey(key, index))
+        except OSError:
+            break
+        index += 1
+    return names
+
+
+def _install_path(winreg, company_key, tag: str, access: int,
+                  value_name: str | None) -> str:
+    """One registration's interpreter path, or ``""``.
+
+    ``value_name`` of ``None`` reads the key's default value, which PEP 514
+    defines as the installation *directory*; ``python.exe`` is joined onto it.
+    A named value is taken as the executable itself.
+    """
+    try:
+        key = winreg.OpenKey(company_key, tag + r"\\InstallPath", 0, access)
+    except OSError:
+        return ""
+    with key:
+        try:
+            raw, _kind = winreg.QueryValueEx(key, value_name)
+        except OSError:
+            return ""
+    text = str(raw or "").strip().strip('"')
+    if not text:
+        return ""
+    if value_name is None:
+        return ntpath.join(text, "python.exe")
+    return text
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +184,20 @@ class Host(abc.ABC):
     @abc.abstractmethod
     def which(self, program: str) -> str:
         """Absolute path to ``program``, or ``""``."""
+
+    # -- registry ---------------------------------------------------------
+    def registry_python_paths(self) -> list[str]:
+        """Interpreters registered under PEP 514, newest-looking first.
+
+        Concrete rather than abstract, returning nothing by default, because a
+        host that has no registry is a legitimate host -- but on Windows this
+        is the *authoritative* answer and a path list is only a fallback. A
+        python.org installer records itself here whether it installed for one
+        user or all of them, whether it was added to PATH or not, and wherever
+        it put itself. Reading it is the difference between finding the owner's
+        Python and telling them to install one they already have.
+        """
+        return []
 
     # -- optional ---------------------------------------------------------
     def port_owner(self, port: int) -> str:
@@ -320,6 +373,69 @@ class WindowsHost(Host):
 
     def which(self, program: str) -> str:
         return shutil.which(program) or ""
+
+    def registry_python_paths(self) -> list[str]:
+        """Read PEP 514 registrations from both hives and both registry views.
+
+        Four sweeps are needed and each omission is a real machine missed.
+        ``HKEY_CURRENT_USER`` holds a per-user install, which is what
+        python.org does by default. ``HKEY_LOCAL_MACHINE`` holds an all-users
+        install. And both have to be read through the 64-bit *and* 32-bit
+        views, because a 32-bit process reading the plain path is silently
+        redirected into ``WOW6432Node`` and would miss every 64-bit
+        registration -- which is exactly the set we want.
+
+        ``ExecutablePath`` is preferred over joining ``python.exe`` onto
+        ``InstallPath``: PEP 514 allows a distribution to put the executable
+        somewhere else, and the value exists to be used.
+        """
+        if os.name != "nt":
+            return []
+        # pragma: no cover - requires Windows
+        import winreg
+
+        found: list[str] = []
+        seen: set[str] = set()
+        subkey = r"Software\\Python"
+        for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            for view in (getattr(winreg, "KEY_WOW64_64KEY", 0),
+                         getattr(winreg, "KEY_WOW64_32KEY", 0)):
+                for path in self._sweep(winreg, hive, subkey, view):
+                    key = path.lower()
+                    if key not in seen:
+                        seen.add(key)
+                        found.append(path)
+        return found
+
+    @staticmethod
+    def _sweep(winreg, hive, subkey: str, view: int) -> list[str]:
+        """Every ``ExecutablePath`` under one hive and one registry view."""
+        out: list[str] = []
+        access = winreg.KEY_READ | view
+        try:
+            root = winreg.OpenKey(hive, subkey, 0, access)
+        except OSError:
+            return out
+        with root:
+            for company in _subkeys(winreg, root):
+                if company.lower() == "pylauncher":
+                    continue
+                try:
+                    company_key = winreg.OpenKey(root, company, 0, access)
+                except OSError:
+                    continue
+                with company_key:
+                    for tag in _subkeys(winreg, company_key):
+                        for value in ("ExecutablePath", None):
+                            path = _install_path(winreg, company_key, tag,
+                                                 access, value)
+                            if path:
+                                out.append(path)
+                                break
+        # Newest tag last in the registry is not guaranteed, so sort by the
+        # version-looking part of the path descending and let the caller's own
+        # version check have the final say.
+        return sorted(out, reverse=True)
 
     def port_owner(self, port: int) -> str:
         """Map a listening port to a process name via netstat and tasklist.

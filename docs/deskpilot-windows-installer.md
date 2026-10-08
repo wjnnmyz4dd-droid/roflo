@@ -100,13 +100,50 @@ created is a **block**: inbound, public profile, DeskPilot's own interpreter. It
 changes nothing today and means a later mistake does not silently expose the
 business. Nothing else is touched, and uninstall removes that one rule by name.
 
-### Which Python, and the awkward fact about versions
+### Finding the Python you already have
+
+This is the part that was wrong, and it is worth describing precisely because
+the symptom was so misleading.
+
+An owner with a working Python 3.13.12 was told the installer would install
+Python. The version was never the problem: every 3.13.x release installs into a
+directory called `Python313`, and 3.13 clears the 3.11 floor comfortably. The
+**search** was the problem. It looked in four fixed directories — two under
+`Program Files`, two at the root of `C:` — and nowhere else. python.org's
+installer defaults to a **per-user** install, into
+`%LOCALAPPDATA%\Programs\Python\Python313`, and leaves **"Add python.exe to
+PATH" unticked**. Both defaults put a perfectly good interpreter outside
+everything the installer looked at. Worse, the wizard — the half that draws the
+system-check screen and decides whether to install Python — consulted neither
+`PATH` nor the registry at all.
+
+The search now has five routes, and each is tested in isolation:
+
+| Route | Why it is there |
+|---|---|
+| **Registry (PEP 514)** | The authoritative record on Windows. python.org registers itself here regardless of where it installed or whether PATH was touched. Read from `HKCU` and `HKLM`, in both the 64- and 32-bit views — a 32-bit process reading the plain path is redirected into `WOW6432Node` and misses every 64-bit entry. |
+| **PATH** | Whatever `python` means to this process. |
+| **`py -0p`** | The launcher knows every registered install, including ones registered unusually. |
+| **All-users locations** | `Program Files`, `Program Files (x86)` and the root of `C:`, for 3.11 through 3.14. |
+| **Per-user locations** | `AppData\Local\Programs\Python` under **every** profile on the machine — not just the current one. The installer is elevated, so `%LOCALAPPDATA%` may be the administrator's while the owner's Python sits in theirs. |
+
+The wizard's fallback list is **generated from the engine's** by `build.py` into
+`python-search.nsh`. Two hand-maintained lists is two sources of truth, and the
+one that drifts is the one nobody is testing — which is exactly how the engine
+came to see a PATH interpreter that the wizard could not.
+
+When nothing is found the screen now says how many locations were checked and
+names the registry among them, so "it did not find my Python" becomes a
+question with an answer instead of a dead end.
+
+### Which Python it installs, when it has to
 
 DeskPilot declares 3.11 or newer, and 3.11 is what the suite is proven against.
 But python.org no longer publishes a **Windows installer** for 3.11 or 3.12 —
 both are security-only, source only. So on Windows the real choice is 3.13 or
 newer. The floor stays at 3.11 so an existing 3.11 or 3.12 is reused rather
-than replaced; the bootstrap fetches 3.13.9.
+than replaced; the bootstrap fetches 3.13.12, and only when no usable
+interpreter exists at all.
 
 That download is verified against a SHA-256 compiled into the installer, and a
 mismatch aborts without running it. The digest's provenance is one download

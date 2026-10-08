@@ -89,6 +89,16 @@ class FakeWindows(Host):
     dirs: set[str] = field(default_factory=set)
     #: Normalised path -> mtime.
     mtimes: dict[str, int] = field(default_factory=dict)
+    #: Normalised path -> the spelling it was created with.
+    #:
+    #: Windows compares paths case-insensitively but *reports* names with
+    #: their original case. Code that enumerates a directory and builds a
+    #: path from what it finds therefore gets real casing, and a fake that
+    #: returned lowercase names would make such code look broken when it is
+    #: not -- or hide a genuine bug behind a fake-only mismatch.
+    display: dict[str, str] = field(default_factory=dict)
+    #: Interpreters registered under PEP 514, as the registry would report.
+    registry_paths: list[str] = field(default_factory=list)
 
     procs: list[ProcessInfo] = field(default_factory=list)
     listening: dict[int, str] = field(default_factory=dict)
@@ -115,6 +125,7 @@ class FakeWindows(Host):
         key = norm(path)
         self.files[key] = data
         self.mtimes[key] = mtime
+        self._remember(path)
         parent = ntpath.dirname(key)
         while parent and parent not in self.dirs:
             self.dirs.add(parent)
@@ -127,6 +138,7 @@ class FakeWindows(Host):
     def add_dir(self, path: str) -> "FakeWindows":
         key = norm(path)
         self.dirs.add(key)
+        self._remember(path)
         parent = ntpath.dirname(key)
         while parent and parent not in self.dirs:
             self.dirs.add(parent)
@@ -135,6 +147,15 @@ class FakeWindows(Host):
                 break
             parent = nxt
         return self
+
+    def _remember(self, path: str) -> None:
+        """Record the original spelling of every segment of ``path``."""
+        cleaned = path.replace("/", "\\")
+        parts = [p for p in cleaned.split("\\") if p]
+        built = ""
+        for part in parts:
+            built = part if not built else built + "\\" + part
+            self.display.setdefault(norm(built), part)
 
     def add_program(self, name: str, path: str) -> "FakeWindows":
         self.path_programs[name.lower()] = path
@@ -216,7 +237,8 @@ class FakeWindows(Host):
                 continue
             parent = ntpath.dirname(candidate)
             if parent == key:
-                names.add(ntpath.basename(candidate))
+                names.add(self.display.get(candidate,
+                                           ntpath.basename(candidate)))
         return sorted(names)
 
     def remove_tree(self, path: str) -> None:
@@ -288,6 +310,9 @@ class FakeWindows(Host):
 
     def which(self, program: str) -> str:
         return self.path_programs.get(program.lower(), "")
+
+    def registry_python_paths(self) -> list[str]:
+        return list(self.registry_paths)
 
 
 # ---------------------------------------------------------------------------
@@ -401,8 +426,11 @@ def install_ready(host: FakeWindows | None = None, *,
             h.add_program("python.exe", path)
             h.on(path, "sys.version_info", stdout="3 13 True")
 
+        # Matched on the generic shape rather than the pinned version: the
+        # bootstrap version moves, and a fixture naming it goes stale the day
+        # it does.
         host.on("curl.exe", "python.org", effect=arrived)
-        host.on("python-3.13.9-amd64.exe", "/quiet", effect=installed)
+        host.on("-amd64.exe", "/quiet", effect=installed)
 
     def venv_made(h: FakeWindows, argv) -> None:
         h.add_program("venvpython", venv_python)

@@ -35,6 +35,7 @@ bootstrap offers 3.13.
 from __future__ import annotations
 
 import hmac
+import ntpath
 from dataclasses import dataclass
 
 from .host import Host
@@ -44,17 +45,21 @@ from .report import Failure, Outcome, Row
 MIN_VERSION = (3, 11)
 
 #: What the installer fetches when nothing suitable is present.
-BOOTSTRAP_VERSION = "3.13.9"
-BOOTSTRAP_URL = ("https://www.python.org/ftp/python/3.13.9/"
-                 "python-3.13.9-amd64.exe")
+#:
+#: Only reached when no usable interpreter exists. An owner who already has
+#: 3.11 or newer keeps it -- which is the whole point of the search above, and
+#: the thing the previous version of this installer got wrong.
+BOOTSTRAP_VERSION = "3.13.12"
+BOOTSTRAP_URL = ("https://www.python.org/ftp/python/3.13.12/"
+                 "python-3.13.12-amd64.exe")
 #: SHA-256 of the file at :data:`BOOTSTRAP_URL`, computed from that URL over
-#: HTTPS on 2026-10-07. The fail-closed gate before the installer is executed.
-BOOTSTRAP_SHA256 = ("200ddff856bbff949d2cc1be42e8807c07538abd6b6966d5113a094c"
-                    "f628c5c5")
+#: HTTPS on 2026-10-08. The fail-closed gate before the installer is executed.
+BOOTSTRAP_SHA256 = ("96159fcb523ae404b707186a75b4104ee23851e476a5e838e14584cf"
+                    "1e03f981")
 #: Published by python.org on the release page. Recorded so the owner can
 #: cross-check this pin against the publisher without trusting this installer.
-BOOTSTRAP_MD5 = "3e86f4361963db7f02fd6615b90aab32"
-BOOTSTRAP_BYTES = 28761776
+BOOTSTRAP_MD5 = "7588c11aecd9b64fc6213525c4a13c85"
+BOOTSTRAP_BYTES = 29096776
 
 #: Arguments for an unattended, all-users install that stays out of the way.
 #:
@@ -92,15 +97,114 @@ class Interpreter:
         return ".".join(str(p) for p in self.version) if self.version else "unknown"
 
 
-#: Where to look, in order. The first usable one wins.
-SEARCH = (
-    r"C:\Program Files\Python313\python.exe",
-    r"C:\Program Files\Python312\python.exe",
-    r"C:\Program Files\Python311\python.exe",
-    r"C:\Python313\python.exe",
-    r"C:\Python312\python.exe",
-    r"C:\Python311\python.exe",
-)
+#: Minor versions worth looking for, newest first. Patch level never appears
+#: in an installation path -- 3.13.0 and 3.13.12 both live in ``Python313`` --
+#: so searching by minor version covers every patch release of it.
+MINORS = ("313", "314", "312", "311")
+
+#: All-users install roots. What ``InstallAllUsers=1`` produces.
+_MACHINE_ROOTS = (r"C:\Program Files", r"C:\Program Files (x86)", "C:\\")
+
+#: Per-user install root, relative to a profile directory.
+#:
+#: This is where python.org's installer puts Python **by default**. Omitting it
+#: was the defect that made a working interpreter invisible: the owner installs
+#: Python, it works in their shell, and an installer that only searched the
+#: all-users roots reports "WILL INSTALL" and offers to install a second copy.
+_USER_SUFFIX = r"AppData\Local\Programs\Python"
+
+#: The per-machine launcher, which can enumerate every registered install.
+_LAUNCHER = r"C:\Windows\py.exe"
+
+
+def machine_candidates() -> list[str]:
+    """All-users installation paths, newest minor version first."""
+    out: list[str] = []
+    for minor in MINORS:
+        for root in _MACHINE_ROOTS:
+            out.append(ntpath.join(root, f"Python{minor}", "python.exe"))
+    return out
+
+
+def profile_candidates(host: Host) -> list[str]:
+    """Per-user installation paths, for every profile on the machine.
+
+    Every profile, not just the current one, and that is the point. The
+    installer runs elevated, so ``%LOCALAPPDATA%`` may resolve to the
+    administrator's profile while the Python the owner installed sits in
+    theirs. Looking only at the current profile finds nothing on exactly the
+    machine this is meant to fix.
+
+    ``C:\\Users`` is assumed and ``USERPROFILE``'s parent is added, which
+    covers a machine whose profiles were relocated to another drive. An earlier
+    version derived the root from ``LOCALAPPDATA`` by stripping two components,
+    which yields the *profile* directory rather than the directory holding the
+    profiles -- it searched inside one user instead of across all of them.
+    """
+    roots = {"C:\\Users"}
+    profile = host.environ().get("USERPROFILE", "")
+    if profile:
+        roots.add(ntpath.dirname(profile))
+    out: list[str] = []
+    for users_dir in sorted(roots):
+        if not users_dir or not host.is_dir(users_dir):
+            continue
+        for entry in host.listdir(users_dir):
+            base = ntpath.join(users_dir, entry, _USER_SUFFIX)
+            if not host.is_dir(base):
+                continue
+            for minor in MINORS:
+                out.append(ntpath.join(base, f"Python{minor}", "python.exe"))
+    return out
+
+
+def registry_candidates(host: Host) -> list[str]:
+    """Interpreters that registered themselves under PEP 514.
+
+    The authoritative source on Windows, and the one that does not care where
+    the installer chose to put things or whether PATH was ever touched.
+    """
+    return list(host.registry_python_paths())
+
+
+def launcher_candidates(host: Host) -> list[str]:
+    """Interpreters the ``py`` launcher knows about.
+
+    ``py -0p`` lists every registered installation with its path. A last
+    resort: it covers a distribution that registered itself in a way the
+    registry sweep did not anticipate, and it costs one process.
+    """
+    if not host.exists(_LAUNCHER):
+        return []
+    result = host.run([_LAUNCHER, "-0p"], timeout=60.0)
+    if not result.ok:
+        return []
+    out: list[str] = []
+    for line in result.output.splitlines():
+        # Lines look like " -V:3.13 *        C:\path\to\python.exe"; the path
+        # is whatever follows the last run of two or more spaces.
+        text = line.strip()
+        if not text or text.lower().startswith("-v:") is False and ":" not in text:
+            continue
+        marker = text.rfind("  ")
+        candidate = text[marker:].strip() if marker > 0 else ""
+        if candidate.lower().endswith("python.exe"):
+            out.append(candidate)
+    return out
+
+
+def path_candidates(host: Host) -> list[str]:
+    """Whatever ``python`` means on this process's PATH, if anything."""
+    out = []
+    for program in ("python.exe", "python3.exe", "python"):
+        found = host.which(program)
+        if found:
+            out.append(found)
+    return out
+
+
+#: Kept as a name because tests and the generated wizard list refer to it.
+SEARCH = tuple(machine_candidates())
 
 
 def _interrogate(host: Host, path: str) -> Interpreter:
@@ -146,10 +250,15 @@ def discover(host: Host, extra: tuple[str, ...] = ()) -> list[Interpreter]:
     """
     seen: set[str] = set()
     found: list[Interpreter] = []
-    candidates = list(extra) + list(SEARCH)
-    on_path = host.which("python.exe") or host.which("python")
-    if on_path:
-        candidates.append(on_path)
+    # Registry first: it is the authoritative record and it is right about
+    # machines the path lists are wrong about. The rest are fallbacks, in
+    # descending order of how much they are to be trusted.
+    candidates = (list(extra)
+                  + registry_candidates(host)
+                  + path_candidates(host)
+                  + launcher_candidates(host)
+                  + machine_candidates()
+                  + profile_candidates(host))
     for path in candidates:
         key = path.lower()
         if key in seen or not host.exists(path):
@@ -167,7 +276,25 @@ def choose(found: list[Interpreter]) -> Interpreter | None:
     return max(usable, key=lambda i: i.version)
 
 
-def row(found: list[Interpreter], chosen: Interpreter | None) -> Row:
+def search_report(host: Host) -> dict[str, list[str]]:
+    """Every place that was looked, grouped by how it was looked up.
+
+    Exists because of a specific failure: an owner with a working Python was
+    told the installer would install one, and nothing on the screen said where
+    it had looked. A list of locations turns "it did not find my Python" into
+    a question with an answer.
+    """
+    return {
+        "registry (PEP 514)": registry_candidates(host),
+        "PATH": path_candidates(host),
+        "py launcher": launcher_candidates(host),
+        "all-users locations": machine_candidates(),
+        "per-user locations": profile_candidates(host),
+    }
+
+
+def row(found: list[Interpreter], chosen: Interpreter | None,
+        host: Host | None = None) -> Row:
     """The system-check line. ``WILL INSTALL`` is a pass, not a problem."""
     if chosen is not None:
         return Row("Python", Outcome.PASS,
@@ -180,8 +307,15 @@ def row(found: list[Interpreter], chosen: Interpreter | None) -> Row:
                    f"here cannot be used ({why})",
                    facts={"rejected": [{"path": i.path, "why": i.rejected}
                                        for i in found]})
-    return Row("Python", Outcome.WILL_INSTALL,
-               f"WILL INSTALL {BOOTSTRAP_VERSION} from python.org")
+    facts: dict = {}
+    detail = f"WILL INSTALL {BOOTSTRAP_VERSION} from python.org"
+    if host is not None:
+        searched = search_report(host)
+        looked = sum(len(v) for v in searched.values())
+        detail += (f" - no existing Python was found in {looked} checked "
+                   f"locations, including the registry")
+        facts["searched"] = {name: paths for name, paths in searched.items()}
+    return Row("Python", Outcome.WILL_INSTALL, detail, facts=facts)
 
 
 def verify_download(host: Host, path: str) -> str:
