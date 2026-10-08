@@ -92,6 +92,24 @@ def require_clean_engine(allow_dirty: bool = False) -> str:
     return dirty
 
 
+def write_provenance(out_dir: pathlib.Path, commit: str,
+                     text: str) -> pathlib.Path:
+    """Write ``BUILD.txt`` and a copy the next build will not overwrite.
+
+    ``BUILD.txt`` alone was the only record of a delivered installer's hash,
+    and ``dist/`` is not in the repository, so every build destroyed its
+    predecessor's provenance. makensis embeds a build timestamp, so the lost
+    hash could not be recomputed from the same commit either -- which left the
+    artifact register pointing at a file that no longer described the artifact
+    it named. Returns the path of the preserved copy.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "BUILD.txt").write_text(text, encoding="utf-8")
+    kept = out_dir / f"BUILD-{commit}.txt"
+    kept.write_text(text, encoding="utf-8")
+    return kept
+
+
 def engine_source(commit: str, dirty: str) -> str:
     """The provenance file's account of what the engine was built from."""
     if not dirty:
@@ -248,7 +266,7 @@ def main() -> int:
     # that are stable -- the source commit and the payload digest -- and points
     # here for the one fact that is not.
     provenance = out_dir / "BUILD.txt"
-    provenance.write_text(
+    text = (
         # Parenthesised: adjacent string literals concatenate before `*`, so
         # without it the rule multiplied the title line as well.
         "DeskPilot Windows installer — build provenance\n"
@@ -268,9 +286,10 @@ def main() -> int:
         "windows execution   : NOT VERIFIED. Built and tested on Linux; the\n"
         "                      compiled wizard has not been run on Windows.\n\n"
         "Verify this file against the executable before installing:\n"
-        "    certutil -hashfile DeskPilot-Setup.exe SHA256\n",
-        encoding="utf-8")
+        "    certutil -hashfile DeskPilot-Setup.exe SHA256\n")
+    kept = write_provenance(out_dir, commit, text)
     print(f"  provenance: {provenance}")
+    print(f"  preserved : {kept}")
     return 0
 
 

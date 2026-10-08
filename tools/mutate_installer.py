@@ -357,6 +357,13 @@ MUTANTS: tuple[Mutant, ...] = (
            ".EveryRefusalStatesItsReason"
            ".test_no_refusal_states_a_placeholder_reason",
            "a refusal's reason says something"),
+    Mutant("provenance-not-preserved-per-build", "build.py",
+           '    kept = out_dir / f"BUILD-{commit}.txt"\n    kept.write_text(text, encoding="utf-8")\n    return kept',
+           '    kept = out_dir / "BUILD.txt"\n    return kept',
+           "tests_solvent.test_installer_architecture"
+           ".EachBuildKeepsItsOwnProvenance"
+           ".test_a_later_build_does_not_destroy_an_earlier_record",
+           "a delivered installer's hash stays recoverable after later builds"),
     Mutant("provenance-flatters-a-dirty-tree", "build.py",
            '    if not dirty:\n        return (f"engine source',
            '    if True:\n        return (f"engine source',

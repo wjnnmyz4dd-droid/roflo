@@ -442,3 +442,44 @@ class TheProvenanceFileCannotFlatter(unittest.TestCase):
             self.build_module().require_clean_engine)
         self.assertIn("-> str", source,
                       "require_clean_engine does not hand back what it found")
+
+
+class EachBuildKeepsItsOwnProvenance(unittest.TestCase):
+    """A delivered installer's hash has to stay recoverable.
+
+    The artifact register named the current installer's hash by pointing at
+    ``dist/BUILD.txt``. ``dist/`` is not in the repository and every build
+    overwrote that file, so the moment a later build ran, the register pointed
+    at a file describing a different executable -- and because makensis embeds
+    a build timestamp, rebuilding the same commit does not reproduce the lost
+    hash. The question the register exists to answer ("was I given the one
+    with the defect?") became unanswerable.
+    """
+
+    def build_module(self):
+        sys.path.insert(0, str(INSTALLER))
+        import build
+        return build
+
+    def test_a_build_writes_both_the_pointer_and_a_kept_copy(self):
+        import tempfile
+        build = self.build_module()
+        with tempfile.TemporaryDirectory() as box:
+            out = pathlib.Path(box)
+            kept = build.write_provenance(out, "abc1234", "provenance text\n")
+            self.assertTrue((out / "BUILD.txt").is_file())
+            self.assertEqual(kept, out / "BUILD-abc1234.txt")
+            self.assertTrue(kept.is_file())
+            self.assertEqual(kept.read_text(), (out / "BUILD.txt").read_text())
+
+    def test_a_later_build_does_not_destroy_an_earlier_record(self):
+        import tempfile
+        build = self.build_module()
+        with tempfile.TemporaryDirectory() as box:
+            out = pathlib.Path(box)
+            first = build.write_provenance(out, "aaaaaaa", "the first build\n")
+            build.write_provenance(out, "bbbbbbb", "the second build\n")
+            self.assertEqual(first.read_text(), "the first build\n",
+                             "the second build overwrote the first's record")
+            self.assertEqual((out / "BUILD.txt").read_text(),
+                             "the second build\n")
