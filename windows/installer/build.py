@@ -221,8 +221,10 @@ def main() -> int:
     # here for the one fact that is not.
     provenance = out_dir / "BUILD.txt"
     provenance.write_text(
+        # Parenthesised: adjacent string literals concatenate before `*`, so
+        # without it the rule multiplied the title line as well.
         "DeskPilot Windows installer — build provenance\n"
-        "=" * 46 + "\n\n"
+        + ("=" * 46) + "\n\n"
         f"file                : {exe.name}\n"
         f"installer version   : {__version__}\n"
         f"source HEAD         : {commit}\n"
