@@ -34,7 +34,21 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PACKAGE = ROOT / "windows" / "installer" / "deskpilot_installer"
+INSTALLER = ROOT / "windows" / "installer"
+PACKAGE = INSTALLER / "deskpilot_installer"
+
+
+def source_path(module: str) -> pathlib.Path:
+    """Where a mutant's ``module`` lives.
+
+    Mutants used to name a module under ``deskpilot_installer`` and nothing
+    else, so the battery could not touch the NSIS wizard -- the half of the
+    installer where all three real-world failures actually happened. A name
+    with a separator, or one that is not in the package, resolves against
+    ``windows/installer`` instead.
+    """
+    inside = PACKAGE / module
+    return inside if inside.is_file() else INSTALLER / module
 
 
 @dataclasses.dataclass(frozen=True)
@@ -283,6 +297,140 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheRealApplicationCommandsWork"
            ".test_08_the_engines_capability_script_uses_the_right_module",
            "the capability read-back imports Solvent from where it lives"),
+    # The credential hand-over. Each of these is the third real-world
+    # failure, or the silence that made it look like the owner's fault.
+    Mutant("handover-error-swallowed", "cli.py",
+           '        return AnswersTransfer(\n            OwnerAnswers(), source,\n            f"the owner\'s answers did not arrive as readable JSON "',
+           '        return AnswersTransfer(\n            OwnerAnswers(), source,\n            "" if True else\n            f"the owner\'s answers did not arrive as readable JSON "',
+           "tests_solvent.test_installer_security"
+           ".TheOwnersAnswersArriveOrSayWhyNot"
+           ".test_the_exact_observed_payload_is_reported_not_swallowed",
+           "a broken hand-over is reported, not defaulted away"),
+    Mutant("handover-failure-does-not-block-install", "cli.py",
+           '    if transfer.error and args.phase in ("selfcheck", "install"):',
+           '    if transfer.error and args.phase in ("selfcheck",):',
+           "tests_solvent.test_installer_security"
+           ".TheOwnersAnswersArriveOrSayWhyNot"
+           ".test_the_install_phase_refuses_a_bad_handover",
+           "a broken hand-over stops the installation"),
+    Mutant("owner-details-check-removed", "selfcheck.py",
+           '    if transfer.error:\n        return Row("Owner details", Outcome.FAIL,',
+           '    if False:\n        return Row("Owner details", Outcome.FAIL,',
+           "tests_solvent.test_installer_security"
+           ".TheOwnersAnswersArriveOrSayWhyNot"
+           ".test_the_self_check_fails_on_a_broken_handover",
+           "the self-check verifies the owner details arrived"),
+    # Raised by the two advisory review gates, and by auditing the stages the
+    # third failure was not in. Each is a real defect that was present.
+    Mutant("upgrade-mixes-two-engines", "DeskPilot-Setup.nsi",
+           '  RMDir /r "$INSTDIR\\Engine"\n  SetOutPath "$INSTDIR\\Engine"',
+           '  SetOutPath "$INSTDIR\\Engine"',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheUpgradeDoesNotMixTwoEngines"
+           ".test_the_engine_directory_is_cleared_before_it_is_filled",
+           "an upgrade does not leave the previous engine's modules behind"),
+    Mutant("upgrade-deletes-the-owners-data", "DeskPilot-Setup.nsi",
+           '  RMDir /r "$INSTDIR\\Engine"\n  SetOutPath',
+           '  RMDir /r "$INSTDIR\\Engine"\n  RMDir /r "$INSTDIR\\Data"\n  SetOutPath',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheUpgradeDoesNotMixTwoEngines"
+           ".test_the_install_deletes_nothing_the_owner_owns",
+           "an upgrade never removes the owner's database or backups"),
+    Mutant("answers-cleared-before-the-document-is-built",
+           "DeskPilot-Setup.nsi",
+           '  StrCpy $AnswersJson \'{"owner_identity"',
+           '  StrCpy $AnsPassword ""\n  StrCpy $AnswersJson \'{"owner_identity"',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheEscapedCopiesDoNotOutliveTheDocument"
+           ".test_the_document_is_built_before_the_copies_are_cleared",
+           "the password reaches the document before it is forgotten"),
+    Mutant("a-refusal-with-no-reason", "engine.py",
+           '                why="; ".join(problems),\n', '',
+           "tests_solvent.test_installer_architecture"
+           ".EveryRefusalStatesItsReason"
+           ".test_no_refusal_omits_what_failed_why_or_what_to_do",
+           "a refusal cites the rule it was refused under"),
+    Mutant("a-refusal-with-a-placeholder-reason", "engine.py",
+           '                why="; ".join(problems),',
+           '                why="failed",',
+           "tests_solvent.test_installer_architecture"
+           ".EveryRefusalStatesItsReason"
+           ".test_no_refusal_states_a_placeholder_reason",
+           "a refusal's reason says something"),
+    Mutant("provenance-flatters-a-dirty-tree", "build.py",
+           '    if not dirty:\n        return (f"engine source',
+           '    if True:\n        return (f"engine source',
+           "tests_solvent.test_installer_architecture"
+           ".TheProvenanceFileCannotFlatter"
+           ".test_a_dirty_tree_is_never_recorded_as_clean",
+           "the written record does not claim a clean tree it did not have"),
+    # The wizard itself. Nothing here can run the script, so these prove the
+    # static checks notice a wizard that says the wrong thing -- the three
+    # real-world failures were all a wizard saying the wrong thing while a
+    # green Python suite watched.
+    Mutant("handover-reads-the-wrong-register", "DeskPilot-Setup.nsi",
+           'SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t R5)',
+           'SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t r5)',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheSystemPluginRegisterConvention"
+           ".test_no_system_call_uses_a_lowercase_register",
+           "the hand-over reads the register it wrote (the third failure)"),
+    Mutant("handover-register-not-cleared", "DeskPilot-Setup.nsi",
+           '  StrCpy $R5 ""\n  ; The document held the password',
+           '  ; The document held the password',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheSystemPluginRegisterConvention"
+           ".test_the_handover_clears_the_register_and_the_variable",
+           "the password does not outlive the hand-over"),
+    Mutant("find-python-leaves-r5-unsaved", "DeskPilot-Setup.nsi",
+           "  Push $R4\n  Push $R5\n  Push $R6",
+           "  Push $R4\n  Push $R6",
+           "tests_solvent.test_installer_wizard_static"
+           ".RegistersAreSavedByFunctionsThatUseThem"
+           ".test_find_python_saves_the_whole_register_file",
+           "a helper leaves its caller's registers as it found them"),
+    Mutant("selfcheck-abort-keeps-the-password", "DeskPilot-Setup.nsi",
+           '    Call ForgetSecrets\n    DetailPrint "INSTALLATION STOPPED BEFORE ANY CHANGE WAS MADE."',
+           '    DetailPrint "INSTALLATION STOPPED BEFORE ANY CHANGE WAS MADE."',
+           "tests_solvent.test_installer_wizard_static"
+           ".EverySecretIsForgottenOnEveryExit"
+           ".test_no_abort_after_the_hand_over_skips_it",
+           "every exit path forgets the owner's password"),
+    Mutant("forget-secrets-misses-the-password", "DeskPilot-Setup.nsi",
+           '  StrCpy $WebPassword ""\n  StrCpy $WebPassword2 ""\n  StrCpy $AiApiKey ""\n  Pop $R9',
+           '  StrCpy $WebPassword2 ""\n  StrCpy $AiApiKey ""\n  Pop $R9',
+           "tests_solvent.test_installer_wizard_static"
+           ".EverySecretIsForgottenOnEveryExit"
+           ".test_the_authority_clears_every_secret_variable",
+           "the forgetting authority forgets all of it"),
+    Mutant("forget-secrets-clobbers-its-caller", "DeskPilot-Setup.nsi",
+           "Function ForgetSecrets\n  Push $R9",
+           "Function ForgetSecrets",
+           "tests_solvent.test_installer_wizard_static"
+           ".EverySecretIsForgottenOnEveryExit"
+           ".test_the_authority_does_not_disturb_its_caller",
+           "clearing secrets does not corrupt the install's exit code"),
+    Mutant("uninstaller-guesses-at-python-again", "DeskPilot-Setup.nsi",
+           '  ReadRegStr $PythonExe HKLM "${REGKEY}" "PythonExe"',
+           '  StrCpy $PythonExe "C:\\Program Files\\Python313\\python.exe"',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheUninstallerDoesNotGuessAtPython"
+           ".test_the_uninstaller_hardcodes_no_interpreter_path",
+           "the uninstaller reads the recorded interpreter, not a guess"),
+    Mutant("interpreter-never-recorded", "DeskPilot-Setup.nsi",
+           '  WriteRegStr HKLM "${REGKEY}" "PythonExe" "$PythonExe"',
+           '  WriteRegStr HKLM "${REGKEY}" "PythonVersion" "${PYTHON_VERSION}"',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheUninstallerDoesNotGuessAtPython"
+           ".test_the_installer_records_the_interpreter_it_used",
+           "the install records which interpreter it used"),
+    Mutant("stale-recorded-interpreter-is-trusted", "DeskPilot-Setup.nsi",
+           '  ${AndIf} ${FileExists} "$PythonExe"\n    Return',
+           '    Return',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheUninstallerDoesNotGuessAtPython"
+           ".test_a_recorded_path_that_no_longer_exists_is_not_used",
+           "a recorded interpreter that has since gone is not run"),
     Mutant("metatraders-python-adopted", "python_runtime.py",
            "    for fragment in _FOREIGN:\n        if fragment in low:",
            "    for fragment in _FOREIGN:\n        if False:",
@@ -370,7 +518,7 @@ def run_tests(target: str) -> tuple[bool, str]:
 
 def apply_mutation(mutant: Mutant) -> tuple[bool, str]:
     """Replace the source. Returns ``(applied, original_text)``."""
-    path = PACKAGE / mutant.module
+    path = source_path(mutant.module)
     original = path.read_text()
     occurrences = original.count(mutant.old)
     if occurrences != 1:
@@ -380,7 +528,7 @@ def apply_mutation(mutant: Mutant) -> tuple[bool, str]:
 
 
 def restore(mutant: Mutant, original: str) -> None:
-    (PACKAGE / mutant.module).write_text(original)
+    source_path(mutant.module).write_text(original)
 
 
 def main() -> int:

@@ -46,7 +46,7 @@ from deskpilot_installer.engine import Engine, OwnerAnswers  # noqa: E402
 from deskpilot_installer.installlog import Log, scrub  # noqa: E402
 from deskpilot_installer.layout import Layout  # noqa: E402
 from deskpilot_installer.probe import Settings  # noqa: E402
-from deskpilot_installer.report import MASK, Secret  # noqa: E402
+from deskpilot_installer.report import MASK, Outcome, Secret  # noqa: E402
 
 PACKAGE = r"C:\Media\DeskPilot-certified.zip"
 PASSWORD = "correct-horse-battery-staple"
@@ -233,7 +233,7 @@ class SecretsDoNotLeak(unittest.TestCase):
         host.add_file(r"C:\Temp\answers.json",
                       json.dumps({"web_password": PASSWORD}))
         os.environ.pop(ANSWERS_ENV, None)
-        parsed = read_answers("", r"C:\Temp\answers.json", host)
+        parsed = read_answers("", r"C:\Temp\answers.json", host).answers
         self.assertEqual(parsed.web_password.reveal(), PASSWORD)
         self.assertFalse(host.exists(r"C:\Temp\answers.json"))
 
@@ -349,15 +349,49 @@ class CodeExecutionIsRefused(unittest.TestCase):
             {"owner_identity": "Jo", "components": {"autostart": "yes-please",
                                                     "unknown": True},
              "__class__": "evil"})
-        parsed = read_answers()
+        parsed = read_answers().answers
         self.assertTrue(parsed.components.autostart)
         self.assertFalse(hasattr(parsed.components, "unknown"))
 
     def test_malformed_answers_do_not_crash_the_engine(self):
+        """Never raises — the caller needs a report it can show the owner."""
         for raw in ("", "not json", "[]", "null", '{"web_password": null}'):
             os.environ[ANSWERS_ENV] = raw
-            parsed = read_answers()
-            self.assertIsInstance(parsed, OwnerAnswers)
+            got = read_answers()
+            self.assertIsInstance(got.answers, OwnerAnswers)
+
+    def test_a_broken_transfer_and_an_incomplete_one_are_different(self):
+        """The distinction this whole repair exists to make.
+
+        A payload that cannot be parsed is the installer's fault and must say
+        so. A payload that parses but lacks a field is a different matter,
+        reported by the owner-details check instead. Collapsing the two is
+        what sent an owner back to a screen they had filled in correctly.
+        """
+        # "" is deliberately absent rather than broken: the wizard clears the
+        # variable to an empty string once the hand-over is done, and a phase
+        # that does not need the answers must not be blocked by its absence.
+        os.environ[ANSWERS_ENV] = ""
+        nothing = read_answers()
+        self.assertEqual(nothing.source, "absent")
+        self.assertEqual(nothing.error, "")
+
+        broken = ("not json", "[]", "null", "ollama")
+        for raw in broken:
+            os.environ[ANSWERS_ENV] = raw
+            got = read_answers()
+            self.assertFalse(got.arrived, f"{raw!r} is a broken transfer")
+            self.assertTrue(got.error, f"{raw!r} must report why")
+
+        # Well-formed, and merely missing something.
+        os.environ[ANSWERS_ENV] = '{"web_password": null}'
+        got = read_answers()
+        self.assertTrue(got.arrived,
+                        "a readable document arrived; it is incomplete, "
+                        "which is not a transfer fault")
+        self.assertEqual(got.error, "")
+        self.assertTrue(got.answers.problems(),
+                        "the incompleteness must be reported elsewhere")
 
 
 class BusinessRecordsSurvive(unittest.TestCase):
@@ -588,6 +622,151 @@ class AFailureReportStatesWhatSurvived(unittest.TestCase):
         for heading in ("Why:", "What was changed:", "What was NOT changed:",
                         "Safe next action:"):
             self.assertIn(heading, text)
+
+
+class TheOwnersAnswersArriveOrSayWhyNot(unittest.TestCase):
+    """A hand-over that failed must say so, not blame the owner's typing.
+
+    The third real-world failure: the wizard set the environment variable from
+    the wrong register, the engine received the word ``ollama`` where a JSON
+    document belonged, and ``read_answers`` quietly returned defaults. The
+    installation then refused with "a control-centre password is needed" and
+    sent the owner back to a screen they had filled in correctly.
+
+    The parse failure was always detected. Swallowing it is what made the
+    message wrong, so these tests pin the reporting rather than the parsing.
+    """
+
+    def transfer(self, raw: str | None):
+        from deskpilot_installer.cli import ANSWERS_ENV, read_answers
+        os.environ.pop(ANSWERS_ENV, None)
+        if raw is not None:
+            os.environ[ANSWERS_ENV] = raw
+        return read_answers()
+
+    def test_a_good_payload_arrives(self):
+        got = self.transfer(json.dumps(
+            {"owner_identity": "Jo", "web_password": PASSWORD}))
+        self.assertTrue(got.arrived)
+        self.assertEqual(got.error, "")
+        self.assertEqual(got.source, "environment")
+        self.assertEqual(got.answers.web_password.reveal(), PASSWORD)
+
+    def test_the_exact_observed_payload_is_reported_not_swallowed(self):
+        """``ollama`` — the literal value the broken wizard sent."""
+        got = self.transfer("ollama")
+        self.assertFalse(got.arrived)
+        self.assertIn("did not arrive as readable JSON", got.error)
+        self.assertIn("ollama", got.error)
+
+    def test_the_report_says_it_is_not_the_owners_fault(self):
+        got = self.transfer("ollama")
+        self.assertIn("not in what you typed", got.error)
+
+    def test_an_empty_payload_is_reported(self):
+        got = self.transfer("")
+        self.assertFalse(got.arrived)
+
+    def test_a_whitespace_payload_is_reported(self):
+        got = self.transfer("   ")
+        self.assertFalse(got.arrived)
+        self.assertIn("empty", got.error)
+
+    def test_a_json_array_is_reported(self):
+        got = self.transfer("[1,2,3]")
+        self.assertFalse(got.arrived)
+        self.assertIn("not an", got.error)
+
+    def test_no_payload_at_all_is_not_an_error(self):
+        """A phase that does not need the answers must not be blocked."""
+        got = self.transfer(None)
+        self.assertEqual(got.source, "absent")
+        self.assertEqual(got.error, "")
+        self.assertFalse(got.arrived)
+
+    def test_the_error_never_contains_the_password(self):
+        """A malformed payload may still hold the secret."""
+        got = self.transfer('{"web_password": "' + PASSWORD + '"')
+        self.assertFalse(got.arrived)
+        self.assertNotIn(PASSWORD, got.error)
+
+    def test_the_error_quotes_only_a_short_prefix(self):
+        got = self.transfer("x" * 5000)
+        self.assertFalse(got.arrived)
+        self.assertLess(len(got.error), 400)
+
+    def test_the_variable_is_cleared_even_when_the_payload_is_bad(self):
+        from deskpilot_installer.cli import ANSWERS_ENV
+        self.transfer("ollama")
+        self.assertNotIn(ANSWERS_ENV, os.environ)
+
+    def test_the_failure_report_has_the_five_answers(self):
+        from deskpilot_installer.cli import transfer_failure
+        failure = transfer_failure(self.transfer("ollama"))
+        self.assertIn("could not read the details you entered",
+                      failure.what_failed)
+        self.assertEqual(failure.changed, ())
+        self.assertTrue(any("MetaTrader was not touched" in line
+                            for line in failure.not_changed))
+        self.assertIn("not in what you typed", failure.safe_next_action)
+        self.assertIn("re-entering the details will not help",
+                      failure.safe_next_action)
+
+    def test_the_install_phase_refuses_a_bad_handover(self):
+        from deskpilot_installer.cli import ANSWERS_ENV, main
+        host, _engine, _log, digest = installed()
+        os.environ[ANSWERS_ENV] = "ollama"
+        with contextlib.redirect_stdout(io.StringIO()) as captured:
+            code = main(["install", "--package", PACKAGE,
+                         "--expect-sha256", digest], host=host)
+        self.assertEqual(code, 1)
+        self.assertIn("could not read the details you entered",
+                      captured.getvalue().lower())
+
+    def test_the_self_check_reports_the_handover(self):
+        from deskpilot_installer import selfcheck
+        from deskpilot_installer.probe import Settings
+        host, _engine, _log, digest = installed()
+        good = self.transfer(json.dumps(
+            {"owner_identity": "Jo", "web_password": PASSWORD}))
+        report = selfcheck.preinstall(
+            host, Settings(layout=Layout(), package_path=PACKAGE,
+                           expected_digest=digest), transfer=good)
+        row = report.row("Owner details")
+        self.assertIsNotNone(row, "the self-check must report the hand-over")
+        self.assertEqual(row.outcome, Outcome.PASS)
+
+    def test_the_self_check_fails_on_a_broken_handover(self):
+        """Distinct from incomplete: the payload itself was unreadable.
+
+        The self-check must stop the wizard here too, so a transfer fault is
+        caught before the machine is touched rather than eight steps in.
+        """
+        from deskpilot_installer import selfcheck
+        from deskpilot_installer.probe import Settings
+        host, _engine, _log, digest = installed()
+        broken = self.transfer("ollama")
+        report = selfcheck.preinstall(
+            host, Settings(layout=Layout(), package_path=PACKAGE,
+                           expected_digest=digest), transfer=broken)
+        row = report.row("Owner details")
+        self.assertIsNotNone(row)
+        self.assertEqual(row.outcome, Outcome.FAIL)
+        self.assertIn("did not reach the installer", row.detail)
+        self.assertFalse(report.may_continue)
+
+    def test_the_self_check_fails_on_incomplete_answers(self):
+        from deskpilot_installer import selfcheck
+        from deskpilot_installer.probe import Settings
+        host, _engine, _log, digest = installed()
+        short = self.transfer(json.dumps(
+            {"owner_identity": "Jo", "web_password": "tooshort"}))
+        report = selfcheck.preinstall(
+            host, Settings(layout=Layout(), package_path=PACKAGE,
+                           expected_digest=digest), transfer=short)
+        row = report.row("Owner details")
+        self.assertEqual(row.outcome, Outcome.FAIL)
+        self.assertFalse(report.may_continue)
 
 
 class ThePrivilegeBoundaryIsRespected(unittest.TestCase):

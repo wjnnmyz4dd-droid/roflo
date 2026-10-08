@@ -261,6 +261,112 @@ class TheRealLauncherRuns(unittest.TestCase):
         self.assertNotIn("Traceback (most recent call last)", done.stdout)
 
 
+class TheHandOverWorksThroughARealEnvironment(unittest.TestCase):
+    """The credential transfer, end to end, as the wizard performs it.
+
+    The wizard sets an environment variable and starts the engine, which
+    inherits it. These tests do exactly that — a real variable, a real
+    subprocess — because the defect that reached an owner was in the value the
+    variable carried, and no in-process test can see that.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.box = tempfile.TemporaryDirectory()
+        cls.launcher = stage_engine(pathlib.Path(cls.box.name) / "engine")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.box.cleanup()
+
+    def run_with(self, value, *args):
+        env = dict(os.environ)
+        if value is None:
+            env.pop("DESKPILOT_SETUP_ANSWERS", None)
+        else:
+            env["DESKPILOT_SETUP_ANSWERS"] = value
+        return subprocess.run(
+            [sys.executable, "-I", str(self.launcher), *args],
+            capture_output=True, text=True, timeout=300, env=env,
+            cwd=str(pathlib.Path(tempfile.gettempdir())))
+
+    def answers(self, **extra):
+        payload = {"owner_identity": "Jo Owner",
+                   "business_email": "jo@example.com",
+                   "web_password": "correct-horse-battery",
+                   "ai_kind": "ollama", "ai_api_key": "",
+                   "components": {"autostart": True, "backups": True,
+                                  "configure_ai": True}}
+        payload.update(extra)
+        return json.dumps(payload)
+
+    def test_a_good_hand_over_reports_the_details_as_received(self):
+        done = self.run_with(self.answers(), "selfcheck", "--root",
+                             "C:/DeskPilot", "--package", os.devnull,
+                             "--expect-sha256", "ab" * 32)
+        self.assertIn("Owner details", done.stdout)
+        self.assertIn("complete", done.stdout)
+        self.assertNotIn("could not read the details", done.stdout.lower())
+
+    def test_the_observed_broken_value_is_named_as_an_installer_fault(self):
+        """``ollama`` — the literal value the defective wizard sent."""
+        done = self.run_with("ollama", "selfcheck", "--root", "C:/DeskPilot",
+                             "--package", os.devnull,
+                             "--expect-sha256", "ab" * 32)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("could not read the details you entered",
+                      done.stdout.lower())
+        self.assertIn("not in what you typed", done.stdout)
+        self.assertNotIn("a control-centre password is needed", done.stdout)
+
+    def test_a_broken_hand_over_changes_nothing(self):
+        done = self.run_with("ollama", "install", "--root", "C:/DeskPilot",
+                             "--package", os.devnull,
+                             "--expect-sha256", "ab" * 32)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("nothing was installed", done.stdout)
+        self.assertIn("MetaTrader was not touched", done.stdout)
+
+    def test_the_password_never_appears_in_the_engines_output(self):
+        done = self.run_with(self.answers(), "selfcheck", "--root",
+                             "C:/DeskPilot", "--package", os.devnull,
+                             "--expect-sha256", "ab" * 32)
+        self.assertNotIn("correct-horse-battery", done.stdout)
+        self.assertNotIn("correct-horse-battery", done.stderr)
+
+    def test_a_password_with_quotes_and_backslashes_survives(self):
+        """What the wizard escapes, the engine must read back unchanged."""
+        tricky = 'pa\\ss"word-long-enough'
+        done = self.run_with(self.answers(web_password=tricky), "selfcheck",
+                             "--root", "C:/DeskPilot", "--package", os.devnull,
+                             "--expect-sha256", "ab" * 32)
+        self.assertIn("complete", done.stdout)
+        self.assertNotIn(tricky, done.stdout)
+
+    def test_a_short_password_is_reported_as_incomplete_not_as_a_fault(self):
+        done = self.run_with(self.answers(web_password="short"), "selfcheck",
+                             "--root", "C:/DeskPilot", "--package", os.devnull,
+                             "--expect-sha256", "ab" * 32)
+        self.assertIn("incomplete", done.stdout)
+        self.assertNotIn("could not read the details", done.stdout.lower())
+
+    def test_no_hand_over_is_not_an_error_for_a_check(self):
+        done = self.run_with(None, "check", "--root", "C:/DeskPilot",
+                             "--package", os.devnull,
+                             "--expect-sha256", "ab" * 32)
+        self.assertNotIn("could not read the details", done.stdout.lower())
+
+    def test_the_variable_does_not_leak_to_a_grandchild(self):
+        """The engine clears it before starting anything of its own."""
+        done = self.run_with(self.answers(), "selfcheck", "--root",
+                             "C:/DeskPilot", "--package", os.devnull,
+                             "--expect-sha256", "ab" * 32, "--out",
+                             str(pathlib.Path(self.box.name) / "r.json"))
+        report = json.loads(
+            (pathlib.Path(self.box.name) / "r.json").read_text())
+        self.assertNotIn("correct-horse-battery", json.dumps(report))
+
+
 class ADamagedEngineStopsSafely(unittest.TestCase):
     """A broken package must not produce a traceback or a zero exit."""
 

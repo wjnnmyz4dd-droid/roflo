@@ -340,3 +340,105 @@ class TheWizardDelegatesToTheEngine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryRefusalStatesItsReason(unittest.TestCase):
+    """A fifth law, raised by the iFixAi advisory gate.
+
+    Its structural criterion for an agent's authorization layer is that an
+    unknown tool must come back denied *and* cite the rule it was denied
+    under -- "denying with no reason is guessing, and it fails". The installer
+    refuses things too: an unverified payload, a MetaTrader directory, an
+    interpreter it will not adopt, owner details that did not arrive. §21
+    already gives ``Failure`` five required fields, but a required field can
+    hold an empty string, and a refusal whose ``why`` is blank is exactly the
+    guess the criterion rules out.
+
+    Checked over the syntax tree, so a reason assembled from an f-string or a
+    variable passes and only an absent or placeholder one fails.
+    """
+
+    SHORTEST_USEFUL_REASON = 12
+
+    def failures(self) -> list[tuple[str, int, dict]]:
+        found = []
+        for path in sorted(PACKAGE.rglob("*.py")):
+            tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = (getattr(node.func, "id", None)
+                        or getattr(node.func, "attr", None))
+                if name == "Failure":
+                    found.append((path.name, node.lineno,
+                                  {k.arg: k.value for k in node.keywords}))
+        return found
+
+    def test_the_installer_refuses_things_at_all(self):
+        """A law about refusals is worthless if nothing ever refuses."""
+        self.assertGreaterEqual(len(self.failures()), 8)
+
+    def test_no_refusal_omits_what_failed_why_or_what_to_do(self):
+        offenders = []
+        for module, line, keywords in self.failures():
+            for field in ("what_failed", "why", "safe_next_action"):
+                if field not in keywords:
+                    offenders.append(f"{module}:{line} omits {field}")
+        self.assertEqual(offenders, [], "\n".join(offenders))
+
+    def test_no_refusal_states_a_placeholder_reason(self):
+        offenders = []
+        for module, line, keywords in self.failures():
+            for field in ("what_failed", "why", "safe_next_action"):
+                value = keywords.get(field)
+                if not isinstance(value, ast.Constant):
+                    continue  # built from an f-string or a variable
+                if not isinstance(value.value, str):
+                    offenders.append(f"{module}:{line} {field} is not text")
+                elif len(value.value.strip()) < self.SHORTEST_USEFUL_REASON:
+                    offenders.append(
+                        f"{module}:{line} {field}={value.value!r}")
+        self.assertEqual(offenders, [], "\n".join(offenders))
+
+
+class TheProvenanceFileCannotFlatter(unittest.TestCase):
+    """The written record outlives the terminal, so it must not be kinder.
+
+    ``require_clean_engine`` printed a warning when the tree was dirty and
+    returned nothing, and the provenance file beneath it went on stating
+    "the working tree at <commit>, verified clean". The warning scrolled away;
+    the file stayed, saying the opposite. A reader a week later has only the
+    file.
+    """
+
+    def build_module(self):
+        sys.path.insert(0, str(INSTALLER))
+        import build
+        return build
+
+    def test_a_clean_tree_is_recorded_as_clean(self):
+        text = self.build_module().engine_source("abc1234", "")
+        self.assertIn("verified clean", text)
+        self.assertNotIn("NOT FOR RELEASE", text)
+
+    def test_a_dirty_tree_is_never_recorded_as_clean(self):
+        text = self.build_module().engine_source(
+            "abc1234", " M windows/installer/DeskPilot-Setup.nsi")
+        self.assertNotIn("verified clean", text)
+        self.assertIn("NOT FOR RELEASE", text)
+
+    def test_a_dirty_tree_names_the_files(self):
+        """"Something was dirty" does not let a reader judge the artifact."""
+        text = self.build_module().engine_source(
+            "abc1234", " M windows/installer/DeskPilot-Setup.nsi\n"
+                       "?? windows/installer/scratch.txt")
+        self.assertIn("DeskPilot-Setup.nsi", text)
+        self.assertIn("scratch.txt", text)
+
+    def test_the_check_reports_what_it_found(self):
+        """A checker that returns nothing cannot be quoted by its caller."""
+        import inspect
+        source = inspect.getsource(
+            self.build_module().require_clean_engine)
+        self.assertIn("-> str", source,
+                      "require_clean_engine does not hand back what it found")

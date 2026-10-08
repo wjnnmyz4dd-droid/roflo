@@ -63,18 +63,25 @@ def head_commit() -> str:
     return run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO).strip()
 
 
-def require_clean_engine(allow_dirty: bool = False) -> None:
+def require_clean_engine(allow_dirty: bool = False) -> str:
     """Refuse to build a release whose engine is not in the recorded commit.
 
     The payload is archived from a commit, but the engine is copied from the
     working tree. A dirty tree therefore produces an artifact whose recorded
     HEAD is true of its payload and false of its installer code -- which is
     exactly the sort of half-true provenance a hash is supposed to prevent.
+
+    Returns the uncommitted changes, empty when the tree is clean. The caller
+    needs them: this function used to warn on screen and return nothing, and
+    the provenance file went on stating "verified clean" underneath the
+    warning. A warning that scrolls past while the written record says the
+    opposite is worse than no check, because the record is what outlives the
+    terminal.
     """
     dirty = run(["git", "status", "--porcelain", "--",
                  "windows/installer"], cwd=REPO).strip()
     if not dirty:
-        return
+        return ""
     message = ("the installer source has uncommitted changes, so the build's "
                "recorded commit would not describe the engine it ships:\n"
                + dirty + "\n\nCommit them, or pass --allow-dirty for a "
@@ -82,6 +89,27 @@ def require_clean_engine(allow_dirty: bool = False) -> None:
     if not allow_dirty:
         raise SystemExit(message)
     print("WARNING: " + message)
+    return dirty
+
+
+def engine_source(commit: str, dirty: str) -> str:
+    """The provenance file's account of what the engine was built from."""
+    if not dirty:
+        return (f"engine source       : the working tree at {commit}, "
+                "verified clean\n"
+                "                      (payload is git archive of that "
+                "commit)\n\n")
+    # ``git status --porcelain`` indents unstaged changes by one column, so
+    # the lines do not align under a fixed prefix unless they are stripped.
+    files = "\n".join(f"                        {line.strip()}"
+                       for line in dirty.splitlines())
+    return ("engine source       : THE WORKING TREE WAS NOT CLEAN. The commit\n"
+            f"                      above describes the payload, not the\n"
+            f"                      engine shipped beside it. Uncommitted at\n"
+            f"                      build time:\n" + files + "\n\n"
+            "NOT FOR RELEASE     : this build's recorded commit does not\n"
+            "                      describe its own installer code. Use it for\n"
+            "                      local testing and publish nothing from it.\n\n")
 
 
 def build_payload(out: pathlib.Path, commit: str) -> tuple[str, int]:
@@ -163,7 +191,7 @@ def main() -> int:
     args = parser.parse_args()
 
     commit = args.commit or head_commit()
-    require_clean_engine(args.allow_dirty)
+    dirty = require_clean_engine(args.allow_dirty)
     out_dir = pathlib.Path(args.out_dir)
     stage = out_dir / "stage"
     stage.mkdir(parents=True, exist_ok=True)
@@ -233,8 +261,7 @@ def main() -> int:
         f"payload             : {payload.name}\n"
         f"payload SHA-256     : {digest_of_payload}\n"
         f"payload size        : {size}\n"
-        f"engine source       : the working tree at {commit}, verified clean\n"
-        f"                      (payload is git archive of that commit)\n\n"
+        + engine_source(commit, dirty) +
         "code signature      : NONE. No Windows code-signing certificate\n"
         "                      exists in the build environment. Windows will\n"
         "                      warn that the publisher is unknown.\n"

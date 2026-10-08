@@ -83,6 +83,14 @@ Var VerifyHeadline
 Var OptAutostart
 Var OptBackups
 Var KeepOwnerData
+Var AnswersJson        ; the hand-over document, built by BuildAnswers
+Var AnsName            ; JSON-escaped copies of the owner's answers
+Var AnsEmail
+Var AnsPassword
+Var AnsApiKey
+Var AnsKind
+Var AnsAutostart
+Var AnsBackups
 
 ; ---------------------------------------------------------------------------
 ; Pages
@@ -221,6 +229,21 @@ Function TryOne
 FunctionEnd
 
 Function FindPython
+  ; Saves every register it and its helpers use as scratch. The result is
+  ; returned in $PythonExe, a named variable, so nothing needs to survive in a
+  ; register across the call. Without this the function silently destroys
+  ; whatever the caller held in $R0-$R9 -- which the install section does.
+  Push $R0
+  Push $R1
+  Push $R2
+  Push $R3
+  Push $R4
+  Push $R5
+  Push $R6
+  Push $R7
+  Push $R8
+  Push $R9
+
   StrCpy $PythonExe ""
 
   ; 1. PEP 514, both hives and both registry views.
@@ -229,13 +252,13 @@ Function FindPython
   Call ScanRegistryHive
   ${If} $PythonExe != ""
     SetRegView Default
-    Return
+    Goto find_done
   ${EndIf}
   StrCpy $R5 "HKLM"
   Call ScanRegistryHive
   ${If} $PythonExe != ""
     SetRegView Default
-    Return
+    Goto find_done
   ${EndIf}
   SetRegView 32
   StrCpy $R5 "HKCU"
@@ -246,7 +269,7 @@ Function FindPython
   ${EndIf}
   SetRegView Default
   ${If} $PythonExe != ""
-    Return
+    Goto find_done
   ${EndIf}
 
   ; 2. Whatever "python" means on this process's PATH.
@@ -255,7 +278,7 @@ Function FindPython
     Call TryOne
   ${EndIf}
   ${If} $PythonExe != ""
-    Return
+    Goto find_done
   ${EndIf}
 
   ; 3. The per-machine launcher, which knows every registered install.
@@ -273,19 +296,31 @@ Function FindPython
     ${EndIf}
   ${EndIf}
   ${If} $PythonExe != ""
-    Return
+    Goto find_done
   ${EndIf}
 
   ; 4. All-users locations, generated from the engine's list.
   !insertmacro DP_EACH_MACHINE_PATH DP_TRY_PATH
   ${If} $PythonExe != ""
-    Return
+    Goto find_done
   ${EndIf}
 
   ; 5. Per-user locations, for every profile on this machine. Every profile,
   ;    because the installer is elevated and $LOCALAPPDATA may be the
   ;    administrator's while the owner's Python sits in theirs.
   Call ScanUserProfiles
+
+find_done:
+  Pop $R9
+  Pop $R8
+  Pop $R7
+  Pop $R6
+  Pop $R5
+  Pop $R4
+  Pop $R3
+  Pop $R2
+  Pop $R1
+  Pop $R0
 FunctionEnd
 
 ; Enumerate Software\Python\<Company>\<Tag>\InstallPath in the hive named by $R5.
@@ -418,6 +453,9 @@ FunctionEnd
 ; Drop everything up to and including the last double space on a line.
 Function TrimLeadingColumns
   Exch $0
+  Push $1
+  Push $2
+  Push $3
   StrCpy $1 0
   StrCpy $2 -1
 trim_scan:
@@ -442,6 +480,9 @@ strip_space:
     StrCpy $0 $0 "" 1
     Goto strip_space
   ${EndIf}
+  Pop $3
+  Pop $2
+  Pop $1
   Exch $0
 FunctionEnd
 
@@ -468,6 +509,11 @@ FunctionEnd
 
 Function ExtractHex
   Exch $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
   ${StrRep} $0 "$0" "$\r" "$\n"
   StrCpy $1 ""
   StrCpy $2 0
@@ -499,6 +545,11 @@ finish_line:
   ${EndIf}
 hex_done:
   StrCpy $0 $1
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
   Exch $0
 FunctionEnd
 
@@ -743,6 +794,19 @@ FunctionEnd
 ; ---------------------------------------------------------------------------
 ; Install
 ; ---------------------------------------------------------------------------
+; One place forgets the secrets, so no exit path can forget to.
+Function ForgetSecrets
+  Push $R9
+  System::Call 'kernel32::SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t "")i.R9'
+  StrCpy $AnswersJson ""
+  StrCpy $AnsPassword ""
+  StrCpy $AnsApiKey ""
+  StrCpy $WebPassword ""
+  StrCpy $WebPassword2 ""
+  StrCpy $AiApiKey ""
+  Pop $R9
+FunctionEnd
+
 Section "-Install"
   SetDetailsPrint both
 
@@ -783,8 +847,13 @@ Section "-Install"
   ;    this machine in the process list. An environment block is inherited by
   ;    the child and is not listed alongside processes.
   Call BuildAnswers
-  Pop $R5
-  System::Call 'kernel32::SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t r5)i.r0'
+  ; Uppercase R5. The System plugin reads `r5` as $5 and `R5` as $R5; the
+  ; lowercase form sent the engine the value of $5 instead of the answers.
+  StrCpy $R5 $AnswersJson
+  System::Call 'kernel32::SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t R5)i.R0'
+  StrCpy $R5 ""
+  ; The document held the password; it must not outlive the hand-over.
+  StrCpy $AnswersJson ""
 
   ; -- Preinstallation self-check. Nothing on this machine has been modified
   ;    at this point, and nothing will be if this does not pass.
@@ -794,6 +863,7 @@ Section "-Install"
   ${If} $R2 != "0"
     SetDetailsPrint both
     DetailPrint ""
+    Call ForgetSecrets
     DetailPrint "INSTALLATION STOPPED BEFORE ANY CHANGE WAS MADE."
     DetailPrint "The lines above say which check failed and why. Your computer"
     DetailPrint "is exactly as it was: nothing installed, no database touched,"
@@ -806,10 +876,7 @@ Section "-Install"
   Pop $R1
 
   ; Clear the answers from this process so nothing started later inherits them.
-  System::Call 'kernel32::SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t "")i.r0'
-  StrCpy $WebPassword ""
-  StrCpy $WebPassword2 ""
-  StrCpy $AiApiKey ""
+  Call ForgetSecrets
 
   ${If} $R1 != "0"
     SetDetailsPrint both
@@ -822,6 +889,14 @@ Section "-Install"
   ; -- Keep the engine. It used to live only in the installer's temporary
   ;    directory, which Windows deletes on exit, so the uninstaller pointed at
   ;    a path that had never existed.
+  ;
+  ;    Clear it first. Extracting over an existing Engine directory leaves
+  ;    behind any module the previous version had and this one does not, and
+  ;    Python imports whatever is in a package directory -- so an upgraded
+  ;    install could run a mixture of two engines. Only this directory is
+  ;    cleared, because only this directory belongs to the installer. Data,
+  ;    App, venv and the owner's backups are left exactly as they are.
+  RMDir /r "$INSTDIR\Engine"
   SetOutPath "$INSTDIR\Engine"
   File /r "${ENGINE_DIR}"
   File "${ENGINE_LAUNCHER}"
@@ -835,6 +910,11 @@ Section "-Install"
   WriteRegStr HKLM "${REGKEY}" "UninstallString" '"$INSTDIR\Uninstall-DeskPilot.exe"'
   WriteRegStr HKLM "${REGKEY}" "DisplayIcon" '"$INSTDIR\Uninstall-DeskPilot.exe"'
   WriteRegStr HKLM "${REGKEY}" "PayloadCommit" "${PAYLOAD_COMMIT}"
+  ; The interpreter this install actually used. The uninstaller used to
+  ; guess at two hardcoded paths -- the same mistake that stopped the
+  ; first installer from finding a Python that was already there. It now
+  ; reads the fact recorded here instead of guessing again.
+  WriteRegStr HKLM "${REGKEY}" "PythonExe" "$PythonExe"
   WriteRegDWORD HKLM "${REGKEY}" "NoModify" 1
   WriteRegDWORD HKLM "${REGKEY}" "NoRepair" 0
 SectionEnd
@@ -851,37 +931,55 @@ Function PythonFailed
   Abort "Python could not be installed."
 FunctionEnd
 
-; Build the answers JSON. Quotes and backslashes in anything the owner typed
-; are escaped, so a password containing them cannot break the document.
+; Build the answers JSON into $AnswersJson.
+;
+; Written with named variables rather than $0-$9, and that is the point. NSIS's
+; twenty numbered registers are global: a function that writes $5 destroys
+; whatever its caller had there, and nothing warns. This function used to build
+; its result in $0-$7 and hand it back on the stack, and the caller then set
+; the environment variable from `t r5` -- which the System plugin reads as $5,
+; not $R5. $5 held "ollama", so the owner's details never reached the engine
+; and the installation refused with "a control-centre password is needed" to an
+; owner who had typed one.
+;
+; Named variables cannot collide, so the mistake is no longer expressible. The
+; one register still involved is loaded immediately before the call that needs
+; it, with the case the plugin actually means.
 Function BuildAnswers
   Push $0
-  ${StrRep} $1 "$OwnerName" "\" "\\"
-  ${StrRep} $1 "$1" '"' '\"'
-  ${StrRep} $2 "$OwnerEmail" "\" "\\"
-  ${StrRep} $2 "$2" '"' '\"'
-  ${StrRep} $3 "$WebPassword" "\" "\\"
-  ${StrRep} $3 "$3" '"' '\"'
-  ${StrRep} $4 "$AiApiKey" "\" "\\"
-  ${StrRep} $4 "$4" '"' '\"'
 
-  StrCpy $5 "ollama"
+  ${StrRep} $AnsName "$OwnerName" "\" "\\"
+  ${StrRep} $AnsName "$AnsName" '"' '\"'
+  ${StrRep} $AnsEmail "$OwnerEmail" "\" "\\"
+  ${StrRep} $AnsEmail "$AnsEmail" '"' '\"'
+  ${StrRep} $AnsPassword "$WebPassword" "\" "\\"
+  ${StrRep} $AnsPassword "$AnsPassword" '"' '\"'
+  ${StrRep} $AnsApiKey "$AiApiKey" "\" "\\"
+  ${StrRep} $AnsApiKey "$AnsApiKey" '"' '\"'
+
+  StrCpy $AnsKind "ollama"
   ${If} $AiChoice == "cloud"
-    StrCpy $5 "vllm"
+    StrCpy $AnsKind "vllm"
   ${ElseIf} $AiChoice == "later"
-    StrCpy $5 "none"
+    StrCpy $AnsKind "none"
   ${EndIf}
 
-  StrCpy $6 "true"
+  StrCpy $AnsAutostart "true"
   ${If} $OptAutostart != "1"
-    StrCpy $6 "false"
+    StrCpy $AnsAutostart "false"
   ${EndIf}
-  StrCpy $7 "true"
+  StrCpy $AnsBackups "true"
   ${If} $OptBackups != "1"
-    StrCpy $7 "false"
+    StrCpy $AnsBackups "false"
   ${EndIf}
 
-  StrCpy $0 '{"owner_identity":"$1","business_email":"$2","web_password":"$3","ai_kind":"$5","ai_api_key":"$4","components":{"autostart":$6,"backups":$7,"configure_ai":true}}'
-  Exch $0
+  StrCpy $AnswersJson '{"owner_identity":"$AnsName","business_email":"$AnsEmail","web_password":"$AnsPassword","ai_kind":"$AnsKind","ai_api_key":"$AnsApiKey","components":{"autostart":$AnsAutostart,"backups":$AnsBackups,"configure_ai":true}}'
+
+  ; The password must not outlive the hand-over in a second place.
+  StrCpy $AnsPassword ""
+  StrCpy $AnsApiKey ""
+
+  Pop $0
 FunctionEnd
 
 ; ---------------------------------------------------------------------------
@@ -991,12 +1089,20 @@ Section "Uninstall"
 SectionEnd
 
 Function un.FindPython
+  ; Two sources, in order of how much they are worth trusting: the virtual
+  ; environment this install built, then the interpreter the installer recorded
+  ; at install time. No hardcoded version numbers: a machine running 3.14, or a
+  ; per-user Python, is not an unusual machine.
   StrCpy $PythonExe ""
   ${If} ${FileExists} "$INSTDIR\venv\Scripts\python.exe"
     StrCpy $PythonExe "$INSTDIR\venv\Scripts\python.exe"
     Return
   ${EndIf}
-  ${If} ${FileExists} "C:\Program Files\Python313\python.exe"
-    StrCpy $PythonExe "C:\Program Files\Python313\python.exe"
+  ReadRegStr $PythonExe HKLM "${REGKEY}" "PythonExe"
+  ${If} $PythonExe != ""
+  ${AndIf} ${FileExists} "$PythonExe"
+    Return
   ${EndIf}
+  ; Recorded but since removed, or never recorded by an older installer.
+  StrCpy $PythonExe ""
 FunctionEnd

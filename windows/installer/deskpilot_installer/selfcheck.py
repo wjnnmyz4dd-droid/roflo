@@ -27,6 +27,11 @@ the job:
    there, it is readable and will be kept.
 7. **MetaTrader remains protected** -- detected, fingerprinted, and confirmed
    not to conflict.
+8. **The owner's details arrived** -- the answers the wizard collected reached
+   the engine intact. Added after a hand-over defect: the wizard set the
+   environment variable from the wrong register, the engine received the word
+   ``ollama`` instead of a JSON document, and the owner was told they had not
+   entered a password they had in fact entered.
 
 Every check reports a :class:`Row`, so the verdict the owner reads is the
 verdict that gates the installation -- there is no second opinion to drift. And
@@ -215,7 +220,42 @@ def _metatrader_row(host: Host, needed_ports: tuple[int, ...]) -> Row:
                       "processes": list(presence.processes)})
 
 
-def preinstall(host: Host, settings) -> Report:
+def _answers_row(transfer) -> Row:
+    """Did the owner's details actually reach the engine?
+
+    The eighth check, added after a hand-over defect reached an owner: the
+    wizard set the environment variable from the wrong register, so the engine
+    received the string ``ollama`` where a JSON document should have been, fell
+    back to defaults, and reported that the owner had not entered a password.
+    They had.
+
+    Checked here, before anything is modified, and worded so a transfer fault
+    is never mistaken for a blank field.
+    """
+    if transfer is None:
+        return Row("Owner details", Outcome.WARN,
+                   "not supplied to this check; the install phase will "
+                   "require them")
+    if transfer.error:
+        return Row("Owner details", Outcome.FAIL,
+                   f"they did not reach the installer: {transfer.error}",
+                   facts={"source": transfer.source})
+    if transfer.source == "absent":
+        return Row("Owner details", Outcome.WARN,
+                   "none handed over yet; the install phase will require them",
+                   facts={"source": transfer.source})
+    problems = transfer.answers.problems()
+    if problems:
+        return Row("Owner details", Outcome.FAIL,
+                   "incomplete: " + "; ".join(problems),
+                   facts={"source": transfer.source})
+    return Row("Owner details", Outcome.PASS,
+               f"received via the {transfer.source} and complete "
+               f"(password held, never logged)",
+               facts={"source": transfer.source})
+
+
+def preinstall(host: Host, settings, transfer=None) -> Report:
     """Every check that must pass before the machine is modified.
 
     Writes nothing. Returns a report whose ``may_continue`` is the gate: the
@@ -237,6 +277,7 @@ def preinstall(host: Host, settings) -> Report:
         _paths_row(host, layout),
         _existing_data_row(host, layout),
         _metatrader_row(host, settings.needed_ports),
+        _answers_row(transfer),
     ]
 
     report = Report("selfcheck", tuple(rows))
