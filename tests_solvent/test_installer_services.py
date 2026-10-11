@@ -191,18 +191,55 @@ class TheGeneratedCommandsAreAcceptedByTheRealCli(unittest.TestCase):
         self.assertEqual(len(set(subcommands)), len(subcommands),
                          f"two services run the same command: {subcommands}")
 
-    def test_each_launcher_loads_the_secrets_from_the_file(self):
-        """Credentials reach the process through the environment, not argv."""
+    def test_each_launcher_loads_its_secrets_from_the_file(self):
+        """Credentials reach the process through the environment, not argv.
+
+        Each service gets what it reads and not what it does not: the split
+        itself is asserted below. What is common to both is that nothing
+        arrives on a command line, where every account on the machine could
+        read it out of the process list.
+        """
         for service in integration.BOOT_SERVICES:
             with self.subTest(service=service.task_name):
                 argv = self.argv_of(service)
                 environ = run_launcher.last_environ
-                self.assertEqual(environ.get("SOLVENT_OWNER_KEY"),
-                                 "not-a-real-key")
-                self.assertEqual(environ.get("SOLVENT_WEB_PASSWORD_HASH"),
-                                 "not-a-real-hash")
+                self.assertTrue(
+                    any(value in ("not-a-real-key", "not-a-real-hash")
+                        for value in environ.values()),
+                    f"{service.task_name} loaded no credentials at all")
                 for secret in ("not-a-real-key", "not-a-real-hash"):
                     self.assertNotIn(secret, " ".join(argv))
+
+    def test_the_control_centre_is_not_given_the_owner_signing_key(self):
+        """``solvent.web`` says it never reads the key. Nor is it handed it.
+
+        The web surface states as a security property that
+        ``SOLVENT_OWNER_KEY`` "is never read here, never sent to a browser,
+        and never needed to display anything" -- and it reads exactly one
+        environment variable, the password hash. A launcher that loaded the
+        whole secrets file would put the key in the process environment
+        anyway, so a compromised control centre could read what the design
+        keeps away from it.
+        """
+        web = integration.BOOT_SERVICES[1]
+        self.argv_of(web)
+        environ = run_launcher.last_environ
+        self.assertIsNone(environ.get("SOLVENT_OWNER_KEY"),
+                          "the control centre was handed the owner's key")
+        self.assertEqual(environ.get("SOLVENT_WEB_PASSWORD_HASH"),
+                         "not-a-real-hash",
+                         "the control centre cannot authenticate the owner")
+
+    def test_the_runtime_is_given_the_owner_signing_key(self):
+        """It signs, so it needs it. Least privilege, not no privilege."""
+        self.argv_of(integration.BOOT_SERVICES[0])
+        environ = run_launcher.last_environ
+        self.assertEqual(environ.get("SOLVENT_OWNER_KEY"), "not-a-real-key")
+
+    def test_each_service_declares_what_it_may_read(self):
+        runtime, web = integration.BOOT_SERVICES
+        self.assertIsNone(runtime.env_allow)
+        self.assertEqual(web.env_allow, ("SOLVENT_WEB_PASSWORD_HASH",))
 
     def test_a_missing_secrets_file_does_not_stop_the_launcher(self):
         """It is Solvent's job to refuse, with a reason the owner can read."""

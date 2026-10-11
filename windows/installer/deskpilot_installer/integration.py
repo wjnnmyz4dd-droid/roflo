@@ -42,6 +42,7 @@ import ntpath
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from . import secrets_env
 from .host import Host
 from .layout import Layout, WEB_HOST, WEB_PORT
 
@@ -89,6 +90,7 @@ import sys
 APP = r"{app}"
 ENV_FILE = r"{env_file}"
 ARGV = {argv}
+ENV_ALLOW = {env_allow}
 
 
 def load_env(path):
@@ -103,7 +105,10 @@ def load_env(path):
         if not line or line.startswith("#") or "=" not in line:
             continue
         name, _, value = line.partition("=")
-        os.environ[name.strip()] = value.strip()
+        name = name.strip()
+        if ENV_ALLOW is not None and name not in ENV_ALLOW:
+            continue
+        os.environ[name] = value.strip()
         count += 1
     return count
 
@@ -251,6 +256,14 @@ class BootService:
     xml: str
     #: The Solvent command, built from the layout.
     argv: "Callable[[Layout], tuple[str, ...]]"
+    #: Which names from the secrets file this service may have. ``None`` means
+    #: all of them. The control centre gets one, because it reads one:
+    #: ``solvent.web`` states that the owner's signing key "is never read
+    #: here, never sent to a browser, and never needed to display anything",
+    #: and a launcher that put the whole file into its environment would have
+    #: handed a compromised web process the key that design keeps away from
+    #: it. The runtime does sign, so it gets everything.
+    env_allow: tuple[str, ...] | None
     #: For the installation log and the readiness screen.
     purpose: str
 
@@ -261,11 +274,22 @@ class BootService:
         return ntpath.join(layout.config, self.xml)
 
 
+# Named, not positional: the fields are a path, a path, a callable, a sentence
+# and a tuple, and inserting one in the middle silently reassigned two of them
+# when they were positional.
 BOOT_SERVICES: tuple[BootService, ...] = (
-    BootService(TASK_NAME, "deskpilot-service.py", "deskpilot-task.xml",
-                runtime_argv, "DeskPilot's runtime"),
-    BootService(WEB_TASK_NAME, "deskpilot-web.py", "deskpilot-web-task.xml",
-                web_argv, "the owner's control centre"),
+    BootService(task_name=TASK_NAME,
+                script="deskpilot-service.py",
+                xml="deskpilot-task.xml",
+                argv=runtime_argv,
+                purpose="DeskPilot's runtime",
+                env_allow=None),
+    BootService(task_name=WEB_TASK_NAME,
+                script="deskpilot-web.py",
+                xml="deskpilot-web-task.xml",
+                argv=web_argv,
+                purpose="the owner's control centre",
+                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,)),
 )
 
 #: Every task this installer creates. What uninstall has to remove.
@@ -277,8 +301,11 @@ ALL_TASK_NAMES: tuple[str, ...] = (
 
 def launcher_source(layout: Layout, service: BootService) -> str:
     """The launcher for one service: load the secrets, then run its command."""
-    return LAUNCHER_SOURCE.format(app=layout.app, env_file=layout.env_file,
-                                  argv=repr(list(service.argv(layout))))
+    return LAUNCHER_SOURCE.format(
+        app=layout.app, env_file=layout.env_file,
+        argv=repr(list(service.argv(layout))),
+        env_allow=(None if service.env_allow is None
+                   else repr(tuple(service.env_allow))))
 
 
 def backup_source(layout: Layout, keep: int = BACKUP_RETENTION) -> str:

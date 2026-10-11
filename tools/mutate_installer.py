@@ -70,9 +70,12 @@ class Mutant:
 
 #: The control-centre entry in :data:`BOOT_SERVICES`, as source text.
 WEB_ENTRY_OLD = (
-    '    BootService(WEB_TASK_NAME, "deskpilot-web.py", '
-    '"deskpilot-web-task.xml",\n'
-    '                web_argv, "the owner\'s control centre"),\n'
+    '    BootService(task_name=WEB_TASK_NAME,\n'
+    '                script="deskpilot-web.py",\n'
+    '                xml="deskpilot-web-task.xml",\n'
+    '                argv=web_argv,\n'
+    '                purpose="the owner' + chr(39) + 's control centre",\n'
+    '                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,)),\n'
 )
 
 
@@ -474,6 +477,30 @@ MUTANTS: tuple[Mutant, ...] = (
            ".RepairingAnInstallationMadeByTheDefectiveBuild"
            ".test_an_upgrade_does_not_give_autostart_to_someone_who_declined_it",
            "an upgrade does not add autostart the owner declined"),
+    # Least privilege between the two services, which only became a question
+    # once the control centre was actually started by something.
+    Mutant("control-centre-gets-the-owner-key", "integration.py",
+           "                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,)),",
+           "                env_allow=None),",
+           "tests_solvent.test_installer_services"
+           ".TheGeneratedCommandsAreAcceptedByTheRealCli"
+           ".test_the_control_centre_is_not_given_the_owner_signing_key",
+           "the control centre is not handed the owner's signing key"),
+    Mutant("the-allowlist-is-not-applied", "integration.py",
+           "        if ENV_ALLOW is not None and name not in ENV_ALLOW:\n"
+           "            continue\n",
+           "",
+           "tests_solvent.test_installer_services"
+           ".TheGeneratedCommandsAreAcceptedByTheRealCli"
+           ".test_the_control_centre_is_not_given_the_owner_signing_key",
+           "a declared allowlist is actually enforced"),
+    Mutant("the-runtime-loses-its-key", "integration.py",
+           "                env_allow=None),",
+           "                env_allow=()),",
+           "tests_solvent.test_installer_services"
+           ".TheGeneratedCommandsAreAcceptedByTheRealCli"
+           ".test_the_runtime_is_given_the_owner_signing_key",
+           "the runtime keeps the key it signs with"),
     # The wizard itself. Nothing here can run the script, so these prove the
     # static checks notice a wizard that says the wrong thing -- the three
     # real-world failures were all a wizard saying the wrong thing while a
