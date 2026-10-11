@@ -83,6 +83,13 @@ Var WebPassword2
 Var AiChoice           ; ollama | cloud | later
 Var AiApiKey
 Var CheckBlocked
+Var ExistingInstall    ; "1" when this computer already has DeskPilot
+Var FinishTitle        ; the last screen must not claim more than is true
+Var FinishNote
+Var HeadlineFile
+Var InstallMode        ; "install" or "repair"
+Var ModeRepairRadio
+Var ModeInstallRadio
 Var VerifyHeadline
 Var OptAutostart
 Var OptBackups
@@ -106,14 +113,28 @@ Var AnsBackups
 !insertmacro MUI_PAGE_WELCOME
 
 Page custom SystemCheckPage SystemCheckLeave
+Page custom ModePage ModeLeave
+; Skipped when repairing: a repair reads the components, the owner details and
+; the AI choice from the installation it is repairing, so asking again would be
+; asking the owner to retype what is already on their disk -- and a wrong
+; answer would overwrite a right one.
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipWhenRepairing
 !insertmacro MUI_PAGE_COMPONENTS
 Page custom OwnerSetupPage OwnerSetupLeave
 Page custom AiSetupPage AiSetupLeave
 !insertmacro MUI_PAGE_INSTFILES
-Page custom VerifyPage
+; There was a "Verify installation" page here. Its entire content was a label
+; reading "Running health, readiness and diagnostics against the installed
+; database...", and it ran none of them. Verification now happens in the step
+; above, where its output goes into the details pane and its verdict decides
+; what the last screen is allowed to say.
 
-!define MUI_FINISHPAGE_TITLE "DeskPilot is installed"
-!define MUI_FINISHPAGE_TEXT "$VerifyHeadline$\r$\n$\r$\nThe control centre runs on this computer at http://127.0.0.1:8765 and is not reachable from the internet. Sign in with the password you chose."
+; Both are variables. The title used to be the literal "DeskPilot is
+; installed", printed whatever the checks had found -- and the checks were
+; never run, because the page that claimed to run them only displayed a label
+; saying so. An installer's last screen is the one thing an owner believes.
+!define MUI_FINISHPAGE_TITLE "$FinishTitle"
+!define MUI_FINISHPAGE_TEXT "$VerifyHeadline$\r$\n$\r$\n$FinishNote"
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open the DeskPilot control centre"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenControlCentre
@@ -642,8 +663,8 @@ Function SystemCheckPage
   Pop $Lbl
 
   ; -- Existing installation
-  ${If} ${FileExists} "$INSTDIR\Data\solvent.db"
-    ${NSD_CreateLabel} 0 70u 100% 12u "Existing DeskPilot         UPDATE AVAILABLE - your data will be kept"
+  ${If} $ExistingInstall == "1"
+    ${NSD_CreateLabel} 0 70u 100% 12u "Existing DeskPilot         FOUND - it can be repaired, and your data is kept"
   ${Else}
     ${NSD_CreateLabel} 0 70u 100% 12u "Existing DeskPilot         NONE"
   ${EndIf}
@@ -688,7 +709,69 @@ Var FldEmail
 Var FldPass
 Var FldPass2
 
+; Repair or install. Shown only when there is something to repair.
+Function ModePage
+  ${If} $ExistingInstall != "1"
+    ; Nothing installed: there is no choice to make, and a page offering one
+    ; would be a question with one answer.
+    StrCpy $InstallMode "install"
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "DeskPilot is already installed" \
+    "Repair it, or install it again."
+  nsDialogs::Create 1018
+  Pop $Dlg
+  ${If} $Dlg == error
+    Abort
+  ${EndIf}
+
+  ${NSD_CreateLabel} 0 0 100% 24u "DeskPilot is already on this computer. \
+Repairing is almost always what you want: it puts back the program files and \
+the two background services, and leaves everything you have done untouched."
+  Pop $Lbl
+
+  ${NSD_CreateRadioButton} 0 30u 100% 12u "Repair DeskPilot (recommended)"
+  Pop $ModeRepairRadio
+  ${NSD_CreateLabel} 14u 42u 100% 24u "Keeps your database, your sign-in \
+password, your owner key, your API keys, your settings, your job history and \
+your backups. Nothing is reset and nothing is asked again."
+  Pop $Lbl
+
+  ${NSD_CreateRadioButton} 0 70u 100% 12u "Install again from the beginning"
+  Pop $ModeInstallRadio
+  ${NSD_CreateLabel} 14u 82u 100% 24u "Asks for the owner details and the AI \
+choice again, and replaces the control-centre password with the one you type. \
+Your database and your owner key are still kept."
+  Pop $Lbl
+
+  ${If} $InstallMode == "install"
+    ${NSD_SetState} $ModeInstallRadio ${BST_CHECKED}
+  ${Else}
+    ${NSD_SetState} $ModeRepairRadio ${BST_CHECKED}
+  ${EndIf}
+
+  nsDialogs::Show
+FunctionEnd
+
+Function ModeLeave
+  ${NSD_GetState} $ModeRepairRadio $R0
+  ${If} $R0 == ${BST_CHECKED}
+    StrCpy $InstallMode "repair"
+  ${Else}
+    StrCpy $InstallMode "install"
+  ${EndIf}
+FunctionEnd
+
+; Used by the pages that ask questions a repair already knows the answers to.
+Function SkipWhenRepairing
+  ${If} $InstallMode == "repair"
+    Abort
+  ${EndIf}
+FunctionEnd
+
 Function OwnerSetupPage
+  Call SkipWhenRepairing
   !insertmacro MUI_HEADER_TEXT "Owner setup" "The only things DeskPilot needs from you."
   nsDialogs::Create 1018
   Pop $Dlg
@@ -749,6 +832,7 @@ Var RadioLater
 Var FldApiKey
 
 Function AiSetupPage
+  Call SkipWhenRepairing
   !insertmacro MUI_HEADER_TEXT "AI setup" "Which language model DeskPilot should use."
   nsDialogs::Create 1018
   Pop $Dlg
@@ -858,14 +942,19 @@ Section "-Install"
   ;    Not through the command line: arguments are visible to every account on
   ;    this machine in the process list. An environment block is inherited by
   ;    the child and is not listed alongside processes.
-  Call BuildAnswers
-  ; Uppercase R5. The System plugin reads `r5` as $5 and `R5` as $R5; the
-  ; lowercase form sent the engine the value of $5 instead of the answers.
-  StrCpy $R5 $AnswersJson
-  System::Call 'kernel32::SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t R5)i.R0'
-  StrCpy $R5 ""
-  ; The document held the password; it must not outlive the hand-over.
-  StrCpy $AnswersJson ""
+  ;    A repair hands over nothing. It did not ask for a password, so there
+  ;    is none to pass, and the credentials it needs are the ones already in
+  ;    the installation it is repairing.
+  ${If} $InstallMode != "repair"
+    Call BuildAnswers
+    ; Uppercase R5. The System plugin reads `r5` as $5 and `R5` as $R5; the
+    ; lowercase form sent the engine the value of $5 instead of the answers.
+    StrCpy $R5 $AnswersJson
+    System::Call 'kernel32::SetEnvironmentVariable(t "DESKPILOT_SETUP_ANSWERS", t R5)i.R0'
+    StrCpy $R5 ""
+    ; The document held the password; it must not outlive the hand-over.
+    StrCpy $AnswersJson ""
+  ${EndIf}
 
   ; -- Preinstallation self-check. Nothing on this machine has been modified
   ;    at this point, and nothing will be if this does not pass.
@@ -876,15 +965,24 @@ Section "-Install"
     SetDetailsPrint both
     DetailPrint ""
     Call ForgetSecrets
-    DetailPrint "INSTALLATION STOPPED BEFORE ANY CHANGE WAS MADE."
+    DetailPrint "STOPPED BEFORE ANY CHANGE WAS MADE."
     DetailPrint "The lines above say which check failed and why. Your computer"
     DetailPrint "is exactly as it was: nothing installed, no database touched,"
     DetailPrint "MetaTrader not touched."
-    Abort "DeskPilot was not installed."
+    Abort "DeskPilot was not changed."
   ${EndIf}
 
-  DetailPrint "Installing DeskPilot..."
-  nsExec::ExecToLog '"$PythonExe" -I "$EngineDir\deskpilot-engine.py" install --package "$PayloadFile" --expect-sha256 "${PAYLOAD_SHA256}" --root "$INSTDIR" --out "$ReportFile"'
+  ; -- Install or repair. One executable, one of two phases, chosen on the
+  ;    mode page. The engine has had a repair phase since it was written; what
+  ;    it did not have was any way for an owner to reach it, which left the
+  ;    only route to a broken installation being a full reinstall.
+  ${If} $InstallMode == "repair"
+    DetailPrint "Repairing DeskPilot. Your data is not touched..."
+    nsExec::ExecToLog '"$PythonExe" -I "$EngineDir\deskpilot-engine.py" repair --package "$PayloadFile" --expect-sha256 "${PAYLOAD_SHA256}" --root "$INSTDIR" --out "$ReportFile"'
+  ${Else}
+    DetailPrint "Installing DeskPilot..."
+    nsExec::ExecToLog '"$PythonExe" -I "$EngineDir\deskpilot-engine.py" install --package "$PayloadFile" --expect-sha256 "${PAYLOAD_SHA256}" --root "$INSTDIR" --out "$ReportFile"'
+  ${EndIf}
   Pop $R1
 
   ; Clear the answers from this process so nothing started later inherits them.
@@ -893,9 +991,61 @@ Section "-Install"
   ${If} $R1 != "0"
     SetDetailsPrint both
     DetailPrint ""
-    DetailPrint "INSTALLATION STOPPED. The lines above say what failed, what was"
-    DetailPrint "changed and what was not. MetaTrader was not touched."
+    DetailPrint "STOPPED. The lines above say what failed, what was changed and"
+    DetailPrint "what was not. MetaTrader was not touched."
     Abort "DeskPilot was not installed."
+  ${EndIf}
+
+  ; -- Verify, for real. This used to be a page that displayed the sentence
+  ;    "Running health, readiness and diagnostics..." and then ran nothing at
+  ;    all, while the finish screen announced success regardless. The engine's
+  ;    verify phase asks the installed database whether it is healthy, asks
+  ;    both scheduled tasks whether they are registered, and asks port 8765
+  ;    whether the control centre answers.
+  DetailPrint ""
+  DetailPrint "Checking that DeskPilot actually works..."
+  nsExec::ExecToLog '"$PythonExe" -I "$EngineDir\deskpilot-engine.py" verify --root "$INSTDIR" --out "$ReportFile" --headline "$HeadlineFile"'
+  Pop $R3
+
+  ; The verdict, in the engine's own words, onto the last screen.
+  ${If} ${FileExists} "$HeadlineFile"
+    ClearErrors
+    FileOpen $R4 "$HeadlineFile" r
+    ${IfNot} ${Errors}
+      FileRead $R4 $R5
+      FileClose $R4
+      ${StrRep} $VerifyHeadline "$R5" "$\r" ""
+      ${StrRep} $VerifyHeadline "$VerifyHeadline" "$\n" ""
+    ${EndIf}
+  ${EndIf}
+  ${If} $VerifyHeadline == ""
+    StrCpy $VerifyHeadline "DeskPilot could not report its own readiness."
+  ${EndIf}
+
+  ${If} $R3 == "0"
+    ${If} $InstallMode == "repair"
+      StrCpy $FinishTitle "DeskPilot is repaired"
+      StrCpy $FinishNote "Your database, password, owner key and backups are \
+as they were. The control centre runs on this computer at \
+http://127.0.0.1:8765 and is not reachable from the internet."
+    ${Else}
+      StrCpy $FinishTitle "DeskPilot is installed"
+      StrCpy $FinishNote "The control centre runs on this computer at \
+http://127.0.0.1:8765 and is not reachable from the internet. Sign in with \
+the password you chose."
+    ${EndIf}
+  ${Else}
+    ; Installed, and not working. Saying so is the whole point.
+    SetDetailsPrint both
+    StrCpy $FinishTitle "DeskPilot needs attention"
+    StrCpy $FinishNote "The files are in place, but the check above did not \
+pass, so do not assume DeskPilot is running. The installation log lists every \
+check and what it found. Your data, your credentials and MetaTrader were not \
+touched."
+    DetailPrint ""
+    DetailPrint "DESKPILOT IS NOT READY. The lines above say which check failed."
+    DetailPrint "Nothing has been lost: your data and credentials are intact and"
+    DetailPrint "MetaTrader was not touched. The log is at $INSTDIR\Logs\install.log"
   ${EndIf}
 
   ; -- Keep the engine. It used to live only in the installer's temporary
@@ -997,21 +1147,24 @@ FunctionEnd
 ; ---------------------------------------------------------------------------
 ; Verify
 ; ---------------------------------------------------------------------------
-Function VerifyPage
-  !insertmacro MUI_HEADER_TEXT "Verify installation" "DeskPilot checks itself, using its own authorities."
-  nsDialogs::Create 1018
-  Pop $Dlg
-
-  ${NSD_CreateLabel} 0 0 100% 12u "Running health, readiness and diagnostics against the installed database..."
-  Pop $Lbl
-  nsDialogs::Show
-FunctionEnd
-
 Function InitDefaults
   StrCpy $OptAutostart "1"
   StrCpy $OptBackups "1"
   StrCpy $AiChoice "ollama"
-  StrCpy $VerifyHeadline "DeskPilot is installed."
+  StrCpy $VerifyHeadline ""
+  StrCpy $FinishTitle "DeskPilot"
+  StrCpy $FinishNote "The control centre runs on this computer at \
+http://127.0.0.1:8765 and is not reachable from the internet."
+  StrCpy $HeadlineFile "$PLUGINSDIR\headline.txt"
+  ; Decided once, here, rather than wherever it happens to be needed: the
+  ; system-check page reports it, the mode page offers a choice because of it,
+  ; and the install section runs a different phase because of it.
+  StrCpy $ExistingInstall "0"
+  StrCpy $InstallMode "install"
+  ${If} ${FileExists} "$INSTDIR\Data\solvent.db"
+    StrCpy $ExistingInstall "1"
+    StrCpy $InstallMode "repair"
+  ${EndIf}
 FunctionEnd
 
 Function OpenControlCentre

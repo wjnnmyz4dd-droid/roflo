@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 
 from . import integration, payload, secrets_env
 from .secrets_env import read_env_secrets  # noqa: F401
-from .engine import Engine, InstallState, OwnerAnswers, StepFailed
+from .engine import Engine, InstallState, OwnerAnswers, StepFailed, StepResult
 from .host import Host
 from .installlog import Log
 from .layout import Layout
@@ -174,6 +174,49 @@ def repair(host: Host, settings: Settings, answers: OwnerAnswers,
     engine = Engine(host, settings, answers, log)
     engine.owner_key = key
     had_db = host.exists(layout.db)
+    state = InstallState.load(host, layout.state_file)
+
+    # Repair replaces the application over an installation that has the
+    # owner's work in it, and ``step_extract`` used to delete the previous
+    # application outright before writing the new one. A step failing after
+    # that point left no way back: a half-replaced installation, and the
+    # version that had been working already gone.
+    #
+    # So the same protection an upgrade takes, through the same record and the
+    # same rollback. The database is copied first even though repair does not
+    # intend to touch it -- "does not intend to" is the claim the backup
+    # exists to make recoverable if it turns out to be wrong.
+    record = ReplacementRecord()
+    rows: list[Row] = []
+    if had_db:
+        log.step("Backing up the database")
+        record.database_backup = _backup_database(host, layout, "repair")
+        rows.append(Row("Database backup", Outcome.PASS,
+                        f"copied to {record.database_backup} before anything "
+                        f"was replaced"))
+    if host.exists(layout.app):
+        record.previous_app = layout.app + ".previous"
+        if host.exists(record.previous_app):
+            host.remove_tree(record.previous_app)
+        host.move(layout.app, record.previous_app)
+        rows.append(Row("Previous version", Outcome.PASS,
+                        f"kept at {record.previous_app} until this repair "
+                        f"succeeds"))
+
+    # Autostart as the installation already had it, not as the answers
+    # describe it. A repair run with default answers would otherwise hand
+    # autostart to an owner who had declined it, which is a decision a repair
+    # does not get to make.
+    recorded = tuple(state.tasks) if state else ()
+    had_services = any(service.task_name in recorded
+                       for service in integration.BOOT_SERVICES)
+
+    def restore_services() -> StepResult:
+        if not had_services and state is not None:
+            return StepResult("autostart", "Restoring autostart", True,
+                              "autostart was not configured on this "
+                              "installation; left as it was", skipped=True)
+        return engine.refresh_services()
 
     sequence = [
         ("Verifying package", engine.step_verify_package),
@@ -182,33 +225,44 @@ def repair(host: Host, settings: Settings, answers: OwnerAnswers,
         ("Rebuilding the Python environment", engine.step_venv),
         ("Re-registering certified capabilities", engine.step_capability),
         ("Restoring the firewall rule", engine.step_firewall),
-        ("Restoring autostart", engine.step_autostart),
+        ("Restoring autostart", restore_services),
         ("Restoring backups", engine.step_backups),
     ]
-    rows: list[Row] = []
     for title, step in sequence:
         log.step(title)
         try:
             result = step()
-        except payload.PayloadRefused as refused:
-            log.flush()
-            return Report("repair", tuple(rows), refused.failure)
-        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
-            detail = getattr(exc, "detail", None) or str(exc)
-            rows.append(Row(title, Outcome.FAIL, detail))
+        except (payload.PayloadRefused, Exception) as exc:  # noqa: BLE001
+            refused = isinstance(exc, payload.PayloadRefused)
+            detail = (exc.failure.why if refused
+                      else getattr(exc, "detail", None) or str(exc))
+            if not refused:
+                rows.append(Row(title, Outcome.FAIL, detail))
+            restored = _rollback(host, layout, record, log)
+            rows.append(Row("Rollback",
+                            Outcome.PASS if restored else Outcome.FAIL,
+                            "; ".join(record.notes) or "nothing to restore"))
             log.flush()
             return Report("repair", tuple(rows), Failure(
-                what_failed=f"{title} failed",
+                what_failed=(exc.failure.what_failed if refused
+                             else f"{title} failed"),
                 why=detail,
                 changed=tuple(engine.changed),
-                not_changed=("your database was not modified",
+                not_changed=("your database was restored from the copy taken "
+                             "before this repair began"
+                             if record.database_backup else
+                             "your database was not modified",
                              "your configuration and owner key were not changed",
                              "your audit history and backups were not touched",
                              "MetaTrader was not touched"),
-                safe_next_action=(f"Read {layout.install_log} and run Repair "
-                                  f"again once the cause is fixed."),
+                safe_next_action=(f"DeskPilot is back as it was. Read "
+                                  f"{layout.install_log} and run Repair again "
+                                  f"once the cause is fixed."),
             ))
         rows.append(result.row())
+
+    if record.previous_app and host.exists(record.previous_app):
+        host.remove_tree(record.previous_app)
 
     # The whole promise of repair, asserted rather than assumed.
     if had_db and not host.exists(layout.db):
@@ -227,8 +281,14 @@ def repair(host: Host, settings: Settings, answers: OwnerAnswers,
 # ---------------------------------------------------------------------------
 
 @dataclass
-class UpgradeRecord:
-    """What an upgrade moved aside, so a rollback knows where to look."""
+class ReplacementRecord:
+    """What was moved aside, so a rollback knows where to look.
+
+    Used by upgrade and by repair. Both replace the application in place over
+    an installation that has the owner's data in it, and the difference between
+    them -- whether the payload is a new version or the same one -- changes
+    nothing about what has to be put back when a step fails partway.
+    """
 
     previous_app: str = ""
     database_backup: str = ""
@@ -251,7 +311,7 @@ def upgrade(host: Host, settings: Settings, answers: OwnerAnswers,
     """
     log = log or Log(host)
     layout = settings.layout
-    record = UpgradeRecord()
+    record = ReplacementRecord()
     rows: list[Row] = []
     had_services = False
 
@@ -405,7 +465,8 @@ class _UpgradeFailed(Exception):
     """Internal: an upgrade step failed and a rollback is required."""
 
 
-def _backup_database(host: Host, layout: Layout) -> str:
+def _backup_database(host: Host, layout: Layout,
+                     before: str = "upgrade") -> str:
     """Copy the database aside before the new code can touch it.
 
     A byte copy, not SQLite's online backup API, and deliberately so: the
@@ -416,12 +477,12 @@ def _backup_database(host: Host, layout: Layout) -> str:
     import datetime
     stamp = (datetime.datetime.now(datetime.timezone.utc)
              .strftime("%Y%m%dT%H%M%SZ"))
-    target = ntpath.join(layout.backups, f"pre-upgrade-{stamp}.db")
+    target = ntpath.join(layout.backups, f"pre-{before}-{stamp}.db")
     host.write_bytes(target, host.read_bytes(layout.db))
     return target
 
 
-def _rollback(host: Host, layout: Layout, record: UpgradeRecord,
+def _rollback(host: Host, layout: Layout, record: ReplacementRecord,
               log: Log) -> bool:
     """Put back the previous application and database. Best effort, reported."""
     ok = True

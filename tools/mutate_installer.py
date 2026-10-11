@@ -501,6 +501,59 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheGeneratedCommandsAreAcceptedByTheRealCli"
            ".test_the_runtime_is_given_the_owner_signing_key",
            "the runtime keeps the key it signs with"),
+    # One executable that installs or repairs, and a last screen that cannot
+    # claim more than was checked.
+    Mutant("reinstall-is-the-default-over-a-working-install",
+           "DeskPilot-Setup.nsi",
+           '    StrCpy $InstallMode "repair"\n  ${EndIf}',
+           '    StrCpy $InstallMode "install"\n  ${EndIf}',
+           "tests_solvent.test_installer_wizard_static"
+           ".OneExecutableInstallsOrRepairs"
+           ".test_repair_is_the_default_when_an_installation_is_found",
+           "repair is offered rather than a full reinstall"),
+    Mutant("a-repair-asks-the-owner-to-retype", "DeskPilot-Setup.nsi",
+           "Function OwnerSetupPage\n  Call SkipWhenRepairing",
+           "Function OwnerSetupPage",
+           "tests_solvent.test_installer_wizard_static"
+           ".OneExecutableInstallsOrRepairs"
+           ".test_the_questions_a_repair_already_knows_are_not_asked",
+           "a repair does not ask for what is already on disk"),
+    Mutant("the-finish-screen-claims-success-regardless",
+           "DeskPilot-Setup.nsi",
+           '!define MUI_FINISHPAGE_TITLE "$FinishTitle"',
+           '!define MUI_FINISHPAGE_TITLE "DeskPilot is installed"',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheLastScreenCannotClaimMoreThanWasChecked"
+           ".test_the_finish_title_is_not_a_fixed_claim",
+           "the last screen reflects what the checks found"),
+    Mutant("verification-is-never-run", "DeskPilot-Setup.nsi",
+           '--headline "$HeadlineFile"',
+           '--headline ""',
+           "tests_solvent.test_installer_wizard_static"
+           ".TheLastScreenCannotClaimMoreThanWasChecked"
+           ".test_the_headline_comes_from_the_engine_not_the_script",
+           "the readiness verdict comes from the engine"),
+    Mutant("repair-takes-no-backup", "lifecycle.py",
+           '        record.database_backup = _backup_database(host, layout, "repair")',
+           '        record.database_backup = ""',
+           "tests_solvent.test_installer_services"
+           ".RepairKeepsEverythingAndCanBeUndone"
+           ".test_a_repair_backs_the_database_up_first",
+           "a repair copies the database before replacing anything"),
+    Mutant("a-failed-repair-cannot-be-undone", "lifecycle.py",
+           "            restored = _rollback(host, layout, record, log)",
+           "            restored = True",
+           "tests_solvent.test_installer_services"
+           ".RepairKeepsEverythingAndCanBeUndone"
+           ".test_a_failed_repair_puts_the_application_back",
+           "a repair that fails partway puts back what it moved"),
+    Mutant("repair-imposes-autostart", "lifecycle.py",
+           "        if not had_services and state is not None:",
+           "        if False:",
+           "tests_solvent.test_installer_services"
+           ".RepairKeepsEverythingAndCanBeUndone"
+           ".test_a_repair_does_not_impose_autostart_on_someone_who_declined",
+           "a repair does not add autostart the owner declined"),
     # The wizard itself. Nothing here can run the script, so these prove the
     # static checks notice a wizard that says the wrong thing -- the three
     # real-world failures were all a wizard saying the wrong thing while a
@@ -513,8 +566,8 @@ MUTANTS: tuple[Mutant, ...] = (
            ".test_no_system_call_uses_a_lowercase_register",
            "the hand-over reads the register it wrote (the third failure)"),
     Mutant("handover-register-not-cleared", "DeskPilot-Setup.nsi",
-           '  StrCpy $R5 ""\n  ; The document held the password',
-           '  ; The document held the password',
+           '    StrCpy $R5 ""\n    ; The document held the password',
+           '    ; The document held the password',
            "tests_solvent.test_installer_wizard_static"
            ".TheSystemPluginRegisterConvention"
            ".test_the_handover_clears_the_register_and_the_variable",
@@ -527,8 +580,8 @@ MUTANTS: tuple[Mutant, ...] = (
            ".test_find_python_saves_the_whole_register_file",
            "a helper leaves its caller's registers as it found them"),
     Mutant("selfcheck-abort-keeps-the-password", "DeskPilot-Setup.nsi",
-           '    Call ForgetSecrets\n    DetailPrint "INSTALLATION STOPPED BEFORE ANY CHANGE WAS MADE."',
-           '    DetailPrint "INSTALLATION STOPPED BEFORE ANY CHANGE WAS MADE."',
+           '    Call ForgetSecrets\n    DetailPrint "STOPPED BEFORE ANY CHANGE WAS MADE."',
+           '    DetailPrint "STOPPED BEFORE ANY CHANGE WAS MADE."',
            "tests_solvent.test_installer_wizard_static"
            ".EverySecretIsForgottenOnEveryExit"
            ".test_no_abort_after_the_hand_over_skips_it",

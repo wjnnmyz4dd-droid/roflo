@@ -564,3 +564,137 @@ class TheUpgradeDoesNotMixTwoEngines(unittest.TestCase):
                         "the Engine directory is cleared before the install "
                         "phase could fail, so a failed upgrade would leave no "
                         "engine behind at all")
+
+
+class OneExecutableInstallsOrRepairs(unittest.TestCase):
+    """The repair phase existed from the start and nothing could reach it.
+
+    ``deskpilot_installer.lifecycle.repair`` has always been there, tested, and
+    careful about owner data. The executable ran ``install`` and only
+    ``install``, so the only route an owner had to a broken installation was a
+    full reinstall -- and a full reinstall asks for the password again. The
+    wizard now chooses, and these assert the choosing.
+    """
+
+    def text(self) -> str:
+        return NSI.read_text()
+
+    def install_section(self) -> list[str]:
+        inside, out = False, []
+        for _number, line in code_lines():
+            if line.strip().startswith('Section "-Install"'):
+                inside = True
+                continue
+            if inside and line.strip().startswith("SectionEnd"):
+                break
+            if inside:
+                out.append(line.strip())
+        return out
+
+    def test_the_wizard_can_run_both_phases(self):
+        body = " ".join(self.install_section())
+        self.assertIn('deskpilot-engine.py" repair', body)
+        self.assertIn('deskpilot-engine.py" install', body)
+
+    def test_the_phase_is_chosen_by_the_mode(self):
+        body = self.install_section()
+        branch = next(i for i, line in enumerate(body)
+                      if line.startswith('${If} $InstallMode == "repair"'))
+        window = " ".join(body[branch:branch + 8])
+        self.assertIn('repair --package', window)
+        self.assertIn('install --package', window)
+
+    def test_repair_is_the_default_when_an_installation_is_found(self):
+        """Reinstalling over a working installation is the bigger hammer."""
+        defaults = functions()["InitDefaults"]
+        joined = " ".join(defaults)
+        self.assertIn('StrCpy $ExistingInstall "1"', joined)
+        self.assertIn('StrCpy $InstallMode "repair"', joined)
+        self.assertIn('StrCpy $InstallMode "install"', joined)
+
+    def test_the_mode_page_is_skipped_when_there_is_nothing_to_repair(self):
+        body = functions()["ModePage"]
+        guard = next(i for i, line in enumerate(body)
+                     if line.startswith('${If} $ExistingInstall != "1"'))
+        window = body[guard:guard + 4]
+        self.assertIn('StrCpy $InstallMode "install"', window)
+        self.assertIn("Abort", window)
+
+    def test_the_questions_a_repair_already_knows_are_not_asked(self):
+        """Owner setup and AI setup are skipped; so is the components page."""
+        for page in ("OwnerSetupPage", "AiSetupPage"):
+            with self.subTest(page=page):
+                self.assertEqual(functions()[page][0],
+                                 "Call SkipWhenRepairing",
+                                 f"{page} asks before it checks the mode")
+        self.assertIn("!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipWhenRepairing",
+                      self.text())
+        skip = functions()["SkipWhenRepairing"]
+        self.assertIn('${If} $InstallMode == "repair"', skip)
+        self.assertIn("Abort", skip)
+
+    def test_a_repair_hands_over_no_password(self):
+        """It never asked for one, so there is none to pass."""
+        body = self.install_section()
+        guard = next(i for i, line in enumerate(body)
+                     if line.startswith('${If} $InstallMode != "repair"'))
+        built = next(i for i, line in enumerate(body)
+                     if line.startswith("Call BuildAnswers"))
+        self.assertLess(guard, built,
+                        "the answers are built before the mode is checked")
+
+
+class TheLastScreenCannotClaimMoreThanWasChecked(unittest.TestCase):
+    """There was a page that said it was verifying, and verified nothing.
+
+    Its whole content was a label reading "Running health, readiness and
+    diagnostics against the installed database...". No check ran, the finish
+    screen's title was the literal string "DeskPilot is installed", and
+    ``$VerifyHeadline`` was assigned that same sentence in ``InitDefaults``
+    before anything had happened. Three screens of reassurance over nothing.
+    """
+
+    def install_section(self) -> list[str]:
+        return OneExecutableInstallsOrRepairs.install_section(self)
+
+    def test_the_wizard_runs_the_verify_phase(self):
+        self.assertIn('deskpilot-engine.py" verify',
+                      " ".join(self.install_section()))
+
+    def test_verification_runs_after_the_work_not_before(self):
+        text = NSI.read_text()
+        self.assertLess(text.index('deskpilot-engine.py" install'),
+                        text.index('deskpilot-engine.py" verify'))
+
+    def test_the_page_that_only_claimed_to_verify_is_gone(self):
+        text = NSI.read_text()
+        self.assertNotIn("Function VerifyPage", text)
+        self.assertNotIn("Page custom VerifyPage", text)
+        self.assertNotIn("Running health, readiness and diagnostics",
+                         "\n".join(line for _n, line in code_lines()))
+
+    def test_the_finish_title_is_not_a_fixed_claim(self):
+        text = NSI.read_text()
+        self.assertIn('!define MUI_FINISHPAGE_TITLE "$FinishTitle"', text)
+        self.assertNotIn('!define MUI_FINISHPAGE_TITLE "DeskPilot is installed"',
+                         text)
+
+    def test_a_failed_check_changes_what_the_last_screen_says(self):
+        body = self.install_section()
+        verdict = next(i for i, line in enumerate(body)
+                       if line.startswith('${If} $R3 == "0"'))
+        window = " ".join(body[verdict:verdict + 30])
+        self.assertIn("DeskPilot needs attention", window)
+        self.assertIn("DeskPilot is installed", window)
+        self.assertIn("DeskPilot is repaired", window)
+
+    def test_the_headline_comes_from_the_engine_not_the_script(self):
+        body = " ".join(self.install_section())
+        self.assertIn('--headline "$HeadlineFile"', body)
+        self.assertIn("FileRead", body)
+        defaults = " ".join(functions()["InitDefaults"])
+        self.assertIn('StrCpy $VerifyHeadline ""', defaults)
+
+    def test_an_unreadable_verdict_is_not_silently_optimistic(self):
+        body = " ".join(self.install_section())
+        self.assertIn("could not report its own readiness", body)

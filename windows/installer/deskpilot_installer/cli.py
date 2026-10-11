@@ -195,6 +195,9 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=["selfcheck", "check", "install", "verify",
                                  "repair", "upgrade", "uninstall",
                                  "plan-uninstall"])
+    parser.add_argument("--headline", default="",
+                        help="write the one-line readiness verdict here, for "
+                             "a wizard that has to put it on a screen")
     parser.add_argument("--package", default="",
                         help="path to the certified DeskPilot package")
     parser.add_argument("--expect-sha256", default="",
@@ -248,7 +251,14 @@ def main(argv: list[str] | None = None, host: Host | None = None) -> int:
         report = Engine(host, settings, answers, log).verify(
             probe_inference=args.probe_inference)
         print()
-        print(readiness_headline(report))
+        headline = readiness_headline(report)
+        print(headline)
+        if args.headline:
+            # The wizard cannot read a Python return value, and a finish screen
+            # that announces success while verification found a blocker is a
+            # lie the installer tells last and loudest. So the verdict is
+            # written where the wizard can put it on the screen verbatim.
+            host.write_bytes(args.headline, (headline + "\n").encode("utf-8"))
     elif args.phase == "repair":
         report = lifecycle.repair(host, settings, answers, log)
     elif args.phase == "upgrade":

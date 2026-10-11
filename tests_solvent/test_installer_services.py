@@ -663,3 +663,168 @@ class RepairingAnInstallationMadeByTheDefectiveBuild(Scenario):
             Log(host))
         for service in integration.BOOT_SERVICES:
             self.assertNotIn(service.task_name, host.scheduled_tasks)
+
+
+class RepairKeepsEverythingAndCanBeUndone(Scenario):
+    """Repair over a working installation, and repair that fails partway.
+
+    ``step_extract`` deleted the previous application before writing the new
+    one, so a step failing after that point left a half-replaced installation
+    and the working version already gone. The owner's data was never the thing
+    at risk -- repair does not run the credential or database steps -- but
+    "the database was not modified" was a claim resting on nothing being able
+    to go wrong.
+    """
+
+    #: Where install_ready puts the certified package on the fake machine.
+    PACKAGE = r"C:\Media\DeskPilot-certified.zip"
+
+    def installed(self):
+        data, digest = certified_payload()
+        host = install_ready(package=data, digest=digest)
+        engine, report, _log = self.install(host, digest)
+        self.assertInstalled(host, report)
+        layout = Layout()
+        host.write_bytes(layout.db, b"SQLite format 3\x00THE-OWNERS-WORK")
+        return host, layout, digest
+
+    def settings_for(self, digest):
+        from deskpilot_installer.engine import Settings
+        return Settings(layout=Layout(), package_path=self.PACKAGE,
+                        expected_digest=digest)
+
+    def repair(self, host, digest):
+        from tests_solvent.test_installer_matrix import answers
+        return lifecycle.repair(host, self.settings_for(digest), answers(),
+                                Log(host))
+
+    def key_in(self, host, layout):
+        from deskpilot_installer import secrets_env
+        found = secrets_env.read_env_secrets(host, layout.env_file)
+        secret = found.get(secrets_env.OWNER_KEY_ENV)
+        return secret.reveal() if secret is not None else None
+
+    # -- the happy path -------------------------------------------------
+    def test_a_repair_succeeds_and_says_so(self):
+        host, _layout, digest = self.installed()
+        report = self.repair(host, digest)
+        self.assertTrue(report.may_continue,
+                        [row.detail for row in report.blockers]
+                        + ([report.failure.why] if report.failure else []))
+        self.assertEqual(report.row("Data preservation").outcome.name, "PASS")
+
+    def test_a_repair_backs_the_database_up_first(self):
+        host, layout, digest = self.installed()
+        report = self.repair(host, digest)
+        row = report.row("Database backup")
+        self.assertIsNotNone(row, "no backup was taken before replacing files")
+        copies = [name for name in host.listdir(layout.backups)
+                  if "pre-repair" in name]
+        self.assertTrue(copies, f"no pre-repair copy in {layout.backups}")
+
+    def test_the_backup_is_taken_before_anything_is_replaced(self):
+        host, layout, digest = self.installed()
+        order = []
+        original_write, original_remove = host.write_bytes, host.remove_tree
+
+        def watch_write(path, data):
+            if "pre-repair" in path.lower():
+                order.append("backup")
+            original_write(path, data)
+
+        def watch_remove(path):
+            if path.lower().rstrip("\\") == layout.app.lower():
+                order.append("app-gone")
+            original_remove(path)
+
+        host.write_bytes = watch_write        # type: ignore[method-assign]
+        host.remove_tree = watch_remove       # type: ignore[method-assign]
+        self.repair(host, digest)
+        self.assertIn("backup", order)
+        if "app-gone" in order:
+            self.assertLess(order.index("backup"), order.index("app-gone"))
+
+    def test_a_repair_keeps_the_database_the_key_and_the_backups(self):
+        host, layout, digest = self.installed()
+        before_key = self.key_in(host, layout)
+        before_env = host.read_bytes(layout.env_file)
+        self.repair(host, digest)
+        self.assertEqual(host.read_bytes(layout.db),
+                         b"SQLite format 3\x00THE-OWNERS-WORK")
+        self.assertEqual(self.key_in(host, layout), before_key)
+        self.assertEqual(host.read_bytes(layout.env_file), before_env,
+                         "repair rewrote the credentials file")
+
+    def test_a_repair_leaves_no_previous_copy_behind(self):
+        host, layout, digest = self.installed()
+        self.repair(host, digest)
+        self.assertFalse(host.exists(layout.app + ".previous"),
+                         "the kept copy was never cleaned up")
+
+    def test_a_repair_restores_both_services(self):
+        host, _layout, digest = self.installed()
+        for service in integration.BOOT_SERVICES:
+            host.run(["schtasks.exe", "/Delete", "/TN",
+                      service.task_name, "/F"])
+        self.repair(host, digest)
+        for service in integration.BOOT_SERVICES:
+            self.assertIn(service.task_name, host.scheduled_tasks,
+                          f"{service.task_name} was not restored")
+
+    def test_a_repair_does_not_impose_autostart_on_someone_who_declined(self):
+        from tests_solvent.test_installer_matrix import Components, answers
+        data, digest = certified_payload()
+        host = install_ready(package=data, digest=digest)
+        self.install(host, digest,
+                    owner=answers(components=Components(autostart=False,
+                                                        backups=False)))
+        lifecycle.repair(host, self.settings_for(digest), answers(), Log(host))
+        for service in integration.BOOT_SERVICES:
+            self.assertNotIn(service.task_name, host.scheduled_tasks)
+
+    # -- the unhappy path -----------------------------------------------
+    def failing_repair(self, host, digest, step="step_venv"):
+        """Break one step, the way a real machine breaks one."""
+        from deskpilot_installer.engine import Engine, StepFailed
+        broken = getattr(Engine, step)
+
+        def fail(self_engine):
+            raise StepFailed("the virtual environment could not be rebuilt")
+
+        setattr(Engine, step, fail)
+        try:
+            return self.repair(host, digest)
+        finally:
+            setattr(Engine, step, broken)
+
+    def test_a_failed_repair_puts_the_application_back(self):
+        host, layout, digest = self.installed()
+        before = sorted(host.listdir(layout.app))
+        report = self.failing_repair(host, digest)
+        self.assertFalse(report.may_continue)
+        self.assertEqual(sorted(host.listdir(layout.app)), before,
+                         "the previous application was not restored")
+        self.assertFalse(host.exists(layout.app + ".previous"))
+
+    def test_a_failed_repair_keeps_the_database(self):
+        host, layout, digest = self.installed()
+        self.failing_repair(host, digest)
+        self.assertEqual(host.read_bytes(layout.db),
+                         b"SQLite format 3\x00THE-OWNERS-WORK")
+
+    def test_a_failed_repair_reports_the_rollback(self):
+        host, _layout, digest = self.installed()
+        report = self.failing_repair(host, digest)
+        row = report.row("Rollback")
+        self.assertIsNotNone(row, "a failed repair did not say what it undid")
+        self.assertEqual(row.outcome.name, "PASS")
+
+    def test_a_failed_repair_says_what_was_not_touched(self):
+        host, _layout, digest = self.installed()
+        report = self.failing_repair(host, digest)
+        self.assertIsNotNone(report.failure)
+        reassurance = " ".join(report.failure.not_changed).lower()
+        for promise in ("owner key", "metatrader", "backups"):
+            self.assertIn(promise, reassurance)
+        self.assertTrue(report.failure.why)
+        self.assertTrue(report.failure.safe_next_action)
