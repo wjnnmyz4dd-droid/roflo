@@ -17,12 +17,12 @@ See "Signing status" below.
 | File | `DeskPilot-Setup.exe` |
 | Status | **CURRENT — unsigned test build, Windows-unverified** |
 | Installer version | 1.0.0 |
-| Source HEAD | `5789392` — built from a clean tree |
-| Size | 1,353,927 bytes |
-| Installer SHA-256 | `cf529639c9bf68468154106191dab8ec386136282fc54909d2fda40594e0e3c9` |
-| Provenance | `dist/BUILD-5789392.txt` |
-| Payload | `DeskPilot-certified-5789392.zip` |
-| Payload SHA-256 | `8a8f19eecd1064ca6d17e48397673c824fe707735b79afd466cb253775fcad26` |
+| Source HEAD | `237b63d` — built from a clean tree |
+| Size | 1,356,995 bytes |
+| Installer SHA-256 | `a0e64d00711b1950b3546080e06a7c5e4198593ff02f4e00c6fc654ee6d48361` |
+| Provenance | `dist/BUILD-237b63d.txt` |
+| Payload | `DeskPilot-certified-237b63d.zip` |
+| Payload SHA-256 | `5d3197010caf91035e79a156abd20ab33fe94eee4dffe8b287114de55fcdd69b` |
 | Code signature | **none** |
 | Windows execution | **not verified** |
 
@@ -50,6 +50,7 @@ given. Do not install any of these.
 
 | Installer SHA-256 | HEAD | Superseded because |
 |---|---|---|
+| `cf529639c9bf68468154106191dab8ec386136282fc54909d2fda40594e0e3c9` | `5789392` | **Superseded.** Installed and repaired correctly, but shipped a runtime that could not start: `DEFAULT_INTERVALS` had no `heartbeat` cadence and `interval()` used a bare subscript, so registering the first task raised `KeyError` out of `serve()` — after `start()` had already recorded `runtime.started` with `health=HEALTHY`. The runtime died before its first tick on every launch, so no diagnostics were ever recorded. The heartbeat tick also used `Path` without importing it. |
 | `ce724f84f6875ada13b3f83a199551b3d7c9a5048642c6ced0e1f1576c8fc960` | `30113a9` | **Superseded, not defective.** Installed and repaired correctly, but could only ever run the `install` phase: the engine's `repair` was unreachable, so the only route to a broken installation was a full reinstall. It also verified nothing — the "Verify installation" page displayed a label saying it was checking and ran no check, and the finish screen's title was the fixed string "DeskPilot is installed". |
 | `51e80e3fee113571a23c25c4edd4e1426596a511c68946133cd8ab8c8aaf6aeb` | `53ce33c` | **Defective.** Neither background service ran. The runtime's generated launcher passed `--spool` to `solvent run`, which rejects unrecognised arguments and exits 2, so the scheduled task failed at every boot and Windows gave up after ten attempts. The control centre was never registered as a service at all, so `127.0.0.1:8765` refused connections. Both tasks also carried only a boot trigger and nothing ran them, so even a correct installation was down until the owner rebooted. Fixing the repair path found two more: an installation over existing owner data rotated the owner signing key, and an upgrade never rewrote the generated launchers. |
 | *not recoverable — see note below* | `b938e73` | **Defective.** The owner's details never reached the engine. The wizard stored them in `$R5` and handed them over with `t r5`, which the System plugin reads as `$5`, not `$R5`; `$5` held the AI backend name, so the engine received the word `ollama` where a JSON document belonged, found no owner details, and told an owner who had typed a password that one was needed. The engine also defaulted silently instead of saying the transfer had failed. Four further defects were found auditing the stages this one was not in. |
