@@ -17,12 +17,12 @@ See "Signing status" below.
 | File | `DeskPilot-Setup.exe` |
 | Status | **CURRENT — unsigned test build, Windows-unverified** |
 | Installer version | 1.0.0 |
-| Source HEAD | `2fdd4b3` — built from a clean tree |
-| Size | 1,347,925 bytes |
-| Installer SHA-256 | `c1fa9490b3c47b73852f7d890825c37482f449c976aa13b34233d0461e17577a` |
-| Provenance | `dist/BUILD-2fdd4b3.txt` |
-| Payload | `DeskPilot-certified-2fdd4b3.zip` |
-| Payload SHA-256 | `7a0bcc0d4882164b5c42e914b2e7b500c3f748333bee5163c79bb458d36bf0fb` |
+| Source HEAD | `30113a9` — built from a clean tree |
+| Size | 1,347,960 bytes |
+| Installer SHA-256 | `ce724f84f6875ada13b3f83a199551b3d7c9a5048642c6ced0e1f1576c8fc960` |
+| Provenance | `dist/BUILD-30113a9.txt` |
+| Payload | `DeskPilot-certified-30113a9.zip` |
+| Payload SHA-256 | `2d15f7a6590f025b78fe034609d6ae5196a73772e4d2d8a8befb2ecc1d11759c` |
 | Code signature | **none** |
 | Windows execution | **not verified** |
 
