@@ -489,7 +489,11 @@ class BusinessRecordsSurvive(unittest.TestCase):
         lifecycle.uninstall(host, Layout(), log=Log(host))
         names = [argv[argv.index("/TN") + 1] for argv in host.commands
                  if "/TN" in argv]
-        self.assertEqual(sorted(names), ["DeskPilot", "DeskPilot Backup"])
+        # Every task DeskPilot creates, and nothing else. Spelled from the
+        # engine's own tuple: a name added there and not removed here would be
+        # a task left running for an application that is gone.
+        self.assertEqual(sorted(names),
+                         sorted(integration.ALL_TASK_NAMES))
 
     def test_an_upgrade_backs_up_before_the_new_code_opens_the_database(self):
         """A backup taken after is a backup of whatever the new code did."""
@@ -782,10 +786,33 @@ class ThePrivilegeBoundaryIsRespected(unittest.TestCase):
         self.assertTrue(any(a == "profile=public" for a in argv))
 
     def test_the_control_centre_stays_on_loopback(self):
-        from deskpilot_installer.layout import WEB_PORT
-        source = integration.launcher_source(Layout())
-        self.assertNotIn("0.0.0.0", source)
+        """Bound to 127.0.0.1 explicitly, and said so in its own launcher.
+
+        This used to read the runtime's launcher for the string ``0.0.0.0``,
+        which it was never going to contain: that launcher did not start the
+        control centre at all. It passed for four builds while the control
+        centre was not started by anything.
+        """
+        from deskpilot_installer.layout import WEB_HOST, WEB_PORT
         self.assertEqual(WEB_PORT, 8765)
+        self.assertEqual(WEB_HOST, "127.0.0.1")
+        web = next(service for service in integration.BOOT_SERVICES
+                   if service.argv(Layout())[1] == "web")
+        argv = web.argv(Layout())
+        self.assertIn("--host", argv)
+        self.assertEqual(argv[argv.index("--host") + 1], "127.0.0.1")
+        for exposed in ("0.0.0.0", "::", "--insecure-cookies"):
+            self.assertNotIn(exposed, argv)
+        source = integration.launcher_source(Layout(), web)
+        self.assertNotIn("0.0.0.0", source)
+        self.assertIn("127.0.0.1", source)
+
+    def test_no_service_binds_anything_but_loopback(self):
+        for service in integration.BOOT_SERVICES:
+            source = integration.launcher_source(Layout(), service)
+            for exposed in ("0.0.0.0", "--insecure-cookies"):
+                self.assertNotIn(exposed, source,
+                                 f"{service.task_name} exposes {exposed}")
 
     def test_the_scheduled_task_does_not_run_as_an_interactive_user(self):
         xml = integration.task_xml("py.exe", "s.py", at_startup=True)
@@ -801,7 +828,8 @@ class ThePrivilegeBoundaryIsRespected(unittest.TestCase):
 
     def test_the_generated_scripts_are_valid_python(self):
         import ast
-        ast.parse(integration.launcher_source(Layout()))
+        for service in integration.BOOT_SERVICES:
+            ast.parse(integration.launcher_source(Layout(), service))
         ast.parse(integration.backup_source(Layout()))
 
     def test_the_backup_retention_matches_the_deployment_contract(self):

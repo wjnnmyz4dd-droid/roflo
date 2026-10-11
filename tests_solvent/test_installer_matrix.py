@@ -473,7 +473,7 @@ class InterruptionScenarios(Scenario):
         created = [argv for argv in host.commands
                    if argv[0].lower().endswith("schtasks.exe")
                    and "/Create" in argv]
-        self.assertEqual(len(created), 2)
+        self.assertEqual(len(created), len(integration.ALL_TASK_NAMES))
         xml = host.read_bytes(
             integration.InstalledScripts.under(Layout()).task_xml
         ).decode("utf-8")

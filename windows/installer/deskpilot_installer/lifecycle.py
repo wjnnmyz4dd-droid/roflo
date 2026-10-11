@@ -113,8 +113,12 @@ def plan_uninstall(host: Host, layout: Layout,
     if purge_owner_data:
         remove += keep
         keep = []
-    tasks = tuple(state.tasks) if state and state.tasks else (
-        integration.TASK_NAME, integration.BACKUP_TASK_NAME)
+    # Falling back to every task this installer can create, not a list written
+    # out here: an installation recorded by an older build has no control-centre
+    # task in its state, and one left behind by uninstall would keep starting a
+    # control centre for an application that is gone.
+    tasks = (tuple(state.tasks) if state and state.tasks
+             else integration.ALL_TASK_NAMES)
     rule = (state.firewall_rule if state and state.firewall_rule
             else integration.FIREWALL_RULE_NAME)
     return UninstallPlan(tuple(remove), tuple(keep), tasks, rule,
@@ -251,7 +255,11 @@ class UpgradeRecord:
 
     previous_app: str = ""
     database_backup: str = ""
-    task_was_running: bool = False
+    #: The boot services that were running when the upgrade began, by task
+    #: name. A bool was enough while there was one service; it cannot say which
+    #: of two to put back, and restarting one the owner had disabled would be
+    #: the upgrade making a decision that is not its to make.
+    tasks_were_running: tuple[str, ...] = ()
     notes: list[str] = field(default_factory=list)
 
 
@@ -304,14 +312,15 @@ def upgrade(host: Host, settings: Settings, answers: OwnerAnswers,
 
     try:
         log.step("Stopping DeskPilot")
-        record.task_was_running = integration.task_exists(
-            host, integration.TASK_NAME)
-        if record.task_was_running:
-            host.run(["schtasks.exe", "/End", "/TN", integration.TASK_NAME],
-                     timeout=120.0)
+        record.tasks_were_running = tuple(
+            service.task_name for service in integration.BOOT_SERVICES
+            if integration.task_exists(host, service.task_name))
+        if record.tasks_were_running:
+            for name in record.tasks_were_running:
+                integration.stop_task(host, name)
             rows.append(Row("Stopping DeskPilot", Outcome.PASS,
-                            "the DeskPilot task was stopped; "
-                            "MetaTrader was not touched"))
+                            "stopped: " + ", ".join(record.tasks_were_running)
+                            + "; MetaTrader was not touched"))
 
         log.step("Backing up the database")
         record.database_backup = _backup_database(host, layout)
@@ -384,12 +393,14 @@ def upgrade(host: Host, settings: Settings, answers: OwnerAnswers,
     engine.state.tasks = list(state.tasks)
     engine.state.firewall_rule = state.firewall_rule
     engine.step_record_state()
-    if record.task_was_running:
-        integration.register_task(
-            host, integration.TASK_NAME,
-            integration.InstalledScripts.under(layout).task_xml)
+    for service in integration.BOOT_SERVICES:
+        if service.task_name not in record.tasks_were_running:
+            continue
+        integration.register_task(host, service.task_name,
+                                  service.xml_path(layout))
+        integration.start_task(host, service.task_name)
         rows.append(Row("Restarting DeskPilot", Outcome.PASS,
-                        "the DeskPilot task was re-registered"))
+                        f"{service.task_name} was re-registered and started"))
     log.flush()
     return Report("upgrade", tuple(rows))
 
@@ -437,11 +448,14 @@ def _rollback(host: Host, layout: Layout, record: UpgradeRecord,
         except OSError as exc:
             record.notes.append(f"could not restore the database: {exc}")
             ok = False
-    if record.task_was_running:
-        integration.register_task(
-            host, integration.TASK_NAME,
-            integration.InstalledScripts.under(layout).task_xml)
-        record.notes.append("re-registered the DeskPilot startup task")
+    for name in record.tasks_were_running:
+        service = next((sv for sv in integration.BOOT_SERVICES
+                        if sv.task_name == name), None)
+        if service is None:
+            continue
+        integration.register_task(host, name, service.xml_path(layout))
+        integration.start_task(host, name)
+        record.notes.append(f"re-registered and started {name}")
     for note in record.notes:
         log.write(f"  rollback: {note}")
     return ok

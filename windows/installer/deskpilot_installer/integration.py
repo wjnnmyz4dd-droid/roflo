@@ -39,13 +39,16 @@ same order for the same reasons, including excluding the secrets file.
 from __future__ import annotations
 
 import ntpath
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .host import Host
-from .layout import Layout
+from .layout import Layout, WEB_HOST, WEB_PORT
 
-#: The scheduled task that starts DeskPilot at boot.
+#: The scheduled task that starts DeskPilot's runtime at boot.
 TASK_NAME = "DeskPilot"
+#: The scheduled task that starts the owner's control centre at boot.
+WEB_TASK_NAME = "DeskPilot Control Centre"
 #: The scheduled task that takes a daily backup.
 BACKUP_TASK_NAME = "DeskPilot Backup"
 #: The one firewall rule this installer creates.
@@ -64,6 +67,13 @@ BACKUP_RETENTION = 14
 # environment: something has to bridge the two, and a ``.cmd`` file doing it
 # with ``for /f`` would be shell quoting around the owner's signing key. This
 # is a Python file instead, parsed by Python, with no shell anywhere.
+#
+# One template, two services. The command it runs is data -- ``ARGV``, supplied
+# per service from :data:`BOOT_SERVICES` -- because loading the owner's secrets
+# into the environment is one responsibility and it should have one
+# implementation. The previous version hardcoded the runtime's arguments, and
+# the only way to add the control centre would have been a second copy of the
+# same credential-loading code.
 LAUNCHER_SOURCE = '''\
 """Start DeskPilot with the owner's environment loaded. Written by the installer.
 
@@ -78,8 +88,7 @@ import sys
 
 APP = r"{app}"
 ENV_FILE = r"{env_file}"
-DB = r"{db}"
-SPOOL = r"{spool}"
+ARGV = {argv}
 
 
 def load_env(path):
@@ -102,9 +111,7 @@ def load_env(path):
 def main():
     load_env(ENV_FILE)
     sys.path.insert(0, APP)
-    sys.argv = ["solvent", "run", "--db", DB]
-    if SPOOL:
-        sys.argv += ["--spool", SPOOL]
+    sys.argv = list(ARGV)
     runpy.run_module("solvent.cli", run_name="__main__")
 
 
@@ -193,9 +200,85 @@ if __name__ == "__main__":
 '''
 
 
-def launcher_source(layout: Layout) -> str:
+# ---------------------------------------------------------------------------
+# The two services
+# ---------------------------------------------------------------------------
+#
+# DeskPilot is two processes, as it is on Linux: ``deploy/solvent.service`` runs
+# the runtime and ``deploy/solvent-web.service`` runs the owner's control
+# centre. The Windows installer registered only the first, so the control
+# centre the Finish page links to was never started and the browser reported
+# ERR_CONNECTION_REFUSED on 127.0.0.1:8765.
+#
+# Enumerated here rather than written out at each site. Every place that
+# creates, starts, stops, re-registers, verifies or removes a DeskPilot service
+# reads this tuple, so adding the second one did not mean finding six places
+# that each knew the first one's name.
+
+
+def runtime_argv(layout: Layout) -> tuple[str, ...]:
+    """What starts DeskPilot's runtime.
+
+    ``--always-on`` is the mode a boot-started service on a host that stays
+    awake is actually in, and it makes the startup checks refuse to run against
+    in-memory storage instead of appearing to work and losing everything at the
+    next restart. ``deploy/solvent.service`` passes it for the same reason.
+
+    No ``--spool``: that is a ``solvent web`` flag. Passing it here is what made
+    the task exit 2 on every boot, because ``solvent run`` rejects unrecognised
+    arguments -- correctly. The runtime does not read the spool; owner intents
+    are consumed by ``solvent intents``, under the owner's explicit
+    authorisation, and never on the runtime's timer.
+    """
+    return ("solvent", "run", "--db", layout.db, "--always-on")
+
+
+def web_argv(layout: Layout) -> tuple[str, ...]:
+    """What starts the owner's control centre, bound to loopback."""
+    return ("solvent", "web", "--db", layout.db,
+            "--host", WEB_HOST, "--port", str(WEB_PORT),
+            "--spool", layout.spool)
+
+
+@dataclass(frozen=True, slots=True)
+class BootService:
+    """One process the installer starts at boot, and how to start it."""
+
+    task_name: str
+    #: Basename of the generated launcher, written into ``App``.
+    script: str
+    #: Basename of the generated task definition, written into ``Config``.
+    xml: str
+    #: The Solvent command, built from the layout.
+    argv: "Callable[[Layout], tuple[str, ...]]"
+    #: For the installation log and the readiness screen.
+    purpose: str
+
+    def script_path(self, layout: Layout) -> str:
+        return ntpath.join(layout.app, self.script)
+
+    def xml_path(self, layout: Layout) -> str:
+        return ntpath.join(layout.config, self.xml)
+
+
+BOOT_SERVICES: tuple[BootService, ...] = (
+    BootService(TASK_NAME, "deskpilot-service.py", "deskpilot-task.xml",
+                runtime_argv, "DeskPilot's runtime"),
+    BootService(WEB_TASK_NAME, "deskpilot-web.py", "deskpilot-web-task.xml",
+                web_argv, "the owner's control centre"),
+)
+
+#: Every task this installer creates. What uninstall has to remove.
+ALL_TASK_NAMES: tuple[str, ...] = (
+    tuple(service.task_name for service in BOOT_SERVICES)
+    + (BACKUP_TASK_NAME,)
+)
+
+
+def launcher_source(layout: Layout, service: BootService) -> str:
+    """The launcher for one service: load the secrets, then run its command."""
     return LAUNCHER_SOURCE.format(app=layout.app, env_file=layout.env_file,
-                                  db=layout.db, spool=layout.spool)
+                                  argv=repr(list(service.argv(layout))))
 
 
 def backup_source(layout: Layout, keep: int = BACKUP_RETENTION) -> str:
@@ -270,6 +353,24 @@ def register_task(host: Host, name: str, xml_path: str) -> bool:
     return result.ok
 
 
+def start_task(host: Host, name: str) -> bool:
+    """Run a registered task now.
+
+    A boot trigger starts a service at the next boot and not before, so a fresh
+    installation left both services down until the owner rebooted -- and the
+    Finish page offers the control centre's address immediately. Starting them
+    here is what makes that link answer.
+    """
+    result = host.run(["schtasks.exe", "/Run", "/TN", name], timeout=120.0)
+    return result.ok
+
+
+def stop_task(host: Host, name: str) -> bool:
+    """Ask a running task to stop. Used before an upgrade replaces its code."""
+    result = host.run(["schtasks.exe", "/End", "/TN", name], timeout=120.0)
+    return result.ok
+
+
 def delete_task(host: Host, name: str) -> bool:
     result = host.run(["schtasks.exe", "/Delete", "/TN", name, "/F"],
                       timeout=120.0)
@@ -318,16 +419,24 @@ class InstalledScripts:
     """Where the generated scripts live. Inside App: replaced by an upgrade."""
 
     launcher: str
+    web: str
     backup: str
     task_xml: str
+    web_task_xml: str
     backup_task_xml: str
 
     @classmethod
     def under(cls, layout: Layout) -> "InstalledScripts":
+        # Unpacked rather than indexed: if a third boot service is ever added,
+        # this raises instead of silently leaving it out of the named paths
+        # that uninstall and upgrade read.
+        runtime, control_centre = BOOT_SERVICES
         return cls(
-            launcher=ntpath.join(layout.app, "deskpilot-service.py"),
+            launcher=runtime.script_path(layout),
+            web=control_centre.script_path(layout),
             backup=ntpath.join(layout.app, "deskpilot-backup.py"),
-            task_xml=ntpath.join(layout.config, "deskpilot-task.xml"),
+            task_xml=runtime.xml_path(layout),
+            web_task_xml=control_centre.xml_path(layout),
             backup_task_xml=ntpath.join(layout.config,
                                         "deskpilot-backup-task.xml"),
         )

@@ -23,6 +23,12 @@ DEFAULT_ROOT = r"C:\DeskPilot"
 
 #: Loopback port the control centre binds. Matches ``solvent web --port``.
 WEB_PORT = 8765
+#: The interface it binds. Loopback, and not configurable here on purpose:
+#: exposing the control centre is a reverse proxy's job, with the owner's
+#: deliberate say-so, not an installer default. ``solvent web --host`` defaults
+#: to loopback too; passing it explicitly means a future change to that default
+#: cannot quietly widen an existing DeskPilot installation.
+WEB_HOST = "127.0.0.1"
 
 
 @dataclass(frozen=True, slots=True)

@@ -68,6 +68,14 @@ class Mutant:
     control: str
 
 
+#: The control-centre entry in :data:`BOOT_SERVICES`, as source text.
+WEB_ENTRY_OLD = (
+    '    BootService(WEB_TASK_NAME, "deskpilot-web.py", '
+    '"deskpilot-web-task.xml",\n'
+    '                web_argv, "the owner\'s control centre"),\n'
+)
+
+
 MUTANTS: tuple[Mutant, ...] = (
     Mutant("hash-always-matches", "payload.py",
            "matched = hmac.compare_digest(actual, expected)",
@@ -371,6 +379,57 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheProvenanceFileCannotFlatter"
            ".test_a_dirty_tree_is_never_recorded_as_clean",
            "the written record does not claim a clean tree it did not have"),
+    # The two services. Both of these shipped, and both were invisible to a
+    # green suite because nothing executed a generated launcher or compared
+    # its command to the Solvent CLI that has to accept it.
+    Mutant("runtime-passes-the-web-commands-spool-flag", "integration.py",
+           'return ("solvent", "run", "--db", layout.db, "--always-on")',
+           'return ("solvent", "run", "--db", layout.db, "--spool", layout.spool)',
+           "tests_solvent.test_installer_services"
+           ".TheGeneratedCommandsAreAcceptedByTheRealCli"
+           ".test_the_runtime_does_not_pass_the_web_commands_spool_flag",
+           "the runtime command is one the Solvent CLI accepts"),
+    Mutant("runtime-not-always-on", "integration.py",
+           'return ("solvent", "run", "--db", layout.db, "--always-on")',
+           'return ("solvent", "run", "--db", layout.db)',
+           "tests_solvent.test_installer_services"
+           ".TheGeneratedCommandsAreAcceptedByTheRealCli"
+           ".test_the_runtime_runs_in_always_on_mode",
+           "a boot-started service refuses non-durable storage"),
+    Mutant("control-centre-is-not-a-boot-service", "integration.py",
+           WEB_ENTRY_OLD, "",
+           "tests_solvent.test_installer_services"
+           ".TheGeneratedCommandsAreAcceptedByTheRealCli"
+           ".test_there_are_two_services_and_they_are_the_expected_two",
+           "the control centre is started by something"),
+    Mutant("services-registered-but-never-started", "engine.py",
+           "            if integration.start_task(self.host, service.task_name):",
+           "            if False and integration.start_task(self.host, service.task_name):",
+           "tests_solvent.test_installer_services"
+           ".BothServicesStartAtBootAndNow"
+           ".test_both_services_are_running_when_the_installer_finishes",
+           "a fresh install does not need a reboot to answer"),
+    Mutant("control-centre-binds-every-interface", "layout.py",
+           'WEB_HOST = "127.0.0.1"',
+           'WEB_HOST = "0.0.0.0"',
+           "tests_solvent.test_installer_services"
+           ".TheGeneratedCommandsAreAcceptedByTheRealCli"
+           ".test_the_control_centre_serves_http_on_loopback_only",
+           "the control centre is reachable only from this machine"),
+    Mutant("uninstall-forgets-a-task", "integration.py",
+           'ALL_TASK_NAMES: tuple[str, ...] = (\n    tuple(service.task_name for service in BOOT_SERVICES)\n    + (BACKUP_TASK_NAME,)\n)',
+           'ALL_TASK_NAMES: tuple[str, ...] = (TASK_NAME, BACKUP_TASK_NAME)',
+           "tests_solvent.test_installer_security"
+           ".BusinessRecordsSurvive"
+           ".test_uninstall_removes_only_its_own_scheduled_tasks",
+           "uninstall removes every task the install created"),
+    Mutant("upgrade-restarts-only-the-runtime", "lifecycle.py",
+           '    for service in integration.BOOT_SERVICES:\n        if service.task_name not in record.tasks_were_running:\n            continue',
+           '    for service in integration.BOOT_SERVICES[:1]:\n        if service.task_name not in record.tasks_were_running:\n            continue',
+           "tests_solvent.test_installer_services"
+           ".TheLifecycleKnowsAboutBothServices"
+           ".test_an_upgrade_stops_and_restarts_both_services",
+           "an upgrade puts back every service it stopped"),
     # The wizard itself. Nothing here can run the script, so these prove the
     # static checks notice a wizard that says the wrong thing -- the three
     # real-world failures were all a wizard saying the wrong thing while a

@@ -66,6 +66,12 @@ class Handler:
     stderr: str = ""
     #: Called with the argv when matched, for side effects on the fake machine.
     effect: Callable[["FakeWindows", Sequence[str]], None] | None = None
+    #: Computes ``(returncode, stdout, stderr)`` from the fake's state instead
+    #: of answering the same way every time. ``schtasks /Query`` needs this: a
+    #: handler that always succeeded meant the fake could not tell a registered
+    #: task from a missing one, so a test could not tell either.
+    answer: Callable[["FakeWindows", Sequence[str]],
+                     tuple[int, str, str]] | None = None
 
 
 @dataclass
@@ -108,6 +114,10 @@ class FakeWindows(Host):
     handlers: list[Handler] = field(default_factory=list)
     #: Every argv passed to :meth:`run`, in order.
     commands: list[tuple[str, ...]] = field(default_factory=list)
+    #: Scheduled tasks on this machine: name -> is it running right now.
+    #: Real state, because "registered" and "running" are different questions
+    #: and the installer asks both.
+    scheduled_tasks: dict[str, bool] = field(default_factory=dict)
     #: Every secret passed as stdin, so a test can prove it went there.
     stdin_secrets: list[str] = field(default_factory=list)
     #: Raise on any command with no handler, rather than returning success.
@@ -170,12 +180,20 @@ class FakeWindows(Host):
         self.listening[port] = owner
         return self
 
+    def schedule_task(self, name: str, *, running: bool = True
+                      ) -> "FakeWindows":
+        """Say this machine already has that task, as an upgrade would find."""
+        self.scheduled_tasks[name] = running
+        return self
+
     def on(self, *must_contain: str, returncode: int = 0, stdout: str = "",
            stderr: str = "",
-           effect: Callable[["FakeWindows", Sequence[str]], None] | None = None
+           effect: Callable[["FakeWindows", Sequence[str]], None] | None = None,
+           answer: Callable[["FakeWindows", Sequence[str]],
+                            tuple[int, str, str]] | None = None
            ) -> "FakeWindows":
         self.handlers.append(Handler(tuple(must_contain), returncode, stdout,
-                                     stderr, effect))
+                                     stderr, effect, answer))
         return self
 
     # -- Host: facts -----------------------------------------------------
@@ -287,6 +305,9 @@ class FakeWindows(Host):
             if all(fragment in joined for fragment in handler.must_contain):
                 if handler.effect is not None:
                     handler.effect(self, args)
+                if handler.answer is not None:
+                    code, out, err = handler.answer(self, args)
+                    return CommandResult(args, code, out, err)
                 return CommandResult(args, handler.returncode, handler.stdout,
                                      handler.stderr)
         if self.strict:
@@ -511,15 +532,76 @@ def install_ready(host: FakeWindows | None = None, *,
     host.on("icacls.exe")
     host.on("netsh.exe", "advfirewall", "firewall", "add")
     host.on("netsh.exe", "advfirewall", "firewall", "delete")
-    host.on("schtasks.exe", "/Create")
-    host.on("schtasks.exe", "/Query")
-    host.on("schtasks.exe", "/End")
-    host.on("schtasks.exe", "/Delete")
+    # schtasks, with the state it actually keeps. These used to answer "yes"
+    # to everything, which meant ``task_exists`` was true on a machine with no
+    # tasks at all and no test could notice a service that was never
+    # registered -- exactly the gap that let the control centre go missing.
+    host.on("schtasks.exe", "/Create", effect=task_created)
+    host.on("schtasks.exe", "/Query", answer=task_queried)
+    host.on("schtasks.exe", "/Run", answer=task_run)
+    host.on("schtasks.exe", "/End", answer=task_ended)
+    host.on("schtasks.exe", "/Delete", answer=task_deleted)
     host.add_program("ollama.exe", r"C:\Program Files\Ollama\ollama.exe")
     host.on("ollama.exe", "list", stdout=OLLAMA_LIST)
     host.on("ollama.exe", "run", stdout="ok\n")
     host.listen(11434, "ollama.exe")
     return host
+
+
+# ---------------------------------------------------------------------------
+# schtasks
+# ---------------------------------------------------------------------------
+#: What real schtasks prints when the named task is not there.
+_NO_SUCH_TASK = "ERROR: The system cannot find the file specified.\n"
+
+
+def task_name_in(argv: Sequence[str]) -> str:
+    """The value after ``/TN``, or empty if the command did not name one."""
+    for index, arg in enumerate(argv):
+        if arg.upper() == "/TN" and index + 1 < len(argv):
+            return argv[index + 1]
+    return ""
+
+
+def task_created(host: "FakeWindows", argv: Sequence[str]) -> None:
+    """``/Create /F`` registers the task. Registered is not yet running."""
+    name = task_name_in(argv)
+    if name:
+        host.scheduled_tasks.setdefault(name, False)
+
+
+def task_queried(host: "FakeWindows", argv: Sequence[str]
+                 ) -> tuple[int, str, str]:
+    name = task_name_in(argv)
+    if name not in host.scheduled_tasks:
+        return (1, "", _NO_SUCH_TASK)
+    return (0, f"{name}\n", "")
+
+
+def task_run(host: "FakeWindows", argv: Sequence[str]
+             ) -> tuple[int, str, str]:
+    name = task_name_in(argv)
+    if name not in host.scheduled_tasks:
+        return (1, "", _NO_SUCH_TASK)
+    host.scheduled_tasks[name] = True
+    return (0, "", "")
+
+
+def task_ended(host: "FakeWindows", argv: Sequence[str]
+               ) -> tuple[int, str, str]:
+    name = task_name_in(argv)
+    if name not in host.scheduled_tasks:
+        return (1, "", _NO_SUCH_TASK)
+    host.scheduled_tasks[name] = False
+    return (0, "", "")
+
+
+def task_deleted(host: "FakeWindows", argv: Sequence[str]
+                 ) -> tuple[int, str, str]:
+    name = task_name_in(argv)
+    if host.scheduled_tasks.pop(name, None) is None:
+        return (1, "", _NO_SUCH_TASK)
+    return (0, "", "")
 
 
 def _bootstrap_bytes() -> bytes:

@@ -63,6 +63,10 @@ VIAddVersionKey "LegalCopyright" "DeskPilot"
 ; Generated from deskpilot_installer/python_runtime.py by build.py, so the
 ; wizard's Python search and the engine's cannot drift apart.
 !include "${PYTHON_SEARCH_NSH}"
+; Every scheduled task a DeskPilot installation can have, generated
+; from deskpilot_installer/integration.py so the uninstaller cannot
+; fall behind the engine on what it has to remove.
+!include "${SERVICES_NSH}"
 !define PYTHON_VERSION "${DP_PYTHON_BOOTSTRAP_VERSION}"
 !define PYTHON_URL "${DP_PYTHON_BOOTSTRAP_URL}"
 !define PYTHON_SHA256 "${DP_PYTHON_BOOTSTRAP_SHA256}"
@@ -794,6 +798,14 @@ FunctionEnd
 ; ---------------------------------------------------------------------------
 ; Install
 ; ---------------------------------------------------------------------------
+; Delete one scheduled task by name, for the uninstall path that has no
+; Python to run the engine's own uninstall. Expanded once per name in the
+; generated list, so this script never states what the names are.
+!macro DP_DELETE_TASK _name
+  nsExec::ExecToLog 'schtasks.exe /Delete /TN "${_name}" /F'
+  Pop $R0
+!macroend
+
 ; One place forgets the secrets, so no exit path can forget to.
 Function ForgetSecrets
   Push $R9
@@ -1058,10 +1070,7 @@ Section "Uninstall"
     ; instrument is not on the list.
     DetailPrint "Python was not found, so DeskPilot's own uninstall could not run."
     DetailPrint "Removing the scheduled tasks and the firewall rule only."
-    nsExec::ExecToLog 'schtasks.exe /Delete /TN "DeskPilot" /F'
-    Pop $R0
-    nsExec::ExecToLog 'schtasks.exe /Delete /TN "DeskPilot Backup" /F'
-    Pop $R0
+    !insertmacro DP_EACH_TASK_NAME DP_DELETE_TASK
     nsExec::ExecToLog '"$SYSDIR\netsh.exe" advfirewall firewall delete rule name="DeskPilot control centre (loopback only)"'
     Pop $R0
     RMDir /r "$INSTDIR\App"

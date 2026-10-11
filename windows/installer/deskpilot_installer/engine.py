@@ -505,23 +505,54 @@ class Engine:
         if not self.answers.components.autostart:
             return StepResult("autostart", "Configuring autostart", True,
                               "not selected", skipped=True)
-        scripts = integration.InstalledScripts.under(self.layout)
-        self.host.write_bytes(scripts.launcher,
-                              integration.launcher_source(self.layout)
-                              .encode("utf-8"))
-        xml = integration.task_xml(self.python_exe, scripts.launcher,
-                                   at_startup=True)
-        self.host.write_bytes(scripts.task_xml, xml.encode("utf-8"))
-        if not integration.register_task(self.host, integration.TASK_NAME,
-                                          scripts.task_xml):
-            raise StepFailed("the DeskPilot startup task could not be created")
-        self.state.tasks.append(integration.TASK_NAME)
-        self._note(f"created the scheduled task {integration.TASK_NAME!r}, "
-                   f"which starts DeskPilot at boot and restarts it on failure")
-        return StepResult("autostart", "Configuring autostart", True,
-                          f"{integration.TASK_NAME} runs at boot as SYSTEM and "
-                          f"restarts on failure",
-                          facts={"task": integration.TASK_NAME})
+        running: list[str] = []
+        registered_only: list[str] = []
+        for service in integration.BOOT_SERVICES:
+            script = service.script_path(self.layout)
+            self.host.write_bytes(
+                script,
+                integration.launcher_source(self.layout, service)
+                .encode("utf-8"))
+            xml_path = service.xml_path(self.layout)
+            self.host.write_bytes(
+                xml_path,
+                integration.task_xml(self.python_exe, script,
+                                     at_startup=True).encode("utf-8"))
+            if not integration.register_task(self.host, service.task_name,
+                                             xml_path):
+                raise StepFailed(f"the scheduled task that starts "
+                                 f"{service.purpose} "
+                                 f"({service.task_name}) could not be created")
+            self.state.tasks.append(service.task_name)
+            self._note(f"created the scheduled task {service.task_name!r}, "
+                       f"which starts {service.purpose} at boot and restarts "
+                       f"it on failure")
+
+            # Start it now as well. A boot trigger starts a service at the next
+            # boot and not a moment sooner, and the last screen offers the
+            # control centre's address as soon as the installer finishes -- so
+            # a correct installation still answered ERR_CONNECTION_REFUSED
+            # until the owner happened to reboot. Failing to start is not
+            # failing to install: the task is registered and the next boot will
+            # run it, so this is reported rather than raised.
+            if integration.start_task(self.host, service.task_name):
+                running.append(service.task_name)
+            else:
+                registered_only.append(service.task_name)
+                self._note(f"{service.task_name!r} is registered but could not "
+                           f"be started now; it will start at the next boot")
+
+        detail = (f"{len(integration.BOOT_SERVICES)} services run at boot as "
+                  f"SYSTEM and restart on failure: "
+                  + ", ".join(s.task_name for s in integration.BOOT_SERVICES))
+        if registered_only:
+            detail += ("; not started yet: " + ", ".join(registered_only)
+                       + " (a reboot will start them)")
+        return StepResult("autostart", "Configuring autostart", True, detail,
+                          facts={"tasks": [s.task_name
+                                           for s in integration.BOOT_SERVICES],
+                                 "started_now": running,
+                                 "awaiting_boot": registered_only})
 
     def step_backups(self) -> StepResult:
         if not self.answers.components.backups:
@@ -752,11 +783,17 @@ class Engine:
         if not self.answers.components.autostart:
             return Row("Autostart", Outcome.WARN,
                        "not configured; DeskPilot will not start after a reboot")
-        present = integration.task_exists(self.host, integration.TASK_NAME)
-        return Row("Autostart",
-                   Outcome.PASS if present else Outcome.FAIL,
-                   f"{integration.TASK_NAME} "
-                   f"{'registered' if present else 'is missing'}")
+        missing = [service.task_name
+                   for service in integration.BOOT_SERVICES
+                   if not integration.task_exists(self.host,
+                                                  service.task_name)]
+        if missing:
+            return Row("Autostart", Outcome.FAIL,
+                       "missing: " + ", ".join(missing))
+        return Row("Autostart", Outcome.PASS,
+                   ", ".join(service.task_name
+                             for service in integration.BOOT_SERVICES)
+                   + " registered")
 
 
 def readiness_headline(report: Report) -> str:
