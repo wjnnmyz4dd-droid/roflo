@@ -36,36 +36,13 @@ import ntpath
 from dataclasses import dataclass, field
 
 from . import integration, payload, secrets_env
+from .secrets_env import read_env_secrets  # noqa: F401
 from .engine import Engine, InstallState, OwnerAnswers, StepFailed
 from .host import Host
 from .installlog import Log
 from .layout import Layout
 from .probe import Settings
 from .report import Failure, Outcome, Report, Row, Secret
-
-
-# ---------------------------------------------------------------------------
-# Reading back what the installer wrote
-# ---------------------------------------------------------------------------
-
-def read_env_secrets(host: Host, path: str) -> dict[str, Secret]:
-    """Load the secrets file. Values come back wrapped so they cannot be logged."""
-    out: dict[str, Secret] = {}
-    if not host.exists(path):
-        return out
-    try:
-        text = host.read_bytes(path).decode("utf-8", "replace")
-    except OSError:
-        return out
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, _, value = line.partition("=")
-        name, value = name.strip(), value.strip()
-        if name and value:
-            out[name] = Secret(value, name)
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +253,7 @@ def upgrade(host: Host, settings: Settings, answers: OwnerAnswers,
     layout = settings.layout
     record = UpgradeRecord()
     rows: list[Row] = []
+    had_services = False
 
     verdict = payload.verify(host, settings.package_path,
                              settings.expected_digest)
@@ -296,6 +274,8 @@ def upgrade(host: Host, settings: Settings, answers: OwnerAnswers,
             not_changed=("nothing was changed", "MetaTrader was not touched"),
             safe_next_action="Install DeskPilot instead of upgrading it.",
         ))
+    had_services = any(service.task_name in tuple(state.tasks)
+                       for service in integration.BOOT_SERVICES)
     if state.payload_sha256 == verdict.actual:
         rows.append(Row("Version", Outcome.PASS,
                         "this is the version already installed; nothing to do"))
@@ -356,6 +336,23 @@ def upgrade(host: Host, settings: Settings, answers: OwnerAnswers,
         rows.append(Row("Migrations", Outcome.PASS,
                         "the new version opened the existing database"))
 
+        # Re-apply the generated service artifacts before checking, not
+        # after. The launchers and task definitions are generated from the
+        # version installed, so an upgrade that leaves the previous version's
+        # in place leaves the previous version's command running against new
+        # code -- which is how an installation could be upgraded and still
+        # fail at every boot. Doing it after verification instead meant
+        # verification judged the state the upgrade had not finished creating.
+        #
+        # Only when the installation already had a boot service: an upgrade
+        # does not hand autostart to an owner who declined it.
+        if had_services or record.tasks_were_running:
+            log.step("Restarting DeskPilot")
+            refreshed = engine.refresh_services()
+            rows.append(Row("Restarting DeskPilot",
+                            Outcome.PASS if refreshed.ok else Outcome.WARN,
+                            refreshed.detail))
+
         log.step("Checking the upgraded installation")
         checked = engine.verify(probe_inference=False)
         rows.extend(checked.rows)
@@ -390,17 +387,16 @@ def upgrade(host: Host, settings: Settings, answers: OwnerAnswers,
         host.remove_tree(record.previous_app)
     engine.state.payload_sha256 = verdict.actual
     engine.state.python_exe = engine.python_exe
-    engine.state.tasks = list(state.tasks)
+    # Not carried forward wholesale: a list recorded by an older build has no
+    # control-centre task in it, and uninstall reads this. refresh_services
+    # appends what it registers, below.
+    engine.state.tasks = [name for name in state.tasks
+                          if name not in
+                          {service.task_name
+                           for service in integration.BOOT_SERVICES}]
     engine.state.firewall_rule = state.firewall_rule
+    engine.state.tasks = list(dict.fromkeys(engine.state.tasks))
     engine.step_record_state()
-    for service in integration.BOOT_SERVICES:
-        if service.task_name not in record.tasks_were_running:
-            continue
-        integration.register_task(host, service.task_name,
-                                  service.xml_path(layout))
-        integration.start_task(host, service.task_name)
-        rows.append(Row("Restarting DeskPilot", Outcome.PASS,
-                        f"{service.task_name} was re-registered and started"))
     log.flush()
     return Report("upgrade", tuple(rows))
 

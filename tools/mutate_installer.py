@@ -423,13 +423,6 @@ MUTANTS: tuple[Mutant, ...] = (
            ".BusinessRecordsSurvive"
            ".test_uninstall_removes_only_its_own_scheduled_tasks",
            "uninstall removes every task the install created"),
-    Mutant("upgrade-restarts-only-the-runtime", "lifecycle.py",
-           '    for service in integration.BOOT_SERVICES:\n        if service.task_name not in record.tasks_were_running:\n            continue',
-           '    for service in integration.BOOT_SERVICES[:1]:\n        if service.task_name not in record.tasks_were_running:\n            continue',
-           "tests_solvent.test_installer_services"
-           ".TheLifecycleKnowsAboutBothServices"
-           ".test_an_upgrade_stops_and_restarts_both_services",
-           "an upgrade puts back every service it stopped"),
     Mutant("verification-trusts-the-task-instead-of-the-answer", "engine.py",
            "        if self.host.port_in_use(WEB_PORT):",
            "        if True:",
@@ -447,6 +440,36 @@ MUTANTS: tuple[Mutant, ...] = (
            ".VerificationCallsTheControlCentreRatherThanTrustingIt"
            ".test_a_silent_control_centre_does_not_fail_a_good_install",
            "a service that may still be starting does not fail the install"),
+    # Repairing an installation the previous build made. Each of these would
+    # make the documented repair procedure destructive or useless.
+    Mutant("reinstall-rotates-the-owner-key", "engine.py",
+           "        if kept is not None and not secrets_env.self_check(kept):",
+           "        if False:",
+           "tests_solvent.test_installer_services"
+           ".RepairingAnInstallationMadeByTheDefectiveBuild"
+           ".test_reinstalling_over_it_keeps_the_owner_key",
+           "a reinstall over owner data keeps the key that authorises it"),
+    Mutant("first-install-reuses-nothing", "engine.py",
+           "            key = secrets_env.generate_owner_key()",
+           "            key = kept",
+           "tests_solvent.test_installer_services"
+           ".RepairingAnInstallationMadeByTheDefectiveBuild"
+           ".test_a_first_installation_still_generates_a_key",
+           "a first installation generates an owner key"),
+    Mutant("upgrade-leaves-the-old-launchers", "lifecycle.py",
+           "        if had_services or record.tasks_were_running:",
+           "        if False:",
+           "tests_solvent.test_installer_services"
+           ".RepairingAnInstallationMadeByTheDefectiveBuild"
+           ".test_upgrading_it_rewrites_the_launchers_too",
+           "an upgrade rewrites the commands belonging to the new version"),
+    Mutant("upgrade-imposes-autostart", "lifecycle.py",
+           "        if had_services or record.tasks_were_running:",
+           "        if True:",
+           "tests_solvent.test_installer_services"
+           ".RepairingAnInstallationMadeByTheDefectiveBuild"
+           ".test_an_upgrade_does_not_give_autostart_to_someone_who_declined_it",
+           "an upgrade does not add autostart the owner declined"),
     # The wizard itself. Nothing here can run the script, so these prove the
     # static checks notice a wizard that says the wrong thing -- the three
     # real-world failures were all a wizard saying the wrong thing while a

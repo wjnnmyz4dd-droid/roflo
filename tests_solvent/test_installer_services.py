@@ -492,3 +492,137 @@ class StartingTheServicesAuthorisesNothing(unittest.TestCase):
                          "operating_mode", "capability", "halt", "resume"):
                 self.assertNotIn(knob, source,
                                  f"{service.task_name} writes {knob}")
+
+
+class RepairingAnInstallationMadeByTheDefectiveBuild(Scenario):
+    """The machine this change exists to fix, reconstructed and repaired.
+
+    An installation from the previous build has: a ``DeskPilot`` task whose
+    launcher passes ``--spool`` to ``solvent run`` and therefore exits 2 at
+    every boot, no control-centre task at all, and an owner's database,
+    credentials and backups that must come through untouched.
+    """
+
+    OLD_LAUNCHER = (
+        'APP = r"C:\\DeskPilot\\App"\n'
+        'ENV_FILE = r"C:\\DeskPilot\\Config\\solvent.env"\n'
+        'DB = r"C:\\DeskPilot\\Data\\solvent.db"\n'
+        'SPOOL = r"C:\\DeskPilot\\Data\\spool"\n'
+        'def main():\n'
+        '    sys.argv = ["solvent", "run", "--db", DB]\n'
+        '    if SPOOL:\n'
+        '        sys.argv += ["--spool", SPOOL]\n'
+    )
+
+    def broken_installation(self):
+        """A good install, then damaged back into the shape that shipped."""
+        data, digest = certified_payload()
+        host = install_ready(package=data, digest=digest)
+        engine, report, _log = self.install(host, digest)
+        self.assertInstalled(host, report)
+        layout = Layout()
+
+        runtime, control_centre = integration.BOOT_SERVICES
+        # The old build's launcher, and no control centre.
+        host.write_bytes(runtime.script_path(layout),
+                         self.OLD_LAUNCHER.encode("utf-8"))
+        host.run(["schtasks.exe", "/Delete", "/TN",
+                  control_centre.task_name, "/F"])
+        host.write_bytes(layout.db, b"SQLite format 3\x00THE-OWNERS-RECORDS")
+        return host, layout, digest
+
+    def key_in(self, host, layout):
+        from deskpilot_installer import secrets_env
+        found = secrets_env.read_env_secrets(host, layout.env_file)
+        secret = found.get(secrets_env.OWNER_KEY_ENV)
+        return secret.reveal() if secret is not None else None
+
+    def test_the_reconstruction_is_actually_broken(self):
+        """Otherwise the repair below proves nothing."""
+        host, layout, _digest = self.broken_installation()
+        runtime, control_centre = integration.BOOT_SERVICES
+        shipped = host.read_bytes(runtime.script_path(layout)).decode("utf-8")
+        self.assertIn("--spool", shipped)
+        self.assertNotIn(control_centre.task_name, host.scheduled_tasks)
+
+    def test_reinstalling_over_it_fixes_both_services(self):
+        host, layout, digest = self.broken_installation()
+        self.install(host, digest)
+        runtime, control_centre = integration.BOOT_SERVICES
+        fixed = host.read_bytes(runtime.script_path(layout)).decode("utf-8")
+        self.assertNotIn("--spool", fixed)
+        self.assertIn("--always-on", fixed)
+        self.assertIn(control_centre.task_name, host.scheduled_tasks)
+        self.assertTrue(host.scheduled_tasks[control_centre.task_name])
+
+    def test_reinstalling_over_it_keeps_the_owner_key(self):
+        """The credential that authorises everything already recorded."""
+        host, layout, digest = self.broken_installation()
+        before = self.key_in(host, layout)
+        self.assertIsNotNone(before)
+        self.install(host, digest)
+        self.assertEqual(self.key_in(host, layout), before,
+                         "the reinstall rotated the owner's signing key")
+
+    def test_reinstalling_over_it_keeps_the_database(self):
+        host, layout, digest = self.broken_installation()
+        self.install(host, digest)
+        self.assertEqual(host.read_bytes(layout.db),
+                         b"SQLite format 3\x00THE-OWNERS-RECORDS")
+
+    def test_a_first_installation_still_generates_a_key(self):
+        """Preserving an existing key must not mean never making one."""
+        data, digest = certified_payload()
+        host = install_ready(package=data, digest=digest)
+        layout = Layout()
+        self.assertIsNone(self.key_in(host, layout))
+        self.install(host, digest)
+        self.assertIsNotNone(self.key_in(host, layout))
+
+    def test_upgrading_it_rewrites_the_launchers_too(self):
+        """An upgrade replaces the code; the commands belong to the version."""
+        import hashlib
+        from deskpilot_installer.engine import Settings
+        from tests_solvent.test_installer_matrix import answers
+
+        host, layout, _digest = self.broken_installation()
+        new_payload = zip_bytes({**CERTIFIED_ENTRIES,
+                                 "solvent/v2.py": b"# v2\n"})
+        host.add_file(r"C:\Media\v2.zip", new_payload)
+        report = lifecycle.upgrade(
+            host,
+            Settings(layout=layout, package_path=r"C:\Media\v2.zip",
+                     expected_digest=hashlib.sha256(new_payload).hexdigest()),
+            answers(), Log(host))
+        self.assertTrue(report.may_continue,
+                        [row.detail for row in report.blockers])
+
+        runtime, control_centre = integration.BOOT_SERVICES
+        fixed = host.read_bytes(runtime.script_path(layout)).decode("utf-8")
+        self.assertNotIn("--spool", fixed,
+                         "the upgrade left the previous version's command")
+        self.assertIn(control_centre.task_name, host.scheduled_tasks,
+                      "the upgrade did not add the control centre")
+
+    def test_an_upgrade_does_not_give_autostart_to_someone_who_declined_it(self):
+        from tests_solvent.test_installer_matrix import Components, answers
+        import hashlib
+        from deskpilot_installer.engine import Settings
+
+        data, digest = certified_payload()
+        host = install_ready(package=data, digest=digest)
+        layout = Layout()
+        self.install(host, digest,
+                     owner=answers(components=Components(autostart=False,
+                                                         backups=False)))
+        new_payload = zip_bytes({**CERTIFIED_ENTRIES,
+                                 "solvent/v2.py": b"# v2\n"})
+        host.add_file(r"C:\Media\v2.zip", new_payload)
+        lifecycle.upgrade(
+            host,
+            Settings(layout=layout, package_path=r"C:\Media\v2.zip",
+                     expected_digest=hashlib.sha256(new_payload).hexdigest()),
+            answers(components=Components(autostart=False, backups=False)),
+            Log(host))
+        for service in integration.BOOT_SERVICES:
+            self.assertNotIn(service.task_name, host.scheduled_tasks)

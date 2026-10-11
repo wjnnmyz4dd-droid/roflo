@@ -113,6 +113,36 @@ _HEADER = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Reading back what was written
+# ---------------------------------------------------------------------------
+#
+# Here rather than in lifecycle, where it used to live: this module owns the
+# secrets file, and both the installation steps and the lifecycle operations
+# need to read it. ``engine`` cannot import ``lifecycle`` -- lifecycle imports
+# Engine -- so a shared home was the only way for an installation over existing
+# owner data to see the key it already has.
+
+def read_env_secrets(host: Host, path: str) -> dict[str, Secret]:
+    """Load the secrets file. Values come back wrapped so they cannot be logged."""
+    out: dict[str, Secret] = {}
+    if not host.exists(path):
+        return out
+    try:
+        text = host.read_bytes(path).decode("utf-8", "replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        name, value = name.strip(), value.strip()
+        if name and value:
+            out[name] = Secret(value, name)
+    return out
+
+
 def write_env_file(host: Host, path: str, contents: EnvContents) -> list[str]:
     """Create, lock down, then fill the environment file. Returns what was run.
 

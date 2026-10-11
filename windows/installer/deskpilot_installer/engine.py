@@ -319,10 +319,26 @@ class Engine:
                           facts={"python": venv_python, "pth": pth})
 
     def step_secrets(self) -> StepResult:
-        key = secrets_env.generate_owner_key()
-        problem = secrets_env.self_check(key)
-        if problem:
-            raise StepFailed(f"the generated owner key was rejected: {problem}")
+        # An installation over existing owner data keeps the key it already
+        # has. The key is the owner's authority on this machine, and the system
+        # check promises on screen that their data will be kept -- a reinstall
+        # that silently rotated it would leave that data authorised by a key
+        # that no longer exists. Found while working out how to repair an
+        # existing installation: the obvious instruction, "run the new
+        # installer over the top", would have rotated it.
+        existing = secrets_env.read_env_secrets(self.host,
+                                                self.layout.env_file)
+        kept = existing.get(secrets_env.OWNER_KEY_ENV)
+        if kept is not None and not secrets_env.self_check(kept):
+            key = kept
+            self._note(f"kept the owner signing key already in "
+                       f"{self.layout.env_file}")
+        else:
+            key = secrets_env.generate_owner_key()
+            problem = secrets_env.self_check(key)
+            if problem:
+                raise StepFailed(f"the generated owner key was rejected: "
+                                 f"{problem}")
         self.owner_key = key
         password_hash = None
         if self.answers.web_password is not None:
@@ -348,8 +364,10 @@ class Engine:
         self._note(f"created {self.layout.env_file}, readable only by SYSTEM "
                    f"and Administrators")
         return StepResult("secrets", "Creating owner credentials", True,
-                          "owner signing key generated on this computer; "
-                          "control-centre password stored as a hash",
+                          ("owner signing key kept from the existing "
+                           "installation; " if key is kept else
+                           "owner signing key generated on this computer; ")
+                          + "control-centre password stored as a hash",
                           facts={"env_file": self.layout.env_file})
 
     def step_database(self) -> StepResult:
@@ -505,6 +523,21 @@ class Engine:
         if not self.answers.components.autostart:
             return StepResult("autostart", "Configuring autostart", True,
                               "not selected", skipped=True)
+        return self.refresh_services()
+
+    def refresh_services(self) -> StepResult:
+        """Write both launchers, register both tasks, and start both.
+
+        Separate from the component check in :meth:`step_autostart` because an
+        upgrade has to do this too and must not consult the answers to decide:
+        it is preserving an existing installation's posture, not asking again.
+
+        The launcher scripts and task definitions are generated artifacts that
+        belong to the version installed, and an upgrade that replaced the
+        application without rewriting them left the previous version's command
+        running against the new code. On the installation this was written to
+        repair, that command was the one that exits 2 at every boot.
+        """
         running: list[str] = []
         registered_only: list[str] = []
         for service in integration.BOOT_SERVICES:
