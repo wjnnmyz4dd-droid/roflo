@@ -17,32 +17,31 @@ See "Signing status" below.
 | File | `DeskPilot-Setup.exe` |
 | Status | **CURRENT — unsigned test build, Windows-unverified** |
 | Installer version | 1.0.0 |
-| Source HEAD | `53ce33c` — built from a clean tree, so the commit describes the payload *and* the engine |
-| Size | 1,332,395 bytes |
-| Installer SHA-256 | `51e80e3fee113571a23c25c4edd4e1426596a511c68946133cd8ab8c8aaf6aeb` |
-| Provenance | `dist/BUILD-53ce33c.txt` (and `dist/BUILD.txt` until the next build) |
-| Payload | `DeskPilot-certified-53ce33c.zip` |
-| Payload SHA-256 | `771e75c425bb3799fcaa5201cd8b3bcab4129d3657f315c6ba0c2fbcd9151998` |
+| Source HEAD | `2fdd4b3` — built from a clean tree |
+| Size | 1,347,925 bytes |
+| Installer SHA-256 | `c1fa9490b3c47b73852f7d890825c37482f449c976aa13b34233d0461e17577a` |
+| Provenance | `dist/BUILD-2fdd4b3.txt` |
+| Payload | `DeskPilot-certified-2fdd4b3.zip` |
+| Payload SHA-256 | `7a0bcc0d4882164b5c42e914b2e7b500c3f748333bee5163c79bb458d36bf0fb` |
 | Code signature | **none** |
 | Windows execution | **not verified** |
 
-Verified after compiling, by extracting the executable rather than trusting the
-build log: the embedded payload's SHA-256 equals both the payload built beside
-it and the digest compiled into the wizard; all seventeen engine modules and
-the bootstrap launcher in the executable are byte-identical to the repository's;
-the shipped `cli.py` and `selfcheck.py` contain the credential-transfer repair;
-and the `.nsi` that `makensis` compiled is byte-identical to the committed blob
-at `53ce33c`.
+Verified by extracting the executable: the embedded payload matches the payload
+built beside it, all seventeen engine modules are byte-identical to the
+repository's, the `.nsi` compiled is byte-identical to the committed blob, and
+the shipped `integration.py` — read from its syntax tree, not by searching for
+strings — builds `solvent run --db … --always-on` for the runtime and
+`solvent web --db … --host 127.0.0.1 --port 8765 --spool …` for the control
+centre. The generated `services.nsh` names all three scheduled tasks, so the
+uninstaller's Python-less path removes the control centre too.
 
-This is a **test build, not a production release.** The distinction is not
-cosmetic: a production release would carry an Authenticode signature from a
-certificate issued to the owner's legal identity, and this file carries none.
-Windows will warn that the publisher is unknown. Check the SHA-256 above before
-running it.
+This is a **test build, not a production release**: no Authenticode signature,
+and no Windows machine has run it. See `REPAIR-MY-VPS.md` for repairing an
+existing installation in place.
 
 Throwaway builds made with `--allow-dirty` during development are not listed
-here. They are not artifacts: their own provenance file marks them
-`NOT FOR RELEASE`, and none was delivered.
+here. Their own provenance file marks them `NOT FOR RELEASE`, and none was
+delivered.
 
 ## Superseded
 
@@ -51,6 +50,7 @@ given. Do not install any of these.
 
 | Installer SHA-256 | HEAD | Superseded because |
 |---|---|---|
+| `51e80e3fee113571a23c25c4edd4e1426596a511c68946133cd8ab8c8aaf6aeb` | `53ce33c` | **Defective.** Neither background service ran. The runtime's generated launcher passed `--spool` to `solvent run`, which rejects unrecognised arguments and exits 2, so the scheduled task failed at every boot and Windows gave up after ten attempts. The control centre was never registered as a service at all, so `127.0.0.1:8765` refused connections. Both tasks also carried only a boot trigger and nothing ran them, so even a correct installation was down until the owner rebooted. Fixing the repair path found two more: an installation over existing owner data rotated the owner signing key, and an upgrade never rewrote the generated launchers. |
 | *not recoverable — see note below* | `b938e73` | **Defective.** The owner's details never reached the engine. The wizard stored them in `$R5` and handed them over with `t r5`, which the System plugin reads as `$5`, not `$R5`; `$5` held the AI backend name, so the engine received the word `ollama` where a JSON document belonged, found no owner details, and told an owner who had typed a password that one was needed. The engine also defaulted silently instead of saying the transfer had failed. Four further defects were found auditing the stages this one was not in. |
 | `096ae82cef666c7c0a21f07f453f7c7518fcfdd4249f2ee474bfbf0157cdaccb` | payload `b938e73`, engine uncommitted | **Provenance not fully recorded.** Built from a working tree whose engine changes were not yet committed, so its recorded commit described its payload and not its installer code. Superseded for that reason alone — the code in it is the code that was then committed. The build now refuses this state outright (`require_clean_engine`). |
 | `6c57b1a5ca732df4534105374bcaf1b0cbaa4a06df1c6cdb2fa5a83c7a29710d` | `b938e73` | **Defective.** The packaged engine could not start: `cli.py` was run as a script although it is a package module using relative imports, so the install phase raised `ImportError: attempted relative import with no known parent package`. Five further packaging and command-contract defects were found in the same audit. |

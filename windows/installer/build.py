@@ -92,8 +92,38 @@ def require_clean_engine(allow_dirty: bool = False) -> str:
     return dirty
 
 
-def write_provenance(out_dir: pathlib.Path, commit: str,
-                     text: str) -> pathlib.Path:
+def check_register(exe_digest: str, payload_digest: str, size: int,
+                   commit: str) -> list[str]:
+    """Does ARTIFACTS.md describe what was just built? Returns complaints.
+
+    The register is hand-written, and its whole value is that a reader can
+    trust it. A digest typed from a truncated screenful of output is worse
+    than no digest at all: it looks like provenance and is not. This compares
+    what the register claims against what the build actually produced, so the
+    mistake is a line of output rather than a document nobody can rely on.
+
+    Advisory, not fatal. The register is updated after a build by definition
+    -- the installer's own hash cannot be in the commit it is built from -- so
+    a mismatch on the build that precedes the update is expected.
+    """
+    register = REPO / "windows" / "installer" / "ARTIFACTS.md"
+    if not register.is_file():
+        return ["ARTIFACTS.md is missing"]
+    text = register.read_text(encoding="utf-8")
+    current = text.split("## Superseded")[0]
+    complaints = []
+    for label, value in (("installer SHA-256", exe_digest),
+                         ("payload SHA-256", payload_digest),
+                         ("size", format(size, ",")),
+                         ("source commit", commit)):
+        if value not in current:
+            complaints.append(f"the register's Current section does not "
+                              f"name this build's {label} ({value})")
+    return complaints
+
+
+def write_provenance(out_dir: pathlib.Path, commit: str, text: str,
+                     dirty: str = "") -> pathlib.Path:
     """Write ``BUILD.txt`` and a copy the next build will not overwrite.
 
     ``BUILD.txt`` alone was the only record of a delivered installer's hash,
@@ -105,7 +135,13 @@ def write_provenance(out_dir: pathlib.Path, commit: str,
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "BUILD.txt").write_text(text, encoding="utf-8")
-    kept = out_dir / f"BUILD-{commit}.txt"
+    # A throwaway build keeps its record under a different name. Both builds
+    # are at the same commit when one is dirty, so a single commit-keyed name
+    # let a --allow-dirty build overwrite the record of the clean build that
+    # was actually delivered -- destroying exactly what this function exists
+    # to preserve.
+    suffix = f"{commit}-dirty" if dirty else commit
+    kept = out_dir / f"BUILD-{suffix}.txt"
     kept.write_text(text, encoding="utf-8")
     return kept
 
@@ -318,9 +354,12 @@ def main() -> int:
         "                      compiled wizard has not been run on Windows.\n\n"
         "Verify this file against the executable before installing:\n"
         "    certutil -hashfile DeskPilot-Setup.exe SHA256\n")
-    kept = write_provenance(out_dir, commit, text)
+    kept = write_provenance(out_dir, commit, text, dirty)
     print(f"  provenance: {provenance}")
     print(f"  preserved : {kept}")
+    for complaint in check_register(digest, digest_of_payload, len(data),
+                                    commit):
+        print(f"  register  : {complaint}")
     return 0
 
 

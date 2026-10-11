@@ -472,6 +472,27 @@ class EachBuildKeepsItsOwnProvenance(unittest.TestCase):
             self.assertTrue(kept.is_file())
             self.assertEqual(kept.read_text(), (out / "BUILD.txt").read_text())
 
+    def test_a_throwaway_build_does_not_overwrite_a_release_record(self):
+        """Both are at the same commit when one of them is dirty.
+
+        A single commit-keyed name let a ``--allow-dirty`` build replace the
+        record of the clean build that was actually delivered, which destroys
+        the one thing these files exist to preserve. Found by running a dirty
+        build after recording a clean one.
+        """
+        import tempfile
+        build = self.build_module()
+        with tempfile.TemporaryDirectory() as box:
+            out = pathlib.Path(box)
+            release = build.write_provenance(out, "abc1234",
+                                             "the delivered build\n")
+            throwaway = build.write_provenance(
+                out, "abc1234", "a throwaway\n",
+                dirty=" M windows/installer/build.py")
+            self.assertNotEqual(release, throwaway)
+            self.assertEqual(release.read_text(), "the delivered build\n")
+            self.assertIn("dirty", throwaway.name)
+
     def test_a_later_build_does_not_destroy_an_earlier_record(self):
         import tempfile
         build = self.build_module()
