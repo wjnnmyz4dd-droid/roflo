@@ -504,3 +504,68 @@ class EachBuildKeepsItsOwnProvenance(unittest.TestCase):
                              "the second build overwrote the first's record")
             self.assertEqual((out / "BUILD.txt").read_text(),
                              "the second build\n")
+
+
+class EveryMutantStillDescribesTheCode(unittest.TestCase):
+    """A mutant whose anchor has drifted tests nothing, and says so quietly.
+
+    ``tools/mutate_installer.py`` replaces an exact string. When the code it
+    quotes is edited, the replacement matches zero times and the harness
+    reports NOT_APPLIED -- which is correct and honest, but only visible after
+    running the whole battery, and it is easy to read a wall of KILLED and not
+    notice one line that is not. Three anchors went stale in one afternoon of
+    editing, and each time the control it guarded was unguarded until the next
+    full run.
+
+    This is the same check, in a second: every anchor must appear exactly once
+    in the file it names. Exactly once, not at least once, because a pattern
+    matching twice is also refused by the harness -- an ambiguous mutation is
+    not a mutation.
+    """
+
+    def mutants(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import mutate_installer
+        return mutate_installer
+
+    def test_the_battery_is_not_empty(self):
+        self.assertGreater(len(self.mutants().MUTANTS), 50)
+
+    def test_every_anchor_appears_exactly_once(self):
+        harness = self.mutants()
+        wrong = []
+        for mutant in harness.MUTANTS:
+            path = harness.source_path(mutant.module)
+            if not path.is_file():
+                wrong.append(f"{mutant.name}: {mutant.module} does not exist")
+                continue
+            found = path.read_text().count(mutant.old)
+            if found != 1:
+                wrong.append(f"{mutant.name}: its anchor appears {found} "
+                             f"times in {mutant.module}")
+        self.assertEqual(wrong, [], "\n".join(wrong))
+
+    def test_every_mutation_would_change_something(self):
+        """``old`` equal to ``new`` is a mutant that cannot fail."""
+        same = [m.name for m in self.mutants().MUTANTS if m.old == m.new]
+        self.assertEqual(same, [])
+
+    def test_every_designated_test_can_be_resolved(self):
+        """A misspelled target fails for the wrong reason and counts a kill."""
+        import unittest as ut
+        loader = ut.TestLoader()
+        unresolved = []
+        for mutant in self.mutants().MUTANTS:
+            try:
+                suite = loader.loadTestsFromName(mutant.designated)
+            except Exception as exc:  # noqa: BLE001 - report, do not raise
+                unresolved.append(f"{mutant.name}: {exc}")
+                continue
+            if suite.countTestCases() == 0:
+                unresolved.append(f"{mutant.name}: {mutant.designated} "
+                                  f"matches no tests")
+            errors = [t for t in suite if type(t).__name__ == "_FailedTest"]
+            if errors:
+                unresolved.append(f"{mutant.name}: {mutant.designated} "
+                                  f"could not be loaded")
+        self.assertEqual(unresolved, [], "\n".join(unresolved))

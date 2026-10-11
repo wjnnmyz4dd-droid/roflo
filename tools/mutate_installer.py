@@ -373,7 +373,7 @@ MUTANTS: tuple[Mutant, ...] = (
            ".test_no_refusal_states_a_placeholder_reason",
            "a refusal's reason says something"),
     Mutant("provenance-not-preserved-per-build", "build.py",
-           '    kept = out_dir / f"BUILD-{commit}.txt"\n    kept.write_text(text, encoding="utf-8")\n    return kept',
+           '    kept = out_dir / f"BUILD-{suffix}.txt"\n    kept.write_text(text, encoding="utf-8")\n    return kept',
            '    kept = out_dir / "BUILD.txt"\n    return kept',
            "tests_solvent.test_installer_architecture"
            ".EachBuildKeepsItsOwnProvenance"
