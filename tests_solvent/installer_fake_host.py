@@ -44,6 +44,8 @@ from deskpilot_installer.host import (  # noqa: E402
     CommandResult, Host, HostFacts, ProcessInfo,
 )
 from deskpilot_installer.report import Secret  # noqa: E402
+from deskpilot_installer import integration  # noqa: E402
+from deskpilot_installer.layout import WEB_PORT  # noqa: E402
 
 GB = 1024 ** 3
 
@@ -584,6 +586,12 @@ def task_run(host: "FakeWindows", argv: Sequence[str]
     if name not in host.scheduled_tasks:
         return (1, "", _NO_SUCH_TASK)
     host.scheduled_tasks[name] = True
+    # Starting the control centre's task makes something listen on its port,
+    # because that is what starting it does. Without this the fake could not
+    # tell a control centre that came up from one that did not, which is the
+    # question the installer's last screen now answers for the owner.
+    if name == integration.WEB_TASK_NAME:
+        host.listen(WEB_PORT, "python.exe")
     return (0, "", "")
 
 
@@ -593,6 +601,8 @@ def task_ended(host: "FakeWindows", argv: Sequence[str]
     if name not in host.scheduled_tasks:
         return (1, "", _NO_SUCH_TASK)
     host.scheduled_tasks[name] = False
+    if name == integration.WEB_TASK_NAME:
+        host.listening.pop(WEB_PORT, None)
     return (0, "", "")
 
 
@@ -601,6 +611,8 @@ def task_deleted(host: "FakeWindows", argv: Sequence[str]
     name = task_name_in(argv)
     if host.scheduled_tasks.pop(name, None) is None:
         return (1, "", _NO_SUCH_TASK)
+    if name == integration.WEB_TASK_NAME:
+        host.listening.pop(WEB_PORT, None)
     return (0, "", "")
 
 

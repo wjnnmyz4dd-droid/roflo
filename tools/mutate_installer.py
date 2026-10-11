@@ -430,6 +430,23 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheLifecycleKnowsAboutBothServices"
            ".test_an_upgrade_stops_and_restarts_both_services",
            "an upgrade puts back every service it stopped"),
+    Mutant("verification-trusts-the-task-instead-of-the-answer", "engine.py",
+           "        if self.host.port_in_use(WEB_PORT):",
+           "        if True:",
+           "tests_solvent.test_installer_services"
+           ".VerificationCallsTheControlCentreRatherThanTrustingIt"
+           ".test_a_silent_control_centre_is_not_reported_as_ready",
+           "readiness means the control centre answered, not that a task "
+           "exists"),
+    Mutant("a-silent-control-centre-blocks-a-good-install", "engine.py",
+           '        return Row("Control centre", Outcome.WARN,\n'
+           '                   f"not answering on {WEB_HOST}:{WEB_PORT} yet.',
+           '        return Row("Control centre", Outcome.FAIL,\n'
+           '                   f"not answering on {WEB_HOST}:{WEB_PORT} yet.',
+           "tests_solvent.test_installer_services"
+           ".VerificationCallsTheControlCentreRatherThanTrustingIt"
+           ".test_a_silent_control_centre_does_not_fail_a_good_install",
+           "a service that may still be starting does not fail the install"),
     # The wizard itself. Nothing here can run the script, so these prove the
     # static checks notice a wizard that says the wrong thing -- the three
     # real-world failures were all a wizard saying the wrong thing while a

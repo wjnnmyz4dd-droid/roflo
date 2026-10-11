@@ -290,6 +290,62 @@ class BothServicesStartAtBootAndNow(Scenario):
             self.assertNotIn(service.task_name, host.scheduled_tasks)
 
 
+class VerificationCallsTheControlCentreRatherThanTrustingIt(Scenario):
+    """A registered task is not an answering service.
+
+    Verification reported autostart PASS because a scheduled task existed. It
+    existed on the installation whose control centre nothing ever started, so
+    the owner was told DESKPILOT READY and then met ERR_CONNECTION_REFUSED.
+    """
+
+    def installed(self):
+        data, digest = certified_payload()
+        host = install_ready(package=data, digest=digest)
+        engine, report, _log = self.install(host, digest)
+        self.assertInstalled(host, report)
+        return host, engine
+
+    def test_a_listening_control_centre_is_reported_as_answering(self):
+        _host, engine = self.installed()
+        row = engine._control_centre_row()
+        self.assertEqual(row.outcome.name, "PASS")
+        self.assertIn(f"{WEB_HOST}:{WEB_PORT}", row.detail)
+
+    def test_a_silent_control_centre_is_not_reported_as_ready(self):
+        host, engine = self.installed()
+        host.listening.pop(WEB_PORT, None)      # it died, or never bound
+        row = engine._control_centre_row()
+        self.assertNotEqual(row.outcome.name, "PASS")
+
+    def test_a_silent_control_centre_does_not_fail_a_good_install(self):
+        """It may simply still be binding. Guessing either way is wrong."""
+        host, engine = self.installed()
+        host.listening.pop(WEB_PORT, None)
+        row = engine._control_centre_row()
+        self.assertEqual(row.outcome.name, "WARN")
+        self.assertFalse(row.outcome.stops_installation)
+
+    def test_the_warning_says_what_to_do_next(self):
+        host, engine = self.installed()
+        host.listening.pop(WEB_PORT, None)
+        row = engine._control_centre_row()
+        self.assertIn("http://", row.detail)
+        self.assertIn(integration.WEB_TASK_NAME, row.detail)
+
+    def test_the_verify_report_carries_the_row(self):
+        _host, engine = self.installed()
+        report = engine.verify(probe_inference=False)
+        self.assertIsNotNone(report.row("Control centre"),
+                             "verification does not mention the control centre")
+
+    def test_stopping_the_task_stops_the_answer(self):
+        """The fake is only useful here if starting and stopping differ."""
+        host, engine = self.installed()
+        self.assertEqual(engine._control_centre_row().outcome.name, "PASS")
+        host.run(["schtasks.exe", "/End", "/TN", integration.WEB_TASK_NAME])
+        self.assertEqual(engine._control_centre_row().outcome.name, "WARN")
+
+
 class TheLifecycleKnowsAboutBothServices(Scenario):
     """Install, upgrade and uninstall each have two services to think about."""
 

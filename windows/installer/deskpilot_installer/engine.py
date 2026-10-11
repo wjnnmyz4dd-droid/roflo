@@ -42,7 +42,7 @@ from typing import Callable
 from . import ai, integration, payload, python_runtime, secrets_env
 from .host import Host
 from .installlog import Log
-from .layout import Layout, WEB_PORT
+from .layout import Layout, WEB_HOST, WEB_PORT
 from .probe import Settings
 from .report import Failure, Level, Outcome, Report, Row, Secret
 
@@ -735,6 +735,7 @@ class Engine:
         rows.append(self._capability_row())
         rows.append(self._ai_row(probe_inference=probe_inference))
         rows.append(self._autostart_row())
+        rows.append(self._control_centre_row())
         return Report("verify", tuple(rows))
 
     def _capability_row(self) -> Row:
@@ -778,6 +779,39 @@ class Engine:
                           model_tag=self.answers.ai_model_tag,
                           probe_inference=probe_inference)
         return ai.row(state)
+
+    def _control_centre_row(self) -> Row:
+        """Is the control centre actually answering?
+
+        Raised by both advisory gates, which converge on the same point:
+        K-LEAN's own loopback server writes a port file so something outside
+        it can tell whether it came up, and iFixAi's structural criterion is to
+        call the machinery and check the answer rather than trust what the
+        configuration declares. Verification said PASS because a scheduled
+        task existed -- which was true on the installation whose control
+        centre nothing started.
+
+        Not listening is a WARN, not a FAIL. One observation a moment after
+        the task was told to run cannot tell a service that is still binding
+        its socket from one that will never bind it, and refusing a complete
+        installation over that would be guessing. It says which it cannot tell,
+        and what to do about it.
+        """
+        if not self.answers.components.autostart:
+            return Row("Control centre", Outcome.WARN,
+                       "autostart was not selected, so nothing is listening "
+                       "yet; start it from the Start menu when you want it")
+        if self.host.port_in_use(WEB_PORT):
+            owner = self.host.port_owner(WEB_PORT)
+            return Row("Control centre", Outcome.PASS,
+                       f"answering on http://{WEB_HOST}:{WEB_PORT}"
+                       + (f" ({owner})" if owner else ""))
+        return Row("Control centre", Outcome.WARN,
+                   f"not answering on {WEB_HOST}:{WEB_PORT} yet. It may still "
+                   f"be starting. Open http://{WEB_HOST}:{WEB_PORT} in a "
+                   f"minute; if the browser still cannot connect, the "
+                   f"{integration.WEB_TASK_NAME!r} task's history in Task "
+                   f"Scheduler says why")
 
     def _autostart_row(self) -> Row:
         if not self.answers.components.autostart:
