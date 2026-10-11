@@ -23,6 +23,7 @@ from solvent import notify
 from solvent import resilience as res
 from solvent.harness import CSV_PROMOTION, OWNER, Solvent, provision_capability
 from solvent.web import auth as web_auth
+from solvent.web import status
 from solvent.web import server as web_server
 from solvent.web.app import Request
 
@@ -31,7 +32,7 @@ PASSWORD = "TEST-ONLY-control-centre-password"
 #: Pages added by this pass, checked as a set so a new one cannot be added
 #: without deciding whether it is reachable anonymously.
 NEW_PAGES = ("/incidents", "/incident", "/diagnostics", "/breakers",
-             "/notifications", "/recommendations", "/wizard")
+             "/notifications", "/recommendations", "/setup")
 
 
 def text_of(response) -> str:
@@ -82,6 +83,18 @@ class Base(unittest.TestCase):
 
     def arrange(self, solvent):
         """Override to break something before the website reads it."""
+
+    def setup_row(self, step: str) -> str:
+        """One row of Owner Setup, and only that row.
+
+        A fixed slice after the step name reaches into the next row, where a
+        state belonging to a different step would make the assertion pass or
+        fail for the wrong reason.
+        """
+        body = self.page("/setup")
+        after = body.split(step, 1)
+        self.assertEqual(len(after), 2, f"no step named {step!r} on /setup")
+        return after[1].split("</tr>", 1)[0]
 
     def diagnostic_row(self, check: str) -> str:
         """Exactly one row of the diagnostics table, and none of the next.
@@ -199,10 +212,12 @@ class AnUnprovisionedCapabilityCannotReadAsAvailable(Base):
         self.assertIn("owner action required", window)
         self.assertNotIn("healthy", window)
 
-    def test_the_wizard_says_the_step_is_outstanding(self):
-        body = self.page("/wizard")
-        window = after_heading(body, "what it is for", "A proven capability")[:220]
-        self.assertIn("action required", window)
+    def test_owner_setup_says_the_step_is_outstanding(self):
+        """Blocked rather than owner-action: work would be done and then
+        refused at the delivery gate, which is something stopping rather than
+        something waiting on a decision."""
+        window = self.setup_row("4. A proven capability")
+        self.assertIn(status.BLOCKED, window)
 
 
 class AProvisionedCapabilityReadsAsAvailable(Base):
@@ -217,10 +232,10 @@ class AProvisionedCapabilityReadsAsAvailable(Base):
         self.assertIn("healthy", window)
         self.assertIn("csv-cleanup", window)
 
-    def test_the_wizard_marks_the_step_done(self):
-        body = self.page("/wizard")
-        window = after_heading(body, "what it is for", "A proven capability")[:220]
-        self.assertIn("done", window)
+    def test_owner_setup_marks_the_step_verified(self):
+        window = self.setup_row("4. A proven capability")
+        self.assertIn(status.VERIFIED_HEALTHY, window)
+        self.assertIn("csv-cleanup", window)
 
 
 class ABrokenAuditChainCannotReadAsIntact(Base):
@@ -351,29 +366,28 @@ class TheNewPagesAreNotAWayIn(Base):
         self.assertNotIn("8675309", body)
 
 
-class TheWizardIsHonestAboutWhatIsNeededYet(Base):
+class OwnerSetupIsHonestAboutWhatIsNeededYet(Base):
     def test_a_payment_rail_is_not_a_blocker_for_a_first_trial(self):
         """Sending an owner to configure Stripe before they have delivered
-        anything is how a setup guide stops being followed."""
-        body = self.page("/wizard")
-        window = after_heading(body, "what it is for", "Payment rail")[:220]
-        self.assertIn("not required yet", window)
+        anything is how a setup guide stops being followed. It is owner action
+        rather than blocked, and the row says it is not needed yet."""
+        window = self.setup_row("8. Payment rail")
+        self.assertIn(status.OWNER_ACTION_REQUIRED, window)
+        self.assertIn("not needed until", window)
 
     def test_work_sources_are_not_a_blocker_either(self):
-        body = self.page("/wizard")
-        window = after_heading(body, "what it is for", "Work sources")[:220]
-        self.assertIn("not required yet", window)
+        window = self.setup_row("9. Work sources")
+        self.assertIn(status.OWNER_ACTION_REQUIRED, window)
+        self.assertIn("deliberately last", window)
 
     def test_it_counts_only_the_steps_that_block_a_first_job(self):
-        self.assertIn("stand between here and a first supervised job",
-                      self.page("/wizard"))
+        """The banner counts the first five. The payment rail and the work
+        sources are steps eight and nine and must not inflate it."""
+        self.assertIn("of the first five steps are not verified",
+                      self.page("/setup"))
 
     def test_it_never_asks_for_a_secret_on_the_page(self):
-        body = self.page("/wizard")
-        self.assertIn("goes in at a terminal", body)
-        self.assertNotIn("<input", self.centre.handle(Request(
-            "GET", "/wizard",
-            cookies={"solvent_session": self.centre.handle(Request(
-                "POST", "/login", form={"password": PASSWORD},
-                source="10.0.0.1")).set_session})).body.decode()
-            .split("Getting started")[-1])
+        body = self.page("/setup")
+        self.assertIn("never entered here", body)
+        self.assertNotIn("<input type=\"password\"", body)
+        self.assertNotIn("<input type=\"text\"", body)

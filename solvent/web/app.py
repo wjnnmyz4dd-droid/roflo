@@ -19,7 +19,9 @@ from dataclasses import dataclass, field
 
 from ..branding import ENGINE, PRODUCT
 from . import auth as auth_module
+from . import board as board_module
 from . import intents as intents_module
+from . import status
 from .render import (
     NAV, detail, esc, link, money, page, pill, table,
 )
@@ -59,6 +61,45 @@ SECURITY_HEADERS = (
      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
      "base-uri 'none'; frame-ancestors 'none'"),
 )
+
+
+def _board_banner(board) -> str:
+    """One line at the top of the page, carrying the board's worst state.
+
+    Worst rather than an average, because a page with one UNSAFE row and
+    nineteen healthy ones is an unsafe page, and a summary that averaged them
+    would be the most misleading sentence on the surface.
+    """
+    summary = board.summary
+    attention = board.needing_attention()
+    if summary == status.VERIFIED_HEALTHY:
+        return ('<div class="banner banner-ok">Every checked fact is '
+                "verified healthy.</div>")
+    tone = status.TONE[summary]
+    return (f'<div class="banner banner-{tone}">{pill(summary, tone)} '
+            f"{esc(str(len(attention)))} of {esc(str(len(board.rows)))} "
+            f"checked facts need reading.</div>")
+
+
+def _board_table(board) -> str:
+    """Worst first, and every row says what it rests on.
+
+    The evidence column is the point of the table rather than a decoration:
+    this surface spent its life reporting a halted business as NORMAL, and what
+    would have given that away is a green row with nothing in the column next
+    to it.
+    """
+    rows = []
+    for name, entry in board.sorted_worst_first():
+        rows.append([
+            esc(name),
+            pill(entry.state, entry.tone),
+            esc(entry.detail),
+            esc(entry.evidence or entry.action or "—"),
+        ])
+    return table(["fact", "state", "what is true", "evidence or next step"],
+                 rows, empty="Nothing could be checked, which is itself "
+                             "unknown rather than healthy.")
 
 
 def _intent_class(verb: str) -> str:
@@ -111,7 +152,14 @@ class ControlCentre:
                                       path=request.path,
                                       csrf=session["csrf"]),
                             SECURITY_HEADERS)
-        body, title = handler(request)
+        answer = handler(request)
+        if isinstance(answer, str):
+            # A handler that returns a bare path is a route kept for its URL
+            # rather than its content. ``/wizard`` is the case: there used to
+            # be two setup pages, and the one that remains is ``/setup``.
+            return Response(303, b"",
+                            (("Location", answer),) + SECURITY_HEADERS[1:])
+        body, title = answer
         return Response(200, page(title, body, path=request.path,
                                   csrf=session["csrf"],
                                   banners=self._banners()),
@@ -131,7 +179,7 @@ class ControlCentre:
             "/breakers": self.breakers,
             "/notifications": self.notifications,
             "/recommendations": self.recommendations,
-            "/wizard": self.wizard,
+            "/wizard": self.wizard,     # kept: redirects to /setup
             "/sources": self.sources,
             "/skills": self.skills,
             "/skill": self.skill_detail,
@@ -299,8 +347,16 @@ class ControlCentre:
                               "unanswered", "/capabilities"))
         if blocked:
             attention.append((f"{blocked} job(s) blocked", "/jobs?state=BLOCKED"))
-        if posture["halted"]:
-            attention.append(("HALT is engaged", "/security"))
+        # Not read from the posture dict a second time: the board decides what
+        # each posture fact means, and two places deciding that is how this
+        # surface came to disagree with itself.
+        board = board_module.build(
+            self.read, heartbeat_path=self.read.policy_value(
+                "runtime", "heartbeat_path", default="") or "")
+        for name, entry in board.sorted_worst_first():
+            if entry.state == status.VERIFIED_HEALTHY:
+                continue
+            attention.append((f"{name}: {entry.detail}", "/health"))
 
         cards = "".join(
             f'<div class="card"><div class="k">{esc(k)}</div>'
@@ -316,9 +372,6 @@ class ControlCentre:
                 ("Awaiting payment", str(counts.get("AWAITING_PAYMENT", 0)),
                  "work done, money not in"),
                 ("Blocked", str(blocked), "needs an answer"),
-                ("Simulation", "ON" if posture["simulation_only"] else "OFF",
-                 "no real external effects" if posture["simulation_only"]
-                 else "real effects enabled"),
             ))
 
         needs = (table(["what", "where"],
@@ -338,8 +391,10 @@ class ControlCentre:
 
         return (f"<h1>{PRODUCT} Command Centre</h1>"
                 f'<p class="sub">What needs you, then what is happening.</p>'
-                f"<h2>Needs your attention</h2>{needs}"
-                f"<h2>Business</h2>{cards}{simulated}"
+                + _board_banner(board)
+                + f"<h2>Needs your attention</h2>{needs}"
+                + "<h2>System status</h2>" + _board_table(board)
+                + f"<h2>Business</h2>{cards}{simulated}"
                 f"<h2>Jobs by state</h2>"
                 + table(["state", "jobs"],
                         [[esc(s), esc(n)] for s, n in sorted(counts.items())],
@@ -877,123 +932,20 @@ class ControlCentre:
                 "Recommendations")
 
     def wizard(self, request: Request):
-        """§77. Getting started, for somebody who does not write software.
+        """Kept as a redirect to ``/setup``, which is now the only setup page.
 
-        Ordered by what blocks what, not by what is easy. Each step says what
-        it is for, whether it is done, and — the part that matters for a first
-        supervised job — whether it is needed *yet*. Sending an owner to
-        configure a payment rail before they have delivered anything is how a
-        setup guide stops being followed.
+        There were two. This one was an ordered checklist of what blocks what;
+        ``/setup`` was a flat list of what had been recorded. They covered the
+        same subject matter from one projection and presented it twice, which
+        is the duplication an audit found -- and the two had already drifted:
+        this page read two policy paths that nothing writes, so steps the owner
+        had completed showed as outstanding.
 
-        No secret is displayed, and no step asks for one here: every value the
-        owner provides goes in at a terminal.
+        The URL stays because it is in the navigation, in the installer's
+        finish screen and in the owner guide. A redirect keeps those working
+        and leaves one page to maintain.
         """
-        DONE, ACTION, OPTIONAL = "DONE", "ACTION REQUIRED", "OPTIONAL"
-        NOT_YET, BLOCKED = "NOT REQUIRED YET", "BLOCKED"
-        UNKNOWN = "CANNOT TELL FROM HERE"
-
-        setup = self.read.owner_setup()
-        settings = self.read.notification_settings()
-        proven = [c for c in self.read.capabilities() if c.get("proven")]
-        rail = self.read.policy_value("payment", "operational_status", default="")
-        posture = self.read.policy_value("network", "default_deny", default=None)
-        # Both of these come from owner_setup(), which reads the paths the
-        # PolicyStore actually writes. They used to be read here from
-        # "models.approved" and a top-level "contracting", neither of which
-        # anything writes, so steps 2 and 3 read ACTION REQUIRED however well
-        # set up the business was.
-        models = setup["cleared_models"]
-        structure = setup["structure"]
-        sources = self.read.work_sources()
-
-        steps = [
-            ("1. Owner signing key",
-             "Nothing consequential can be approved without it. It never goes "
-             "in this website, so this page can only report evidence of it.",
-             DONE if setup["owner_key_evidence"] == "PROVEN" else UNKNOWN,
-             "An approval has been issued, which nothing can do without the "
-             "key." if setup["owner_key_evidence"] == "PROVEN" else
-             "The key lives in the runtime's environment, which this process "
-             "cannot read. Set SOLVENT_OWNER_KEY there; this turns to done "
-             "once an approval has been issued with it."),
-            ("2. Who you contract as",
-             "Your legal name and contact address, for agreements and invoices. "
-             f"{PRODUCT} will never invent these.",
-             DONE if structure else ACTION,
-             "Run `solvent setup contracting` at the terminal."),
-            ("3. A cleared AI model",
-             "Exactly which model artifact is allowed, by digest.",
-             DONE if models else ACTION,
-             "Run `solvent setup model`."),
-            ("4. A proven capability",
-             f"What {PRODUCT} is allowed to sell. Until this is recorded, work is "
-             "done and refused at the delivery gate.",
-             DONE if proven else ACTION,
-             "Run `solvent setup capability`."),
-            ("5. Host firewall",
-             "Default-deny, recorded. Unrecorded reads as unsafe, because a "
-             "script in a repository is not a firewall on a host.",
-             DONE if posture else ACTION,
-             "Run deploy/firewall.sh --apply, then `solvent setup firewall "
-             "--default-deny`."),
-            ("6. Control-centre password",
-             "How you sign in here. Stored as a hash, never as a password.",
-             DONE,
-             "Already set, or this page would not be visible."),
-            ("7. Owner notifications",
-             f"So {PRODUCT} can reach you when you are not looking at this page.",
-             DONE if settings["owner_phone_mask"] else OPTIONAL,
-             "Run `solvent setup notifications`. Your number is stored as a "
-             "mask here and kept in the runtime's environment."),
-            ("8. First supervised job",
-             "One real job, hand-fed, watched from start to finish.",
-             NOT_YET if not proven else ACTION,
-             "With steps 1-5 done, feed one CSV job and watch it through."),
-            ("9. Payment rail",
-             "How money is collected and verified. Not needed for a first "
-             "supervised job that collects nothing.",
-             DONE if rail == "LIVE_VERIFIED" else NOT_YET,
-             "Run `solvent setup stripe` when you are ready to charge."),
-            ("10. Work sources",
-             "Where jobs come from automatically. Not needed while work is "
-             "hand-fed, and deliberately last.",
-             DONE if sources else NOT_YET,
-             "Register one only after a supervised job has worked."),
-        ]
-
-        first_trial = [s for s in steps[:5] if s[2] == ACTION]
-        unverifiable = [s for s in steps[:5] if s[2] == UNKNOWN]
-        # An unverifiable step is not a cleared one. Counting it as done would
-        # let this banner read "everything is in place" about a business whose
-        # owner key this page has never seen evidence of.
-        unseen = (f" {len(unverifiable)} more cannot be checked from here."
-                  if unverifiable else "")
-        if first_trial:
-            banner = ('<div class="banner banner-warn">'
-                      f"{len(first_trial)} step(s) stand between here and a "
-                      f"first supervised job.{unseen}</div>")
-        elif unverifiable:
-            banner = ('<div class="banner banner-warn">Everything this page '
-                      f"can check is in place.{unseen}</div>")
-        else:
-            banner = ('<div class="banner banner-ok">Everything a first '
-                      "supervised job needs is in place.</div>")
-
-        return (banner + "<h1>Getting started</h1>"
-                '<p class="sub">In the order things depend on each other. '
-                "Nothing here asks you to type a secret into this website: "
-                "every value you provide goes in at a terminal, and this page "
-                "only ever reports whether it is there.</p>"
-                + table(["step", "what it is for", "state", "how"],
-                        [[esc(name), esc(purpose), _step_pill(state), esc(how)]
-                         for name, purpose, state, how in steps],
-                        empty="")
-                + '<p class="sub">A first supervised job needs steps 1-5. '
-                  "Steps 9 and 10 are for later and are marked NOT REQUIRED "
-                  "YET rather than missing, because being sent to configure a "
-                  "payment rail before delivering anything is how a setup "
-                  "guide stops being followed.</p>",
-                "Getting started")
+        return "/setup"
 
     def sources(self, request: Request):
         """§9. Where work may come from, and what may be done about it.
@@ -1580,47 +1532,197 @@ class ControlCentre:
 
     # ------------------------------------------------------------ owner setup
     def setup(self, request: Request):
+        """The one Owner Setup page. ``/wizard`` redirects here.
+
+        There were two pages: an ordered checklist of what blocks what, and a
+        flat list of what had been recorded. Same subject, same projection,
+        presented twice -- and they had already drifted apart, because the
+        checklist read two policy paths nothing writes and so reported
+        outstanding work the owner had finished.
+
+        One page, in the order things depend on each other, with the five
+        states the rest of the control centre uses. Every row says what is
+        true, what it rests on, and what to do about it -- including, where
+        this process genuinely cannot establish something, that it cannot.
+
+        No secret is displayed and none is asked for here. Values the owner
+        provides either go in through a request the runtime executes, or -- for
+        the three that carry legal identity or turn simulation off -- at a
+        terminal, named on the row.
+        """
         setup = self.read.owner_setup()
-        steps = [
-            ("Contracting structure", bool(setup["structure"]),
-             setup["structure"] or "not recorded"),
-            ("Legal name", setup["has_legal_name"],
-             "supplied" if setup["has_legal_name"] else "needed to name the "
-             "contracting party"),
-            ("Contact email", setup["has_email"],
-             "supplied" if setup["has_email"] else "needed so a client can "
-             "reach you"),
-            ("Postal address", setup["has_address"],
-             "supplied" if setup["has_address"] else "NOT REQUIRED YET — only to "
-             "issue an invoice"),
-            ("Tax reference", setup["tax_reference_provisioned"],
-             "recorded as present (never the number)"
-             if setup["tax_reference_provisioned"] else
-             "NOT REQUIRED YET — only to connect a payment rail"),
-            ("Payment rail", setup["rail_status"] not in ("", "SELECTED"),
-             f"{setup['payment_rail'] or 'none'} — {setup['rail_status']}"),
-            ("Model clearance", bool(setup["cleared_models"]),
-             f"{len(setup['cleared_models'])} artifact(s) cleared"
-             if setup["cleared_models"] else "no artifact cleared"),
-            ("Production model", bool(setup["production_model"]),
-             setup["production_model"].get("tag", "")
-             if setup["production_model"] else
-             "no artifact marked as the one this deployment runs"),
-        ]
-        return ("<h1>Owner setup</h1>"
-                '<p class="sub">Only what is genuinely required, and what is not '
-                "required yet.</p>"
-                + table(["step", "state", "detail"],
-                        [[esc(name),
-                          pill("DONE", "ok") if done else pill("ACTION", "warn"),
-                          esc(note)] for name, done, note in steps])
+        settings = self.read.notification_settings()
+        proven = [c for c in self.read.capabilities() if c.get("proven")]
+        sources = self.read.work_sources()
+        firewall = self.read.policy_value("network", "default_deny",
+                                          default=None)
+        rail_status = setup["rail_status"]
+
+        board = status.Board()
+
+        # 1. The owner key. Evidence or UNKNOWN; never an accusation.
+        if setup["owner_key_evidence"] == "PROVEN":
+            board.add("1. Owner signing key", status.healthy(
+                "an approval has been issued, which nothing can do without "
+                "the key",
+                evidence="a signed owner approval exists in this database"))
+        else:
+            board.add("1. Owner signing key", status.unknown(
+                "the key lives in the runtime's environment, which this "
+                "process cannot read",
+                action="Set SOLVENT_OWNER_KEY in the runtime's environment "
+                       "file. This turns to verified once an approval has "
+                       "been issued with it."))
+
+        # 2. Who the owner contracts as.
+        if setup["structure"]:
+            missing = [name for name, present in (
+                ("legal name", setup["has_legal_name"]),
+                ("contact email", setup["has_email"])) if not present]
+            if missing:
+                board.add("2. Who you contract as", status.owner_action(
+                    f"recorded as {setup['structure']}, without "
+                    + " or ".join(missing),
+                    action="Run `solvent setup contracting` at the terminal.",
+                    evidence="governance.contracting in the policy document"))
+            else:
+                board.add("2. Who you contract as", status.healthy(
+                    f"{setup['structure']}, with a legal name and a contact "
+                    f"address recorded",
+                    evidence="governance.contracting in the policy document"))
+        else:
+            board.add("2. Who you contract as", status.owner_action(
+                "nothing is recorded, and nothing here will invent it",
+                action="Run `solvent setup contracting` at the terminal. It "
+                       "carries your legal name and address, which is why it "
+                       "is not a form on this page."))
+
+        # 3. A cleared model artifact.
+        cleared = setup["cleared_models"]
+        if cleared:
+            board.add("3. A cleared AI model", status.healthy(
+                f"{len(cleared)} artifact(s) cleared by digest"
+                + (f"; this deployment runs "
+                   f"{setup['production_model'].get('tag', 'none')}"
+                   if setup["production_model"] else
+                   ", and none is marked as the one this deployment runs"),
+                evidence="governance.approved_models in the policy document"))
+        else:
+            board.add("3. A cleared AI model", status.owner_action(
+                "no model artifact is cleared, so no model may be used for "
+                "paid work",
+                action="Open AI model, or run `solvent setup model`."))
+
+        # 4. Something it is allowed to sell.
+        if proven:
+            board.add("4. A proven capability", status.healthy(
+                ", ".join(sorted(c.get("name", "") for c in proven))
+                + " cleared for client work",
+                evidence="the capability registry, with verifier evidence"))
+        else:
+            board.add("4. A proven capability", status.blocked(
+                "nothing is registered as proven, so work would be done and "
+                "then refused at the delivery gate",
+                action="Open Capabilities, or run `solvent setup capability`."))
+
+        # 5. The host firewall. Unrecorded reads as unsafe on purpose.
+        if firewall:
+            board.add("5. Host firewall", status.healthy(
+                "default-deny, recorded by the owner",
+                evidence="network.default_deny in the policy document"))
+        elif firewall is None:
+            board.add("5. Host firewall", status.unknown(
+                "nobody has recorded what this host's firewall does, and a "
+                "script in a repository is not a firewall on a host",
+                action="Run deploy/firewall.sh --apply, then `solvent setup "
+                       "firewall --default-deny`."))
+        else:
+            board.add("5. Host firewall", status.unsafe(
+                "recorded as NOT default-deny",
+                evidence="network.default_deny is false",
+                action="Close inbound access, then record it again."))
+
+        # 6. How the owner signs in here.
+        board.add("6. Control-centre password", status.healthy(
+            "set, and stored as a hash",
+            evidence="you are reading this page, which needed it"))
+
+        # 7. Notifications. Optional, and said to be optional.
+        if settings["owner_phone_mask"]:
+            board.add("7. Owner notifications", status.healthy(
+                f"texts go to {settings['owner_phone_mask']}"
+                + (f" via {settings['sms_provider']}"
+                   if settings["sms_provider"] else
+                   ", once an SMS provider is configured"),
+                evidence="notifications in the policy document; the number "
+                         "itself is not stored"))
+        else:
+            board.add("7. Owner notifications", status.owner_action(
+                "no number is recorded, so nothing can reach you when you are "
+                "not looking at this page",
+                action="Run `solvent setup notifications`. Your number stays "
+                       "in the runtime's environment; only a mask is stored."))
+
+        # 8. A payment rail. Not needed to do the work, only to be paid.
+        if rail_status == "LIVE_VERIFIED":
+            board.add("8. Payment rail", status.healthy(
+                f"{setup['payment_rail']} is live and verified",
+                evidence="payment.operational_status in the policy document"))
+        else:
+            board.add("8. Payment rail", status.owner_action(
+                f"{setup['payment_rail'] or 'no rail'} "
+                f"({rail_status or 'nothing recorded'}) — not needed until "
+                f"you intend to be paid",
+                action="Open Money, or run `solvent setup stripe`."))
+
+        # 9. Where work comes from. Deliberately last.
+        if sources:
+            board.add("9. Work sources", status.healthy(
+                f"{len(sources)} source(s) registered",
+                evidence="the work-source registry"))
+        else:
+            board.add("9. Work sources", status.owner_action(
+                "none registered — deliberately last, and not needed while "
+                "work is hand-fed",
+                action="Open Work sources once a supervised job has worked."))
+
+        blocking = [row for row in board.rows[:5]
+                    if row[1].state != status.VERIFIED_HEALTHY]
+        unknowns = [row for row in board.rows[:5]
+                    if row[1].state == status.UNKNOWN]
+        if not blocking:
+            banner = ('<div class="banner banner-ok">Everything a first '
+                      "supervised job needs is verified.</div>")
+        else:
+            unseen = (f" {len(unknowns)} of them cannot be checked from here."
+                      if unknowns else "")
+            banner = ('<div class="banner banner-warn">'
+                      f"{len(blocking)} of the first five steps are not "
+                      f"verified.{unseen}</div>")
+
+        return (banner + "<h1>Owner setup</h1>"
+                '<p class="sub">In the order things depend on each other. The '
+                "first five are what a first supervised job needs; the rest "
+                "are for later and say so. Nothing here asks you to type a "
+                "secret into this website.</p>"
+                + _board_table(board)
+                + detail("Why some values are typed at a terminal",
+                         "<p>Three changes are not completed from this page "
+                         "even with a valid approval. Your contracting "
+                         "identity carries your legal name and address; "
+                         "authorising a work source needs an adapter, which "
+                         "is code rather than a row in a form; and leaving "
+                         "simulation is the single change that turns a "
+                         "rehearsal into a business that can spend money and "
+                         "contact strangers. Each row above names the command "
+                         "for the one it needs.</p>")
                 + detail("Where secrets go",
-                         "<p>The owner key and any payment secret live in "
-                         "<code>/etc/solvent/solvent.env</code> on the server, "
-                         "readable only by the service. They are never entered "
-                         "here, never displayed here, and never sent to a "
-                         "browser. This page reports whether a value is present, "
-                         "never what it is.</p>"),
+                         "<p>The owner key and any payment secret live in the "
+                         "runtime's environment file on the server, readable "
+                         "only by the runtime's own account. They are never "
+                         "entered here, never displayed here, and never sent "
+                         "to a browser. This page reports whether a value is "
+                         "present, never what it is.</p>"),
                 "Owner setup")
 
 

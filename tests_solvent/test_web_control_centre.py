@@ -27,6 +27,7 @@ from solvent.types import ActionClass
 from solvent.web import auth as web_auth
 from solvent.web import intents as web_intents
 from solvent.web import server as web_server
+from solvent.web import status
 from solvent.web.app import SECURITY_HEADERS, ControlCentre, Request
 from solvent.web.readmodel import ReadModel
 from tests_solvent import fixtures_csv as fx
@@ -1187,6 +1188,16 @@ class TheFilesPage(Base):
                            "file": "/etc/passwd", "download": "1"}))
                 self.assertNotIn(b"root:x:0:0", response.body)
                 headers = dict(response.headers)
+                if response.status == 303:
+                    # A route kept for its URL rather than its content. It
+                    # must still not serve a file, and it must redirect
+                    # somewhere inside this surface rather than anywhere a
+                    # query parameter asked for.
+                    where = headers.get("Location", "")
+                    self.assertTrue(where.startswith("/"),
+                                    f"{route} redirected to {where!r}")
+                    self.assertEqual(response.body, b"")
+                    continue
                 self.assertTrue(
                     headers.get("Content-Type", "").startswith("text/html"),
                     f"{route} answered with {headers.get('Content-Type')!r}")
@@ -1619,34 +1630,62 @@ class TheSetupPagesReflectAConfiguredBusiness(unittest.TestCase):
             cookies={"solvent_session": response.set_session})
         ).body.decode("utf-8")
 
-    def test_the_readiness_page_credits_the_recorded_contracting(self):
-        body = self.page("/wizard")
-        row = self.step(body, "2. Who you contract as")
-        self.assertIn("done", row)
-        self.assertNotIn("action required", row)
+    def test_the_setup_page_credits_the_recorded_contracting(self):
+        row = self.step(self.page("/setup"), "2. Who you contract as")
+        self.assertIn(status.VERIFIED_HEALTHY, row)
 
-    def test_the_readiness_page_credits_the_cleared_model(self):
-        body = self.page("/wizard")
-        row = self.step(body, "3. A cleared AI model")
-        self.assertIn("done", row)
-        self.assertNotIn("action required", row)
+    def test_the_setup_page_credits_the_cleared_model(self):
+        row = self.step(self.page("/setup"), "3. A cleared AI model")
+        self.assertIn(status.VERIFIED_HEALTHY, row)
 
     def test_the_owner_key_step_says_it_cannot_tell_rather_than_accusing(self):
         """No approval has been issued here, so there is no evidence of a key.
         The honest answer is that this page cannot see the runtime's
         environment — not that the owner has failed to do something."""
-        body = self.page("/wizard")
-        row = self.step(body, "1. Owner signing key")
-        self.assertIn("cannot tell from here", row)
-        self.assertNotIn("action required", row)
+        row = self.step(self.page("/setup"), "1. Owner signing key")
+        self.assertIn(status.UNKNOWN, row)
+        self.assertNotIn(status.OWNER_ACTION_REQUIRED, row)
 
-    def test_the_banner_does_not_claim_everything_is_in_place(self):
-        """Steps 2-5 are done and step 1 is unverifiable, so the banner must
+    def test_every_verified_row_shows_what_it_rests_on(self):
+        """The evidence column is the point of the table. This surface spent
+        its life reporting a halted business as NORMAL, and a green row with
+        nothing beside it is what would have given that away."""
+        body = self.page("/setup")
+        for name in ("2. Who you contract as", "3. A cleared AI model",
+                     "5. Host firewall"):
+            row = self.step(body, name)
+            with self.subTest(step=name):
+                self.assertIn(status.VERIFIED_HEALTHY, row)
+                self.assertIn("policy document", row,
+                              "a verified row named no evidence")
+
+    def test_the_banner_does_not_claim_everything_is_verified(self):
+        """Steps 2-5 are verified and step 1 is unknowable, so the banner must
         not read as an all-clear. An unverifiable step is not a cleared one."""
-        body = self.page("/wizard")
+        body = self.page("/setup")
         self.assertIn("cannot be checked from here", body)
-        self.assertNotIn("Everything a first supervised job needs is in place",
+        self.assertNotIn("Everything a first supervised job needs is verified",
                          body)
+
+    def test_the_wizard_url_still_works_and_leads_to_the_one_page(self):
+        """The URL is in the navigation, the installer's finish screen and the
+        owner guide. Consolidating two pages into one must not break it."""
+        response = self.centre.handle(Request(
+            "POST", "/login", form={"password": PASSWORD}, source="10.0.0.1"))
+        cookies = {"solvent_session": response.set_session}
+        redirect = self.centre.handle(Request("GET", "/wizard",
+                                              cookies=cookies))
+        self.assertEqual(redirect.status, 303)
+        self.assertEqual(dict(redirect.headers).get("Location"), "/setup")
+
+    def test_there_is_only_one_setup_page_in_the_navigation(self):
+        """Two entries covering the same projection is the duplication an
+        audit found; one of them also read paths nothing writes."""
+        from solvent.web.render import NAV
+
+        setupish = [href for href, _label in NAV
+                    if href in ("/setup", "/wizard")]
+        self.assertEqual(setupish, ["/setup"])
 
     def test_the_setup_page_shows_what_was_recorded(self):
         body = self.page("/setup")

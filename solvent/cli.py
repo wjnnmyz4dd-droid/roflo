@@ -341,6 +341,36 @@ def cmd_setup_stripe(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup_runtime(args: argparse.Namespace) -> int:
+    """Record where the runtime's own files live on this machine.
+
+    Both paths have defaults suited to the ``deploy/`` unit files, and a
+    deployment whose filesystem is laid out differently has to say so -- the
+    runtime reads the heartbeat path from policy, and the control centre is
+    given the spool path on its command line, so the two can disagree unless
+    one place records them.
+
+    This command is deliberately free of any knowledge of which platform it is
+    running on. Where the files belong is a property of an installation, and
+    the installer is what knows that.
+    """
+    solvent = _owner_solvent(args)
+    patch: dict = {}
+    if args.heartbeat_path:
+        patch["heartbeat_path"] = args.heartbeat_path
+    if args.owner_intent_spool:
+        patch["owner_intent_spool"] = args.owner_intent_spool
+    if not patch:
+        print("refused: nothing to record; pass --heartbeat-path or "
+              "--owner-intent-spool", file=sys.stderr)
+        return 2
+    solvent.policy.amend({"runtime": patch}, args.owner,
+                         "owner recorded the runtime's paths for this machine")
+    for name, value in sorted(patch.items()):
+        print(f"{name}: {value}")
+    return 0
+
+
 def cmd_setup_firewall(args: argparse.Namespace) -> int:
     """Record what the host firewall does, so readiness can see it."""
     solvent = _owner_solvent(args)
@@ -1113,6 +1143,16 @@ def build_parser() -> argparse.ArgumentParser:
                              "CONFIGURED and LIVE_VERIFIED. Never a credential")
     stripe.add_argument("--reason", default="OD-2: payment rail progress")
     stripe.set_defaults(func=cmd_setup_stripe)
+
+    runtime_paths = owned(setup_sub.add_parser(
+        "runtime", help="record where the runtime's own files live"))
+    runtime_paths.add_argument(
+        "--heartbeat-path", default="",
+        help="where the runtime touches its liveness file")
+    runtime_paths.add_argument(
+        "--owner-intent-spool", default="",
+        help="the directory the control centre drops requests into")
+    runtime_paths.set_defaults(func=cmd_setup_runtime)
 
     firewall = owned(setup_sub.add_parser(
         "firewall", help="record what the host firewall does"))

@@ -145,6 +145,13 @@ def rules(layout: Layout) -> tuple[Rule, ...]:
         Rule(layout.db + "-shm", ("/grant:r", f"{WEB_SID}:(R,W)"),
              "SQLite's shared index; no reader can open a WAL database without it",
              required=False),
+        # The liveness signal. A file whose only content is the fact that it
+        # was recently written, so the control centre may read it -- and has
+        # to, because "is the runtime alive *now*" cannot be answered from a
+        # database row the runtime wrote when it started.
+        Rule(layout.heartbeat, ("/grant:r", f"{WEB_SID}:(R)"),
+             "the control centre reads the runtime's liveness signal",
+             required=False),
         # -- the drop box --------------------------------------------------
         Rule(layout.spool,
              ("/inheritance:r", "/grant:r", full, "/grant:r", admins_full,

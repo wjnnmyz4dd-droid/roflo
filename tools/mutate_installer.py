@@ -670,19 +670,20 @@ MUTANTS: tuple[Mutant, ...] = (
            "the verification section of a job page is not silently empty"),
     Mutant("the-owner-key-step-claims-what-it-cannot-see",
            "solvent/web/app.py",
-           '             DONE if setup["owner_key_evidence"] == "PROVEN" else UNKNOWN,',
-           "             DONE,",
+           '        if setup["owner_key_evidence"] == "PROVEN":',
+           "        if True:",
            "tests_solvent.test_web_control_centre"
            ".TheSetupPagesReflectAConfiguredBusiness"
            ".test_the_owner_key_step_says_it_cannot_tell_rather_than_accusing",
            "a fact this page cannot establish is not reported as done"),
     Mutant("unverifiable-steps-are-counted-as-cleared",
            "solvent/web/app.py",
-           '        unverifiable = [s for s in steps[:5] if s[2] == UNKNOWN]',
-           "        unverifiable = []",
+           "        unknowns = [row for row in board.rows[:5]\n"
+           "                    if row[1].state == status.UNKNOWN]",
+           "        unknowns = []",
            "tests_solvent.test_web_control_centre"
            ".TheSetupPagesReflectAConfiguredBusiness"
-           ".test_the_banner_does_not_claim_everything_is_in_place",
+           ".test_the_banner_does_not_claim_everything_is_verified",
            "the all-clear banner cannot be reached past an unchecked step"),
     # The Windows boundary, and the probe that is the only reason to believe
     # it. Every one of these was a real possible state of this code.
@@ -759,6 +760,98 @@ MUTANTS: tuple[Mutant, ...] = (
            ".BothServicesStartAtBootAndNow"
            ".test_the_control_centre_launcher_never_opens_the_owner_key_file",
            "the web launcher never opens the file holding the key"),
+    # One status vocabulary, and the two rules that keep it honest. Every
+    # one of these was a real state of this surface: it reported a halted
+    # business as NORMAL for the life of the project.
+    Mutant("a-healthy-status-needs-no-evidence", "solvent/web/status.py",
+           "        if self.state == VERIFIED_HEALTHY and not self.evidence.strip():",
+           "        if False:",
+           "tests_solvent.test_web_status.TheVocabularyRefusesTwoThings"
+           ".test_verified_healthy_needs_evidence",
+           "a green row cannot be built without something behind it"),
+    Mutant("a-sixth-status-word-is-accepted", "solvent/web/status.py",
+           "        if self.state not in TONE:",
+           "        if False:",
+           "tests_solvent.test_web_status.TheVocabularyRefusesTwoThings"
+           ".test_a_sixth_status_word_is_refused",
+           "the vocabulary stays closed"),
+    Mutant("stale-evidence-keeps-its-verdict", "solvent/web/status.py",
+           "    if age_seconds > stale_after:",
+           "    if False:",
+           "tests_solvent.test_web_status.StaleEvidenceIsNotEvidence"
+           ".test_evidence_past_its_window_reads_unknown",
+           "evidence older than its subject is not evidence"),
+    Mutant("absent-evidence-reads-as-present", "solvent/web/status.py",
+           "    if age_seconds is None:",
+           "    if False:",
+           "tests_solvent.test_web_status.StaleEvidenceIsNotEvidence"
+           ".test_no_evidence_at_all_reads_unknown_rather_than_failed",
+           "nothing established is UNKNOWN, not a verdict"),
+    Mutant("the-summary-takes-the-best-row", "solvent/web/status.py",
+           "    for state in ORDER:",
+           "    for state in reversed(ORDER):",
+           "tests_solvent.test_web_status.TheWorstStateWins"
+           ".test_one_unsafe_row_decides_the_summary",
+           "one unsafe row decides the page"),
+    Mutant("an-empty-board-reads-healthy", "solvent/web/status.py",
+           "    if not found:\n        return UNKNOWN",
+           "    if not found:\n        return VERIFIED_HEALTHY",
+           "tests_solvent.test_web_status.TheWorstStateWins"
+           ".test_no_rows_at_all_is_unknown_not_healthy",
+           "a board that checked nothing is not a healthy board"),
+    Mutant("an-unrecognised-check-state-reads-healthy", "solvent/web/board.py",
+           '    state = FROM_DIAGNOSTICS.get(str(finding.get("state", "")), st.UNKNOWN)',
+           '    state = FROM_DIAGNOSTICS.get(str(finding.get("state", "")),\n'
+           "                                 st.VERIFIED_HEALTHY)",
+           "tests_solvent.test_web_status.TheTranslationTableIsComplete"
+           ".test_an_unrecognised_state_becomes_unknown_not_healthy",
+           "a state this page cannot interpret is not reported as fine"),
+    Mutant("a-stale-heartbeat-reads-as-alive", "solvent/web/board.py",
+           "    if age > HEARTBEAT_STALE_SECONDS:",
+           "    if False:",
+           "tests_solvent.test_web_status.LivenessComesFromTheHeartbeat"
+           ".test_a_stale_heartbeat_is_unknown_not_dead",
+           "liveness is the heartbeat being recent, not it existing"),
+    Mutant("a-missing-heartbeat-is-not-noticed", "solvent/web/board.py",
+           "    except FileNotFoundError:",
+           "    except _NeverRaised:",
+           "tests_solvent.test_web_status.LivenessComesFromTheHeartbeat"
+           ".test_a_missing_heartbeat_is_unknown",
+           "a runtime that never ticked is not reported as running"),
+    Mutant("real-execution-with-no-allowlist-reads-fine",
+           "solvent/web/board.py",
+           "    if not allowlist:",
+           "    if False:",
+           "tests_solvent.test_web_status.ThePostureFactsReadHonestly"
+           ".test_real_execution_with_no_allowlist_is_unsafe",
+           "real effects with nothing scoping them is UNSAFE"),
+    Mutant("an-unreadable-posture-claims-real-execution",
+           "solvent/web/board.py",
+           '    simulated = bool(posture.get("simulation_only", True))',
+           '    simulated = bool(posture.get("simulation_only", False))',
+           "tests_solvent.test_web_status.ThePostureFactsReadHonestly"
+           ".test_an_absent_posture_defaults_to_simulation",
+           "a projection that cannot read the policy fails safe"),
+    Mutant("an-unknown-operating-mode-reads-healthy",
+           "solvent/web/board.py",
+           '    return st.unknown(f"the operating mode reads {mode!r}, which this page "',
+           '    return st.healthy(f"the operating mode reads {mode!r}", "none") or st.unknown(f"{mode} "',
+           "tests_solvent.test_web_status.ThePostureFactsReadHonestly"
+           ".test_a_mode_this_page_does_not_know_is_unknown",
+           "a mode this page does not recognise is not reported as running"),
+    Mutant("a-stale-report-still-fills-the-board", "solvent/web/board.py",
+           '        if not latest.get("stale"):',
+           "        if True:",
+           "tests_solvent.test_web_status.AStaleReportDoesNotFillTheBoard"
+           ".test_a_stale_report_contributes_no_findings",
+           "a report describing a past moment is not current state"),
+    Mutant("the-old-setup-url-stops-working", "solvent/web/app.py",
+           '        return "/setup"',
+           '        return "", ""',
+           "tests_solvent.test_web_control_centre"
+           ".TheSetupPagesReflectAConfiguredBusiness"
+           ".test_the_wizard_url_still_works_and_leads_to_the_one_page",
+           "consolidating two pages did not break the surviving URL"),
     # The drop box: the surface writes intents and holds no reader.
     Mutant("the-surface-is-handed-a-reader", "solvent/web/server.py",
            "        intent_writer=intents_module.WriteOnlySpool(",

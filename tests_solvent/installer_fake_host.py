@@ -529,6 +529,13 @@ def install_ready(host: FakeWindows | None = None, *,
                     "use.\n")
         h.on(venv_python, "setup", "firewall",
              stdout="host network posture: default-deny\n")
+        # The runtime's own paths. Recorded because both defaults are this
+        # project's Linux deployment paths, so on Windows the runtime wrote
+        # its liveness file to C:\var\lib\solvent\heartbeat while the
+        # installer's Layout.heartbeat went unused -- and nothing read it, so
+        # nothing noticed.
+        h.on(venv_python, "setup", "runtime",
+             stdout="heartbeat_path: recorded\nowner_intent_spool: recorded\n")
         h.on(venv_python, "solvent.cli", "health",
              stdout="Startup checks (LOCAL)\n  [ok   ] audit chain: chain "
                     "intact\n")

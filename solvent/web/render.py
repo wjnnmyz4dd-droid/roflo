@@ -88,8 +88,10 @@ NAV = (
     ("/security", "Security"),
     ("/audit", "Audit"),
     ("/health", "System health"),
+    # One setup entry. There were two -- "Owner setup" and "Getting started" --
+    # covering the same subject matter from the same projection, and /wizard
+    # now redirects here rather than presenting it a second way.
     ("/setup", "Owner setup"),
-    ("/wizard", "Getting started"),
 )
 
 STYLE = """

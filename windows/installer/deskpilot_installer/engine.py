@@ -516,6 +516,38 @@ class Engine:
                           f"{option.display} cleared ({option.licence})",
                           facts={"tag": option.tag, "licence": option.licence})
 
+    def step_runtime_paths(self) -> StepResult:
+        """Tell the runtime where its own files live on this machine.
+
+        ``runtime.heartbeat_path`` defaults to ``/var/lib/solvent/heartbeat``,
+        which is this project's Linux deployment path. Nothing configured it on
+        Windows, so the runtime wrote its liveness signal to ``C:\var\lib\
+        solvent\heartbeat`` -- creating that tree on the system drive -- while
+        ``Layout.heartbeat`` sat unused. Nothing read it, so nothing noticed.
+
+        ``runtime.owner_intent_spool`` is recorded for the same reason: the
+        runtime's drain reads it from policy, and the control centre is handed
+        its path on the command line, so the two could disagree.
+        """
+        argv = [self.python_exe, "-I", "-m", "solvent.cli", "setup", "runtime",
+                "--db", self.layout.db,
+                "--heartbeat-path", self.layout.heartbeat,
+                "--owner-intent-spool", self.layout.spool]
+        env = {secrets_env.OWNER_KEY_ENV: self.owner_key.reveal()} \
+            if self.owner_key else {}
+        result = self.host.run(argv, cwd=self.layout.app, env=env, timeout=300.0)
+        self.log.command(argv, result.returncode, result.output)
+        if not result.ok:
+            raise StepFailed(f"the runtime's own paths could not be recorded: "
+                             f"{result.output.strip()[:300]}")
+        self._note(f"recorded the heartbeat path {self.layout.heartbeat} and "
+                   f"the request spool {self.layout.spool}")
+        return StepResult("runtime_paths", "Recording runtime paths", True,
+                          f"heartbeat at {self.layout.heartbeat}; requests at "
+                          f"{self.layout.spool}",
+                          facts={"heartbeat": self.layout.heartbeat,
+                                 "spool": self.layout.spool})
+
     def step_firewall(self) -> StepResult:
         """One scoped rule, then tell Solvent what the posture now is."""
         for argv in integration.firewall_commands(self.python_exe):
@@ -810,6 +842,7 @@ class Engine:
             ("Recording owner details", self.step_contracting),
             ("Registering certified capabilities", self.step_capability),
             ("Configuring AI", self.step_model_rights),
+            ("Recording runtime paths", self.step_runtime_paths),
             ("Configuring web control centre", self.step_firewall),
             ("Restricting the control centre", self.step_isolation),
             ("Configuring autostart", self.step_autostart),
