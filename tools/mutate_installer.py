@@ -192,8 +192,12 @@ MUTANTS: tuple[Mutant, ...] = (
            '        ("Rebuilding the Python environment", engine.step_venv),',
            '        ("Rebuilding the Python environment", engine.step_venv),\n'
            '        ("Rotating credentials", engine.step_secrets),',
+           # Designated against the structural assertion, not the byte
+           # comparison. step_secrets now keeps an owner key that already
+           # exists, so inserting it into repair no longer changes the file
+           # and the comparison cannot see this any more.
            "tests_solvent.test_installer_security.BusinessRecordsSurvive"
-           ".test_repair_does_not_rotate_the_owner_key",
+           ".test_repair_does_not_run_the_credential_step_at_all",
            "repair preserves signing identity"),
     Mutant("upgrade-skips-the-backup", "lifecycle.py",
            "        record.database_backup = _backup_database(host, layout)",

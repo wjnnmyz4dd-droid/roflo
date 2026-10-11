@@ -429,6 +429,29 @@ class BusinessRecordsSurvive(unittest.TestCase):
                         + ([report.failure.why] if report.failure else []))
         self.assertEqual(host.read_bytes(Layout().env_file), before)
 
+    def test_repair_does_not_run_the_credential_step_at_all(self):
+        """The structural half of the guarantee above.
+
+        The byte comparison in the previous test stopped being able to see
+        this. ``step_secrets`` now keeps an owner key that already exists --
+        so that reinstalling over an existing installation does not rotate it
+        -- which means inserting that step into the repair sequence no longer
+        changes the file, and the comparison passes.
+
+        That is defence in depth rather than a weakening: the key survives
+        both because repair does not run the step and because the step would
+        keep it. But the first of those was left unpinned, and a guarantee
+        resting on two guards should have both of them asserted. Repair must
+        not run the credential step, because credentials are precisely the
+        thing a repair exists not to touch.
+        """
+        import inspect
+        source = inspect.getsource(lifecycle.repair)
+        self.assertNotIn("step_secrets", source,
+                         "repair runs the credential step")
+        self.assertIn("read_env_secrets", source,
+                      "repair does not read the credentials it must preserve")
+
     def test_repair_on_a_machine_with_no_credentials_refuses(self):
         host, digest = self._with_records()
         del host.files[Layout().env_file.lower()]
