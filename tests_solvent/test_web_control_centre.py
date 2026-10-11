@@ -887,11 +887,54 @@ class TheRuntimeSideOfTheBoundary(unittest.TestCase):
         self.assertEqual(results[0]["outcome"], "REFUSED")
         self.assertIn("not an intent", results[0]["why"])
 
+    def aged(self, name: str, text: str) -> pathlib.Path:
+        """A spool file old enough not to be a write in progress."""
+        import os
+        import time
+
+        from solvent.harness import PARTIAL_GRACE_S
+
+        path = self.spool / name
+        path.write_text(text, encoding="utf-8")
+        old = time.time() - PARTIAL_GRACE_S - 1
+        os.utime(path, (old, old))
+        return path
+
     def test_an_unreadable_intent_is_refused_and_recorded(self):
-        (self.spool / "broken.intent").write_text("not json", encoding="utf-8")
+        self.aged("broken.intent", "not json")
         results = self.consume()
         self.assertEqual(results[0]["outcome"], "REFUSED")
         self.assertIn("unreadable", results[0]["why"])
+
+    def test_an_intent_still_being_written_is_left_alone_not_refused(self):
+        """The control centre writes under the final name, because the Windows
+        drop box grants it add-file and no DELETE -- so no rename. A reader can
+        catch a partly written file, and refusing on that would discard an ask
+        the owner had just made."""
+        (self.spool / "half.intent").write_text('{"verb": "ha',
+                                                encoding="utf-8")
+        self.assertEqual(self.consume(), [],
+                         "a write in progress was treated as a broken request")
+        self.assertTrue((self.spool / "half.intent").exists(),
+                        "a write in progress was swept out of the spool")
+
+    def test_a_file_that_stays_unparseable_is_refused_eventually(self):
+        """The other half: the grace period is a delay, not an exemption. A
+        file that is still broken when it is no longer new is a broken request
+        and goes on the record as one."""
+        import os
+        import time
+
+        from solvent.harness import PARTIAL_GRACE_S
+
+        path = self.spool / "stays-broken.intent"
+        path.write_text("{oops", encoding="utf-8")
+        self.assertEqual(self.consume(), [])
+        old = time.time() - PARTIAL_GRACE_S - 1
+        os.utime(path, (old, old))
+        results = self.consume()
+        self.assertEqual([r["outcome"] for r in results], ["REFUSED"])
+        self.assertTrue(list((self.spool / "refused").glob("*.intent")))
 
     def test_a_refusal_names_the_verb_on_the_audit_record(self):
         """An investigator needs to know what was declined, not only that

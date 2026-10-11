@@ -39,7 +39,7 @@ import ntpath
 from dataclasses import asdict, dataclass, field
 from typing import Callable
 
-from . import ai, integration, payload, python_runtime, secrets_env
+from . import ai, integration, isolation, payload, python_runtime, secrets_env
 from .host import Host
 from .installlog import Log
 from .layout import Layout, WEB_HOST, WEB_PORT
@@ -348,27 +348,52 @@ class Engine:
                     self.answers.web_password)
             except ValueError as exc:
                 raise StepFailed(str(exc)) from exc
+        if password_hash is None:
+            # A repair with no new password keeps the one the owner set. Read
+            # from the control centre's own file first and from the legacy
+            # single file second: an installation made before the split has
+            # the hash next to the owner key, and losing it would lock the
+            # owner out of their own control centre on a repair.
+            password_hash = (
+                secrets_env.read_env_secrets(
+                    self.host, self.layout.web_env_file)
+                .get(secrets_env.WEB_PASSWORD_HASH_ENV)
+                or existing.get(secrets_env.WEB_PASSWORD_HASH_ENV))
         extra: list[tuple[str, Secret]] = []
         if self.answers.ai_api_key is not None and self.answers.ai_api_key.present:
             extra.append(("ROFLO_API_KEY", self.answers.ai_api_key))
-        contents = secrets_env.EnvContents(owner_key=key,
-                                           web_password_hash=password_hash,
-                                           extra=tuple(extra))
+        # The owner key goes in the runtime's file. The control-centre password
+        # hash does NOT go in with it, even though it is only a hash: the
+        # generated launcher reads its environment file whole and filters by
+        # name afterwards, so one shared file meant the web process read the
+        # owner signing key into its own memory on every boot and then declined
+        # to use it. Two files is what makes that a permission instead.
+        contents = secrets_env.EnvContents(owner_key=key, extra=tuple(extra))
         try:
             ran = secrets_env.write_env_file(self.host, self.layout.env_file,
                                              contents)
+            if password_hash is not None:
+                ran += secrets_env.write_web_env_file(
+                    self.host, self.layout.web_env_file, password_hash)
         except secrets_env.PermissionsRefused as exc:
             raise StepFailed(str(exc)) from exc
         for line in ran:
             self.log.write(f"$ {line}")
         self._note(f"created {self.layout.env_file}, readable only by SYSTEM "
                    f"and Administrators")
+        if password_hash is not None:
+            self._note(f"created {self.layout.web_env_file}, holding the "
+                       f"control-centre password hash and no owner secret")
         return StepResult("secrets", "Creating owner credentials", True,
                           ("owner signing key kept from the existing "
                            "installation; " if key is kept else
                            "owner signing key generated on this computer; ")
-                          + "control-centre password stored as a hash",
-                          facts={"env_file": self.layout.env_file})
+                          + ("control-centre password stored as a hash in a "
+                             "separate file the website may read"
+                             if password_hash is not None else
+                             "no control-centre password was set"),
+                          facts={"env_file": self.layout.env_file,
+                                 "web_env_file": self.layout.web_env_file})
 
     def step_database(self) -> StepResult:
         """Create the real database, using a command that will create one.
@@ -550,7 +575,9 @@ class Engine:
             self.host.write_bytes(
                 xml_path,
                 integration.task_xml(self.python_exe, script,
-                                     at_startup=True).encode("utf-8"))
+                                     at_startup=True,
+                                     identity=service.identity,
+                                     elevated=service.elevated).encode("utf-8"))
             if not integration.register_task(self.host, service.task_name,
                                              xml_path):
                 raise StepFailed(f"the scheduled task that starts "
@@ -575,9 +602,17 @@ class Engine:
                 self._note(f"{service.task_name!r} is registered but could not "
                            f"be started now; it will start at the next boot")
 
-        detail = (f"{len(integration.BOOT_SERVICES)} services run at boot as "
-                  f"SYSTEM and restart on failure: "
-                  + ", ".join(s.task_name for s in integration.BOOT_SERVICES))
+        def identity_name(service) -> str:
+            if service.identity == isolation.SYSTEM_SID:
+                return "SYSTEM"
+            if service.identity == isolation.WEB_SID:
+                return "LOCAL SERVICE"
+            return service.identity
+
+        detail = (f"{len(integration.BOOT_SERVICES)} services run at boot and "
+                  f"restart on failure: "
+                  + ", ".join(f"{s.task_name} as {identity_name(s)}"
+                              for s in integration.BOOT_SERVICES))
         if registered_only:
             detail += ("; not started yet: " + ", ".join(registered_only)
                        + " (a reboot will start them)")
@@ -586,6 +621,143 @@ class Engine:
                                            for s in integration.BOOT_SERVICES],
                                  "started_now": running,
                                  "awaiting_boot": registered_only})
+
+    # ---------------------------------------------------------- isolation
+    def step_isolation(self) -> StepResult:
+        """Hand the control centre a restricted identity, then prove it.
+
+        Two halves, and the second is the one that matters. Applying ``icacls``
+        tells you the commands returned zero; it does not tell you the control
+        centre is refused anything. So the installer registers a scheduled task
+        running as LOCAL SERVICE, runs a probe under it that tries every
+        forbidden thing, and reads back what happened. A step that only applied
+        the rules would be a step that reports a boundary it never tested.
+
+        A failure here stops the installation, for the same reason a secrets
+        file that cannot be restricted stops it. Carrying on would register the
+        control centre under a reduced identity *without* the grants that
+        identity needs -- so it would run with less access than it requires and
+        no boundary it could rely on, which is worse than both alternatives.
+        The failure says which rule or which check did not hold.
+        """
+        if not self.answers.components.autostart:
+            # No control-centre service means no process to confine, and the
+            # probe needs a scheduled task to run as that identity. Applying
+            # the web ACLs for an identity nothing runs as would be a change
+            # with no purpose, and reporting a verified boundary off the back
+            # of it would be a claim with no subject.
+            return StepResult("isolation", "Restricting the control centre",
+                              True, "no control-centre service was installed, "
+                              "so there is nothing to confine", skipped=True)
+        return self.apply_isolation()
+
+    def apply_isolation(self, title: str = "Restricting the control centre"
+                        ) -> StepResult:
+        """Apply the rules and prove them. Asks the answers nothing.
+
+        Separate from :meth:`step_isolation` for the same reason
+        :meth:`refresh_services` is separate from :meth:`step_autostart`: a
+        repair or an upgrade has to do this and must not consult the answers
+        to decide, because it is restoring an installation's posture rather
+        than asking the owner again.
+        """
+        ran, failed = isolation.apply(self.host, self.layout)
+        for line in ran:
+            self.log.write(f"$ {line}")
+        if failed:
+            self.isolation_findings = ()
+            raise StepFailed(
+                "the access controls that confine the control centre could "
+                "not be applied: " + "; ".join(failed[:3]),
+                facts={"applied": len(ran), "refused": len(failed)})
+
+        findings, broken = self.verify_isolation()
+        self.isolation_findings = tuple(findings)
+        if broken:
+            raise StepFailed(
+                "the access controls were applied but did not hold when "
+                "tested as the control centre's own identity: "
+                + ", ".join(broken[:4])
+                + ". DeskPilot was not left in this state.",
+                facts={"checks": len(findings), "failed": len(broken)})
+        self._note("restricted the control centre to NT AUTHORITY\\LOCAL "
+                   "SERVICE and verified the boundary as that identity")
+        return StepResult(
+            "isolation", title, True,
+            f"the control centre runs as LOCAL SERVICE; "
+            f"{len(findings)} access checks were run as that identity and "
+            f"every one behaved as required",
+            facts={"checks": len(findings), "identity": isolation.WEB_SID})
+
+    PROBE_TASK_NAME = "DeskPilot Isolation Probe"
+
+    def verify_isolation(self) -> tuple[tuple, list[str]]:
+        """Run the probe as the control centre's identity. (findings, broken).
+
+        Executed through a temporary scheduled task, because that is the only
+        way a SYSTEM installer can act as another identity without holding a
+        credential for it -- and holding one would defeat the point of picking
+        an account that has none.
+        """
+        import json as _json
+
+        planted = ntpath.join(self.layout.spool, "probe-planted.intent")
+        result_file = ntpath.join(self.layout.logs, "isolation-probe.json")
+        script = ntpath.join(self.layout.engine, "isolation-probe.py")
+        task_xml_path = ntpath.join(self.layout.config, "isolation-probe.xml")
+
+        # A request the probe must not be able to read, change or delete. Put
+        # here by the installer, which is SYSTEM, so its presence proves the
+        # refusals are about permission and not about a missing file.
+        self.host.write_bytes(planted, b'{"verb": "probe", "why": "planted"}')
+        self.host.remove_file(result_file)
+        self.host.write_bytes(
+            script,
+            isolation.probe_script(self.layout, planted=planted,
+                                   result=result_file).encode("utf-8"))
+        self.host.write_bytes(
+            task_xml_path,
+            integration.task_xml(self.python_exe, script, at_startup=False,
+                                 identity=isolation.WEB_SID,
+                                 elevated=False).encode("utf-8"))
+        try:
+            if not integration.register_task(self.host, self.PROBE_TASK_NAME,
+                                             task_xml_path):
+                return (), ["the probe task could not be registered"]
+            if not integration.start_task(self.host, self.PROBE_TASK_NAME):
+                return (), ["the probe task could not be started"]
+            text = self._await_probe(result_file)
+        finally:
+            integration.delete_task(self.host, self.PROBE_TASK_NAME)
+            self.host.remove_file(task_xml_path)
+            self.host.remove_file(planted)
+            self.host.remove_file(ntpath.join(self.layout.spool,
+                                         "probe-submission.intent"))
+        if text is None:
+            return (), ["the probe produced no result, so nothing was proved"]
+        try:
+            results = _json.loads(text)
+        except ValueError:
+            return (), ["the probe's result could not be read"]
+        if not isinstance(results, dict):
+            return (), ["the probe's result was not a set of findings"]
+        return isolation.judge(results)
+
+    def _await_probe(self, result_file: str, tries: int = 30) -> str | None:
+        """Wait for the probe's result file. ``None`` if it never appeared.
+
+        A scheduled task is started asynchronously: ``schtasks /Run`` returns
+        as soon as the task is queued, not when it has finished.
+        """
+        for _ in range(tries):
+            if self.host.exists(result_file):
+                try:
+                    return self.host.read_bytes(result_file).decode(
+                        "utf-8", "replace")
+                except OSError:
+                    pass
+            self.host.sleep(1.0)
+        return None
 
     def step_backups(self) -> StepResult:
         if not self.answers.components.backups:
@@ -639,6 +811,7 @@ class Engine:
             ("Registering certified capabilities", self.step_capability),
             ("Configuring AI", self.step_model_rights),
             ("Configuring web control centre", self.step_firewall),
+            ("Restricting the control centre", self.step_isolation),
             ("Configuring autostart", self.step_autostart),
             ("Configuring backups", self.step_backups),
             ("Recording installation", self.step_record_state),
@@ -715,6 +888,34 @@ class Engine:
         return tuple(out)
 
     # -- verification ----------------------------------------------------
+    def _isolation_row(self) -> Row:
+        """Isolation, checked by running the probe rather than by recalling it.
+
+        An installation can be perfectly isolated on the day it is made and
+        not afterwards: a later ``icacls`` run, a restore from a backup, a
+        folder recreated by hand. A verification that read the install record
+        would report the day of the install, which is not the question the
+        owner is asking.
+        """
+        if not integration.task_exists(self.host, integration.WEB_TASK_NAME):
+            return Row("Security isolation", Outcome.WARN,
+                       "no control-centre service is registered, so there is "
+                       "nothing to confine")
+        findings, broken = self.verify_isolation()
+        if not findings:
+            return Row("Security isolation", Outcome.FAIL,
+                       "the boundary could not be tested, so it is unknown "
+                       "rather than verified"
+                       + (f": {broken[0]}" if broken else ""))
+        if broken:
+            return Row("Security isolation", Outcome.FAIL,
+                       f"{len(broken)} of {len(findings)} access checks did "
+                       f"not hold as the control centre's own identity: "
+                       + ", ".join(broken[:4]))
+        return Row("Security isolation", Outcome.PASS,
+                   f"all {len(findings)} access checks behaved as required "
+                   f"when run as the control centre's own identity")
+
     def verify(self, *, probe_inference: bool = True) -> Report:
         """Run the authoritative checks against the installed database.
 
@@ -769,6 +970,7 @@ class Engine:
         rows.append(self._ai_row(probe_inference=probe_inference))
         rows.append(self._autostart_row())
         rows.append(self._control_centre_row())
+        rows.append(self._isolation_row())
         return Report("verify", tuple(rows))
 
     def _capability_row(self) -> Row:

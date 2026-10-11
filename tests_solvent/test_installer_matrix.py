@@ -470,10 +470,13 @@ class InterruptionScenarios(Scenario):
         host = install_ready(package=data, digest=digest)
         engine, report, _log = self.install(host, digest)
         self.assertInstalled(host, report)
-        created = [argv for argv in host.commands
-                   if argv[0].lower().endswith("schtasks.exe")
-                   and "/Create" in argv]
-        self.assertEqual(len(created), len(integration.ALL_TASK_NAMES))
+        # What survives, rather than what was created. The isolation step
+        # registers a temporary task to run its probe as the control centre's
+        # identity, so counting /Create calls counts that too -- and a probe
+        # task left behind would be a scheduled task running as LOCAL SERVICE
+        # that nobody asked for, which is worth asserting about separately.
+        self.assertEqual(sorted(host.scheduled_tasks),
+                         sorted(integration.ALL_TASK_NAMES))
         xml = host.read_bytes(
             integration.InstalledScripts.under(Layout()).task_xml
         ).decode("utf-8")

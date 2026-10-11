@@ -45,7 +45,10 @@ from deskpilot_installer.host import (  # noqa: E402
 )
 from deskpilot_installer.report import Secret  # noqa: E402
 from deskpilot_installer import integration  # noqa: E402
-from deskpilot_installer.layout import WEB_PORT  # noqa: E402
+from deskpilot_installer.layout import (  # noqa: E402
+    DEFAULT_ROOT, WEB_PORT,
+)
+from tests_solvent.installer_acl_model import AclModel  # noqa: E402
 
 GB = 1024 ** 3
 
@@ -120,6 +123,18 @@ class FakeWindows(Host):
     #: Real state, because "registered" and "running" are different questions
     #: and the installer asks both.
     scheduled_tasks: dict[str, bool] = field(default_factory=dict)
+    #: The DACLs ``icacls`` has been asked to set. Consulted when the
+    #: isolation probe runs, so that the probe's answers come from the rules
+    #: the installer actually applied rather than from a mock that cannot be
+    #: wrong. See :mod:`tests_solvent.installer_acl_model` for what it is and,
+    #: more importantly, for what it is not.
+    acl: AclModel = field(default_factory=AclModel)
+    #: Seconds the installer asked to wait for. Recorded instead of slept.
+    slept: list[float] = field(default_factory=list)
+    #: Which identity the isolation probe is answered as. The control centre's
+    #: by default; a test can point it at SYSTEM to prove the probe would
+    #: notice a boundary that was not there.
+    web_identity: str = "S-1-5-19"
     #: Every secret passed as stdin, so a test can prove it went there.
     stdin_secrets: list[str] = field(default_factory=list)
     #: Raise on any command with no handler, rather than returning success.
@@ -260,6 +275,15 @@ class FakeWindows(Host):
                 names.add(self.display.get(candidate,
                                            ntpath.basename(candidate)))
         return sorted(names)
+
+    def remove_file(self, path: str) -> None:
+        key = norm(path)
+        self.files.pop(key, None)
+        self.mtimes.pop(key, None)
+
+    def sleep(self, seconds: float) -> None:
+        """Recorded, not taken. A real wait here is time nobody gets back."""
+        self.slept.append(seconds)
 
     def remove_tree(self, path: str) -> None:
         key = norm(path)
@@ -531,7 +555,12 @@ def install_ready(host: FakeWindows | None = None, *,
     # directory is called "venv", so a looser matcher also catches every
     # later command whose interpreter path contains it.
     host.on(SYSTEM_PYTHON, "-m", "venv", effect=venv_made)
-    host.on("icacls.exe")
+    host.on("icacls.exe", effect=icacls_applied)
+    # The DACL C:\DeskPilot starts with, inherited from the root of the drive:
+    # Administrators and SYSTEM full, and Users read and execute. The installer
+    # has to cut that away, and seeding it is what lets a test tell a rule that
+    # was applied from one that was not.
+    host.acl.seed_default_root(DEFAULT_ROOT)
     host.on("netsh.exe", "advfirewall", "firewall", "add")
     host.on("netsh.exe", "advfirewall", "firewall", "delete")
     # schtasks, with the state it actually keeps. These used to answer "yes"
@@ -553,6 +582,13 @@ def install_ready(host: FakeWindows | None = None, *,
 # ---------------------------------------------------------------------------
 # schtasks
 # ---------------------------------------------------------------------------
+#: The installer's temporary probe task. Named here so the fake can
+#: recognise it and play the part of Windows running it as LOCAL SERVICE.
+#: Kept in step with ``Engine.PROBE_TASK_NAME`` by a test, because a fake
+#: that silently stopped recognising it would report a boundary nobody
+#: had checked.
+PROBE_TASK_NAME = "DeskPilot Isolation Probe"
+
 #: What real schtasks prints when the named task is not there.
 _NO_SUCH_TASK = "ERROR: The system cannot find the file specified.\n"
 
@@ -563,6 +599,101 @@ def task_name_in(argv: Sequence[str]) -> str:
         if arg.upper() == "/TN" and index + 1 < len(argv):
             return argv[index + 1]
     return ""
+
+
+def icacls_applied(host: "FakeWindows", argv: Sequence[str]) -> None:
+    """Record the DACL change so the isolation probe can be answered from it.
+
+    Without this, ``icacls`` succeeded and changed nothing a test could see --
+    so a step that applied no rules at all and a step that applied the right
+    ones were indistinguishable.
+    """
+    host.acl.icacls(list(argv))
+
+
+def run_isolation_probe(host: "FakeWindows", argv: Sequence[str]) -> None:
+    """Answer the installer's isolation probe from the recorded DACLs.
+
+    The real probe is a script Windows runs as LOCAL SERVICE. Here the FakeHost
+    plays that part: it works out, from the rules the installer applied, what
+    that identity would be able to do, and writes the result file the installer
+    waits for. What this proves is that the applied rules imply the required
+    refusals. Whether Windows implements those rules the way
+    :mod:`tests_solvent.installer_acl_model` says it does is settled on the
+    owner's machine, by the same probe, and nowhere else.
+    """
+    import json
+
+    from tests_solvent import installer_acl_model as acl
+
+    script = ""
+    for index, arg in enumerate(argv):
+        if arg.upper() == "/TN" and index + 1 < len(argv):
+            break
+    # The probe script's path and its result file are both inside the
+    # installation, and the script itself names them. Read them back out of
+    # the script the installer wrote rather than recomputing the layout,
+    # which would let a test pass while the installer wrote the wrong paths.
+    for path, data in host.files.items():
+        if path.endswith("isolation-probe.py"):
+            script = data.decode("utf-8", "replace")
+            break
+    if not script:
+        return
+
+    def literal(name: str) -> str:
+        marker = f"{name} = r\""
+        start = script.find(marker)
+        if start < 0:
+            return ""
+        start += len(marker)
+        return script[start:script.index('"', start)]
+
+    sid = host.web_identity
+    paths = {name: literal(name) for name in
+             ("OWNER_KEY_FILE", "WEB_ENV_FILE", "STATE_FILE", "DB", "SPOOL",
+              "APP", "ENGINE", "BACKUPS", "PLANTED", "RESULT")}
+
+    def allowed(path: str, capability: str, *, is_dir: bool = False,
+                created_by: str | None = None) -> tuple[bool, str]:
+        if not path:
+            return False, "the probe did not name a path for this check"
+        if not is_dir and created_by is None and not host.exists(path):
+            return False, "FileNotFoundError: no such file"
+        ok = host.acl.may(path, sid, capability, is_dir=is_dir,
+                          created_by=created_by)
+        return ok, "succeeded" if ok else "PermissionError: access is denied"
+
+    own = ntpath.join(paths["SPOOL"], "probe-submission.intent")
+    results = {
+        "read_owner_key": allowed(paths["OWNER_KEY_FILE"], acl.READ),
+        "read_web_password_hash": allowed(paths["WEB_ENV_FILE"], acl.READ),
+        "read_install_state": allowed(paths["STATE_FILE"], acl.READ),
+        "read_database": allowed(paths["DB"], acl.READ),
+        "write_database": allowed(paths["DB"], acl.WRITE),
+        "write_write_ahead_log": allowed(paths["DB"] + "-wal", acl.WRITE),
+        "list_spool": allowed(paths["SPOOL"], acl.LIST, is_dir=True),
+        "add_to_spool": allowed(paths["SPOOL"], acl.ADD_FILE, is_dir=True),
+        # Reading back a file this identity created: it exists, it is owned by
+        # that identity, and the inherited OWNER RIGHTS entry is what decides
+        # whether ownership carries read with it.
+        "read_submitted_request": allowed(paths["PLANTED"], acl.READ),
+        "modify_submitted_request": allowed(paths["PLANTED"], acl.WRITE),
+        "delete_submitted_request": allowed(paths["PLANTED"], acl.DELETE),
+        "read_own_submission": allowed(own, acl.READ, created_by=sid),
+        # Creating a file needs add-file on the *directory*: the file does
+        # not exist yet, so no ACE on it can be consulted. Asking for WRITE on
+        # the absent path instead was a bug in this model, not a gap in the
+        # rules, and it showed up as a boundary failure on a correct install.
+        "write_application_code": allowed(paths["APP"], acl.ADD_FILE,
+                                          is_dir=True),
+        "read_engine": allowed(paths["ENGINE"], acl.LIST, is_dir=True),
+        "read_backups": allowed(paths["BACKUPS"], acl.LIST, is_dir=True),
+    }
+    # The one check whose own creation is the point: adding a file must work,
+    # and reading it back must not. The model decides both.
+    host.add_file(paths["RESULT"], json.dumps(
+        {name: list(value) for name, value in results.items()}))
 
 
 def task_created(host: "FakeWindows", argv: Sequence[str]) -> None:
@@ -586,6 +717,9 @@ def task_run(host: "FakeWindows", argv: Sequence[str]
     if name not in host.scheduled_tasks:
         return (1, "", _NO_SUCH_TASK)
     host.scheduled_tasks[name] = True
+    if name == PROBE_TASK_NAME:
+        run_isolation_probe(host, argv)
+        return (0, "", "")
     # Starting the control centre's task makes something listen on its port,
     # because that is what starting it does. Without this the fake could not
     # tell a control centre that came up from one that did not, which is the

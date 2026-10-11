@@ -36,6 +36,7 @@ import pathlib
 import shutil
 import socket
 import subprocess
+import time
 from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
@@ -160,6 +161,24 @@ class Host(abc.ABC):
     @abc.abstractmethod
     def remove_tree(self, path: str) -> None:
         """Delete a directory and its contents. Callers must be explicit."""
+
+    @abc.abstractmethod
+    def remove_file(self, path: str) -> None:
+        """Delete one file. A path that is not there is not an error.
+
+        Separate from :meth:`remove_tree` because the two are different
+        amounts of damage, and a caller that wanted to delete one file should
+        not reach for the one that deletes a directory.
+        """
+
+    @abc.abstractmethod
+    def sleep(self, seconds: float) -> None:
+        """Wait. On the seam so a test does not have to.
+
+        ``schtasks /Run`` returns once the task is queued rather than once it
+        has finished, so the installer has to wait for what it started. A real
+        sleep in a test suite is time nobody gets back.
+        """
 
     @abc.abstractmethod
     def move(self, src: str, dst: str) -> None: ...
@@ -305,6 +324,17 @@ class WindowsHost(Host):
 
     def remove_tree(self, path: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
+
+    def remove_file(self, path: str) -> None:
+        try:
+            pathlib.Path(path).unlink()
+        except OSError:
+            # Absent, or held open by something. Either way the caller wanted
+            # it gone and cannot do better from here.
+            pass
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
 
     def move(self, src: str, dst: str) -> None:
         pathlib.Path(dst).parent.mkdir(parents=True, exist_ok=True)

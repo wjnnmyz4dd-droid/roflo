@@ -83,7 +83,10 @@ WEB_ENTRY_OLD = (
     '                xml="deskpilot-web-task.xml",\n'
     '                argv=web_argv,\n'
     '                purpose="the owner' + chr(39) + 's control centre",\n'
-    '                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,)),\n'
+    '                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,),\n'
+    '                identity=isolation.WEB_SID,\n'
+    '                elevated=False,\n'
+    '                env_file=lambda layout: layout.web_env_file),\n'
 )
 
 
@@ -488,8 +491,14 @@ MUTANTS: tuple[Mutant, ...] = (
     # Least privilege between the two services, which only became a question
     # once the control centre was actually started by something.
     Mutant("control-centre-gets-the-owner-key", "integration.py",
-           "                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,)),",
-           "                env_allow=None),",
+           "                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,),\n"
+           "                identity=isolation.WEB_SID,\n"
+           "                elevated=False,\n"
+           "                env_file=lambda layout: layout.web_env_file),",
+           "                env_allow=None,\n"
+           "                identity=isolation.SYSTEM_SID,\n"
+           "                elevated=True,\n"
+           "                env_file=lambda layout: layout.env_file),",
            "tests_solvent.test_installer_services"
            ".TheGeneratedCommandsAreAcceptedByTheRealCli"
            ".test_the_control_centre_is_not_given_the_owner_signing_key",
@@ -555,13 +564,28 @@ MUTANTS: tuple[Mutant, ...] = (
            ".RepairKeepsEverythingAndCanBeUndone"
            ".test_a_failed_repair_puts_the_application_back",
            "a repair that fails partway puts back what it moved"),
+    # Two guards share a condition now, in two functions. Each is anchored
+    # on the line it guards: an anchor that matched both stopped being
+    # applied, and a mutant that cannot be applied was never killed.
     Mutant("repair-imposes-autostart", "lifecycle.py",
-           "        if not had_services and state is not None:",
-           "        if False:",
+           "        if not had_services and state is not None:\n"
+           '            return StepResult("autostart", "Restoring '
+           'autostart", True,',
+           "        if False:\n"
+           '            return StepResult("autostart", "Restoring '
+           'autostart", True,',
            "tests_solvent.test_installer_services"
            ".RepairKeepsEverythingAndCanBeUndone"
            ".test_a_repair_does_not_impose_autostart_on_someone_who_declined",
            "a repair does not add autostart the owner declined"),
+    Mutant("repair-confines-nothing", "lifecycle.py",
+           '        ("Restoring the control centre\'s confinement", '
+           "restore_isolation),\n",
+           "",
+           "tests_solvent.test_installer_isolation"
+           ".RepairRestoresTheConfinement"
+           ".test_a_repair_applies_the_access_controls_again",
+           "a repair restores the boundary as well as the service"),
     # The runtime the installer ships. Both of these shipped, and together
     # they meant the runtime died before its first tick on every launch.
     Mutant("heartbeat-has-no-cadence", "solvent/runtime.py",
@@ -660,6 +684,81 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheSetupPagesReflectAConfiguredBusiness"
            ".test_the_banner_does_not_claim_everything_is_in_place",
            "the all-clear banner cannot be reached past an unchecked step"),
+    # The Windows boundary, and the probe that is the only reason to believe
+    # it. Every one of these was a real possible state of this code.
+    Mutant("the-control-centre-runs-as-system-again", "isolation.py",
+           'WEB_SID = "*S-1-5-19"',
+           'WEB_SID = "*S-1-5-18"',
+           "tests_solvent.test_installer_services"
+           ".BothServicesStartAtBootAndNow"
+           ".test_the_two_services_do_not_run_as_the_same_identity",
+           "the website does not share the runtime's token"),
+    Mutant("the-spool-can-be-listed", "isolation.py",
+           '              "/grant:r", f"{WEB_SID}:(WD,AD,X,RA)",',
+           '              "/grant:r", f"{WEB_SID}:(RD,WD,AD,X,RA)",',
+           "tests_solvent.test_installer_isolation.WhatTheRulesImply"
+           ".test_the_web_process_cannot_list_the_spool",
+           "submitted requests cannot be enumerated"),
+    Mutant("submitted-requests-can-be-read-back", "isolation.py",
+           '              "/grant:r", f"{OWNER_RIGHTS_SID}:(OI)(IO)(RA)"),',
+           '              "/grant:r", f"{OWNER_RIGHTS_SID}:(OI)(IO)(RA,RD)"),',
+           "tests_solvent.test_installer_isolation.WhatTheRulesImply"
+           ".test_the_web_process_cannot_read_a_request_it_submitted",
+           "owning a file does not carry the right to read it"),
+    # Three rules in isolation.py are deliberately NOT mutated here, because a
+    # mutation of any one of them provably cannot change behaviour and would
+    # be INVALID rather than a survivor:
+    #
+    #   * /inheritance:r on Data and on the spool. Either cut alone is enough
+    #     to stop the drive's Users:(OI)(CI)(RX) reaching a submitted
+    #     request, so each is redundant while the other stands.
+    #   * the (X,RA) traverse grant to the control centre on Data. Windows
+    #     grants Everyone SeChangeNotifyPrivilege by default, which skips the
+    #     traverse check on intermediate directories, so this grant is belt
+    #     and braces for a host where that privilege has been removed.
+    #
+    # Each is recorded in isolation.py as redundant rather than quietly
+    # treated as covered. Mutating a redundant control to make the numbers
+    # look better would be the kind of result this harness exists to prevent.
+    Mutant("the-database-is-granted-write", "isolation.py",
+           '        Rule(layout.db,\n'
+           '             ("/grant:r", f"{WEB_SID}:(R)"),',
+           '        Rule(layout.db,\n'
+           '             ("/grant:r", f"{WEB_SID}:(R,W)"),',
+           "tests_solvent.test_installer_isolation.WhatTheRulesImply"
+           ".test_the_web_process_cannot_modify_the_database",
+           "the website cannot change what it reports"),
+    Mutant("a-check-the-probe-skipped-counts-as-held", "isolation.py",
+           '            findings.append(Finding(name, expected, False,',
+           '            findings.append(Finding(name, expected, True,',
+           "tests_solvent.test_installer_isolation.TheJudgeIsNotGenerous"
+           ".test_a_check_the_probe_never_reported_is_a_failure",
+           "a check nobody ran is not a check that passed"),
+    Mutant("an-allowed-operation-that-was-refused-counts-as-held",
+           "isolation.py",
+           "        held = succeeded if expected == ALLOWED else not succeeded",
+           "        held = True if expected == ALLOWED else not succeeded",
+           "tests_solvent.test_installer_isolation.TheJudgeIsNotGenerous"
+           ".test_an_operation_that_should_work_and_was_refused_fails",
+           "a boundary that broke the website is not a success"),
+    Mutant("a-boundary-that-did-not-hold-does-not-stop-the-install",
+           "engine.py",
+           '            raise StepFailed(\n'
+           '                "the access controls were applied but did not hold when "',
+           '            return StepResult("isolation", title, True,\n'
+           '                "the access controls were applied but did not hold when "',
+           "tests_solvent.test_installer_isolation"
+           ".TheProbeWouldNoticeAMissingBoundary"
+           ".test_an_install_whose_rules_were_not_applied_is_refused",
+           "an unenforced boundary refuses the installation"),
+    Mutant("the-control-centre-reads-the-owner-key-file-again",
+           "integration.py",
+           "                env_file=lambda layout: layout.web_env_file),",
+           "                env_file=lambda layout: layout.env_file),",
+           "tests_solvent.test_installer_services"
+           ".BothServicesStartAtBootAndNow"
+           ".test_the_control_centre_launcher_never_opens_the_owner_key_file",
+           "the web launcher never opens the file holding the key"),
     # The drop box: the surface writes intents and holds no reader.
     Mutant("the-surface-is-handed-a-reader", "solvent/web/server.py",
            "        intent_writer=intents_module.WriteOnlySpool(",
@@ -794,21 +893,41 @@ MUTANTS: tuple[Mutant, ...] = (
            "never adopt another application's interpreter"),
     Mutant("secrets-written-before-lockdown", "secrets_env.py",
            '''    ran: list[str] = []
-    host.write_bytes(path, _HEADER.encode("utf-8"))''',
+    host.write_bytes(path, header.encode("utf-8"))''',
            '''    ran: list[str] = []
-    host.write_bytes(path, (_HEADER + "\\n".join(contents.lines())
+    host.write_bytes(path, (header + "\\n".join(contents.lines())
                             + "\\n").encode("utf-8"))''',
            "tests_solvent.test_installer_security.SecretsDoNotLeak"
            ".test_the_secrets_file_is_restricted_before_it_holds_a_secret",
            "secrets file private before it holds secrets"),
+    # Two files now, each locked down by the same loop in its own function.
+    # Anchored on the argument that differs, so each mutant disables exactly
+    # one of them: a single mutant would have stopped applying the moment the
+    # second function was written, and read as a pass.
     Mutant("permissions-failure-ignored", "secrets_env.py",
-           """        if not result.ok:
-            raise PermissionsRefused(""",
-           """        if False:
-            raise PermissionsRefused(""",
+           """    for argv in _lockdown_commands(path, readers):
+        result = host.run(list(argv), timeout=60.0)
+        ran.append(" ".join(argv))
+        if not result.ok:""",
+           """    for argv in _lockdown_commands(path, readers):
+        result = host.run(list(argv), timeout=60.0)
+        ran.append(" ".join(argv))
+        if False:""",
            "tests_solvent.test_installer_security.SecretsDoNotLeak"
            ".test_a_failure_to_restrict_the_file_aborts_the_installation",
-           "refuse rather than leave a key readable"),
+           "refuse rather than leave the owner key readable"),
+    Mutant("web-env-permissions-failure-ignored", "secrets_env.py",
+           """    for argv in _lockdown_commands(path, (WEB_SID,)):
+        result = host.run(list(argv), timeout=60.0)
+        ran.append(" ".join(argv))
+        if not result.ok:""",
+           """    for argv in _lockdown_commands(path, (WEB_SID,)):
+        result = host.run(list(argv), timeout=60.0)
+        ran.append(" ".join(argv))
+        if False:""",
+           "tests_solvent.test_installer_security.SecretsDoNotLeak"
+           ".test_a_failure_to_restrict_the_control_centre_file_aborts_it",
+           "refuse rather than leave the control centre's file world-readable"),
     Mutant("log-scrubber-disabled", "installlog.py",
            "    out = text\n    for pattern, replacement in _PATTERNS:",
            "    out = text\n    for pattern, replacement in []:",

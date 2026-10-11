@@ -23,7 +23,6 @@ Nothing here writes to Solvent's database. The spool is a directory.
 from __future__ import annotations
 
 import json
-import os
 import secrets
 from pathlib import Path
 
@@ -141,8 +140,21 @@ class WriteOnlySpool:
               subject: str = "", params: dict | None = None) -> dict:
         """Record one request. Returns the record, including its class.
 
-        Written to a temporary name and renamed, so a reader never sees half an
-        intent — a truncated intent would be an action nobody asked for.
+        Written under its final name, in one call, rather than to a temporary
+        name and renamed. The rename was better in one respect — a reader could
+        never see half an intent — and it is gone for something worth more:
+        ``os.replace`` needs DELETE permission on the source file, and a
+        process holding DELETE in this directory can remove a *pending request*
+        as easily as its own partial. The Windows drop box grants add-file and
+        traverse and nothing else, which is what makes "cannot delete a pending
+        request" a permission rather than a promise.
+
+        A reader can therefore catch a partly written file. That is handled
+        where it is read: :func:`solvent.harness.consume_owner_intents` leaves
+        an unparseable intent alone while it is new and refuses it once it is
+        old, because a truncated file is either a write in progress or a broken
+        request, and which one it is depends only on how long it has been
+        sitting there.
         """
         intent_class = classify(verb)
         if not why.strip():
@@ -158,11 +170,18 @@ class WriteOnlySpool:
             "requested_by": requested_by,
             "requires_owner_approval": intent_class == CONSEQUENTIAL,
         }
-        self.spool.mkdir(parents=True, exist_ok=True)
+        try:
+            self.spool.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # The installer creates this directory and grants add-file on
+            # it without granting the right to create it. A mkdir that
+            # fails because the directory is already there, or because
+            # this identity may not create one, is not a reason to refuse
+            # the owner's request -- the write below is the real test.
+            pass
         target = self.spool / f"{record['id']}.intent"
-        partial = target.with_suffix(".partial")
-        partial.write_text(json.dumps(record, indent=2), encoding="utf-8")
-        os.replace(partial, target)
+        # One call, one buffer. Two writes could be interleaved with a read.
+        target.write_bytes(json.dumps(record, indent=2).encode("utf-8"))
         return record
 
 

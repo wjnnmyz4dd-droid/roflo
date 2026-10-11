@@ -211,6 +211,15 @@ def repair(host: Host, settings: Settings, answers: OwnerAnswers,
     had_services = any(service.task_name in recorded
                        for service in integration.BOOT_SERVICES)
 
+    def restore_isolation() -> StepResult:
+        if not had_services and state is not None:
+            return StepResult("isolation", "Restoring the control centre's "
+                              "confinement", True, "no control-centre service "
+                              "on this installation; nothing to confine",
+                              skipped=True)
+        return engine.apply_isolation(
+            "Restoring the control centre's confinement")
+
     def restore_services() -> StepResult:
         if not had_services and state is not None:
             return StepResult("autostart", "Restoring autostart", True,
@@ -225,6 +234,11 @@ def repair(host: Host, settings: Settings, answers: OwnerAnswers,
         ("Rebuilding the Python environment", engine.step_venv),
         ("Re-registering certified capabilities", engine.step_capability),
         ("Restoring the firewall rule", engine.step_firewall),
+        # Before the services, not after: the control centre's task logs on as
+        # LOCAL SERVICE, and that identity cannot read the database or its own
+        # password hash until these grants exist. Registering the service first
+        # would start a process that could not do its job.
+        ("Restoring the control centre's confinement", restore_isolation),
         ("Restoring autostart", restore_services),
         ("Restoring backups", engine.step_backups),
     ]

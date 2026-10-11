@@ -292,7 +292,7 @@ class BothServicesStartAtBootAndNow(Scenario):
                           f"{service.task_name} does not point at its script")
             host.read_bytes(script)   # raises if the installer never wrote it
 
-    def test_every_task_restarts_after_a_crash_and_runs_as_the_system(self):
+    def test_every_task_starts_at_boot_and_restarts_after_a_crash(self):
         host, _engine, _report = self.installed()
         layout = Layout()
         for service in integration.BOOT_SERVICES:
@@ -301,11 +301,61 @@ class BothServicesStartAtBootAndNow(Scenario):
                 self.assertIn("<BootTrigger>", xml)
                 self.assertIn("<RestartOnFailure>", xml)
                 self.assertIn("<Count>10</Count>", xml)
-                self.assertIn("S-1-5-18", xml)
                 self.assertIn(
                     "<MultipleInstancesPolicy>IgnoreNew"
                     "</MultipleInstancesPolicy>", xml,
                     "a second copy could start alongside the first")
+
+    def test_the_two_services_do_not_run_as_the_same_identity(self):
+        """This test used to assert that both ran as SYSTEM, and it passed.
+
+        That was the defect, not the test: the control centre listens on a
+        socket and renders the owner's data, and running it with the same
+        token as the runtime meant every control it was subject to was a
+        control enforced by its own code.
+        """
+        host, _engine, _report = self.installed()
+        layout = Layout()
+        identities = {}
+        for service in integration.BOOT_SERVICES:
+            xml = host.read_bytes(service.xml_path(layout)).decode("utf-8")
+            identities[service.task_name] = xml
+
+        runtime = next(s for s in integration.BOOT_SERVICES
+                       if s.task_name == integration.TASK_NAME)
+        web = next(s for s in integration.BOOT_SERVICES
+                   if s.task_name == integration.WEB_TASK_NAME)
+        self.assertIn("<UserId>S-1-5-18</UserId>", identities[runtime.task_name])
+        self.assertIn("<RunLevel>HighestAvailable</RunLevel>",
+                      identities[runtime.task_name])
+        self.assertIn("<UserId>S-1-5-19</UserId>", identities[web.task_name])
+        self.assertIn("<RunLevel>LeastPrivilege</RunLevel>",
+                      identities[web.task_name])
+        self.assertNotIn("S-1-5-18", identities[web.task_name],
+                         "the control centre's task still mentions SYSTEM")
+
+    def test_every_task_logs_on_without_a_stored_credential(self):
+        """``ServiceAccount`` means the service control manager logs the
+        identity on. An interactive logon type would need a password stored
+        somewhere, which is a new secret invented to protect a secret."""
+        host, _engine, _report = self.installed()
+        layout = Layout()
+        for service in integration.BOOT_SERVICES:
+            xml = host.read_bytes(service.xml_path(layout)).decode("utf-8")
+            with self.subTest(service=service.task_name):
+                self.assertIn("<LogonType>ServiceAccount</LogonType>", xml)
+
+    def test_the_control_centre_launcher_never_opens_the_owner_key_file(self):
+        """The launcher reads its environment file whole and filters by name
+        afterwards. While both services shared one file, the web process read
+        the owner signing key into its own memory on every boot and then
+        declined to use it -- which is a Python ``if``, not a boundary."""
+        layout = Layout()
+        web = next(s for s in integration.BOOT_SERVICES
+                   if s.task_name == integration.WEB_TASK_NAME)
+        source = integration.launcher_source(layout, web)
+        self.assertIn(layout.web_env_file, source)
+        self.assertNotIn(layout.env_file, source)
 
     def test_no_secret_reaches_a_task_definition(self):
         host, _engine, _report = self.installed()

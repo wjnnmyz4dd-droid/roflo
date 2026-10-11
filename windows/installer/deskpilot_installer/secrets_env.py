@@ -143,38 +143,92 @@ def read_env_secrets(host: Host, path: str) -> dict[str, Secret]:
     return out
 
 
-def write_env_file(host: Host, path: str, contents: EnvContents) -> list[str]:
-    """Create, lock down, then fill the environment file. Returns what was run.
+def write_env_file(host: Host, path: str, contents: EnvContents,
+                   readers: tuple[str, ...] = (),
+                   header: str = _HEADER) -> list[str]:
+    """Create, lock down, then fill an environment file. Returns what was run.
 
     The ordering is the point. ``icacls`` is applied to an empty file so that
     no secret is ever on disk under inherited permissions, however briefly.
     """
     ran: list[str] = []
-    host.write_bytes(path, _HEADER.encode("utf-8"))
-    for argv in _lockdown_commands(path):
+    host.write_bytes(path, header.encode("utf-8"))
+    for argv in _lockdown_commands(path, readers):
         result = host.run(list(argv), timeout=60.0)
         ran.append(" ".join(argv))
         if not result.ok:
             raise PermissionsRefused(
                 f"could not restrict access to {path}: "
                 f"{result.output.strip()[:200]}")
-    body = _HEADER + "\n".join(contents.lines()) + "\n"
+    body = header + "\n".join(contents.lines()) + "\n"
     host.write_bytes(path, body.encode("utf-8"))
     return ran
 
 
-def _lockdown_commands(path: str) -> tuple[tuple[str, ...], ...]:
-    """``icacls`` calls that leave only SYSTEM and Administrators.
+#: Above the control centre's own environment, so whoever opens it knows why
+#: it is a separate file from the one next to it.
+WEB_HEADER = (
+    "# DeskPilot control-centre environment. Created by the DeskPilot installer.\n"
+    "#\n"
+    "# This file is readable by the control centre's own service identity\n"
+    "# (NT AUTHORITY\\LOCAL SERVICE). It therefore holds the password hash that\n"
+    "# process checks a typed password against, and nothing else.\n"
+    "#\n"
+    "# The owner signing key is deliberately NOT here. It is in solvent.env,\n"
+    "# whose permissions do not mention this identity: the control centre's\n"
+    "# launcher used to read that file and filter it in Python, which put the\n"
+    "# key in the memory of the one process most likely to be attacked.\n"
+)
+
+
+def write_web_env_file(host: Host, path: str,
+                       web_password_hash: "Secret") -> list[str]:
+    """The control centre's environment: its password hash, and no owner key.
+
+    A separate :class:`EnvContents` would need an ``owner_key``, which is the
+    whole point of this file not existing inside the other one, so this builds
+    the one line it needs directly.
+    """
+    from .isolation import WEB_SID
+
+    ran: list[str] = []
+    host.write_bytes(path, WEB_HEADER.encode("utf-8"))
+    for argv in _lockdown_commands(path, (WEB_SID,)):
+        result = host.run(list(argv), timeout=60.0)
+        ran.append(" ".join(argv))
+        if not result.ok:
+            raise PermissionsRefused(
+                f"could not restrict access to {path}: "
+                f"{result.output.strip()[:200]}")
+    body = (WEB_HEADER + f"{WEB_PASSWORD_HASH_ENV}="
+            f"{web_password_hash.reveal()}\n")
+    host.write_bytes(path, body.encode("utf-8"))
+    return ran
+
+
+def _lockdown_commands(path: str,
+                       readers: tuple[str, ...] = ()) -> tuple[tuple[str, ...], ...]:
+    """``icacls`` calls that leave only SYSTEM, Administrators and ``readers``.
 
     ``/inheritance:r`` first, because granting rights before removing
     inheritance leaves the inherited Users entry in place and the file readable
     by every account on the machine.
+
+    Identities are SIDs, not names. ``SYSTEM:(R,W)`` is a name lookup, and on a
+    Windows installed in another language the account is called something else
+    -- so the grant failed, :class:`PermissionsRefused` was raised, and the
+    installation stopped on a machine that was perfectly capable of running
+    DeskPilot. A VPS is exactly where a non-English Windows turns up.
     """
-    return (
+    from .isolation import ADMINISTRATORS_SID, SYSTEM_SID
+
+    out = [
         ("icacls.exe", path, "/inheritance:r"),
-        ("icacls.exe", path, "/grant:r", "SYSTEM:(R,W)"),
-        ("icacls.exe", path, "/grant:r", "Administrators:(R,W)"),
-    )
+        ("icacls.exe", path, "/grant:r", f"{SYSTEM_SID}:(R,W)"),
+        ("icacls.exe", path, "/grant:r", f"{ADMINISTRATORS_SID}:(R,W)"),
+    ]
+    out += [("icacls.exe", path, "/grant:r", f"{sid}:(R)") for sid in readers]
+    return tuple(out)
 
 
 class PermissionsRefused(Exception):

@@ -223,6 +223,56 @@ class SecretsDoNotLeak(unittest.TestCase):
                 secrets_env.EnvContents(
                     owner_key=secrets_env.generate_owner_key()))
 
+    def test_a_failure_to_restrict_the_control_centre_file_aborts_it(self):
+        """The control centre's file is the one an unprivileged identity may
+        read. A failed restriction would leave it readable by *every* account,
+        which is worse than the owner key's case, not better."""
+        host = fresh_windows()
+        host.on("icacls.exe", returncode=1, stderr="access denied")
+        with self.assertRaises(secrets_env.PermissionsRefused):
+            secrets_env.write_web_env_file(
+                host, r"C:\DeskPilot\Config\web.env",
+                secrets_env.Secret("pbkdf2$600000$abc$def", "hash"))
+
+    def test_the_control_centre_file_is_restricted_before_it_holds_the_hash(self):
+        host = fresh_windows()
+        host.on("icacls.exe")
+        writes: list[tuple[str, bytes]] = []
+        original = host.write_bytes
+
+        def record(path, data):
+            writes.append((path, data))
+            original(path, data)
+
+        host.write_bytes = record  # type: ignore[method-assign]
+        secrets_env.write_web_env_file(
+            host, r"C:\DeskPilot\Config\web.env",
+            secrets_env.Secret("pbkdf2$600000$abc$def", "hash"))
+        self.assertNotIn("pbkdf2", writes[0][1].decode("utf-8"))
+        self.assertIn("pbkdf2", writes[-1][1].decode("utf-8"))
+
+    def test_the_control_centre_file_holds_no_owner_key(self):
+        """The whole reason there are two files."""
+        host = fresh_windows()
+        host.on("icacls.exe")
+        secrets_env.write_web_env_file(
+            host, r"C:\DeskPilot\Config\web.env",
+            secrets_env.Secret("pbkdf2$600000$abc$def", "hash"))
+        text = host.read_bytes(r"C:\DeskPilot\Config\web.env").decode()
+        self.assertNotIn(secrets_env.OWNER_KEY_ENV, text)
+        self.assertIn(secrets_env.WEB_PASSWORD_HASH_ENV, text)
+
+    def test_every_lockdown_names_an_identity_by_sid(self):
+        """A localised Windows calls SYSTEM something else, and ``icacls
+        SYSTEM:(R,W)`` is a name lookup. The grant failed, the installation
+        refused, and the machine was perfectly capable of running DeskPilot."""
+        for argv in secrets_env._lockdown_commands(r"C:\x", ("*S-1-5-19",)):
+            for token in argv:
+                if ":(" not in token:
+                    continue
+                self.assertTrue(token.startswith("*S-1-"),
+                                f"{token} names an account by name, not SID")
+
     def test_the_answers_environment_variable_is_cleared_after_reading(self):
         os.environ[ANSWERS_ENV] = json.dumps({"web_password": PASSWORD})
         read_answers()

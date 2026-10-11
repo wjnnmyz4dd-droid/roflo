@@ -742,6 +742,32 @@ class _StillQueued(Exception):
     """Internal: this intent is not this run's to answer. Not an error."""
 
 
+#: How long an unparseable intent is treated as a write in progress.
+#:
+#: Longer than any single ``write_bytes`` of a few hundred bytes could take,
+#: and shorter than the runtime's own drain interval, so a genuinely broken
+#: file is refused on the sweep after the one that first saw it rather than
+#: sitting in the spool unexplained.
+PARTIAL_GRACE_S = 10.0
+
+
+def _still_being_written(path: Path) -> bool:
+    """True if this file is young enough to be a write in flight.
+
+    Decided from the file's own modification time rather than from a marker,
+    because the only process that could write a marker is the one whose write
+    may not have finished.
+    """
+    import time
+
+    try:
+        age = time.time() - path.stat().st_mtime
+    except OSError:
+        # Gone between the glob and the stat. Nothing to refuse.
+        return True
+    return 0 <= age < PARTIAL_GRACE_S
+
+
 def _already_announced(s: "Solvent", intent_id: str) -> bool:
     rows = s.store.raw_readonly(
         "SELECT 1 FROM audit_log WHERE event = 'owner.intent_queued' "
@@ -985,6 +1011,15 @@ def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
             if not isinstance(intent, dict):
                 raise ValueError("an intent must be a JSON object")
         except (ValueError, OSError) as exc:
+            if _still_being_written(path):
+                # A write in progress, not a broken request. The control centre
+                # writes an intent under its final name in one call, because
+                # the Windows drop box grants it add-file and nothing else --
+                # no DELETE, so no rename, so no temporary name. The cost is
+                # this race, and refusing on it would throw away an ask the
+                # owner had just made. Left alone; the next sweep is 30s away
+                # and by then the file is either complete or stale.
+                continue
             record["outcome"], record["why"] = "REFUSED", f"unreadable: {exc}"
         else:
             record["verb"] = str(intent.get("verb", ""))

@@ -105,6 +105,21 @@ class Layout:
         return ntpath.join(self.config, "solvent.env")
 
     @property
+    def web_env_file(self) -> str:
+        """The control centre's own environment. Holds no owner secret.
+
+        Split out from :attr:`env_file` because the generated launcher reads
+        its environment file and *then* filters by name -- so while both
+        services shared one file, the control centre's process read the owner
+        signing key into its own memory on every boot and declined to use it.
+        A Python ``if`` is not why an attacker does not have the key.
+
+        What is in here is the control-centre password hash, which that
+        process has to check a typed password against, and which is a hash.
+        """
+        return ntpath.join(self.config, "web.env")
+
+    @property
     def install_log(self) -> str:
         return ntpath.join(self.logs, "install.log")
 

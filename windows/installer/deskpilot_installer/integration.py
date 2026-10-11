@@ -42,7 +42,7 @@ import ntpath
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from . import secrets_env
+from . import isolation, secrets_env
 from .host import Host
 from .layout import Layout, WEB_HOST, WEB_PORT
 
@@ -266,6 +266,18 @@ class BootService:
     env_allow: tuple[str, ...] | None
     #: For the installation log and the readiness screen.
     purpose: str
+    #: The SID this service's scheduled task logs on as. SYSTEM for the
+    #: runtime, which is the only execution authority; LOCAL SERVICE for the
+    #: control centre, which is the process a stranger could reach.
+    identity: str = "*S-1-5-18"
+    #: ``True`` for a task that needs the elevated token. The control centre
+    #: binds a high port and reads a database: it needs neither.
+    elevated: bool = True
+    #: Which environment file the launcher reads. The control centre's own,
+    #: which holds no owner secret -- the launcher reads its file whole and
+    #: filters afterwards, so pointing both services at the file containing
+    #: the owner signing key put that key in the web process's memory.
+    env_file: "Callable[[Layout], str]" = lambda layout: layout.env_file
 
     def script_path(self, layout: Layout) -> str:
         return ntpath.join(layout.app, self.script)
@@ -289,7 +301,10 @@ BOOT_SERVICES: tuple[BootService, ...] = (
                 xml="deskpilot-web-task.xml",
                 argv=web_argv,
                 purpose="the owner's control centre",
-                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,)),
+                env_allow=(secrets_env.WEB_PASSWORD_HASH_ENV,),
+                identity=isolation.WEB_SID,
+                elevated=False,
+                env_file=lambda layout: layout.web_env_file),
 )
 
 #: Every task this installer creates. What uninstall has to remove.
@@ -302,7 +317,7 @@ ALL_TASK_NAMES: tuple[str, ...] = (
 def launcher_source(layout: Layout, service: BootService) -> str:
     """The launcher for one service: load the secrets, then run its command."""
     return LAUNCHER_SOURCE.format(
-        app=layout.app, env_file=layout.env_file,
+        app=layout.app, env_file=service.env_file(layout),
         argv=repr(list(service.argv(layout))),
         env_allow=(None if service.env_allow is None
                    else repr(tuple(service.env_allow))))
@@ -318,7 +333,8 @@ def backup_source(layout: Layout, keep: int = BACKUP_RETENTION) -> str:
 # ---------------------------------------------------------------------------
 
 def task_xml(python_exe: str, script: str, *, at_startup: bool,
-             daily_at: str = "03:17:00") -> str:
+             daily_at: str = "03:17:00",
+             identity: str = "*S-1-5-18", elevated: bool = True) -> str:
     """A Task Scheduler definition.
 
     XML rather than ``schtasks /Create /TR``, because the command-line form
@@ -347,8 +363,14 @@ def task_xml(python_exe: str, script: str, *, at_startup: bool,
         "  </RegistrationInfo>\n"
         f"  <Triggers>{trigger}</Triggers>\n"
         "  <Principals><Principal id=\"Author\">\n"
-        "    <UserId>S-1-5-18</UserId>\n"
-        "    <RunLevel>HighestAvailable</RunLevel>\n"
+        f"    <UserId>{identity.lstrip('*')}</UserId>\n"
+        # ServiceAccount, because LOCAL SERVICE and SYSTEM are logged on by the
+        # service control manager and have no password for Task Scheduler to
+        # hold. A task that asked for an interactive logon here would need a
+        # stored credential, which is a new secret created to protect a secret.
+        "    <LogonType>ServiceAccount</LogonType>\n"
+        f"    <RunLevel>{'HighestAvailable' if elevated else 'LeastPrivilege'}"
+        "</RunLevel>\n"
         "  </Principal></Principals>\n"
         "  <Settings>\n"
         "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n"
