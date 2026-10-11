@@ -288,10 +288,30 @@ class TheCompleteOwnerExperience(unittest.TestCase):
         self.assertTrue(self.centre.read.audit_chain_intact()[0])
 
     def test_nothing_external_happened(self):
+        """Simulation never left, and every action the Gate allowed was marked
+        SIMULATED by the Gate itself.
+
+        This used to assert the allowlist was empty, which passed only because
+        the control centre's policy read named a column policy_current does not
+        have and so returned the default for everything. The rehearsal does
+        record one allowlist entry, and it should: a host being *permitted* is
+        not an external event, and the allowlist is what makes the difference
+        visible the moment simulation is switched off. What carries the claim
+        is ``action_requests.simulated``, which the Gate sets, rather than a
+        posture field that happens to be empty.
+        """
         posture = self.centre.read.posture()
         self.assertTrue(posture["simulation_only"])
-        self.assertEqual(posture["allowlist"], [])
         self.assertFalse(posture["halted"])
+        self.assertEqual([entry["host"] for entry in posture["allowlist"]],
+                         ["client.example.com"],
+                         "the permission the rehearsal records has changed")
+
+        allowed = [r for r in self.centre.read.gate_requests(limit=2000)
+                   if r["allowed"]]
+        self.assertTrue(allowed, "the rehearsal allowed no action at all")
+        self.assertEqual([r for r in allowed if not r["simulated"]], [],
+                         "the Gate allowed an action for real")
 
     def test_every_step_of_the_rehearsal_actually_ran(self):
         """Guards the class: a rehearsal that silently skipped its own steps

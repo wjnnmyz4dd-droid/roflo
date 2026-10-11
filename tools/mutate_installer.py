@@ -592,6 +592,74 @@ MUTANTS: tuple[Mutant, ...] = (
            ".ServingRunsTheTasksAndRecordsDiagnostics"
            ".test_serving_records_a_diagnostics_report",
            "the diagnostics tick persists what it found"),
+    # What the owner is told about safety, and the silence that let it lie.
+    Mutant("the-projection-swallows-its-own-sql-errors",
+           "solvent/web/readmodel.py",
+           '            if "no such table" in str(exc):\n'
+           "                return []",
+           "            return []",
+           "tests_solvent.test_web_control_centre"
+           ".EveryProjectionQueryMatchesTheRealSchema"
+           ".test_a_query_naming_a_column_that_does_not_exist_is_not_silence",
+           "a broken query is an error, not an empty page"),
+    Mutant("the-policy-document-is-read-from-the-wrong-table",
+           "solvent/web/readmodel.py",
+           '            "SELECT d.doc AS doc FROM policy_current c "\n'
+           '            "JOIN policy_versions d ON d.version = c.version '
+           'WHERE c.id = 1")',
+           '            "SELECT doc FROM policy_versions WHERE version = -1")',
+           # Deliberately not the HALT test: the projection's fail-safe default
+           # *is* HALT, so a read that returns nothing at all still satisfies
+           # it. The test that notices a dead read is one whose truth differs
+           # from the default in the dangerous direction.
+           "tests_solvent.test_web_control_centre"
+           ".ThePostureOnThePageIsThePostureInThePolicy"
+           ".test_leaving_simulation_does_not_still_read_as_simulated",
+           "every page reads the policy the authority actually wrote"),
+    Mutant("the-operating-mode-is-read-from-a-path-nothing-writes",
+           "solvent/web/readmodel.py",
+           '        mode = self.policy_value("operating_mode",\n'
+           "                                 default=OperatingMode.HALT.value)",
+           '        mode = self.policy_value("operating", "mode",\n'
+           '                                 default="NORMAL")',
+           "tests_solvent.test_web_control_centre"
+           ".ThePostureOnThePageIsThePostureInThePolicy"
+           ".test_a_halted_business_does_not_read_as_normal",
+           "a halted business does not read as running"),
+    Mutant("an-unreadable-mode-defaults-to-running",
+           "solvent/web/readmodel.py",
+           "                                 default=OperatingMode.HALT.value)",
+           '                                 default="NORMAL")',
+           "tests_solvent.test_web_control_centre"
+           ".ThePostureOnThePageIsThePostureInThePolicy"
+           ".test_an_unreadable_mode_reads_as_halted_not_as_running",
+           "the projection fails safe exactly as the authority does"),
+    Mutant("job-evidence-is-queried-by-a-column-that-does-not-exist",
+           "solvent/web/readmodel.py",
+           '            "SELECT * FROM verification_evidence WHERE subject_ref = ? "\n'
+           '            "ORDER BY rowid", (job_id,))',
+           '            "SELECT * FROM verification_evidence WHERE job_id = ? "\n'
+           '            "ORDER BY rowid", (job_id,))',
+           "tests_solvent.test_web_control_centre"
+           ".EveryProjectionQueryMatchesTheRealSchema"
+           ".test_every_projection_method_runs_against_the_real_schema",
+           "the verification section of a job page is not silently empty"),
+    Mutant("the-owner-key-step-claims-what-it-cannot-see",
+           "solvent/web/app.py",
+           '             DONE if setup["owner_key_evidence"] == "PROVEN" else UNKNOWN,',
+           "             DONE,",
+           "tests_solvent.test_web_control_centre"
+           ".TheSetupPagesReflectAConfiguredBusiness"
+           ".test_the_owner_key_step_says_it_cannot_tell_rather_than_accusing",
+           "a fact this page cannot establish is not reported as done"),
+    Mutant("unverifiable-steps-are-counted-as-cleared",
+           "solvent/web/app.py",
+           '        unverifiable = [s for s in steps[:5] if s[2] == UNKNOWN]',
+           "        unverifiable = []",
+           "tests_solvent.test_web_control_centre"
+           ".TheSetupPagesReflectAConfiguredBusiness"
+           ".test_the_banner_does_not_claim_everything_is_in_place",
+           "the all-clear banner cannot be reached past an unchecked step"),
     # The drop box: the surface writes intents and holds no reader.
     Mutant("the-surface-is-handed-a-reader", "solvent/web/server.py",
            "        intent_writer=intents_module.WriteOnlySpool(",

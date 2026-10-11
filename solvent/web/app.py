@@ -890,27 +890,36 @@ class ControlCentre:
         """
         DONE, ACTION, OPTIONAL = "DONE", "ACTION REQUIRED", "OPTIONAL"
         NOT_YET, BLOCKED = "NOT REQUIRED YET", "BLOCKED"
+        UNKNOWN = "CANNOT TELL FROM HERE"
 
         setup = self.read.owner_setup()
         settings = self.read.notification_settings()
         proven = [c for c in self.read.capabilities() if c.get("proven")]
         rail = self.read.policy_value("payment", "operational_status", default="")
         posture = self.read.policy_value("network", "default_deny", default=None)
-        models = self.read.policy_value("models", "approved", default={}) or {}
-        contracting = self.read.policy_value("contracting", default={}) or {}
+        # Both of these come from owner_setup(), which reads the paths the
+        # PolicyStore actually writes. They used to be read here from
+        # "models.approved" and a top-level "contracting", neither of which
+        # anything writes, so steps 2 and 3 read ACTION REQUIRED however well
+        # set up the business was.
+        models = setup["cleared_models"]
+        structure = setup["structure"]
         sources = self.read.work_sources()
 
         steps = [
             ("1. Owner signing key",
              "Nothing consequential can be approved without it. It never goes "
-             "in this website.",
-             DONE if setup.get("owner_key") else ACTION,
-             "Generate a long random value and set SOLVENT_OWNER_KEY in the "
-             "runtime's environment file."),
+             "in this website, so this page can only report evidence of it.",
+             DONE if setup["owner_key_evidence"] == "PROVEN" else UNKNOWN,
+             "An approval has been issued, which nothing can do without the "
+             "key." if setup["owner_key_evidence"] == "PROVEN" else
+             "The key lives in the runtime's environment, which this process "
+             "cannot read. Set SOLVENT_OWNER_KEY there; this turns to done "
+             "once an approval has been issued with it."),
             ("2. Who you contract as",
              "Your legal name and contact address, for agreements and invoices. "
              f"{PRODUCT} will never invent these.",
-             DONE if contracting.get("structure") else ACTION,
+             DONE if structure else ACTION,
              "Run `solvent setup contracting` at the terminal."),
             ("3. A cleared AI model",
              "Exactly which model artifact is allowed, by digest.",
@@ -953,10 +962,19 @@ class ControlCentre:
         ]
 
         first_trial = [s for s in steps[:5] if s[2] == ACTION]
+        unverifiable = [s for s in steps[:5] if s[2] == UNKNOWN]
+        # An unverifiable step is not a cleared one. Counting it as done would
+        # let this banner read "everything is in place" about a business whose
+        # owner key this page has never seen evidence of.
+        unseen = (f" {len(unverifiable)} more cannot be checked from here."
+                  if unverifiable else "")
         if first_trial:
             banner = ('<div class="banner banner-warn">'
                       f"{len(first_trial)} step(s) stand between here and a "
-                      "first supervised job.</div>")
+                      f"first supervised job.{unseen}</div>")
+        elif unverifiable:
+            banner = ('<div class="banner banner-warn">Everything this page '
+                      f"can check is in place.{unseen}</div>")
         else:
             banner = ('<div class="banner banner-ok">Everything a first '
                       "supervised job needs is in place.</div>")
@@ -1457,7 +1475,7 @@ class ControlCentre:
     # ------------------------------------------------------------------ model
     def model(self, request: Request):
         setup = self.read.owner_setup()
-        approved = setup["approved_models"] or {}
+        approved = setup["production_model"] or {}
         return ("<h1>AI model</h1>"
                 '<p class="sub">Clearance is keyed on the exact artifact. A '
                 "family name clears nothing.</p>"
@@ -1581,8 +1599,13 @@ class ControlCentre:
              "NOT REQUIRED YET — only to connect a payment rail"),
             ("Payment rail", setup["rail_status"] not in ("", "SELECTED"),
              f"{setup['payment_rail'] or 'none'} — {setup['rail_status']}"),
-            ("Model clearance", bool(setup["approved_models"]),
-             "recorded" if setup["approved_models"] else "no artifact cleared"),
+            ("Model clearance", bool(setup["cleared_models"]),
+             f"{len(setup['cleared_models'])} artifact(s) cleared"
+             if setup["cleared_models"] else "no artifact cleared"),
+            ("Production model", bool(setup["production_model"]),
+             setup["production_model"].get("tag", "")
+             if setup["production_model"] else
+             "no artifact marked as the one this deployment runs"),
         ]
         return ("<h1>Owner setup</h1>"
                 '<p class="sub">Only what is genuinely required, and what is not '
@@ -1790,8 +1813,10 @@ def _standing_pill(standing: str) -> str:
 
 def _step_pill(state: str) -> str:
     tone = {"DONE": "ok", "ACTION REQUIRED": "bad", "OPTIONAL": "info",
-            "NOT REQUIRED YET": "neutral", "BLOCKED": "bad"}.get(state,
-                                                                 "neutral")
+            "NOT REQUIRED YET": "neutral", "BLOCKED": "bad",
+            # Not green and not red. A fact this page cannot establish is worth
+            # saying plainly; colouring it either way would be a claim.
+            "CANNOT TELL FROM HERE": "warn"}.get(state, "neutral")
     return pill(state.lower(), tone)
 
 

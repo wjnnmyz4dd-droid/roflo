@@ -275,7 +275,14 @@ class Discovery:
         try:
             rows = self._db.query(
                 "SELECT name, kind FROM work_sources WHERE kind = 'manual'")
-        except Exception:  # noqa: BLE001 - a fresh database has no table yet
+        except Exception as exc:  # noqa: BLE001 - see below
+            # A fresh database has no table yet, which is an empty result. A
+            # query naming a column that does not exist is a defect, and
+            # catching it here would make it invisible — which is exactly how
+            # the control centre's policy read spent its life returning
+            # defaults about a halted business.
+            if "no such table" not in str(exc):
+                raise
             return sources
         for row in rows:
             source = ManualSource(row["name"], [])

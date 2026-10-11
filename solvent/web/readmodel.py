@@ -151,10 +151,19 @@ class ReadModel:
     def rows(self, sql: str, params: tuple = ()) -> list[dict]:
         try:
             return [dict(r) for r in self._conn.execute(sql, params).fetchall()]
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as exc:
             # A table that does not exist yet is an empty section, not an error
             # page. A fresh Solvent has run no jobs.
-            return []
+            if "no such table" in str(exc):
+                return []
+            # Anything else is a defect in the query above, and swallowing it
+            # is how this class spent its life reporting a halted business as
+            # NORMAL: ``policy_value`` named a column that policy_current does
+            # not have, the error was caught here, and every caller quietly
+            # received its default. A page that cannot answer has to say so;
+            # inventing a reassuring answer is the one outcome worse than an
+            # error, because the owner acts on it.
+            raise
 
     def one(self, sql: str, params: tuple = ()) -> dict:
         found = self.rows(sql, params)
@@ -173,11 +182,13 @@ class ReadModel:
         """
         import json
 
-        row = self.one("SELECT value FROM policy_current WHERE key = 'document'")
+        row = self.one(
+            "SELECT d.doc AS doc FROM policy_current c "
+            "JOIN policy_versions d ON d.version = c.version WHERE c.id = 1")
         if not row:
             return default
         try:
-            document = json.loads(row["value"])
+            document = json.loads(row["doc"])
         except (ValueError, TypeError):
             return default
         cursor = document
@@ -189,9 +200,19 @@ class ReadModel:
 
     def posture(self) -> dict:
         """The four facts that decide whether anything can reach the outside."""
+        from ..types import OperatingMode
+
         simulation = self.policy_value("egress", "simulation_only", default=True)
         allowlist = self.policy_value("egress", "allowlist", default=[]) or []
-        mode = self.policy_value("operating", "mode", default="NORMAL")
+        # Top-level ``operating_mode``, which is where PolicyStore writes it —
+        # this read used to name ``operating.mode``, which nothing writes, so a
+        # halted business read as NORMAL on every page.
+        #
+        # The default mirrors PolicyStore.operating_mode exactly: absent means
+        # HALT. A projection that defaulted the other way would tell the owner
+        # the business was running in the one case where it cannot tell.
+        mode = self.policy_value("operating_mode",
+                                 default=OperatingMode.HALT.value)
         return {
             "simulation_only": bool(simulation),
             "allowlist": list(allowlist),
@@ -375,9 +396,17 @@ class ReadModel:
             "GROUP BY kind ORDER BY n DESC")
 
     def verification(self, job_id: str) -> list[dict]:
+        """Evidence recorded against this job.
+
+        The column is ``subject_ref``, which is what ``record_verification``
+        is given the job id as. This asked for ``job_id``, a column
+        verification_evidence does not have, so the verification section of
+        every job page was silently empty — on the one page whose purpose is
+        telling the owner whether the work was checked.
+        """
         return self.rows(
-            "SELECT * FROM verification_evidence WHERE job_id = ? ORDER BY rowid",
-            (job_id,))
+            "SELECT * FROM verification_evidence WHERE subject_ref = ? "
+            "ORDER BY rowid", (job_id,))
 
     def job_audit(self, job_id: str) -> list[dict]:
         return self.rows(
@@ -604,9 +633,36 @@ class ReadModel:
                                               default=""),
             "rail_status": self.policy_value("payment", "operational_status",
                                              default="SELECTED"),
-            "approved_models": self.policy_value(
+            # Two different facts, and they were previously one field called
+            # "approved_models" that held the single production record. The
+            # misnomer is why the readiness page went looking for a cleared
+            # model under "models.approved", a path nothing writes.
+            #
+            # production_model is the one artifact this deployment is
+            # configured to run; cleared_models is every artifact the owner has
+            # cleared, which is what "is a model allowed at all" asks.
+            "production_model": self.policy_value(
                 "governance", "approved_model_artifact", default={}) or {},
+            "cleared_models": self.policy_value(
+                "governance", "approved_models", default={}) or {},
+            "owner_key_evidence": self.owner_key_evidence(),
         }
+
+    def owner_key_evidence(self) -> str:
+        """``PROVEN`` or ``UNKNOWN``. Never ``MISSING``, because it cannot know.
+
+        The owner key lives in the runtime's environment and deliberately not
+        in this process or this database, so the honest answers are "a key has
+        demonstrably been used" and "this page cannot see". An issued approval
+        is the first: nothing can mint one without the key.
+
+        The readiness page used to ask ``owner_setup()`` for a key named
+        ``owner_key``, which it has never returned — so step one read ACTION
+        REQUIRED however well set up the business was. Reporting UNKNOWN is
+        worth more than a confident wrong answer in either direction.
+        """
+        return "PROVEN" if self.scalar(
+            "SELECT COUNT(*) AS n FROM owner_approvals") else "UNKNOWN"
 
     def gate_requests(self, *, limit: int = 200) -> list[dict]:
         return self.rows("SELECT * FROM action_requests ORDER BY rowid DESC "

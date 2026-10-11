@@ -13,6 +13,8 @@ the audit log, or read a secret.
 
 from __future__ import annotations
 
+import json
+import os
 import pathlib
 import sqlite3
 import tempfile
@@ -21,6 +23,7 @@ import unittest
 from solvent import skillslab as lab
 from solvent.branding import PRODUCT
 from solvent.harness import OWNER, Solvent, run_csv_job
+from solvent.types import ActionClass
 from solvent.web import auth as web_auth
 from solvent.web import intents as web_intents
 from solvent.web import server as web_server
@@ -1350,3 +1353,275 @@ class TheControlCentreCannotReadBackWhatItAskedFor(unittest.TestCase):
         self.assertIn(record["id"], body)
         self.assertIn("promote_capability", body)
         self.assertIn("asked from the control centre", body)
+
+
+class EveryProjectionQueryMatchesTheRealSchema(unittest.TestCase):
+    """The guard that was missing, and the two defects it would have caught.
+
+    ``ReadModel.rows`` caught every ``OperationalError`` and returned an empty
+    list, on the reasoning that a fresh database has no tables yet. That is
+    true and worth keeping for a missing *table*. What it also did was absorb
+    "no such column", so two queries that named columns their tables do not
+    have returned nothing at all for the life of the control centre:
+
+    * ``policy_value`` asked ``policy_current`` for a ``key`` column. The
+      document lives in ``policy_versions``, joined through it. Every policy
+      read on every page therefore returned its default — so a HALTED business
+      read as NORMAL, and a Solvent that had left simulation read as SIMULATED
+      with an empty allowlist. That is the dangerous direction: the owner is
+      told nothing is real while real effects are permitted.
+    * ``verification`` asked ``verification_evidence`` for ``job_id``; the
+      column is ``subject_ref``. The verification section of every job page
+      was empty — on the page whose purpose is saying whether the work was
+      checked.
+
+    Neither was caught by a unit test, because each had tests that asserted on
+    what the method returned, and what it returned was consistently empty.
+    """
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.db = str(self.dir / "solvent.db")
+        Solvent(self.db).store.close()
+        self.read = ReadModel(self.db)
+        self.addCleanup(self.read.close)
+
+    def test_every_projection_method_runs_against_the_real_schema(self):
+        """Executed, not read. SQLite validates every table and column name
+        when it prepares a statement, so running each query against a real
+        schema finds a wrong name whether or not any row would match."""
+        import inspect
+
+        sample = {"job_id": "job_1", "client_id": "c1", "digest": "d" * 64,
+                  "incident_id": "inc_1", "fingerprint": "f1",
+                  "trace_id": "t1", "project_id": "p1", "skill": "s"}
+        skip = {"close", "rows", "one", "scalar", "policy_value"}
+        checked = []
+        for name, method in sorted(inspect.getmembers(
+                self.read, predicate=inspect.ismethod)):
+            if name.startswith("_") or name in skip:
+                continue
+            required = [p for p, param in inspect.signature(method).parameters
+                        .items() if param.default is inspect.Parameter.empty]
+            missing = [p for p in required if p not in sample]
+            self.assertEqual(missing, [], f"{name} takes {missing}, which this "
+                             "test has no sample for — add one rather than "
+                             "letting the method go unchecked")
+            with self.subTest(method=name):
+                method(**{p: sample[p] for p in required})
+                checked.append(name)
+        self.assertGreater(len(checked), 40,
+                           "this guard stopped covering the projection")
+
+    def test_a_query_naming_a_column_that_does_not_exist_is_not_silence(self):
+        with self.assertRaises(sqlite3.OperationalError):
+            self.read.rows("SELECT no_such_column FROM audit_log")
+
+    def test_a_table_that_does_not_exist_yet_is_still_an_empty_section(self):
+        """The part of the old behaviour that was right. A fresh Solvent has
+        run no jobs, and that is an empty page rather than an error."""
+        self.assertEqual(self.read.rows("SELECT * FROM table_from_the_future"),
+                         [])
+
+
+class ThePostureOnThePageIsThePostureInThePolicy(unittest.TestCase):
+    """What the owner is told about safety has to be what is true.
+
+    Each of these failed before the policy read was fixed, and each failed in
+    the reassuring direction.
+    """
+
+    def build(self, configure):
+        db = str(pathlib.Path(tempfile.mkdtemp()) / "solvent.db")
+        solvent = Solvent(db)
+        configure(solvent)
+        solvent.store.close()
+        read = ReadModel(db)
+        self.addCleanup(read.close)
+        return read
+
+    def test_a_halted_business_does_not_read_as_normal(self):
+        from solvent.types import OperatingMode
+
+        read = self.build(lambda s: s.policy.set_operating_mode(
+            OperatingMode.HALT, OWNER, "the owner halted it"))
+        posture = read.posture()
+        self.assertEqual(posture["operating_mode"], "HALT")
+        self.assertTrue(posture["halted"])
+
+    def test_leaving_simulation_does_not_still_read_as_simulated(self):
+        """The dangerous direction: told nothing is real while it is."""
+        read = self.build(lambda s: s.policy.amend(
+            {"egress": {"simulation_only": False,
+                        "allowlist": [{"host": "api.example.com"}]}},
+            OWNER, "left simulation"))
+        posture = read.posture()
+        self.assertFalse(posture["simulation_only"])
+        self.assertEqual([e["host"] for e in posture["allowlist"]],
+                         ["api.example.com"])
+
+    def test_an_unreadable_mode_reads_as_halted_not_as_running(self):
+        """Mirrors PolicyStore.operating_mode, whose default is HALT. A
+        projection that guessed NORMAL would tell the owner the business was
+        running in the one case where it cannot tell."""
+        db = str(pathlib.Path(tempfile.mkdtemp()) / "solvent.db")
+        Solvent(db).store.close()
+        self.assertEqual(ReadModel(db).policy_value("operating_mode"), "NORMAL",
+                         "a fresh policy should record NORMAL explicitly")
+
+        # A database whose policy document cannot be reached. Done by removing
+        # the pointer rather than by patching the connection, so what is being
+        # tested is the projection's answer to a real state.
+        writable = sqlite3.connect(db)
+        writable.execute("DELETE FROM policy_current")
+        writable.commit()
+        writable.close()
+
+        read = ReadModel(db)
+        self.addCleanup(read.close)
+        self.assertEqual(read.posture()["operating_mode"], "HALT")
+        self.assertTrue(read.posture()["halted"])
+
+    def test_recorded_contracting_is_visible_to_the_setup_page(self):
+        read = self.build(lambda s: s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure="INDIVIDUAL", reason="test",
+            legal_name="A Real Person", email="a@b.c", address="1 Road",
+            tax_reference="provisioned"))
+        setup = read.owner_setup()
+        self.assertEqual(setup["structure"], "INDIVIDUAL")
+        self.assertTrue(setup["has_legal_name"])
+        self.assertTrue(setup["has_address"])
+        self.assertTrue(setup["tax_reference_provisioned"])
+
+    def test_the_tax_reference_is_reported_as_present_and_never_shown(self):
+        """§ "Never display full tax identifiers". The owner_setup projection
+        returns a boolean, and the value the owner typed is not in the policy
+        document to be returned in the first place."""
+        read = self.build(lambda s: s.policy.record_contracting_structure(
+            owner_identity=OWNER, structure="INDIVIDUAL", reason="test",
+            tax_reference="GB-12-345-6789"))
+        self.assertTrue(read.owner_setup()["tax_reference_provisioned"])
+        document = json.dumps(read.policy_value("governance", "contracting"))
+        self.assertNotIn("12-345-6789", document)
+
+    def test_the_owner_key_is_reported_as_evidence_not_as_a_guess(self):
+        """It lives in the runtime's environment, which this process cannot
+        read. PROVEN means an approval exists, which nothing can mint without
+        the key; UNKNOWN means this page cannot tell. There is no third answer
+        it is entitled to give."""
+        read = self.build(lambda s: None)
+        self.assertEqual(read.owner_key_evidence(), "UNKNOWN")
+
+        previous = os.environ.get("SOLVENT_OWNER_KEY")
+        os.environ["SOLVENT_OWNER_KEY"] = "test-key-not-a-real-credential-" * 2
+        self.addCleanup(lambda: (
+            os.environ.__setitem__("SOLVENT_OWNER_KEY", previous)
+            if previous is not None
+            else os.environ.pop("SOLVENT_OWNER_KEY", None)))
+
+        def approve(s):
+            s.owner.issue(owner_identity=OWNER, subject="anything",
+                          action_class=ActionClass.C5_AUTHORITY_CHANGE)
+
+        self.assertEqual(self.build(approve).owner_key_evidence(), "PROVEN")
+
+
+class TheSetupPagesReflectAConfiguredBusiness(unittest.TestCase):
+    """Rendered, not projected. Both pages read owner_setup(), and both used
+    to show ACTION REQUIRED against work the owner had actually done — the
+    readiness page because two of its reads named paths nothing writes, and
+    step one because it asked for a field owner_setup() has never returned.
+    """
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.db = str(self.dir / "solvent.db")
+        solvent = Solvent(self.db)
+        solvent.policy.record_contracting_structure(
+            owner_identity=OWNER, structure="INDIVIDUAL",
+            reason="test", legal_name="A Real Person", email="a@b.c")
+        solvent.policy.approve_model_artifact(
+            owner_identity=OWNER, model="qwen2.5-coder",
+            tag="qwen2.5-coder:7b", digest="sha256:" + "a" * 64,
+            license_id="apache-2.0",
+            license_source="https://example.invalid/licence",
+            verified_on="2026-01-01", placement="LOCAL", commercial_use=True,
+            max_privacy="CLIENT_CONFIDENTIAL", production=True,
+            reason="test")
+        solvent.policy.record_network_posture(
+            owner_identity=OWNER, default_deny=True, note="test")
+        solvent.store.close()
+        self.centre = web_server.build(
+            self.db, password_hash=web_auth.hash_password(PASSWORD),
+            spool=str(pathlib.Path(tempfile.mkdtemp())))
+        self.addCleanup(self.centre.read.close)
+
+    def step(self, body, name):
+        """One row of the checklist, and only that row.
+
+        Taking a fixed slice after the step name reaches into the next row,
+        where an ACTION REQUIRED that belongs to a different step would make
+        this assertion pass or fail for the wrong reason.
+        """
+        after = body.split(name, 1)
+        self.assertEqual(len(after), 2, f"no step named {name!r} on the page")
+        return after[1].split("</tr>", 1)[0]
+
+    def page(self, path):
+        response = self.centre.handle(Request(
+            "POST", "/login", form={"password": PASSWORD}, source="10.0.0.1"))
+        self.assertEqual(response.status, 303)
+        return self.centre.handle(Request(
+            "GET", path,
+            cookies={"solvent_session": response.set_session})
+        ).body.decode("utf-8")
+
+    def test_the_readiness_page_credits_the_recorded_contracting(self):
+        body = self.page("/wizard")
+        row = self.step(body, "2. Who you contract as")
+        self.assertIn("done", row)
+        self.assertNotIn("action required", row)
+
+    def test_the_readiness_page_credits_the_cleared_model(self):
+        body = self.page("/wizard")
+        row = self.step(body, "3. A cleared AI model")
+        self.assertIn("done", row)
+        self.assertNotIn("action required", row)
+
+    def test_the_owner_key_step_says_it_cannot_tell_rather_than_accusing(self):
+        """No approval has been issued here, so there is no evidence of a key.
+        The honest answer is that this page cannot see the runtime's
+        environment — not that the owner has failed to do something."""
+        body = self.page("/wizard")
+        row = self.step(body, "1. Owner signing key")
+        self.assertIn("cannot tell from here", row)
+        self.assertNotIn("action required", row)
+
+    def test_the_banner_does_not_claim_everything_is_in_place(self):
+        """Steps 2-5 are done and step 1 is unverifiable, so the banner must
+        not read as an all-clear. An unverifiable step is not a cleared one."""
+        body = self.page("/wizard")
+        self.assertIn("cannot be checked from here", body)
+        self.assertNotIn("Everything a first supervised job needs is in place",
+                         body)
+
+    def test_the_setup_page_shows_what_was_recorded(self):
+        body = self.page("/setup")
+        self.assertIn("INDIVIDUAL", body)
+        self.assertIn("qwen2.5-coder:7b", body)
+
+    def test_the_model_page_shows_the_production_artifact(self):
+        body = self.page("/model")
+        self.assertIn("qwen2.5-coder:7b", body)
+        self.assertIn("apache-2.0", body)
+        self.assertNotIn("No artifact cleared", body)
+
+    def test_a_verified_job_shows_its_evidence_on_its_own_page(self):
+        """The query behind this section asked verification_evidence for a
+        job_id column it does not have, so it was empty for every job."""
+        job_id, _, _ = build_database(str(self.dir / "jobs.db"))
+        read = ReadModel(str(self.dir / "jobs.db"))
+        self.addCleanup(read.close)
+        evidence = read.verification(job_id)
+        self.assertTrue(evidence, "a completed job recorded no evidence")
+        self.assertTrue(all(row["subject_ref"] == job_id for row in evidence))
