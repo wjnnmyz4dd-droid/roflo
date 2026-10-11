@@ -423,6 +423,148 @@ class Scheduling(unittest.TestCase):
         self.assertIn("skipped", self.runtime._tick_discovery())
 
 
+class TheDefaultTasksCanActuallyBeRegistered(unittest.TestCase):
+    """The gap that let a runtime ship unable to start.
+
+    :class:`Scheduling` above exercises ``add_task`` with names chosen by hand
+    -- health, discovery, reconciliation -- each of which happened to have a
+    cadence in ``DEFAULT_INTERVALS``. Nothing called ``default_tasks``, which
+    registers five, and ``heartbeat`` had no cadence. ``interval`` looked names
+    up with a bare subscript, so registering the *first* default task raised
+    ``KeyError: 'heartbeat'``.
+
+    ``serve`` calls ``default_tasks`` after ``start``, and ``start`` has by
+    then recorded ``runtime.started`` with ``health=HEALTHY`` and run
+    reconciliation. So the runtime died before its first tick on every launch,
+    while the audit log said it had started healthily and the control centre's
+    Diagnostics page stayed empty -- correctly, since the task that records
+    diagnostics had never been registered, let alone run.
+    """
+
+    def setUp(self):
+        self.solvent = Solvent(db_path())
+
+    def runtime(self):
+        return rt.Runtime(self.solvent, mode=rt.Mode.LOCAL,
+                          clock=lambda: 0.0, sleep=lambda _s: None)
+
+    def test_every_task_the_runtime_registers_has_a_cadence(self):
+        """The assertion whose absence was the whole defect."""
+        runtime = self.runtime()
+        runtime.default_tasks()
+        for task in runtime.tasks:
+            with self.subTest(task=task.name):
+                self.assertIn(task.name, rt.DEFAULT_INTERVALS,
+                              f"{task.name} is registered with no cadence")
+
+    def test_no_cadence_is_configured_for_a_task_nobody_runs(self):
+        """The other direction: a cadence for a task that does not exist is a
+        line nobody reads, and hides a rename."""
+        runtime = self.runtime()
+        runtime.default_tasks()
+        registered = {task.name for task in runtime.tasks}
+        self.assertEqual(set(rt.DEFAULT_INTERVALS), registered)
+
+    def test_registering_the_default_tasks_does_not_raise(self):
+        runtime = self.runtime()
+        runtime.default_tasks()
+        self.assertEqual(len(runtime.tasks), len(rt.DEFAULT_INTERVALS))
+
+    def test_the_heartbeat_stays_inside_the_watchdogs_limit(self):
+        """``deploy/solvent-watchdog.sh`` fails a heartbeat older than 180s."""
+        self.assertLessEqual(rt.DEFAULT_INTERVALS["heartbeat"] * 2, 180.0)
+
+    def test_the_diagnostics_cadence_stays_inside_the_stale_window(self):
+        from solvent import diagnostics
+        self.assertLess(rt.DEFAULT_INTERVALS["diagnostics"],
+                        diagnostics.REPORT_STALE_SECONDS)
+
+    def test_every_default_task_can_be_run(self):
+        """Registered is not the same as runnable; run each one once."""
+        runtime = self.runtime()
+        runtime.default_tasks()
+        results = runtime.run_due()
+        self.assertEqual(len(results), len(runtime.tasks))
+        failed = [line for line in results if "FAILED" in line]
+        self.assertEqual(failed, [], "\n".join(failed))
+
+    def test_a_task_with_no_cadence_anywhere_does_not_kill_the_runtime(self):
+        """``run_due`` treats a failing task as weather. Registration should
+        not be stricter than running, since it happens before that guard."""
+        runtime = self.runtime()
+        task = runtime.add_task("a-task-nobody-gave-a-cadence", lambda: "ok")
+        self.assertEqual(task.interval_s, rt.FALLBACK_INTERVAL)
+
+    def test_that_fallback_is_recorded_rather_than_silent(self):
+        runtime = self.runtime()
+        runtime.add_task("a-task-nobody-gave-a-cadence", lambda: "ok")
+        self.assertIn("a-task-nobody-gave-a-cadence", runtime.unscheduled)
+        self.assertTrue(any("no configured cadence" in line
+                            for line in runtime.log),
+                        f"nothing said so: {runtime.log}")
+
+    def test_a_correct_build_falls_back_for_nothing(self):
+        runtime = self.runtime()
+        runtime.default_tasks()
+        self.assertEqual(runtime.unscheduled, [])
+
+
+class ServingRunsTheTasksAndRecordsDiagnostics(unittest.TestCase):
+    """End to end through ``serve``, which nothing used to call.
+
+    Every piece of this was tested in isolation and the assembled thing could
+    not start. The diagnostics tick is included here deliberately: the owner's
+    report of the defect was an empty Diagnostics page, and that page is empty
+    exactly when this path has not run.
+    """
+
+    def setUp(self):
+        self.solvent = Solvent(db_path())
+
+    def test_serve_completes_a_tick_without_raising(self):
+        report = rt.serve(self.solvent, mode=rt.Mode.LOCAL, tick_s=0,
+                          max_ticks=1)
+        self.assertIn("loop finished", report)
+
+    def test_serving_records_a_diagnostics_report(self):
+        self.assertIsNone(self.solvent.diagnostics.latest(),
+                          "something recorded a report before the runtime ran")
+        rt.serve(self.solvent, mode=rt.Mode.LOCAL, tick_s=0, max_ticks=1)
+        latest = Solvent(self.solvent.store.path).diagnostics.latest()
+        self.assertIsNotNone(latest,
+                             "a full tick recorded no diagnostics report")
+        self.assertTrue(latest["findings"])
+
+    def test_the_recorded_report_covers_every_check(self):
+        rt.serve(self.solvent, mode=rt.Mode.LOCAL, tick_s=0, max_ticks=1)
+        fresh = Solvent(self.solvent.store.path)
+        import json
+        recorded = json.loads(fresh.diagnostics.latest()["findings"])
+        self.assertEqual(len(recorded), len(fresh.diagnostics.run().findings))
+
+    def test_the_recorded_report_is_not_a_blanket_pass(self):
+        """A database with no capabilities and no owner key is not healthy,
+        and the page must not be handed a green light it has not earned."""
+        rt.serve(self.solvent, mode=rt.Mode.LOCAL, tick_s=0, max_ticks=1)
+        import json
+        fresh = Solvent(self.solvent.store.path)
+        latest = fresh.diagnostics.latest()
+        states = {f["state"] for f in json.loads(latest["findings"])}
+        self.assertNotEqual(states, {"HEALTHY"})
+        self.assertIn(latest["worst"], ("UNSAFE", "FAILED", "UNKNOWN",
+                                        "OWNER_ACTION_REQUIRED"))
+
+    def test_the_heartbeat_is_written_where_the_watchdog_looks(self):
+        import pathlib as _p
+        import tempfile as _t
+        beat = _p.Path(_t.mkdtemp()) / "heartbeat"
+        self.solvent.policy.amend(
+            {"runtime": {"heartbeat_path": str(beat)}}, OWNER, "test")
+        rt.serve(self.solvent, mode=rt.Mode.LOCAL, tick_s=0, max_ticks=1)
+        self.assertTrue(beat.is_file(),
+                        "the runtime completed a tick and wrote no heartbeat")
+
+
 class Shutdown(unittest.TestCase):
     def setUp(self):
         self.db = db_path()

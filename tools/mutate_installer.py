@@ -48,7 +48,15 @@ def source_path(module: str) -> pathlib.Path:
     ``windows/installer`` instead.
     """
     inside = PACKAGE / module
-    return inside if inside.is_file() else INSTALLER / module
+    if inside.is_file():
+        return inside
+    beside = INSTALLER / module
+    if beside.is_file():
+        return beside
+    # A path relative to the repository root, for the Solvent modules the
+    # installer ships but does not own. The runtime is one of them, and a
+    # defect in it reaches the owner through this installer like any other.
+    return ROOT / module
 
 
 @dataclasses.dataclass(frozen=True)
@@ -554,6 +562,36 @@ MUTANTS: tuple[Mutant, ...] = (
            ".RepairKeepsEverythingAndCanBeUndone"
            ".test_a_repair_does_not_impose_autostart_on_someone_who_declined",
            "a repair does not add autostart the owner declined"),
+    # The runtime the installer ships. Both of these shipped, and together
+    # they meant the runtime died before its first tick on every launch.
+    Mutant("heartbeat-has-no-cadence", "solvent/runtime.py",
+           '    "heartbeat": 60.0,         # the watchdog fails it at 180s; stay well inside\n',
+           '',
+           "tests_solvent.test_runtime"
+           ".TheDefaultTasksCanActuallyBeRegistered"
+           ".test_every_task_the_runtime_registers_has_a_cadence",
+           "every registered task has a cadence"),
+    Mutant("a-missing-cadence-kills-the-runtime", "solvent/runtime.py",
+           "        if name not in DEFAULT_INTERVALS:",
+           "        if False:",
+           "tests_solvent.test_runtime"
+           ".TheDefaultTasksCanActuallyBeRegistered"
+           ".test_a_task_with_no_cadence_anywhere_does_not_kill_the_runtime",
+           "registration is no stricter than running"),
+    Mutant("the-heartbeat-tick-cannot-write", "solvent/runtime.py",
+           "from pathlib import Path\n",
+           "",
+           "tests_solvent.test_runtime"
+           ".TheDefaultTasksCanActuallyBeRegistered"
+           ".test_every_default_task_can_be_run",
+           "every default task actually runs"),
+    Mutant("serving-records-no-diagnostics", "solvent/runtime.py",
+           "        report = self.solvent.diagnostics.record()",
+           "        report = self.solvent.diagnostics.run()",
+           "tests_solvent.test_runtime"
+           ".ServingRunsTheTasksAndRecordsDiagnostics"
+           ".test_serving_records_a_diagnostics_report",
+           "the diagnostics tick persists what it found"),
     # The wizard itself. Nothing here can run the script, so these prove the
     # static checks notice a wizard that says the wrong thing -- the three
     # real-world failures were all a wizard saying the wrong thing while a

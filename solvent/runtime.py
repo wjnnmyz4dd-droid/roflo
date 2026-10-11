@@ -26,6 +26,7 @@ import signal
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from enum import Enum
 from typing import Callable
 
@@ -262,6 +263,17 @@ class Task:
 #: takes hours per job, not a trading system, and a tight loop on a $5 host is
 #: cost with no benefit. Every one is overridable from Policy.
 DEFAULT_INTERVALS = {
+    # Every task :meth:`Runtime.default_tasks` registers needs an entry here.
+    # ``heartbeat`` did not have one, and ``interval`` looked names up with a
+    # bare subscript, so registering the first task raised KeyError out of
+    # ``serve`` -- after ``start`` had already recorded runtime.started with
+    # health=HEALTHY. The runtime died before its first tick every time it was
+    # launched, which left an owner with an audit log saying everything was
+    # fine and a Diagnostics page with nothing on it, because the task that
+    # records diagnostics had never been registered, let alone run.
+    #
+    # ``test_runtime`` now asserts the two sets match.
+    "heartbeat": 60.0,         # the watchdog fails it at 180s; stay well inside
     "discovery": 900.0,        # look for work every 15 minutes
     "reconciliation": 300.0,   # re-check payment and job state every 5
     "health": 60.0,            # notice trouble within a minute
@@ -270,6 +282,15 @@ DEFAULT_INTERVALS = {
     # that has stopped crosses into "stale" quickly enough to be noticed.
     "diagnostics": 300.0,
 }
+
+#: Used when a task is registered with no cadence anywhere. That is a
+#: programming mistake and a test catches it, but the runtime meeting one at
+#: boot should not be fatal: ``run_due`` already treats a task that *fails* as
+#: weather and degrades only after three strikes, while a task that failed to
+#: *register* took the whole process down, because registration happens before
+#: that protected loop. Four tasks running and one complaint in the log beats a
+#: business that will not start.
+FALLBACK_INTERVAL = 300.0
 
 #: Consecutive failures of one task before the runtime calls itself degraded.
 #: One failure is weather; several in a row is a fault.
@@ -296,6 +317,11 @@ class Runtime:
         self.tasks: list[Task] = []
         self.log: list[str] = []
         self.stop_reason = ""
+        #: Tasks that had no cadence and fell back to one. Empty on a correct
+        #: build. Recorded rather than merely survived, so the condition is
+        #: visible in ``self.log`` instead of being inferred from a task
+        #: ticking at a rate nobody chose.
+        self.unscheduled: list[str] = []
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> Startup:
@@ -346,7 +372,14 @@ class Runtime:
     # ----------------------------------------------------------------- tasks
     def interval(self, name: str) -> float:
         configured = self.solvent.policy.get("runtime", "intervals", name)
-        return float(configured) if configured else DEFAULT_INTERVALS[name]
+        if configured:
+            return float(configured)
+        if name not in DEFAULT_INTERVALS:
+            self.unscheduled.append(name)
+            self._say(f"{name} has no configured cadence; running it every "
+                      f"{FALLBACK_INTERVAL:.0f}s")
+            return FALLBACK_INTERVAL
+        return DEFAULT_INTERVALS[name]
 
     def add_task(self, name: str, run: Callable[[], str]) -> Task:
         task = Task(name=name, interval_s=self.interval(name), run=run)
