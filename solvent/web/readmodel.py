@@ -514,6 +514,35 @@ class ReadModel:
         return self.rows("SELECT * FROM audit_log ORDER BY seq DESC LIMIT ?",
                          (int(limit),))
 
+    def queued_owner_intents(self, *, limit: int = 100) -> list[dict]:
+        """Requests the runtime has seen and is holding for an owner approval.
+
+        Read from the audit log rather than from the spool directory, because
+        the web process is given a spool handle that cannot read one back —
+        see :class:`solvent.web.intents.WriteOnlySpool` for why. Two things
+        follow, both of them improvements:
+
+        * an intent only appears here once the *runtime* has acknowledged it,
+          so the page reports the runtime's state and not a directory listing;
+        * a file dropped into the spool by whoever holds the web process
+          cannot put a row on the owner's approvals page, because it is not
+          the web process that writes this record.
+
+        The cost is a delay of up to one drain interval between the owner
+        submitting a request and seeing it listed here. The page says so.
+
+        An intent is "queued" when the runtime announced it and has not since
+        processed it; ``consume_owner_intents`` writes both events against the
+        same ``input_ref``.
+        """
+        return self.rows(
+            "SELECT input_ref AS id, decision AS verb, why, ts "
+            "FROM audit_log WHERE event = 'owner.intent_queued' "
+            "AND input_ref NOT IN ("
+            "  SELECT input_ref FROM audit_log "
+            "  WHERE event = 'owner.intent_processed' AND input_ref IS NOT NULL"
+            ") ORDER BY seq DESC LIMIT ?", (limit,))
+
     def audit_chain_intact(self) -> tuple[bool, str]:
         """Re-walk the hash chain with the Audit Log's own algorithm.
 

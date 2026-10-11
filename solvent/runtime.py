@@ -274,6 +274,10 @@ DEFAULT_INTERVALS = {
     #
     # ``test_runtime`` now asserts the two sets match.
     "heartbeat": 60.0,         # the watchdog fails it at 180s; stay well inside
+    # The owner is sitting in front of the control centre when they press a
+    # button, so this is the one cadence chosen for a person waiting rather
+    # than for a cheap host.
+    "owner_intents": 30.0,
     "discovery": 900.0,        # look for work every 15 minutes
     "reconciliation": 300.0,   # re-check payment and job state every 5
     "health": 60.0,            # notice trouble within a minute
@@ -393,6 +397,7 @@ class Runtime:
         self.add_task("reconciliation", self._tick_reconcile)
         self.add_task("discovery", self._tick_discovery)
         self.add_task("diagnostics", self._tick_diagnostics)
+        self.add_task("owner_intents", self._tick_owner_intents)
 
     def _tick_heartbeat(self) -> str:
         """Touch a file so something outside Solvent can tell it is working.
@@ -436,6 +441,46 @@ class Runtime:
         """
         report = self.solvent.diagnostics.record()
         return f"{len(report.findings)} check(s); worst {report.worst}"
+
+    def _tick_owner_intents(self) -> str:
+        """Apply what the owner asked for from the control centre.
+
+        The control centre cannot change anything itself -- it holds no
+        authorities, by construction -- so it writes an intent to a spool and
+        something on this side has to pick it up. Nothing did. The spool was
+        drained only by ``solvent intents consume``, typed at a terminal, which
+        left an owner pressing a button in a browser and watching nothing
+        happen, with no indication that anything was waiting.
+
+        :func:`~solvent.harness.consume_owner_intents` decides what may be
+        applied, and this does not second-guess it: a SAFE intent executes,
+        because its worst outcome is Solvent doing less; a CONSEQUENTIAL one is
+        refused without an owner approval minted by the Owner Channel, whose
+        key the website does not hold. Draining on a timer therefore does not
+        widen what the website can cause -- it only stops a decision the owner
+        already made from sitting in a file.
+        """
+        from .harness import QUEUED, consume_owner_intents
+
+        spool = self.solvent.policy.get("runtime", "owner_intent_spool")
+        results = consume_owner_intents(
+            self.solvent, **({"spool": spool} if spool else {}))
+        if not results:
+            return "no owner intents waiting"
+        # Three outcomes, counted separately because they mean different
+        # things to an owner watching: something happened, something is
+        # waiting on their approval, something was turned down.
+        refused = [r for r in results if r.get("outcome") == "REFUSED"]
+        queued = [r for r in results if r.get("outcome") == QUEUED]
+        applied = [r for r in results
+                   if r.get("outcome") not in ("REFUSED", QUEUED)]
+        parts = [f"{len(applied)} applied"]
+        if queued:
+            parts.append(f"{len(queued)} waiting for an owner approval")
+        if refused:
+            verbs = sorted({r.get("verb") or "unreadable" for r in refused})
+            parts.append(f"{len(refused)} refused ({', '.join(verbs)})")
+        return "; ".join(parts)
 
     def _tick_reconcile(self) -> str:
         notes = reconcile(self.solvent)

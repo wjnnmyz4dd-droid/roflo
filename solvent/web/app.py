@@ -61,6 +61,19 @@ SECURITY_HEADERS = (
 )
 
 
+def _intent_class(verb: str) -> str:
+    """The class of a verb named in an audit row, without trusting the row.
+
+    The verb arrives from the audit log, so it is a string and not a promise:
+    a verb that has since left the closed list reads as UNKNOWN rather than
+    being coloured as though it were safe.
+    """
+    try:
+        return intents_module.classify(verb)
+    except ValueError:
+        return "UNKNOWN"
+
+
 class ControlCentre:
     """The whole surface. Given a projection and an intent writer, nothing else."""
 
@@ -68,7 +81,7 @@ class ControlCentre:
                  password_hash: str = "", secure_cookies: bool = True) -> None:
         self.read = readmodel
         self.sessions = sessions or auth_module.Sessions()
-        self.intents = intent_writer or intents_module.IntentWriter()
+        self.intents = intent_writer or intents_module.WriteOnlySpool()
         self.password_hash = password_hash
         self.secure_cookies = secure_cookies
 
@@ -1358,7 +1371,7 @@ class ControlCentre:
         awaiting_skills = self.read.skill_projects(stage="AWAITING_OWNER")
         proposals = [p for p in self.read.capability_proposals()
                      if p.get("kind") == "PROPOSED"]
-        pending_intents = self.intents.pending()
+        pending_intents = self.read.queued_owner_intents()
         return ("<h1>Approvals</h1>"
                 '<p class="sub">Decisions that are genuinely yours. Routine '
                 "technical decisions are not here — they are governed already."
@@ -1377,11 +1390,12 @@ class ControlCentre:
                         [[esc(p.get("name", "")), esc(p.get("why", ""))[:80]]
                          for p in proposals], empty="None.")
                 + "<h2>Requests queued for the runtime</h2>"
-                + table(["intent", "verb", "class", "why"],
+                + table(["intent", "verb", "class", "asked", "why"],
                         [[esc(i.get("id", "")), esc(i.get("verb", "")),
-                          pill(str(i.get("intent_class", "")),
-                               "warn" if i.get("intent_class") == "CONSEQUENTIAL"
-                               else "info"),
+                          pill(_intent_class(i.get("verb", "")),
+                               "warn" if _intent_class(i.get("verb", ""))
+                               == intents_module.CONSEQUENTIAL else "info"),
+                          esc(str(i.get("ts", ""))[:19]),
                           esc(i.get("why", ""))[:60]] for i in pending_intents],
                         empty="None queued.")
                 + detail("Why some actions cannot be completed here",
@@ -1390,7 +1404,14 @@ class ControlCentre:
                          "key — deliberately, so that taking over the website "
                          "does not take over the business. Those actions are "
                          "queued here and completed by the runtime with an owner "
-                         "approval.</p>"),
+                         "approval.</p>"
+                         "<p>This list is the runtime\u2019s own record, not a "
+                         "listing of the queue directory \u2014 this page cannot "
+                         "read that directory, so that taking over the website "
+                         "does not disclose what you have been asking for. A "
+                         "request you have just submitted therefore appears here "
+                         "once the runtime picks it up, which is within a minute "
+                         "rather than immediately.</p>"),
                 "Approvals")
 
     # ------------------------------------------------------------------ money

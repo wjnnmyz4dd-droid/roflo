@@ -592,6 +592,65 @@ MUTANTS: tuple[Mutant, ...] = (
            ".ServingRunsTheTasksAndRecordsDiagnostics"
            ".test_serving_records_a_diagnostics_report",
            "the diagnostics tick persists what it found"),
+    # The drop box: the surface writes intents and holds no reader.
+    Mutant("the-surface-is-handed-a-reader", "solvent/web/server.py",
+           "        intent_writer=intents_module.WriteOnlySpool(",
+           "        intent_writer=intents_module.IntentWriter(",
+           "tests_solvent.test_web_control_centre"
+           ".TheControlCentreCannotReadBackWhatItAskedFor"
+           ".test_the_surface_is_handed_a_spool_it_cannot_read",
+           "the web process cannot read back what the owner asked for"),
+    Mutant("the-approvals-page-lists-the-directory", "solvent/web/app.py",
+           "        pending_intents = self.read.queued_owner_intents()",
+           "        pending_intents = intents_module.IntentWriter(\n"
+           "            self.intents.spool).pending()",
+           "tests_solvent.test_web_control_centre"
+           ".TheControlCentreCannotReadBackWhatItAskedFor"
+           ".test_a_dropped_file_does_not_reach_the_approvals_page",
+           "a planted spool file cannot put a row on the approvals page"),
+    Mutant("finished-requests-still-look-like-they-are-waiting",
+           "solvent/web/readmodel.py",
+           '            "AND input_ref NOT IN ("\n'
+           '            "  SELECT input_ref FROM audit_log "\n'
+           '            "  WHERE event = \'owner.intent_processed\' '
+           'AND input_ref IS NOT NULL"\n'
+           '            ") ORDER BY seq DESC LIMIT ?", (limit,))',
+           '            "ORDER BY seq DESC LIMIT ?", (limit,))',
+           "tests_solvent.test_owner_intent_completion"
+           ".WhatTheOwnerSeesWaitingComesFromTheRuntime"
+           ".test_a_request_the_runtime_completed_stops_showing_as_waiting",
+           "the waiting list clears once the runtime has acted"),
+    Mutant("processed-intents-are-audited-anonymously", "solvent/harness.py",
+           "            input_ref=intent_id,\n"
+           '            decision=record["verb"] or "unreadable",',
+           '            decision=record["verb"] or "unreadable",',
+           "tests_solvent.test_owner_intent_completion"
+           ".WhatTheOwnerSeesWaitingComesFromTheRuntime"
+           ".test_a_request_the_runtime_completed_stops_showing_as_waiting",
+           "a processed intent is identifiable, so waiting can be told from done"),
+    # The control centre's intents, and the boundary that makes draining them
+    # on a timer safe.
+    Mutant("nothing-drains-the-owner-intent-spool", "solvent/runtime.py",
+           '        self.add_task("owner_intents", self._tick_owner_intents)\n',
+           '',
+           "tests_solvent.test_runtime"
+           ".OwnerIntentsReachTheAuthoritiesWithoutATerminal"
+           ".test_a_safe_intent_takes_effect_with_nobody_at_a_terminal",
+           "an owner action from the browser reaches the authorities"),
+    Mutant("the-drain-overstates-what-it-applied", "solvent/runtime.py",
+           '        parts = [f"{len(applied)} applied"]',
+           '        parts = [f"{len(results)} applied"]',
+           "tests_solvent.test_runtime"
+           ".DrainingTheSpoolDoesNotWidenWhatTheWebsiteCanCause"
+           ".test_nothing_dangerous_was_applied",
+           "the tick counts what it applied, not what it saw"),
+    Mutant("terminal-only-verbs-stop-being-refused", "solvent/harness.py",
+           "    return TERMINAL_ONLY",
+           "    return frozenset()",
+           "tests_solvent.test_runtime"
+           ".DrainingTheSpoolDoesNotWidenWhatTheWebsiteCanCause"
+           ".test_the_terminal_only_verbs_were_refused_outright",
+           "a spool file cannot carry the three verbs that need a terminal"),
     # The wizard itself. Nothing here can run the script, so these prove the
     # static checks notice a wizard that says the wrong thing -- the three
     # real-world failures were all a wizard saying the wrong thing while a

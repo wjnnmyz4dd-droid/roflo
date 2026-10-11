@@ -100,6 +100,11 @@ Anything the existing governance already decides is not put in front of you.
 You press a button. The website writes an **intent** — a request — into a spool
 directory. The Solvent runtime reads it and acts under its own authorities.
 
+The runtime checks that directory **every 30 seconds** as one of its scheduled
+tasks, so a button you press takes effect on its own. You do not need to be at a
+terminal for anything on the safe list, and `solvent intents run` is there for
+when you want it to happen now rather than within the minute.
+
 **Safe intents** are executed. Their worst outcome is Solvent doing *less*:
 halting, acknowledging an alert, abandoning a proposed skill. Stopping is the
 safe direction, so a stolen session that halts your business is a nuisance and
@@ -125,7 +130,7 @@ approval, and `solvent intents list` tells you the command to use instead:
 
 | Request | Why not | Type instead |
 |---|---|---|
-| Change who you contract as | Your legal name and address are personal data, and this would route them through a file the web process can read back | `solvent setup contracting` |
+| Change who you contract as | Your legal name and address are personal data, and this would route them through a directory the web process writes to | `solvent setup contracting` |
 | Authorise a work source | An adapter that fetches from a platform is code, not a row in a form | `solvent setup work-source` |
 | Leave simulation | This is the single change that turns a rehearsal into a business that spends money and contacts strangers. Approving a file is too easy a gesture for it | `solvent setup capability` |
 
@@ -136,6 +141,37 @@ still queued afterwards — not carried out, and not thrown away either.
 
 Anything left waiting is announced in the Audit log the first time the runtime
 sees it, so a request you never made is visible before you ever open the list.
+
+### The queue is a drop box, not a mailbox
+
+The website is handed a spool object that can **write** an intent and has no
+method that reads one back. Most intents carry a reason you typed, so a surface
+that could list the directory would let whoever took over the website read back
+everything you had asked for since the last drain.
+
+The *Requests queued for the runtime* list on the Approvals page therefore comes
+from the **audit log** — the runtime's own record, which the runtime writes and
+the website cannot. Two consequences, one of them a cost:
+
+* a file dropped into the spool by whoever holds the web process cannot put a
+  row on your Approvals page, because it is not the web process that writes
+  that record;
+* a request you have just submitted appears on that list once the runtime picks
+  it up, which is within a minute rather than immediately.
+
+**What this is not.** It is not a permission boundary. On Windows both boot
+services currently run as SYSTEM, so a process that can write the directory can
+read it whatever object the code hands it; enforcing it there needs the control
+centre to run under its own lower-privileged service account, which it does not
+yet. On Linux the two units do run as separate users (`solvent` and
+`solvent-web`), which makes the file-level version of this enforceable — but
+`solvent-web.service` currently grants the web user `ReadWritePaths` on the
+spool, which is read as well as write, and nothing sets the directory mode. So
+it is not enforced there either today. What holds on both platforms is that the
+web code carries no reader at all — a test walks the syntax tree of
+every module in `solvent/web` and fails if a call site appears — and that the
+runtime drains the directory on its timer, so an intent is not sitting there for
+long.
 
 ---
 

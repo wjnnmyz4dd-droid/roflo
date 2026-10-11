@@ -974,6 +974,12 @@ def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
         # that something was declined but not what.
         intent: dict = {}
         record = {"intent": path.name, "verb": "", "why": ""}
+        # Named before the read, so even an unreadable intent is audited
+        # against an identifier. The approvals page pairs the queued event
+        # with this one to tell waiting from finished, and a processed event
+        # with nothing to pair against would leave a request showing as
+        # waiting forever.
+        intent_id = path.stem
         try:
             intent = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(intent, dict):
@@ -1044,6 +1050,7 @@ def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
         s.audit.record(
             event="owner.intent_processed", authority="policy",
             initiator="owner:control-centre", why=record["why"][:200],
+            input_ref=intent_id,
             decision=record["verb"] or "unreadable",
             result=record["outcome"][:180],
             external_effect="owner intent from the control centre")

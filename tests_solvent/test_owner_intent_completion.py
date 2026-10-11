@@ -433,3 +433,61 @@ class TheWebProcessStillCannotDoThis(unittest.TestCase):
         for verb, (kind, _) in INTENTS.items():
             if kind is SAFE:
                 self.assertNotIn(verb, TERMINAL_ONLY)
+
+
+class WhatTheOwnerSeesWaitingComesFromTheRuntime(Spooled):
+    """The approvals page lists the runtime's record, not the spool directory.
+
+    The web process is handed a spool it cannot read back
+    (:class:`solvent.web.intents.WriteOnlySpool`), so the list of waiting
+    requests has to come from somewhere the web can read and the web cannot
+    write. That is the audit log. The consequence worth testing is not just
+    that the list is populated but that it is *the runtime's* list: a file
+    dropped into the spool by whoever holds the web process has not been
+    acknowledged by anything, and must not appear on the owner's approvals
+    page as though it had.
+    """
+
+    def waiting(self):
+        from solvent.web.readmodel import ReadModel
+
+        read = ReadModel(self.db)
+        self.addCleanup(read.close)
+        return read.queued_owner_intents()
+
+    def test_a_request_the_runtime_is_holding_shows_as_waiting(self):
+        self.s.policy.set_operating_mode(OperatingMode.HALT, OWNER, "test")
+        record = self.queue("resume", why="the incident is closed")
+        self.apply()
+        waiting = self.waiting()
+        self.assertEqual([r["id"] for r in waiting], [record["id"]])
+        self.assertEqual(waiting[0]["verb"], "resume")
+        self.assertEqual(waiting[0]["why"], "the incident is closed")
+
+    def test_a_request_the_runtime_completed_stops_showing_as_waiting(self):
+        """Otherwise the page accumulates finished work and the owner learns to
+        ignore it, which is the failure mode of every unattended queue."""
+        self.s.policy.set_operating_mode(OperatingMode.HALT, OWNER, "test")
+        record = self.queue("resume", why="the incident is closed")
+        self.apply()
+        self.assertTrue(self.waiting())
+
+        self.apply(approval=self.approval_for(record["id"]))
+        self.assertIs(self.s.policy.operating_mode, OperatingMode.NORMAL)
+        self.assertEqual(self.waiting(), [])
+
+    def test_a_request_the_runtime_refused_does_not_show_as_waiting(self):
+        """A refusal is finished business. Listing it as waiting would invite
+        the owner to approve something that has already been declined."""
+        record = self.queue("enable_real_execution",
+                            why="trying it through the spool")
+        self.apply(approval=self.approval_for(record["id"]))
+        self.assertEqual(self.waiting(), [])
+
+    def test_a_file_the_runtime_has_never_seen_does_not_show_as_waiting(self):
+        """The attack this closes: whoever holds the web process can write the
+        spool, and the page must not be a mirror of what they wrote."""
+        self.queue("promote_capability", why="planted, never drained",
+                   subject="pdf-extract")
+        self.assertEqual(self.waiting(), [],
+                         "an undrained spool file reached the approvals page")

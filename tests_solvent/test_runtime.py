@@ -565,6 +565,145 @@ class ServingRunsTheTasksAndRecordsDiagnostics(unittest.TestCase):
                         "the runtime completed a tick and wrote no heartbeat")
 
 
+class OwnerIntentsReachTheAuthoritiesWithoutATerminal(unittest.TestCase):
+    """The control centre writes intents and nothing drained the spool.
+
+    The website holds no authorities by construction -- constructing a
+    :class:`~solvent.harness.Solvent` installs the egress hook that denies
+    ``socket.bind``, so a process serving a port can never hold them. It
+    therefore writes an intent to a spool and something on this side has to
+    pick it up. Nothing did: ``default_tasks`` had no such task, and the spool
+    was drained only by ``solvent intents consume`` typed at a terminal. An
+    owner pressing a button in a browser watched nothing happen, with no sign
+    that anything was waiting.
+
+    Draining on a timer must not widen what a website can cause, and the
+    second class below is the part that matters: it does not.
+    """
+
+    def setUp(self):
+        self.solvent = Solvent(db_path())
+        self.spool = str(pathlib.Path(tempfile.mkdtemp()) / "owner-intents")
+        self.solvent.policy.amend(
+            {"runtime": {"owner_intent_spool": self.spool}}, OWNER, "test")
+
+    def runtime(self):
+        runtime = rt.Runtime(self.solvent, mode=rt.Mode.LOCAL,
+                             clock=lambda: 0.0, sleep=lambda _s: None)
+        runtime.default_tasks()
+        return runtime
+
+    def ask(self, verb, **params):
+        from solvent.web.intents import IntentWriter
+        return IntentWriter(self.spool).write(
+            verb=verb, requested_by=OWNER, why="owner used the control centre",
+            params=params or None)
+
+    def drain(self):
+        return [line for line in self.runtime().run_due()
+                if line.startswith("owner_intents:")]
+
+    def test_the_runtime_has_a_task_for_owner_intents(self):
+        names = {task.name for task in self.runtime().tasks}
+        self.assertIn("owner_intents", names)
+
+    def test_an_empty_spool_is_not_an_error(self):
+        self.assertEqual(self.drain(), ["owner_intents: no owner intents waiting"])
+
+    def test_a_safe_intent_takes_effect_with_nobody_at_a_terminal(self):
+        """Halt is the canonical safe one: its worst outcome is doing less."""
+        from solvent.types import OperatingMode
+        self.ask("halt")
+        self.drain()
+        after = Solvent(self.solvent.store.path)
+        self.assertEqual(after.policy.operating_mode, OperatingMode.HALT)
+
+    def test_the_applied_intent_is_filed_not_left_lying_about(self):
+        self.ask("halt")
+        self.drain()
+        waiting = list(pathlib.Path(self.spool).glob("*.intent"))
+        self.assertEqual(waiting, [], "the intent was never taken off the queue")
+        self.assertTrue(list((pathlib.Path(self.spool) / "applied").glob("*.intent")))
+
+    def test_the_tick_says_what_it_did(self):
+        self.ask("halt")
+        self.assertIn("1 applied", self.drain()[0])
+
+    def test_the_cadence_is_chosen_for_a_person_waiting(self):
+        """An owner is sitting in front of the page when they press a button."""
+        self.assertLessEqual(rt.DEFAULT_INTERVALS["owner_intents"], 60.0)
+
+
+class DrainingTheSpoolDoesNotWidenWhatTheWebsiteCanCause(unittest.TestCase):
+    """The security property that makes the task above safe to add.
+
+    ``consume_owner_intents`` decides what may be applied and this is not a
+    second opinion on it. A SAFE intent executes. A CONSEQUENTIAL one is
+    refused without an owner approval minted by the Owner Channel, whose key
+    the website does not hold. Three verbs are refused outright even with an
+    approval, each for a written reason -- personal data that should not pass
+    through a file the web process wrote, a source that needs an
+    implementation rather than a row, and the single switch that turns a
+    simulation into a business that can spend money.
+
+    So these tests take the adversary's view: a website that has been taken
+    over writes every dangerous verb it knows, the runtime drains on its
+    timer, and nothing happens.
+    """
+
+    DANGEROUS = ("enable_real_execution", "record_contracting",
+                 "authorize_work_source", "promote_capability", "resume")
+
+    def setUp(self):
+        self.solvent = Solvent(db_path())
+        self.spool = str(pathlib.Path(tempfile.mkdtemp()) / "owner-intents")
+        self.solvent.policy.amend(
+            {"runtime": {"owner_intent_spool": self.spool}}, OWNER, "test")
+        from solvent.web.intents import IntentWriter
+        writer = IntentWriter(self.spool)
+        for verb in self.DANGEROUS:
+            writer.write(verb=verb, requested_by=OWNER,
+                         why="a session somebody else is holding")
+        runtime = rt.Runtime(self.solvent, mode=rt.Mode.LOCAL,
+                             clock=lambda: 0.0, sleep=lambda _s: None)
+        runtime.default_tasks()
+        self.outcome = [line for line in runtime.run_due()
+                        if line.startswith("owner_intents:")][0]
+        self.after = Solvent(self.solvent.store.path)
+
+    def test_nothing_dangerous_was_applied(self):
+        self.assertIn("0 applied", self.outcome)
+
+    def test_simulation_is_still_on(self):
+        self.assertTrue(self.after.policy.get("egress", "simulation_only"),
+                        "a spool file turned off simulation")
+
+    def test_the_business_was_not_resumed_or_halted_into_working(self):
+        from solvent.types import OperatingMode
+        self.assertEqual(self.after.policy.operating_mode, OperatingMode.NORMAL)
+
+    def test_the_terminal_only_verbs_were_refused_outright(self):
+        from solvent.web.intents import TERMINAL_ONLY
+        refused = pathlib.Path(self.spool) / "refused"
+        self.assertEqual(len(list(refused.glob("*.intent"))), len(TERMINAL_ONLY))
+
+    def test_the_rest_wait_for_an_owner_approval(self):
+        self.assertIn("waiting for an owner approval", self.outcome)
+
+    def test_every_refusal_is_on_the_audit_record(self):
+        """A refusal is exactly what an intrusion investigation needs.
+
+        Every one of them, named: an audit entry saying something was declined
+        without saying what would tell an investigator nothing.
+        """
+        said = " ".join(str(e) for e in self.after.audit.events())
+        self.assertIn("owner:control-centre", said)
+        for verb in self.DANGEROUS:
+            with self.subTest(verb=verb):
+                self.assertIn(verb, said,
+                              f"{verb} was declined without saying so")
+
+
 class Shutdown(unittest.TestCase):
     def setUp(self):
         self.db = db_path()

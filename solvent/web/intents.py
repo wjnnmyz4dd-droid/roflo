@@ -105,8 +105,34 @@ def describe(verb: str) -> str:
     return INTENTS.get(verb, (None, "unknown"))[1]
 
 
-class IntentWriter:
-    """Appends intents to the spool. Holds no database handle at all."""
+class WriteOnlySpool:
+    """Writes intents and cannot read one back. This is what the web gets.
+
+    The split is structural rather than a convention. ``record_contracting``
+    carries the owner's legal name and contracting address, and most intents
+    carry a reason the owner typed. Handing the web surface an object that can
+    enumerate the spool would mean whoever took over the website could read
+    back everything the owner had asked for since the runtime last drained it
+    — which is the disclosure this boundary exists to prevent. So the surface
+    is given an object with no method that reads, and a test asserts that no
+    code path in :mod:`solvent.web` calls one.
+
+    The approvals page still shows what is queued. It reads that from the
+    audit log, which the runtime writes and the web cannot — so the list comes
+    from the runtime's own record instead of from a directory the web process
+    can write to, and a stuffed spool file cannot fabricate a row on the
+    owner's approvals page either.
+
+    What this does **not** do, said plainly because a reader deserves to know
+    which half of the problem is solved: it is not an access-control boundary.
+    Both Windows boot services run as SYSTEM, so file permissions do not
+    separate them, and a process that can write the spool can read the
+    directory whatever object this module hands it. Enforcing it at that level
+    needs the control centre to run under its own lower-privileged service
+    account, which it does not yet. What holds today is that the web code
+    carries no reader, and that the runtime drains the spool on its timer so an
+    intent is not sitting there for long.
+    """
 
     def __init__(self, spool: str = INTENT_SPOOL) -> None:
         self.spool = Path(spool)
@@ -138,6 +164,16 @@ class IntentWriter:
         partial.write_text(json.dumps(record, indent=2), encoding="utf-8")
         os.replace(partial, target)
         return record
+
+
+class IntentWriter(WriteOnlySpool):
+    """A spool handle that can also read it back — for the terminal side.
+
+    ``solvent approvals`` has to show the owner the intent they are about to
+    approve, and that is a terminal process running with the owner's own
+    authority. The runtime reads the spool for the same reason. Neither is the
+    web, and the web does not get this class.
+    """
 
     def pending(self) -> list[dict]:
         if not self.spool.is_dir():

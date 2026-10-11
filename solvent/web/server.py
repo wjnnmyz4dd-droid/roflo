@@ -103,7 +103,7 @@ def build(db_path: str, *, password_hash: str = "", spool: str = "",
     return ControlCentre(
         ReadModel(db_path),
         password_hash=password_hash or auth_module.configured_hash(),
-        intent_writer=intents_module.IntentWriter(
+        intent_writer=intents_module.WriteOnlySpool(
             spool or intents_module.INTENT_SPOOL),
         secure_cookies=secure_cookies)
 

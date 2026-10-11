@@ -168,7 +168,7 @@ class NothingWorksWithoutASession(Base):
         sessions = web_auth.Sessions(now=lambda: clock[0])
         centre = ControlCentre(ReadModel(self.db), sessions=sessions,
                                password_hash=self.hash,
-                               intent_writer=web_intents.IntentWriter(
+                               intent_writer=web_intents.WriteOnlySpool(
                                    str(self.spool)))
         session_id, _ = sessions.create()
         cookies = {"solvent_session": session_id}
@@ -184,7 +184,7 @@ class NothingWorksWithoutASession(Base):
         sessions = web_auth.Sessions(now=lambda: clock[0])
         centre = ControlCentre(ReadModel(self.db), sessions=sessions,
                                password_hash=self.hash,
-                               intent_writer=web_intents.IntentWriter(
+                               intent_writer=web_intents.WriteOnlySpool(
                                    str(self.spool)))
         session_id, _ = sessions.create()
         cookies = {"solvent_session": session_id}
@@ -249,7 +249,7 @@ class ThePasswordPathResists(Base):
 
     def test_no_password_configured_refuses_rather_than_admitting_everyone(self):
         centre = ControlCentre(ReadModel(self.db), password_hash="",
-                               intent_writer=web_intents.IntentWriter(
+                               intent_writer=web_intents.WriteOnlySpool(
                                    str(self.spool)))
         response = centre.handle(Request("POST", "/login",
                                          form={"password": ""}, source="1.1.1.1"))
@@ -293,7 +293,7 @@ class CsrfHolds(Base):
         self.assertEqual(response.status, 403)
         self.assertIn("did not carry this session&#x27;s token",
                       response.body.decode())
-        self.assertEqual(self.centre.intents.pending(), [])
+        self.assertEqual(web_intents.IntentWriter(str(self.spool)).pending(), [])
 
     def test_a_post_with_another_sessions_token_is_refused_by_the_csrf_check(self):
         first = self.sign_in("10.0.0.2")
@@ -306,7 +306,7 @@ class CsrfHolds(Base):
         self.assertEqual(response.status, 403)
         self.assertIn("did not carry this session&#x27;s token",
                       response.body.decode())
-        self.assertEqual(self.centre.intents.pending(), [])
+        self.assertEqual(web_intents.IntentWriter(str(self.spool)).pending(), [])
 
     def test_a_missing_token_and_a_missing_password_are_told_apart(self):
         """Two controls, two reasons. A test that only reads the status code
@@ -332,7 +332,7 @@ class CsrfHolds(Base):
             form={"verb": "acknowledge_alert", "why": "seen",
                   "csrf": self.csrf(cookies)}, cookies=cookies))
         self.assertEqual(response.status, 200)
-        self.assertEqual(len(self.centre.intents.pending()), 1)
+        self.assertEqual(len(web_intents.IntentWriter(str(self.spool)).pending()), 1)
 
     def test_tokens_differ_between_sessions(self):
         self.assertNotEqual(self.csrf(self.sign_in("10.0.0.4")),
@@ -595,7 +595,7 @@ class TheSurfaceCannotBecomeABypass(Base):
                   "why": "attacker asks nicely", "csrf": self.csrf(cookies)},
             cookies=cookies))
         self.assertEqual(response.status, 200)
-        queued = self.centre.intents.pending()
+        queued = web_intents.IntentWriter(str(self.spool)).pending()
         self.assertEqual(len(queued), 1)
         self.assertTrue(queued[0]["requires_owner_approval"])
         self.assertEqual(queued[0]["intent_class"], web_intents.CONSEQUENTIAL)
@@ -620,7 +620,7 @@ class TheSurfaceCannotBecomeABypass(Base):
                     form={"verb": verb, "why": "x", "csrf": self.csrf(cookies)},
                     cookies=cookies))
                 self.assertEqual(response.status, 400)
-        self.assertEqual(self.centre.intents.pending(), [])
+        self.assertEqual(web_intents.IntentWriter(str(self.spool)).pending(), [])
 
     def test_a_post_to_any_other_path_does_nothing(self):
         cookies = self.sign_in()
@@ -631,7 +631,7 @@ class TheSurfaceCannotBecomeABypass(Base):
                                         "verb": "halt", "why": "x"},
                     cookies=cookies))
                 self.assertEqual(response.status, 404)
-        self.assertEqual(self.centre.intents.pending(), [])
+        self.assertEqual(web_intents.IntentWriter(str(self.spool)).pending(), [])
 
 
 class HaltAndResumeAreNotSymmetrical(Base):
@@ -654,7 +654,7 @@ class HaltAndResumeAreNotSymmetrical(Base):
                   "password": PASSWORD, "csrf": self.csrf(cookies)},
             cookies=cookies))
         self.assertEqual(response.status, 200)
-        queued = self.centre.intents.pending()
+        queued = web_intents.IntentWriter(str(self.spool)).pending()
         self.assertEqual(queued[0]["intent_class"], web_intents.SAFE)
         self.assertFalse(queued[0]["requires_owner_approval"])
 
@@ -666,7 +666,7 @@ class HaltAndResumeAreNotSymmetrical(Base):
                   "password": PASSWORD, "csrf": self.csrf(cookies)},
             cookies=cookies))
         self.assertEqual(response.status, 200)
-        self.assertTrue(self.centre.intents.pending()[0]
+        self.assertTrue(web_intents.IntentWriter(str(self.spool)).pending()[0]
                         ["requires_owner_approval"])
 
     def test_enabling_real_execution_is_consequential(self):
@@ -1242,3 +1242,111 @@ class TheLearningPage(Base):
 def esc_of(value: str) -> str:
     from solvent.web.render import esc
     return esc(value)
+
+
+class TheControlCentreCannotReadBackWhatItAskedFor(unittest.TestCase):
+    """The spool is a drop box: the surface writes into it and cannot list it.
+
+    Most intents carry a reason the owner typed, and ``record_contracting``
+    would carry their legal name and contracting address. A surface that could
+    enumerate the spool would let whoever took over the website read back
+    everything the owner had asked for since the last drain — so the surface
+    is handed an object with no method that reads, and this class holds that
+    shut structurally rather than by habit.
+
+    What this is not: a permission boundary. Both Windows boot services run as
+    SYSTEM, so a process that can write the directory can read it whatever
+    object it was handed. Enforcing it there needs the control centre to have
+    its own lower-privileged service account, which it does not yet have.
+    These tests cover the part that is true today — the web code carries no
+    reader, and the page it shows the owner is sourced from the runtime.
+    """
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.db = str(self.dir / "solvent.db")
+        self.solvent = promoted(decided(Solvent(self.db)))
+        self.addCleanup(self.solvent.store.close)
+        self.spool = pathlib.Path(tempfile.mkdtemp())
+        self.hash = web_auth.hash_password(PASSWORD)
+
+    def built(self):
+        centre = web_server.build(self.db, password_hash=self.hash,
+                                  spool=str(self.spool))
+        self.addCleanup(centre.read.close)
+        return centre
+
+    def signed_in(self, centre):
+        response = centre.handle(Request("POST", "/login",
+                                         form={"password": PASSWORD},
+                                         source="10.0.0.1"))
+        self.assertEqual(response.status, 303)
+        return {"solvent_session": response.set_session}
+
+    def test_the_surface_is_handed_a_spool_it_cannot_read(self):
+        centre = self.built()
+        self.assertNotIsInstance(centre.intents, web_intents.IntentWriter)
+        self.assertFalse(hasattr(centre.intents, "pending"))
+        self.assertEqual(
+            sorted(name for name in dir(centre.intents)
+                   if not name.startswith("_")
+                   and callable(getattr(centre.intents, name))),
+            ["write"],
+            "the control centre was handed a method other than write")
+
+    def test_no_code_path_in_the_web_package_reads_the_spool(self):
+        """Static, because "nobody wrote a call" is a fact about the code and
+        "we remembered not to" is not a boundary. The reading class is defined
+        in this package for the terminal and the runtime to import; what must
+        not exist is a call site inside the package itself."""
+        import ast
+
+        root = pathlib.Path(web_intents.__file__).parent
+        offences = []
+        for module in sorted(root.glob("*.py")):
+            tree = ast.parse(module.read_text(encoding="utf-8"), module.name)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                called = node.func
+                name = (called.attr if isinstance(called, ast.Attribute)
+                        else called.id if isinstance(called, ast.Name) else "")
+                if name == "pending":
+                    offences.append(f"{module.name}:{node.lineno} reads the "
+                                    "spool with .pending()")
+                elif name == "IntentWriter":
+                    offences.append(f"{module.name}:{node.lineno} builds an "
+                                    "IntentWriter, which can read the spool")
+        self.assertEqual(offences, [])
+
+    def test_a_dropped_file_does_not_reach_the_approvals_page(self):
+        """The page is not a mirror of what the web process can write."""
+        planted = "planted by whoever holds the web process"
+        web_intents.IntentWriter(str(self.spool)).write(
+            verb="promote_capability", requested_by="attacker",
+            why=planted, subject="pdf-extract")
+        centre = self.built()
+        body = centre.handle(Request(
+            "GET", "/approvals",
+            cookies=self.signed_in(centre))).body.decode("utf-8")
+        self.assertNotIn(planted, body)
+        self.assertIn("None queued.", body)
+
+    def test_what_the_runtime_acknowledged_does_reach_the_page(self):
+        """The other half: having stopped reading the directory, the page still
+        has to tell the owner what is waiting for them."""
+        from solvent.harness import QUEUED, consume_owner_intents
+
+        record = web_intents.IntentWriter(str(self.spool)).write(
+            verb="promote_capability", requested_by="web:owner",
+            why="asked from the control centre", subject="pdf-extract")
+        results = consume_owner_intents(self.solvent, spool=str(self.spool))
+        self.assertEqual([r["outcome"] for r in results], [QUEUED])
+
+        centre = self.built()
+        body = centre.handle(Request(
+            "GET", "/approvals",
+            cookies=self.signed_in(centre))).body.decode("utf-8")
+        self.assertIn(record["id"], body)
+        self.assertIn("promote_capability", body)
+        self.assertIn("asked from the control centre", body)
