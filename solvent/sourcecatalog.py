@@ -258,3 +258,126 @@ def automated_sources() -> list:
 
 def manual_sources() -> list:
     return [e for e in CATALOGUE if e.manual_import]
+
+
+# ---------------------------------------------------------------------------
+# What state each platform is actually in
+# ---------------------------------------------------------------------------
+#
+# Seven statuses, **derived** from the facts above rather than stored beside
+# them. A stored status would be a second opinion about the same question, and
+# the first time it disagreed with ``access_method`` nobody would know which
+# was right -- which is the mistake this project has already made twice, once
+# with diagnostics and once with the two setup pages.
+#
+# So this is a function of the entry and the deployment, and the only inputs
+# are things somebody established: the determination the owner recorded, the
+# credentials actually present, and whether an adapter exists.
+
+#: An established automated path: an API, an approved integration, a feed, or
+#: a page whose terms permit fetching. Automated discovery may run.
+ESTABLISHED_AUTOMATED = "ESTABLISHED - AUTOMATED"
+
+#: The owner drives the fetch -- they open the page, they are present, and
+#: DeskPilot reads what they hand it. Not a lesser outcome: it is the
+#: difference between a business that works and an account that is banned.
+ESTABLISHED_OWNER_AUTHORIZED = "ESTABLISHED - OWNER-AUTHORIZED"
+
+#: The owner pastes or uploads what they found. Blocked by nobody, needs
+#: permission from nobody, and feeds exactly the same pipeline.
+ESTABLISHED_MANUAL_IMPORT = "ESTABLISHED - MANUAL IMPORT"
+
+#: A determination exists and the owner has not authorised the permissions it
+#: would need. Nothing is wrong; a decision is outstanding.
+PENDING_OWNER_AUTHORIZATION = "PENDING OWNER AUTHORIZATION"
+
+#: The platform's own terms forbid it. Recorded so nobody tries again, and so
+#: that "we could not" is never confused with "we must not".
+BLOCKED_PLATFORM_RESTRICTION = "BLOCKED - PLATFORM RESTRICTION"
+
+#: Permitted, and the credential to do it is not on this machine.
+BLOCKED_MISSING_CREDENTIALS = "BLOCKED - MISSING CREDENTIALS"
+
+#: Nobody has read this platform's terms, or the reading is too old to rely
+#: on. The honest default and, today, the answer for every marketplace.
+UNVERIFIED = "UNVERIFIED"
+
+OPERATIONAL_STATUSES = (
+    ESTABLISHED_AUTOMATED, ESTABLISHED_OWNER_AUTHORIZED,
+    ESTABLISHED_MANUAL_IMPORT, PENDING_OWNER_AUTHORIZATION,
+    BLOCKED_PLATFORM_RESTRICTION, BLOCKED_MISSING_CREDENTIALS, UNVERIFIED,
+)
+
+
+def operational_status(entry: "CatalogueEntry", *,
+                       registered: bool = False,
+                       permissions: tuple[str, ...] = (),
+                       credential_present: bool | None = None,
+                       today: str = "") -> tuple[str, str]:
+    """``(status, why)`` for one platform. Derived, never stored.
+
+    The order of these tests is the design. Each one asks a question that
+    makes the later ones irrelevant:
+
+    1. **Does the platform forbid it?** A prohibition outranks everything,
+       including a credential being present and an adapter existing. Checking
+       it first means no later branch can talk its way past it.
+    2. **Is the reading current?** A determination with no date, or one older
+       than the window, is not a finding -- terms change, and "somebody
+       checked at some point" is not evidence. This comes before the
+       credential check so that a stale entry with working credentials reads
+       UNVERIFIED rather than ready.
+    3. **Has the owner authorised the permissions?** Registering a source
+       grants the read side only; discovering and applying are different
+       grants, and a platform nobody authorised is pending rather than broken.
+    4. **Is the credential here?** Only now, because a missing credential for
+       something permitted and authorised is the one case where the answer is
+       "fetch me a key".
+
+    ``credential_present=None`` means nobody asked, which is not the same as
+    absent: an entry needing no credential must not read BLOCKED because a
+    caller did not look.
+    """
+    if entry.access_method == access.UNSUPPORTED_AUTOMATION:
+        return (BLOCKED_PLATFORM_RESTRICTION,
+                entry.notes or "this platform's terms do not permit automated "
+                               "access, so DeskPilot does not attempt it")
+    if entry.access_method == access.UNDETERMINED:
+        return (UNVERIFIED, entry.determination_needed)
+    if entry.access_method == access.MANUAL_IMPORT:
+        # No external terms to expire and no credential to hold. The one path
+        # that is never blocked by anybody.
+        return (ESTABLISHED_MANUAL_IMPORT,
+                "the owner enters what they found; no platform permission is "
+                "involved")
+    if entry.stale(today=today):
+        return (UNVERIFIED,
+                f"the determination for this platform was recorded "
+                f"{entry.verified_on or 'at no recorded date'} and is old "
+                f"enough to need re-reading")
+    if not registered:
+        return (PENDING_OWNER_AUTHORIZATION,
+                "a determination exists and this source is not registered in "
+                "this deployment")
+    if access.DISCOVER not in permissions:
+        return (PENDING_OWNER_AUTHORIZATION,
+                "registered without the DISCOVER permission, so nothing may "
+                "be fetched from it yet")
+    if credential_present is False:
+        return (BLOCKED_MISSING_CREDENTIALS,
+                "permitted and authorised; the credential it needs is not on "
+                "this machine")
+    if entry.access_method == access.OWNER_ASSISTED_BROWSER:
+        return (ESTABLISHED_OWNER_AUTHORIZED,
+                "the owner opens the platform and DeskPilot reads what they "
+                "hand it")
+    if not entry.adapter_implemented:
+        # The distinction §9 already makes about rehydration: a row naming a
+        # source is a registration, not an implementation.
+        return (PENDING_OWNER_AUTHORIZATION,
+                "permitted and authorised, and no adapter has been written "
+                "for it -- a row naming a source is not code that fetches "
+                "from one")
+    return (ESTABLISHED_AUTOMATED,
+            f"{entry.access_method} established on {entry.verified_on} "
+            f"({entry.evidence or 'no source recorded'})")

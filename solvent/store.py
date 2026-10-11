@@ -41,6 +41,16 @@ MIGRATIONS = (
     ("work_sources", "credential_configured", "INTEGER NOT NULL DEFAULT 0"),
     ("work_sources", "manual_import", "INTEGER NOT NULL DEFAULT 1"),
     ("work_sources", "rate_limit_note", "TEXT NOT NULL DEFAULT ''"),
+    # A rate limit nobody can enforce is a note. These two make it a rule:
+    # the interval the platform's own documentation implies, and when this
+    # deployment last fetched -- so a poller can be refused rather than
+    # trusted to behave.
+    ("work_sources", "min_poll_interval_seconds", "REAL NOT NULL DEFAULT 0"),
+    ("work_sources", "last_polled_at", "TEXT NOT NULL DEFAULT ''"),
+    # What the platform requires be done with what is fetched. Recorded per
+    # source because it differs per source and because an obligation nobody
+    # wrote down is an obligation nobody meets.
+    ("work_sources", "retention_note", "TEXT NOT NULL DEFAULT ''"),
     ("work_sources", "terms_notes", "TEXT NOT NULL DEFAULT ''"),
     ("work_sources", "base_url", "TEXT NOT NULL DEFAULT ''"),
     # Health is a named state, not a boolean: "cannot authenticate" and

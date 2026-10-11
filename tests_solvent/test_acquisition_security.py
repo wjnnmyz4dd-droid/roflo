@@ -208,8 +208,11 @@ class TheCatalogueCannotBeMadeToClaimAutomation(unittest.TestCase):
             body = centre.handle(Request(
                 "GET", "/sources",
                 cookies={"solvent_session": login.set_session})).body.decode()
+            # The seven-status vocabulary replaced the old two-state
+            # pill. The property is unchanged: a listed platform nobody
+            # has read the terms of does not read as connected.
             self.assertIn("not been established", body)
-            self.assertIn("not established", body)
+            self.assertIn("UNVERIFIED", body)
             self.assertIn("Upwork", body)
 
 

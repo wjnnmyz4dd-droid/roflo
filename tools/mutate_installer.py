@@ -868,6 +868,73 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheOwnerCanSetWorkPreferencesFromTheBrowser"
            ".test_a_value_outside_its_range_is_refused",
            "a filter cannot be set to an absurd value"),
+    # Per-platform rules. The statuses are derived, so what is mutated is the
+    # order of the questions -- which is the part that decides whether a
+    # later branch can talk its way past a prohibition.
+    Mutant("a-platform-prohibition-can-be-talked-past",
+           "solvent/sourcecatalog.py",
+           "    if entry.access_method == access.UNSUPPORTED_AUTOMATION:",
+           "    if False:",
+           "tests_solvent.test_platform_rules.TheStatusAnswersTheQuestionsInOrder"
+           ".test_a_platform_restriction_outranks_everything",
+           "a prohibition outranks a credential and an adapter"),
+    Mutant("a-stale-determination-still-reads-ready",
+           "solvent/sourcecatalog.py",
+           "    if entry.stale(today=today):",
+           "    if False:",
+           "tests_solvent.test_platform_rules.TheStatusAnswersTheQuestionsInOrder"
+           ".test_a_stale_determination_reads_unverified_not_ready",
+           "terms read years ago are not a current finding"),
+    Mutant("an-unauthorised-source-reads-established",
+           "solvent/sourcecatalog.py",
+           "    if access.DISCOVER not in permissions:",
+           "    if False:",
+           "tests_solvent.test_platform_rules.TheStatusAnswersTheQuestionsInOrder"
+           ".test_registering_without_discover_is_pending",
+           "registering grants the read side only"),
+    Mutant("a-source-with-no-adapter-reads-automated",
+           "solvent/sourcecatalog.py",
+           "    if not entry.adapter_implemented:",
+           "    if False:",
+           "tests_solvent.test_platform_rules.TheStatusAnswersTheQuestionsInOrder"
+           ".test_a_permitted_platform_with_no_adapter_is_pending",
+           "a row naming a source is not code that fetches from one"),
+    Mutant("not-asking-about-a-credential-blocks-the-source",
+           "solvent/sourcecatalog.py",
+           "    if credential_present is False:",
+           "    if not credential_present:",
+           "tests_solvent.test_platform_rules.TheStatusAnswersTheQuestionsInOrder"
+           ".test_not_asking_about_a_credential_is_not_the_same_as_absent",
+           "a source needing no credential is not blocked for want of one"),
+    Mutant("the-rate-limit-is-not-enforced", "solvent/discovery.py",
+           "        rested, rest_why = self._rate_limit_respected(source, state)\n"
+           "        if not rested:\n"
+           "            return False, rest_why",
+           "        pass",
+           "tests_solvent.test_platform_rules.ARateLimitIsANumberAndItIsEnforced"
+           ".test_a_second_poll_straight_away_is_refused",
+           "a documented rate limit is a rule, not a note"),
+    Mutant("a-poll-that-found-nothing-is-not-recorded",
+           "solvent/discovery.py",
+           "            self._record_poll(source_name)",
+           "            pass",
+           "tests_solvent.test_platform_rules.ARateLimitIsANumberAndItIsEnforced"
+           ".test_the_poll_is_stamped_even_when_it_returns_nothing",
+           "a fetch that returned nothing still spent a request"),
+    Mutant("a-corrupt-poll-timestamp-permits-a-fetch",
+           "solvent/discovery.py",
+           "            return False, (f\"source {source.name!r} has an unreadable \"",
+           "            return True, (f\"source {source.name!r} has an unreadable \"",
+           "tests_solvent.test_platform_rules.ARateLimitIsANumberAndItIsEnforced"
+           ".test_an_unreadable_timestamp_refuses_rather_than_polls",
+           "a corrupt record is not permission to hammer an API"),
+    Mutant("a-marketplace-can-claim-access-without-evidence",
+           "solvent/sourcecatalog.py",
+           "    if entry.access_method == access.UNDETERMINED:",
+           "    if False:",
+           "tests_solvent.test_platform_rules.EveryPlatformTheOwnerNamedIsCatalogued"
+           ".test_every_marketplace_is_unverified_rather_than_assumed",
+           "an unread platform is UNVERIFIED, never assumed"),
     # The drop box: the surface writes intents and holds no reader.
     Mutant("the-surface-is-handed-a-reader", "solvent/web/server.py",
            "        intent_writer=intents_module.WriteOnlySpool(",

@@ -340,8 +340,9 @@ class Discovery:
             "determination,determined_by,determined_at,is_fixture,healthy,"
             "display_name,source_type,enabled,access_method,auth_required,"
             "manual_import,base_url,health,permissions,credential_configured,"
-            "rate_limit_note,terms_notes,opportunities_found) "
-            "VALUES(?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "rate_limit_note,min_poll_interval_seconds,retention_note,"
+            "terms_notes,opportunities_found) "
+            "VALUES(?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (source.name, source.kind, readiness.value, compliance.value,
              determination, owner_identity, now(), 1 if source.is_fixture else 0,
              getattr(source, "display_name", "") or source.name,
@@ -355,6 +356,8 @@ class Discovery:
              json.dumps(access.validate_permissions(permissions)),
              int(existing.get("credential_configured", 0)),
              getattr(source, "rate_limit_note", ""),
+             float(getattr(source, "min_poll_interval_seconds", 0.0) or 0.0),
+             getattr(source, "retention_note", ""),
              getattr(source, "terms_notes", ""),
              int(existing.get("opportunities_found", 0))))
         # §7. The submission determination is recorded per source, from the
@@ -376,6 +379,69 @@ class Discovery:
             initiator=owner_identity, why=determination, decision=source.name,
             readiness=readiness.value, compliance=compliance.value,
             is_fixture=source.is_fixture)
+
+    def _rate_limit_respected(self, source, state: dict) -> tuple[bool, str]:
+        """Has long enough passed since this source was last fetched?
+
+        Refusing rather than sleeping, deliberately. A sleep inside a poll
+        would hold the runtime's tick for however long the limit says, which
+        turns a politeness rule into an availability problem -- and the task
+        runs again on its own timer anyway, so the next sweep picks it up.
+
+        The interval comes from the registration record rather than from the
+        adapter object, because the record is what an owner can inspect and
+        what survives a restart. An adapter that reported a shorter interval
+        than the one registered would be a source deciding its own rate limit,
+        which is the same mistake as a source deciding how much its content is
+        trusted.
+        """
+        import datetime as _dt
+
+        interval = float(state.get("min_poll_interval_seconds") or 0.0)
+        if interval <= 0:
+            # Nothing established. Manual and owner-entered sources make no
+            # external call at all, so there is no limit to respect; for an
+            # automated one this is a gap in the registration rather than
+            # permission to poll freely, and the registration path records a
+            # conservative default for every adapter that fetches.
+            return True, ""
+        last = str(state.get("last_polled_at") or "")
+        if not last:
+            return True, ""
+        try:
+            when = _dt.datetime.fromisoformat(last)
+        except ValueError:
+            # An unreadable timestamp is treated as "polled just now", which
+            # is the cautious direction: a corrupt record must not become a
+            # licence to hammer somebody's API.
+            return False, (f"source {source.name!r} has an unreadable "
+                           f"last-polled time, so it is left alone until the "
+                           f"next sweep")
+        if when.tzinfo is not None:
+            when = when.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+        waited = (_dt.datetime.utcnow() - when).total_seconds()
+        if waited < 0:
+            return False, (f"source {source.name!r} records a last-polled "
+                           f"time in the future; left alone rather than "
+                           f"fetched on a clock nobody can trust")
+        if waited < interval:
+            return False, (f"source {source.name!r} was polled "
+                           f"{waited:.0f}s ago and its rate limit asks for "
+                           f"{interval:.0f}s between fetches")
+        return True, ""
+
+    def _record_poll(self, name: str) -> None:
+        """Stamp the fetch. Written whether or not anything came back.
+
+        A poll that returned nothing still consumed a request against the
+        platform's limit, so recording only successful fetches would let an
+        empty result reset the clock.
+        """
+        import datetime as _dt
+
+        self._db.execute(
+            "UPDATE work_sources SET last_polled_at = ? WHERE name = ?",
+            (_dt.datetime.utcnow().isoformat(timespec="seconds"), name))
 
     def source_state(self, name: str) -> dict | None:
         row = self._db.query_one("SELECT * FROM work_sources WHERE name = ?", (name,))
@@ -574,6 +640,9 @@ class Discovery:
         permitted, why = self.may(source.name, access.DISCOVER)
         if not permitted:
             return False, why
+        rested, rest_why = self._rate_limit_respected(source, state)
+        if not rested:
+            return False, rest_why
         # One question, one answer. ``health`` is the named state; ``healthy``
         # is the boolean that predates it and is still written by older paths
         # and older databases. Folding the boolean into the state here means
@@ -620,6 +689,13 @@ class Discovery:
                 raise FailClosed(
                     f"source {source_name!r} needs an external fetch but Discovery "
                     "has no Action Gate; there is no path around it")
+            # Stamped before the request, not after. A fetch that raises, or
+            # one the Gate simulates, still counted against the platform's
+            # limit the moment the decision to call was made -- and recording
+            # it only on success would let a failing source be retried in a
+            # tight loop, which is the exact behaviour a rate limit exists to
+            # prevent.
+            self._record_poll(source_name)
             result = self._gate.request(
                 action_class=ActionClass.C1_EXTERNAL_READ, destination=source.host,
                 privacy=PrivacyClass.PUBLIC, purpose=f"poll {source_name} for work",

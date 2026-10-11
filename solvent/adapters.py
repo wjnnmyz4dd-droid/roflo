@@ -84,6 +84,14 @@ class GrantsGovSource(WorkSource):
     rate_limit_note = ("no published rate limit; polled on a slow schedule "
                        "because a public service with no stated limit is one "
                        "to be gentle with, not one to hammer")
+    #: One hour. A documented limit would be honoured as documented; an
+    #: undocumented one is guessed *conservatively*, because the cost of
+    #: being too slow is a later opportunity and the cost of being too fast
+    #: is an IP block on a public service the owner did not pay for.
+    min_poll_interval_seconds = 3600.0
+    retention_note = ("grant notices are public records; nothing here retains "
+                      "personal data, and opportunities are kept as the "
+                      "owner's own working record")
     terms_notes = ("grants.gov API guide, read 2026-09-29: search2 requires no "
                    "authentication and is described as unrestricted access "
                    "intended to democratise information access")
@@ -203,6 +211,16 @@ class SamGovOpportunitiesSource(WorkSource):
     rate_limit_note = ("per GSA documentation, limits depend on the account "
                        "role; a personal key is far more restricted than one "
                        "held against a registered entity")
+    #: Four hours. The documented limit is per-account and not a number this
+    #: repository can know, so the interval is set for the most restricted
+    #: case -- a personal key -- rather than the most generous. Being wrong in
+    #: the generous direction spends somebody else's quota and gets the key
+    #: revoked.
+    min_poll_interval_seconds = 14400.0
+    retention_note = ("contract opportunities are public records. Eligibility "
+                      "and reporting obligations attach to the contractor, "
+                      "not to the data, and nothing here infers that the "
+                      "owner may bid")
     terms_notes = ("open.gsa.gov Get Opportunities Public API, read "
                    "2026-09-29: api_key required, pagination required, limit "
                    "max 1000 per page, postedFrom/postedTo required and at "

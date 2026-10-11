@@ -102,6 +102,32 @@ def _board_table(board) -> str:
                              "unknown rather than healthy.")
 
 
+def _platform_pill(state: str) -> str:
+    """The seven platform statuses, coloured by what they mean for the owner.
+
+    ESTABLISHED reads green whichever kind it is. Manual import is not a
+    lesser outcome than an API: it is the path that is never blocked by
+    anybody, it needs nobody's permission, and it feeds the same pipeline.
+    Colouring it amber would tell the owner to go and fix something that is
+    working.
+    """
+    from ..sourcecatalog import (
+        BLOCKED_MISSING_CREDENTIALS, BLOCKED_PLATFORM_RESTRICTION,
+        ESTABLISHED_AUTOMATED, ESTABLISHED_MANUAL_IMPORT,
+        ESTABLISHED_OWNER_AUTHORIZED, PENDING_OWNER_AUTHORIZATION, UNVERIFIED,
+    )
+
+    return pill(state, {
+        ESTABLISHED_AUTOMATED: "ok",
+        ESTABLISHED_OWNER_AUTHORIZED: "ok",
+        ESTABLISHED_MANUAL_IMPORT: "ok",
+        PENDING_OWNER_AUTHORIZATION: "info",
+        BLOCKED_PLATFORM_RESTRICTION: "neutral",
+        BLOCKED_MISSING_CREDENTIALS: "warn",
+        UNVERIFIED: "warn",
+    }.get(state, "neutral"))
+
+
 def _intent_class(verb: str) -> str:
     """The class of a verb named in an audit row, without trusting the row.
 
@@ -957,9 +983,33 @@ class ControlCentre:
         something the owner has to infer from nothing going wrong.
         """
         from ..sourceaccess import CONSEQUENTIAL, DISCOVER, PERMISSIONS
-        from ..sourcecatalog import CATALOGUE
+        from ..sourcecatalog import CATALOGUE, operational_status
 
         rows = self.read.work_sources()
+        # Derived from what this deployment has actually registered, not from
+        # the catalogue alone: the same platform is UNVERIFIED on a machine
+        # that has not read its terms and ESTABLISHED on one that has.
+        registered = {r.get("name", ""): r for r in rows}
+
+        def status_for(entry):
+            row = registered.get(entry.source_id)
+            if row is None:
+                return operational_status(entry)
+            try:
+                held = tuple(json.loads(row.get("permissions") or "[]"))
+            except ValueError:
+                held = ()
+            return operational_status(
+                entry, registered=True, permissions=held,
+                credential_present=bool(row.get("credential_configured"))
+                if row.get("auth_required") else None)
+
+        def _rate_limit_for(entry, registered_rows):
+            row = registered_rows.get(entry.source_id)
+            seconds = float((row or {}).get("min_poll_interval_seconds") or 0)
+            if seconds <= 0:
+                return "—" if not row else "none recorded"
+            return f"no more than once every {seconds / 60:.0f} min"
 
         def granted(row):
             try:
@@ -1021,15 +1071,13 @@ class ControlCentre:
                   f'account banned. Every one of them supports you entering an '
                   f'opportunity by hand today, which needs nobody\'s '
                   f'permission and feeds exactly the same pipeline.</p>'
-                + table(["platform", "category", "automated discovery",
-                         "manual entry", "what would have to be established"],
+                + table(["platform", "category", "status", "rate limit",
+                         "why it is in this state"],
                         [[esc(e.display_name),
                           esc(e.source_type.replace("_", " ").title()),
-                          pill("yes", "ok") if e.automated_discovery_supported
-                          else pill("not established", "neutral"),
-                          pill("yes", "ok") if e.manual_import
-                          else pill("no", "neutral"),
-                          esc(e.determination_needed)]
+                          _platform_pill(status_for(e)[0]),
+                          esc(_rate_limit_for(e, registered)),
+                          esc(status_for(e)[1])]
                          for e in CATALOGUE],
                         empty="None.")
                 + "<h2>Opportunities seen</h2>"
