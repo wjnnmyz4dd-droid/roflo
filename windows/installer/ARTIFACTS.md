@@ -17,23 +17,39 @@ See "Signing status" below.
 | File | `DeskPilot-Setup.exe` |
 | Status | **CURRENT — unsigned test build, Windows-unverified** |
 | Installer version | 1.0.0 |
-| Source HEAD | `237b63d` — built from a clean tree |
-| Size | 1,356,995 bytes |
-| Installer SHA-256 | `a0e64d00711b1950b3546080e06a7c5e4198593ff02f4e00c6fc654ee6d48361` |
-| Provenance | `dist/BUILD-237b63d.txt` |
-| Payload | `DeskPilot-certified-237b63d.zip` |
-| Payload SHA-256 | `5d3197010caf91035e79a156abd20ab33fe94eee4dffe8b287114de55fcdd69b` |
+| Source HEAD | `a5bdfc0` — built from a clean tree |
+| Size | 1,437,233 bytes |
+| Installer SHA-256 | `18f35c8ab2f2d076db293f32b36c812a418547962ba50b2e6eb8772d251c54dd` |
+| Provenance | `dist/BUILD-a5bdfc0.txt` |
+| Payload | `DeskPilot-certified-a5bdfc0.zip` |
+| Payload SHA-256 | `71d3c0bcebe60c628ddd39177ead6dff2402e2c9d8ae66d861db7a09227550ba` |
 | Code signature | **none** |
 | Windows execution | **not verified** |
 
-Verified by extracting the executable: the embedded payload matches the payload
-built beside it, all seventeen engine modules are byte-identical to the
-repository's, the `.nsi` compiled is byte-identical to the committed blob, and
-the shipped `integration.py` — read from its syntax tree, not by searching for
-strings — builds `solvent run --db … --always-on` for the runtime and
-`solvent web --db … --host 127.0.0.1 --port 8765 --spool …` for the control
-centre. The generated `services.nsh` names all three scheduled tasks, so the
-uninstaller's Python-less path removes the control centre too.
+Verified by extracting the executable rather than by reading the build script:
+the embedded payload's SHA-256 matches the payload built beside it, all
+eighteen engine modules are byte-identical to the repository's, and the shipped
+`integration.py` — read from its syntax tree, not by searching for strings —
+carries `solvent run … --always-on` for the runtime, `solvent web …` for the
+control centre, `isolation.WEB_SID` and `layout.web_env_file` on the control
+centre's service entry, and `ServiceAccount`/`LeastPrivilege` in the task
+principal. The shipped `layout.py` defines `WEB_HOST = '127.0.0.1'` and
+`WEB_PORT = 8765`, so the control centre still binds loopback only.
+`services.nsh` is compiled into the wizard rather than shipped beside it, so
+the uninstaller's Python-less path is covered by the generated include.
+
+What is new in this build, and what it means for an existing installation:
+
+* the control centre's scheduled task logs on as `S-1-5-19`
+  (`NT AUTHORITY\LOCAL SERVICE`) at `LeastPrivilege` instead of SYSTEM;
+* the owner signing key moves to a file whose ACL does not mention that
+  identity, and the control-centre password hash moves to `Config\web.env`.
+  A repair migrates an installation made before the split and keeps both;
+* the installer applies Windows ACLs and then **tests them as the control
+  centre's own identity**, and stops the installation if the boundary does not
+  hold;
+* `runtime.heartbeat_path` is recorded, so the runtime stops writing its
+  liveness file to `C:\var\lib\solvent\heartbeat` on the system drive.
 
 This is a **test build, not a production release**: no Authenticode signature,
 and no Windows machine has run it. See `INSTALL-OR-REPAIR.md` for repairing an
@@ -50,6 +66,7 @@ given. Do not install any of these.
 
 | Installer SHA-256 | HEAD | Superseded because |
 |---|---|---|
+| `a0e64d00711b1950b3546080e06a7c5e4198593ff02f4e00c6fc654ee6d48361` | `237b63d` | **Superseded, not defective.** Installed, repaired and started both services correctly. Superseded because both services ran as SYSTEM with the same token, so the control centre's confinement was enforced by its own code rather than by Windows; its launcher read the file containing the owner signing key on every boot and filtered it in Python; and nothing recorded `runtime.heartbeat_path`, so the runtime wrote its liveness file to `C:\var\lib\solvent\heartbeat` and the control centre had no way to tell whether the runtime was running. |
 | `cf529639c9bf68468154106191dab8ec386136282fc54909d2fda40594e0e3c9` | `5789392` | **Superseded.** Installed and repaired correctly, but shipped a runtime that could not start: `DEFAULT_INTERVALS` had no `heartbeat` cadence and `interval()` used a bare subscript, so registering the first task raised `KeyError` out of `serve()` — after `start()` had already recorded `runtime.started` with `health=HEALTHY`. The runtime died before its first tick on every launch, so no diagnostics were ever recorded. The heartbeat tick also used `Path` without importing it. |
 | `ce724f84f6875ada13b3f83a199551b3d7c9a5048642c6ced0e1f1576c8fc960` | `30113a9` | **Superseded, not defective.** Installed and repaired correctly, but could only ever run the `install` phase: the engine's `repair` was unreachable, so the only route to a broken installation was a full reinstall. It also verified nothing — the "Verify installation" page displayed a label saying it was checking and ran no check, and the finish screen's title was the fixed string "DeskPilot is installed". |
 | `51e80e3fee113571a23c25c4edd4e1426596a511c68946133cd8ab8c8aaf6aeb` | `53ce33c` | **Defective.** Neither background service ran. The runtime's generated launcher passed `--spool` to `solvent run`, which rejects unrecognised arguments and exits 2, so the scheduled task failed at every boot and Windows gave up after ten attempts. The control centre was never registered as a service at all, so `127.0.0.1:8765` refused connections. Both tasks also carried only a boot trigger and nothing ran them, so even a correct installation was down until the owner rebooted. Fixing the repair path found two more: an installation over existing owner data rotated the owner signing key, and an upgrade never rewrote the generated launchers. |
