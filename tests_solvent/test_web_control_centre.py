@@ -1707,3 +1707,109 @@ class TheSetupPagesReflectAConfiguredBusiness(unittest.TestCase):
         evidence = read.verification(job_id)
         self.assertTrue(evidence, "a completed job recorded no evidence")
         self.assertTrue(all(row["subject_ref"] == job_id for row in evidence))
+
+
+class OwnerSetupHasOneThingTheOwnerCanActuallyChange(unittest.TestCase):
+    """The form, and the reason there is one of them rather than nine.
+
+    Nine forms that mostly said "this one needs a terminal" would be worse
+    than a page that says it once. So Owner Setup carries exactly the section
+    the control centre may change on its own -- the qualification filters --
+    and names the command for each of the rest.
+    """
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.db = str(self.dir / "solvent.db")
+        Solvent(self.db).store.close()
+        self.spool = pathlib.Path(tempfile.mkdtemp())
+        self.centre = web_server.build(
+            self.db, password_hash=web_auth.hash_password(PASSWORD),
+            spool=str(self.spool))
+        self.addCleanup(self.centre.read.close)
+        response = self.centre.handle(Request(
+            "POST", "/login", form={"password": PASSWORD}, source="10.0.0.1"))
+        self.cookies = {"solvent_session": response.set_session}
+
+    def page(self, path="/setup"):
+        return self.centre.handle(Request(
+            "GET", path, cookies=self.cookies)).body.decode("utf-8")
+
+    def csrf(self):
+        return self.centre.sessions.get(
+            self.cookies["solvent_session"])["csrf"]
+
+    def test_the_form_is_on_the_page_with_every_preference(self):
+        from solvent.web.intents import WORK_PREFERENCES
+
+        body = self.page()
+        self.assertIn('name="verb" value="set_work_preferences"', body)
+        for name in WORK_PREFERENCES:
+            self.assertIn(f'name="{name}"', body)
+
+    def test_the_form_shows_the_allowed_range_for_each_preference(self):
+        """A box with no bounds beside it is a box the owner fills in wrongly
+        and then reads a refusal about."""
+        from solvent.web.intents import WORK_PREFERENCES
+
+        body = self.page()
+        for _name, (_s, _k, low, high) in WORK_PREFERENCES.items():
+            self.assertIn(f"{low}&ndash;{high}", body)
+
+    def test_submitting_it_writes_one_intent_and_changes_nothing_yet(self):
+        """The web writes a request. The runtime executes it. Submitting a
+        form must not change the policy from inside the web process."""
+        response = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "set_work_preferences",
+                  "minimum_value_cents": "25000",
+                  "why": "small jobs are not worth it",
+                  "csrf": self.csrf()},
+            cookies=self.cookies))
+        self.assertEqual(response.status, 200)
+        queued = web_intents.IntentWriter(str(self.spool)).pending()
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0]["verb"], "set_work_preferences")
+        self.assertEqual(queued[0]["params"]["minimum_value_cents"], "25000")
+        self.assertFalse(queued[0]["requires_owner_approval"])
+
+        read = ReadModel(self.db)
+        self.addCleanup(read.close)
+        self.assertIsNone(
+            read.policy_value("qualification", "minimum_value_cents",
+                              default=None),
+            "the web process changed the policy itself")
+
+    def test_the_form_carries_a_csrf_token_and_a_wrong_one_is_refused(self):
+        self.assertIn(self.csrf(), self.page())
+        response = self.centre.handle(Request(
+            "POST", "/intent",
+            form={"verb": "set_work_preferences",
+                  "minimum_value_cents": "1", "why": "x",
+                  "csrf": "not-the-token"},
+            cookies=self.cookies))
+        self.assertNotEqual(response.status, 200)
+        self.assertEqual(web_intents.IntentWriter(str(self.spool)).pending(),
+                         [])
+
+    def test_the_page_offers_no_form_for_anything_sensitive(self):
+        """Contracting identity, model clearance, the payment rail and
+        leaving simulation are all named with their command rather than given
+        a box, because each is either an authority change or carries personal
+        data."""
+        body = self.page()
+        verbs = [line for line in body.split('name="verb" value="')[1:]]
+        submitted = {chunk.split('"')[0] for chunk in verbs}
+        self.assertEqual(submitted, {"set_work_preferences"})
+        self.assertIn("solvent setup contracting", body)
+
+    def test_the_preferences_shown_are_the_ones_the_authority_will_use(self):
+        """Read through the policy document the qualification authority
+        reads, not from whatever a form last submitted."""
+        read = ReadModel(self.db)
+        self.addCleanup(read.close)
+        prefs = read.work_preferences()
+        self.assertEqual(set(prefs), set(web_intents.WORK_PREFERENCES))
+        for spec in prefs.values():
+            self.assertIn("minimum", spec)
+            self.assertIn("maximum", spec)

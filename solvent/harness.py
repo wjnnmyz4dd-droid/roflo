@@ -1093,6 +1093,42 @@ def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
     return results
 
 
+def _apply_work_preferences(s: "Solvent", params: dict, why: str) -> str:
+    """Write the qualification filters the owner set, and nothing else.
+
+    Every key is looked up in :data:`WORK_PREFERENCES`; an unrecognised one is
+    refused rather than ignored. Ignoring it would mean a browser could submit
+    ``{"egress": {...}}`` and get a success message back having changed
+    nothing -- which is the right outcome by accident and an unreviewable one,
+    because nobody looking at the audit record could tell a refused write from
+    an applied one.
+    """
+    from .web.intents import WORK_PREFERENCES
+
+    if not isinstance(params, dict) or not params:
+        raise FailClosed("a work-preference change has to name a preference")
+    patch: dict[str, dict] = {}
+    applied: list[str] = []
+    for name, raw in sorted(params.items()):
+        if name not in WORK_PREFERENCES:
+            raise FailClosed(
+                f"{name!r} is not a work preference the control centre may "
+                f"set; it may set {', '.join(sorted(WORK_PREFERENCES))}")
+        section, key, low, high = WORK_PREFERENCES[name]
+        try:
+            value = int(str(raw).strip())
+        except (TypeError, ValueError):
+            raise FailClosed(f"{name} must be a whole number, not {raw!r}")
+        if not low <= value <= high:
+            raise FailClosed(
+                f"{name} must be between {low} and {high}; {value} is outside "
+                f"the range this setting is allowed to take")
+        patch.setdefault(section, {})[key] = value
+        applied.append(f"{name}={value}")
+    s.policy.amend(patch, OWNER, why or "owner changed work preferences")
+    return "set " + ", ".join(applied)
+
+
 def _approval_for(approval, intent_id: str):
     """The approval, if it names *this* intent. Otherwise nothing."""
     if approval is None:
@@ -1141,6 +1177,8 @@ def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
                             why=intent.get("why", "owner stopped it"),
                             actor="owner:control-centre")
         return "project abandoned"
+    if verb == "set_work_preferences":
+        return _apply_work_preferences(s, params, why)
     if verb == "deprecate_skill_version":
         params = intent.get("params") or {}
         s.skillslab.deprecate_version(

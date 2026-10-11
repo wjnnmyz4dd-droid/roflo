@@ -1530,6 +1530,54 @@ class ControlCentre:
                           esc("actions of unknown outcome")]]),
                 "System health")
 
+    def _work_preferences_form(self, request: Request) -> str:
+        """The one part of setup this page may change on its own.
+
+        These are qualification filters: they decide which opportunities are
+        worth looking at, and nothing else reads them. The Financial Governor
+        decides affordability and profitability from its own numbers, so
+        widening a filter here cannot make Solvent accept work it could not
+        afford -- which is what makes this a SAFE request rather than one
+        needing an owner approval.
+
+        Everything else on this page is either an authority change or carries
+        personal data, and goes through the approval system or the terminal.
+        One form, not nine, because nine forms that mostly say "this one needs
+        a terminal" would be worse than a page that says it once.
+        """
+        session = self.sessions.get(
+            request.cookies.get("solvent_session", ""))
+        if not session:
+            return ""
+        prefs = self.read.work_preferences()
+        fields = []
+        for name, spec in sorted(prefs.items()):
+            label = name.replace("_", " ")
+            value = "" if spec["value"] is None else str(spec["value"])
+            fields.append(
+                f'<label for="{esc(name)}">{esc(label)} '
+                f'<span class="muted">({spec["minimum"]}&ndash;'
+                f'{spec["maximum"]})</span></label>'
+                f'<input type="text" inputmode="numeric" id="{esc(name)}" '
+                f'name="{esc(name)}" value="{esc(value)}" '
+                f'placeholder="not set">')
+        return (
+            "<h2>Work preferences</h2>"
+            '<p class="sub">Which opportunities are worth looking at. These '
+            "take effect on their own, within a minute: nothing here can "
+            "authorise spending, contact anybody or change what DeskPilot is "
+            "allowed to do.</p>"
+            '<form method="post" action="/intent">'
+            f'<input type="hidden" name="csrf" value="{esc(session["csrf"])}">'
+            '<input type="hidden" name="verb" value="set_work_preferences">'
+            + "".join(fields)
+            + '<label for="why">why</label>'
+            '<input type="text" id="why" name="why" '
+            'placeholder="for the record" value="changed from the control '
+            'centre">'
+            '<p><button class="primary">Save work preferences</button></p>'
+            "</form>")
+
     # ------------------------------------------------------------ owner setup
     def setup(self, request: Request):
         """The one Owner Setup page. ``/wizard`` redirects here.
@@ -1706,6 +1754,7 @@ class ControlCentre:
                 "are for later and say so. Nothing here asks you to type a "
                 "secret into this website.</p>"
                 + _board_table(board)
+                + self._work_preferences_form(request)
                 + detail("Why some values are typed at a terminal",
                          "<p>Three changes are not completed from this page "
                          "even with a valid approval. Your contracting "

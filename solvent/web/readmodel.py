@@ -648,6 +648,23 @@ class ReadModel:
             "owner_key_evidence": self.owner_key_evidence(),
         }
 
+    def work_preferences(self) -> dict:
+        """The qualification filters, with the authority's own defaults.
+
+        Read through the same policy document the qualification authority
+        reads, so the page shows what that authority will actually use rather
+        than what a form last submitted.
+        """
+        from .intents import WORK_PREFERENCES
+
+        out = {}
+        for name, (section, key, low, high) in WORK_PREFERENCES.items():
+            out[name] = {
+                "value": self.policy_value(section, key, default=None),
+                "minimum": low, "maximum": high,
+            }
+        return out
+
     def owner_key_evidence(self) -> str:
         """``PROVEN`` or ``UNKNOWN``. Never ``MISSING``, because it cannot know.
 

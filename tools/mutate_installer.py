@@ -852,6 +852,22 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheSetupPagesReflectAConfiguredBusiness"
            ".test_the_wizard_url_still_works_and_leads_to_the_one_page",
            "consolidating two pages did not break the surviving URL"),
+    # The one setting the control centre may change on its own, and the
+    # whitelist that is the entire reason it is allowed to.
+    Mutant("work-preferences-can-write-anything", "solvent/harness.py",
+           "        if name not in WORK_PREFERENCES:",
+           "        if False:",
+           "tests_solvent.test_owner_intent_completion"
+           ".TheOwnerCanSetWorkPreferencesFromTheBrowser"
+           ".test_it_cannot_write_outside_its_own_namespace",
+           "a browser request writes qualification filters and nothing else"),
+    Mutant("work-preference-bounds-are-not-checked", "solvent/harness.py",
+           "        if not low <= value <= high:",
+           "        if False:",
+           "tests_solvent.test_owner_intent_completion"
+           ".TheOwnerCanSetWorkPreferencesFromTheBrowser"
+           ".test_a_value_outside_its_range_is_refused",
+           "a filter cannot be set to an absurd value"),
     # The drop box: the surface writes intents and holds no reader.
     Mutant("the-surface-is-handed-a-reader", "solvent/web/server.py",
            "        intent_writer=intents_module.WriteOnlySpool(",

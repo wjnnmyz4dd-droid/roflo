@@ -491,3 +491,119 @@ class WhatTheOwnerSeesWaitingComesFromTheRuntime(Spooled):
                    subject="pdf-extract")
         self.assertEqual(self.waiting(), [],
                          "an undrained spool file reached the approvals page")
+
+
+class TheOwnerCanSetWorkPreferencesFromTheBrowser(Spooled):
+    """The one part of Owner Setup that takes effect without an approval.
+
+    These are qualification filters: they decide which opportunities are worth
+    looking at, and the Financial Governor decides affordability from its own
+    numbers. So widening one cannot make Solvent accept work it could not
+    afford, and the worst outcome is Solvent considering a different set of
+    candidates -- the same class as ``halt``.
+
+    That argument holds only while the verb can write nothing else, which is
+    what most of this class is about.
+    """
+
+    def test_a_preference_the_owner_sets_takes_effect(self):
+        record = self.queue("set_work_preferences",
+                            why="small jobs are not worth it",
+                            params={"minimum_value_cents": "25000"})
+        result = self.outcome(self.apply(), record["id"])
+        self.assertIn("minimum_value_cents=25000", result["outcome"])
+        self.assertEqual(
+            self.s.policy.get("qualification", "minimum_value_cents"), 25000)
+
+    def test_it_needs_no_owner_approval(self):
+        """The point of classifying it SAFE. An approval needs the owner key,
+        which means a terminal, which is what this is meant to avoid."""
+        from solvent.web.intents import SAFE, classify
+
+        self.assertEqual(classify("set_work_preferences"), SAFE)
+
+    def test_the_qualification_authority_actually_reads_what_was_set(self):
+        """A setting with no reader is worse than no setting: it tells the
+        owner they have configured something when they have not."""
+        self.queue("set_work_preferences", why="x",
+                   params={"minimum_value_cents": "30000"})
+        self.apply()
+        self.assertEqual(
+            self.s.qualification._policy.get(
+                "qualification", "minimum_value_cents"), 30000)
+
+    def test_it_cannot_write_outside_its_own_namespace(self):
+        """The attack this closes. Whoever holds the web process can write
+        any params they like into the spool."""
+        for name in ("simulation_only", "operating_mode", "allowlist",
+                     "approved_models", "owner_identities",
+                     "max_job_spend_cents", "proven"):
+            with self.subTest(name=name):
+                record = self.queue("set_work_preferences",
+                                    why="trying it", params={name: "1"})
+                result = self.outcome(self.apply(), record["id"])
+                self.assertEqual(result["outcome"], "REFUSED")
+                self.assertIn("not a work preference", result["why"])
+
+    def test_an_unknown_key_is_refused_rather_than_ignored(self):
+        """Ignoring it would be the right outcome by accident and an
+        unreviewable one: nobody reading the audit record could tell a refused
+        write from an applied one."""
+        record = self.queue("set_work_preferences", why="x",
+                            params={"minimum_value_cents": "1000",
+                                    "something_else": "2"})
+        result = self.outcome(self.apply(), record["id"])
+        self.assertEqual(result["outcome"], "REFUSED")
+        self.assertIsNone(
+            self.s.policy.get("qualification", "minimum_value_cents",
+                              default=None),
+            "a refused batch applied part of itself")
+
+    def test_a_value_outside_its_range_is_refused(self):
+        for params in ({"max_concurrent_jobs": "9999"},
+                       {"max_concurrent_jobs": "0"},
+                       {"minimum_value_cents": "-1"},
+                       {"default_hours": "100000"}):
+            with self.subTest(params=params):
+                record = self.queue("set_work_preferences", why="x",
+                                    params=params)
+                result = self.outcome(self.apply(), record["id"])
+                self.assertEqual(result["outcome"], "REFUSED")
+
+    def test_a_value_that_is_not_a_number_is_refused(self):
+        record = self.queue("set_work_preferences", why="x",
+                            params={"minimum_value_cents": "lots"})
+        result = self.outcome(self.apply(), record["id"])
+        self.assertEqual(result["outcome"], "REFUSED")
+
+    def test_naming_no_preference_at_all_is_refused(self):
+        record = self.queue("set_work_preferences", why="x", params={})
+        result = self.outcome(self.apply(), record["id"])
+        self.assertEqual(result["outcome"], "REFUSED")
+
+    def test_the_whitelist_names_nothing_a_governor_or_gate_reads(self):
+        """The structural guarantee behind calling this SAFE. If an entry ever
+        pointed at a spending limit or an egress setting, a browser could
+        raise a limit without an approval -- and the classification would be
+        wrong rather than the code."""
+        from solvent.web.intents import WORK_PREFERENCES
+
+        for name, (section, key, _low, _high) in WORK_PREFERENCES.items():
+            with self.subTest(preference=name):
+                self.assertEqual(
+                    section, "qualification",
+                    f"{name} writes to {section!r}, which is not the "
+                    f"qualification filters this verb is allowed to set")
+                for forbidden in ("spend", "budget", "cost", "limit", "egress",
+                                  "allowlist", "simulation", "owner",
+                                  "capability", "proven", "approval"):
+                    self.assertNotIn(forbidden, key.lower())
+
+    def test_every_change_is_on_the_audit_record(self):
+        record = self.queue("set_work_preferences", why="raising the floor",
+                            params={"minimum_value_cents": "40000"})
+        self.apply()
+        events = [e for e in self.s.audit.events()
+                  if e.get("input_ref") == record["id"]
+                  or e.get("decision") == "set_work_preferences"]
+        self.assertTrue(events, "a policy change left no audit record")

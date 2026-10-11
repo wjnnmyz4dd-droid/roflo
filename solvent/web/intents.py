@@ -43,6 +43,7 @@ INTENTS = {
     "recheck_readiness": (SAFE, "recompute the readiness projection"),
     "mark_relayed": (SAFE, "record that the owner passed a drafted message on"),
     "abandon_skill_project": (SAFE, "stop work on a proposed skill"),
+    "set_work_preferences": (SAFE, "change which work is worth looking at"),
     "deprecate_skill_version": (SAFE, "warn that a version is going away"),
     # --- consequential: refused without an owner approval ----------------
     "resume": (CONSEQUENTIAL, "clear HALT and allow work again"),
@@ -55,6 +56,37 @@ INTENTS = {
     "record_contracting": (CONSEQUENTIAL, "change who Solvent contracts as"),
     "enable_real_execution": (CONSEQUENTIAL,
                               "turn off simulation and allow real effects"),
+}
+
+
+#: The only settings the control centre may change on its own, and the bounds
+#: each one is held to.
+#:
+#: A closed list with a range per entry, and it lives here beside the verb
+#: list rather than in the harness because it is the same kind of thing: a
+#: statement of what this surface may ask for. The harness imports it to
+#: enforce it, exactly as it imports :data:`TERMINAL_ONLY`.
+#:
+#: The whole safety argument for
+#: letting the website write these without an approval is that they are
+#: *qualification filters* -- they decide which opportunities are worth looking
+#: at, and nothing else reads them. The Financial Governor decides whether a
+#: job is affordable and profitable from its own numbers, so widening a filter
+#: cannot make Solvent accept work it could not afford. The worst outcome is
+#: Solvent considering a different set of candidates, which is the same class
+#: as ``halt``: a nuisance, not a loss.
+#:
+#: That argument holds only while this list contains nothing the Governor, the
+#: Gate or the capability registry reads. Adding a spending ceiling here would
+#: quietly convert a SAFE verb into a way to raise a limit from a browser,
+#: which is why each entry names its policy section explicitly rather than
+#: accepting a section from the intent.
+WORK_PREFERENCES: dict[str, tuple[str, str, int, int]] = {
+    # name: (policy section, key, minimum, maximum)
+    "minimum_value_cents": ("qualification", "minimum_value_cents", 0,
+                            100_000_00),
+    "max_concurrent_jobs": ("qualification", "max_concurrent_jobs", 1, 50),
+    "default_hours": ("qualification", "default_hours", 1, 500),
 }
 
 
