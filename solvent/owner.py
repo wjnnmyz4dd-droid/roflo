@@ -38,6 +38,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from .errors import FailClosed
 from .audit import AuditLog, now
 from .errors import FailClosed
 from .store import Store
@@ -232,11 +233,33 @@ class OwnerChannel:
         return ""
 
     def consume(self, approval: SignedApproval) -> None:
-        """Burn the nonce. Called only once an action is actually permitted."""
-        self._db.execute(
+        """Claim the nonce, or refuse. Called once an action is permitted.
+
+        This is the atomic claim, not a bookkeeping note after the fact.
+        ``verify`` reads ``used_at`` and returns, and the caller then acts --
+        so two callers holding the same approval can both pass ``verify``
+        before either of them gets here. Only one UPDATE can match
+        ``used_at IS NULL``; the loser used to carry on regardless, having
+        been told nothing, which made a single-use approval usable twice
+        under concurrency.
+
+        Whoever loses the race is refused. An approval is single-use, and
+        "somebody else is already using it" is not a reason to proceed.
+        """
+        cursor = self._db.execute(
             "UPDATE owner_approvals SET used_at = ? WHERE nonce = ? AND used_at IS NULL",
             (now(), approval.nonce))
         self._db.commit()
+        if cursor.rowcount != 1:
+            self._audit.record(
+                event="owner.approval_replay_refused", authority="owner",
+                initiator=approval.owner_identity, why=approval.subject,
+                job_id=approval.job_id or None,
+                decision=approval.action_class.value,
+                result=f"nonce {approval.nonce[:8]}… was already claimed")
+            raise FailClosed(
+                f"approval {approval.nonce[:8]}… has already been used; a "
+                "single-use approval cannot authorise a second action")
         self._audit.record(
             event="owner.approval_consumed", authority="owner",
             initiator=approval.owner_identity, why=approval.subject,

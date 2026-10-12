@@ -289,6 +289,19 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_the_classifications_that_are_unambiguous_are_read_correctly",
         "a politely worded question is filed as unclassifiable because it "
         "contained the word 'could'"),
+
+    # ---- owner authentication ---------------------------------------
+
+    Mutant(
+        "owner-approval-reusable-under-concurrency",
+        "solvent/owner.py",
+        "        if cursor.rowcount != 1:",
+        "        if False:",
+        "tests_solvent.test_independent_review"
+        ".AnApprovalIsSingleUseUnderConcurrency"
+        ".test_two_threads_holding_one_approval_yield_exactly_one_winner",
+        "two callers holding one single-use approval both proceed, because "
+        "the loser of the claim is never told it lost"),
 )
 
 

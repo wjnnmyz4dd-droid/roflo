@@ -346,3 +346,94 @@ class WhatThisInstallationCanActuallyProduce(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnApprovalIsSingleUseUnderConcurrency(unittest.TestCase):
+    """The race between verify and consume.
+
+    ``verify`` reads ``used_at`` and returns; the caller then acts and claims
+    the nonce. Two callers holding one approval can both pass ``verify``
+    before either claims it, so the claim itself has to be what decides.
+    """
+
+    def setUp(self):
+        import os
+        import secrets
+
+        from solvent.owner import OwnerChannel
+
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.s = Solvent(f"{self.box.name}/race.db")
+        self.addCleanup(self.s.store.close)
+        os.environ["SOLVENT_OWNER_KEY"] = secrets.token_hex(32)
+        self.addCleanup(os.environ.pop, "SOLVENT_OWNER_KEY", None)
+        self.channel = OwnerChannel(self.s.store, self.s.audit, self.s.policy)
+        if not self.channel.available:
+            self.skipTest(self.channel.key_refusal)
+
+    def approval(self):
+        return self.channel.issue(
+            owner_identity=OWNER, subject="spend on one job",
+            action_class=ActionClass.C0_INTERNAL_READ, job_id="job_one")
+
+    def test_a_second_claim_is_refused(self):
+        approval = self.approval()
+        self.channel.consume(approval)
+        with self.assertRaises(FailClosed) as caught:
+            self.channel.consume(approval)
+        self.assertIn("already been used", str(caught.exception))
+
+    def test_two_threads_holding_one_approval_yield_exactly_one_winner(self):
+        import threading
+
+        approval = self.approval()
+        barrier = threading.Barrier(8)
+        wins, losses = [], []
+        lock = threading.Lock()
+
+        # Two barriers, not one. With a single barrier each thread can run
+        # verify *and* consume before the next thread starts, so verify sees
+        # used_at already set and refuses -- the window never opens and the
+        # test passes whether or not the claim is atomic. Everyone verifies,
+        # then everyone claims: that is the interleaving being defended
+        # against, and it has to be forced rather than hoped for.
+        claim_gate = threading.Barrier(8)
+
+        def attempt():
+            barrier.wait()
+            problem = self.channel.verify(
+                approval, action_class=ActionClass.C0_INTERNAL_READ,
+                job_id="job_one", amount_cents=0)
+            claim_gate.wait()
+            try:
+                if problem:
+                    raise FailClosed(problem)
+                self.channel.consume(approval)
+            except Exception as exc:
+                with lock:
+                    losses.append(str(exc))
+            else:
+                with lock:
+                    wins.append(True)
+
+        threads = [threading.Thread(target=attempt) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(
+            len(wins), 1,
+            f"{len(wins)} of 8 threads were authorised by one single-use "
+            f"approval; losses were {losses}")
+        self.assertEqual(len(losses), 7)
+
+    def test_the_refusal_is_recorded(self):
+        approval = self.approval()
+        self.channel.consume(approval)
+        with self.assertRaises(FailClosed):
+            self.channel.consume(approval)
+        events = [r for r in self.s.store.raw_readonly("SELECT * FROM audit_log")
+                  if r["event"] == "owner.approval_replay_refused"]
+        self.assertTrue(events, "a refused replay left no trace")
