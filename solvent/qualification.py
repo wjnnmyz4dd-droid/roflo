@@ -35,7 +35,8 @@ from .discovery import Opportunity, OpportunityStatus
 from .errors import FailClosed
 from .store import Store
 from .types import (
-    CapabilityVerdict, Cents, Conformance, CostCategory, GovernorVerdict, JobState,
+    CapabilityVerdict, Cents, Conformance, CostCategory, Criticality,
+    GovernorVerdict, JobState,
     Requirement, RequirementSource, fmt,
 )
 
@@ -94,6 +95,29 @@ class Decision:
     @property
     def accepted(self) -> bool:
         return self.verdict is Verdict.ACCEPT
+
+
+def _scope_requirement(need: str) -> Requirement:
+    """A posting's `need` recorded as scope, not as an acceptance criterion.
+
+    ADVISORY, deliberately. A need names a *service* -- "csv-cleanup" -- and a
+    service name is not something a verifier can check an artifact against.
+    Recorded as MANDATORY it was worse than useless: it named no registered
+    check, so `commit_requirements` refused the whole checklist with "an
+    untestable requirement would pass the gate by being unverifiable rather
+    than by being satisfied" -- and refused it *forever*, because the
+    requirement is on the job and nothing removes it. Every discovered job was
+    therefore impossible to execute, while the same job hand-fed through
+    `run_csv_job` ran fine, because that path never had this requirement on it.
+
+    The scope still belongs on the record: it is what the client asked for and
+    what the agreed checklist has to cover. It simply does not block delivery
+    on its own, because there is nothing to pass.
+    """
+    return Requirement(
+        id=new_id("req"), text=need,
+        source=RequirementSource.MODEL_EXTRACTED_UNCONFIRMED,
+        criticality=Criticality.ADVISORY)
 
 
 class Qualification:
@@ -239,16 +263,14 @@ class Qualification:
             # The owner typed these in. Nothing is more confirmed than that.
             for need in candidate.needs:
                 requirements.add(confirm(
-                    Requirement(id=new_id("req"), text=need,
-                                source=RequirementSource.MODEL_EXTRACTED_UNCONFIRMED),
+                    _scope_requirement(need),
                     by=self._owner_identity(),
                     source=RequirementSource.OWNER_CONFIRMED))
             return requirements
         if candidate.structured_terms and candidate.needs:
             for need in candidate.needs:
                 requirements.add(confirm(
-                    Requirement(id=new_id("req"), text=need,
-                                source=RequirementSource.MODEL_EXTRACTED_UNCONFIRMED),
+                    _scope_requirement(need),
                     by=f"platform:{candidate.source}",
                     source=RequirementSource.CLIENT_CONFIRMED_STRUCTURED))
             return requirements

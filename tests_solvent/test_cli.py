@@ -262,6 +262,23 @@ class NoCommandSellsWork(unittest.TestCase):
              # this machine — contracting identity, work sources, leaving
              # simulation — it refuses and names the terminal command for.
              "intents",
+             # `cycle` takes one opportunity through the business pipeline.
+             # Reviewed for external effect before being listed:
+             #   * discovery  -- with `--posting` it is the Inserted Work
+             #     door, which has no path to a network at all; without it,
+             #     polling goes through Discovery's own permission machinery,
+             #     which refuses a source whose compliance the owner has not
+             #     recorded in writing;
+             #   * delivery   -- through the Action Gate, so the egress
+             #     allowlist, the privacy class and simulation mode decide,
+             #     exactly as they do for `run`. The command has no way round
+             #     it and no destination of its own;
+             #   * payment    -- `--simulate-payment` records a payment the
+             #     Ledger marks SIMULATED. There is no rail, no credential and
+             #     no path to one; it cannot collect a real cent;
+             #   * approval   -- the two owner decisions it needs both default
+             #     to off, so the unflagged command stops at the first one.
+             "cycle",
              "web-password"},
             "a new subcommand was added without reviewing it for external effect",
         )

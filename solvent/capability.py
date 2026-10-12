@@ -803,14 +803,34 @@ class CapabilityRegistry:
                     "conformance cannot be established from untrusted content",
                     [r.text for r in unconfirmed])
 
-        covered = {c for cap in self._capabilities.values() for c in cap.covers}
-        gaps = [need for need in needs if need not in covered]
+        # A `need` is written two ways, and both are legitimate. A posting says
+        # it needs `csv-cleanup` -- the name of a service. A requirement says it
+        # needs `drop_exact_duplicates` -- the name of a check. This asked only
+        # the second question, against `covers`, which holds check names: a
+        # posting needing `csv-cleanup` was answered "no registered capability
+        # covers csv-cleanup" by a Solvent whose csv-cleanup capability was
+        # registered, proven and cleared for client work. Every discovered
+        # opportunity was rejected for a capability gap that did not exist, and
+        # Discovery's own gap report (`discovery.py`, which matches needs
+        # against capability *names*) disagreed with this function about what a
+        # need is. Resolving both readings is not a widening: whichever way the
+        # need is written, the capability behind it still has to be proven.
+        satisfied: dict[str, list] = {}
+        for cap in self._capabilities.values():
+            for need in needs:
+                if need == cap.name or need in cap.covers:
+                    satisfied.setdefault(need, []).append(cap)
+
+        gaps = [need for need in needs if need not in satisfied]
         if gaps:
             return (CapabilityVerdict.REQUIRES_NEW_CAPABILITY, Conformance.FAILS,
                     f"no registered capability covers: {', '.join(gaps)}", gaps)
 
-        unproven = [cap.name for cap in self._capabilities.values()
-                    if not cap.proven and cap.covers & set(needs)]
+        # A need is proven when *something* that satisfies it is proven. Asking
+        # instead whether any capability touching the need is unproven would let
+        # one unproven registration veto work a proven one can do.
+        unproven = sorted({need for need, caps in satisfied.items()
+                           if not any(cap.proven for cap in caps)})
         if unproven:
             return (CapabilityVerdict.REQUIRES_OWNER_APPROVAL, Conformance.UNKNOWN,
                     f"capability not yet proven: {', '.join(unproven)}", unproven)

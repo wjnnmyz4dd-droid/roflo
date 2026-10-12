@@ -23,6 +23,7 @@ a blocklist only catches the phrasings someone thought of:
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -95,8 +96,14 @@ def confirm(requirement: Requirement, *, by: str,
             f"owner confirmation requires an owner identity (got {by!r})")
     if not by:
         raise FailClosed("confirmation requires an identity")
-    return Requirement(id=requirement.id, text=requirement.text, source=source,
-                       confirmed_by=by)
+    # Everything except the provenance survives. This used to construct a bare
+    # Requirement from the id and text alone, silently discarding the check,
+    # the acceptance criterion, the params and the criticality -- so a fully
+    # specified requirement came back as an untestable MANDATORY one, and
+    # `commit_requirements` then refused the whole checklist because it named
+    # no registered check. Confirming a requirement says who vouched for it;
+    # it is not an edit of what the requirement says.
+    return dataclasses.replace(requirement, source=source, confirmed_by=by)
 
 
 @dataclass(slots=True)

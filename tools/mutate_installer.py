@@ -1429,6 +1429,65 @@ _LIBRARY_MUTANTS: tuple[Mutant, ...] = (
            ".LimitedBecomesApprovedWithoutLosingTheRecord"
            ".test_promoting_twice_changes_nothing",
            "re-running the owner's command is not a second decision"),
+
+    # --- the business pipeline: the joins between the halves ---------------
+    Mutant("need-matched-against-check-names-only", "solvent/capability.py",
+           "                if need == cap.name or need in cap.covers:",
+           "                if need in cap.covers:",
+           "tests_solvent.test_business_cycle.TheWholeTransactionCompletes"
+           ".test_every_stage_ran_in_order",
+           "a posting naming a service Solvent performs is not a gap"),
+    Mutant("execution-answers-the-question-put-to-the-owner",
+           "solvent/harness.py",
+           "    if s.orchestrator.job(job_id).state is JobState.AWAITING_OWNER_APPROVAL:\n        raise FailClosed(",
+           "    if False:\n        raise FailClosed(",
+           "tests_solvent.test_business_cycle"
+           ".SolventNeverAnswersItsOwnersQuestion"
+           ".test_the_service_pipeline_cannot_step_over_a_waiting_job",
+           "the pipeline never supplies its owner's decision"),
+    Mutant("confirming-a-requirement-rewrites-it", "solvent/content.py",
+           "    return dataclasses.replace(requirement, source=source, confirmed_by=by)",
+           "    return Requirement(id=requirement.id, text=requirement.text,\n                       source=source, confirmed_by=by)",
+           "tests_solvent.test_business_cycle"
+           ".ConfirmingARequirementDoesNotRewriteIt"
+           ".test_the_check_acceptance_params_and_criticality_all_survive",
+           "vouching for a requirement does not edit what it says"),
+    Mutant("a-service-name-recorded-as-a-blocking-term",
+           "solvent/qualification.py",
+           "        source=RequirementSource.MODEL_EXTRACTED_UNCONFIRMED,\n        criticality=Criticality.ADVISORY)",
+           "        source=RequirementSource.MODEL_EXTRACTED_UNCONFIRMED,\n        criticality=Criticality.MANDATORY)",
+           "tests_solvent.test_business_cycle"
+           ".ThereIsNoContractWithoutAgreedTerms"
+           ".test_the_postings_own_need_does_not_block_the_checklist",
+           "scope is recorded; only terms block delivery"),
+    Mutant("the-cycle-executes-without-being-selected", "solvent/harness.py",
+           "    ranked = s.qualification.rank([decision])\n    selected, deferred = s.qualification.select(ranked)",
+           "    ranked = s.qualification.rank([decision])\n    selected, deferred = ranked, []",
+           "tests_solvent.test_business_cycle"
+           ".SolventNeverAnswersItsOwnersQuestion"
+           ".test_without_the_owners_answer_the_job_waits",
+           "work is committed by selection, under the capacity limit"),
+    Mutant("work-starts-without-money-authorised", "solvent/orchestrator.py",
+           '        if not grant_id:\n            raise FailClosed("execution requires a Financial Governor budget grant")',
+           '        if not grant_id:\n            pass',
+           "tests_solvent.test_business_cycle"
+           ".WorkDoesNotStartWithoutMoneyAuthorised"
+           ".test_begin_execution_refuses_an_empty_grant",
+           "no work begins without a Governor budget grant"),
+    Mutant("the-worker-is-handed-scope-it-cannot-carry-out",
+           "solvent/harness.py",
+           "    instructions = [r for r in report.committed if r.check]",
+           "    instructions = list(report.committed)",
+           "tests_solvent.test_business_cycle"
+           ".EveryClearedSkillEarnsThroughTheSameCycle"
+           ".test_a_data_entry_job_earns_and_holds_its_exceptions",
+           "instructions are the terms that name a check"),
+    Mutant("simulated-money-booked-as-real-revenue", "solvent/harness.py",
+           '        verification_method=f"{SIMULATED_PREFIX}{payment_rail}")',
+           '        verification_method=payment_rail)',
+           "tests_solvent.test_business_cycle.SimulatedMoneyIsNeverRevenue"
+           ".test_the_ledger_reports_no_real_revenue",
+           "fixture money is never counted, displayed or reported as earnings"),
 )
 
 MUTANTS = MUTANTS + _LIBRARY_MUTANTS

@@ -46,7 +46,7 @@ from .gate import ActionGate, approval
 from .governor import FinancialGovernor
 from .ledger import SIMULATED_PREFIX, Ledger
 from .memory import BusinessMemory
-from .orchestrator import JobOrchestrator
+from .orchestrator import TRANSITIONS, JobOrchestrator
 from .policy import DEFAULT_MAX_CORRECTIONS, PolicyStore
 from .pricing import PricingReference
 from .projection import project
@@ -655,6 +655,338 @@ def run_manual_opportunity(*, title: str, client_ref: str, quote_dollars: str,
                                 s.orchestrator.requirements(decision.job_id)]
                                if decision.job_id else [],
     }
+
+
+# ---------------------------------------------------------------------------
+# The business cycle: one opportunity, from posting to reconciled profit
+# ---------------------------------------------------------------------------
+#
+# Composition, like the service pipeline below it, and for the same reason: the
+# authorities already exist and none of them is re-implemented here. What was
+# missing was the join. Discovery, Qualification and the Governor took an
+# opportunity as far as a priced decision; the service pipeline took a set of
+# requirements as far as a verified, delivered file; the Ledger took a payment
+# event as far as reconciled profit. Nothing ran all three, so the parts that
+# had never met were the parts nothing tested:
+#
+#   * a capability `need` meant a *service name* to Discovery and a *check
+#     name* to the capability registry, so every discovered opportunity was
+#     rejected for a gap that did not exist;
+#   * the service pipeline walked a job to ACCEPTED itself, which is illegal
+#     from AWAITING_OWNER_APPROVAL and, from QUALIFYING, is the pipeline
+#     approving its own work;
+#   * it then entered EXECUTING without a Governor budget grant, bypassing
+#     `begin_execution`, whose entire job is to refuse exactly that.
+#
+# Those are fixed where they live. This function is what proves they stay
+# fixed, because it is the only path that touches all of them in order.
+
+
+@dataclass
+class BusinessCycle:
+    """What happened, how far it got, and why it stopped there."""
+
+    opportunity_ref: str = ""
+    job_id: str = ""
+    #: Each stage that actually completed, in order.
+    stages: list[str] = field(default_factory=list)
+    #: The stage that did not complete, "" when the cycle ran to the end.
+    stopped_at: str = ""
+    why_stopped: str = ""
+
+    verdict: str = ""
+    reason: str = ""
+    governor_verdict: str = ""
+    quoted_cents: Cents = 0
+    expected_profit_cents: Cents = 0
+    authorised_cents: Cents = 0
+    grant_id: str = ""
+    owner_approval_required: bool = False
+    owner_approval_given: bool = False
+    approval_channel: str = ""
+
+    committed_requirements: int = 0
+    delivered: bool = False
+    deliverable_path: str = ""
+    verification_rounds: int = 0
+
+    invoiced_cents: Cents = 0
+    collected_cents: Cents = 0
+    actual_profit_cents: Cents = 0
+    payment_simulated: bool = True
+    real_revenue_cents: Cents = 0
+
+    final_state: str = ""
+    audit_chain_ok: bool = False
+
+    @property
+    def completed(self) -> bool:
+        """True only when every stage ran. Not "nothing raised"."""
+        return not self.stopped_at
+
+    def summary(self) -> str:
+        where = "complete" if self.completed else f"stopped at {self.stopped_at}"
+        return (f"{self.opportunity_ref or '(no opportunity)'}: {where}; "
+                f"{len(self.stages)} stage(s); state {self.final_state or '-'}")
+
+
+#: The stages, in order. Named here so a cycle that stops can say where, and so
+#: a test can assert the order rather than restate it.
+CYCLE_STAGES = (
+    "discover", "qualify", "price", "owner-approval", "contract", "budget",
+    "execute", "verify", "deliver", "invoice", "payment", "reconcile", "audit",
+)
+
+
+def run_business_cycle(
+        s: "Solvent", *, source_name: str, source_file: str, workdir: str,
+        capability: str = "csv-cleanup", owner_identity: str = OWNER,
+        posting: dict | None = None,
+        agreed_requirements: list | None = None,
+        owner_accepts_quote: bool = False,
+        simulate_payment: bool = False,
+        payment_rail: str = "fixture",
+        external_ref: str = "") -> BusinessCycle:
+    """Take one opportunity from a registered source through to profit.
+
+    **Owner decisions are never supplied by this function.** Two of them bound
+    it, and both default to off:
+
+    ``owner_accepts_quote``
+        The owner's answer when the Governor asks for approval. Without it the
+        cycle stops at that stage with the job in AWAITING_OWNER_APPROVAL,
+        which is where a job above the approval threshold belongs until a
+        person says otherwise. Passing it records the owner's acceptance
+        through :meth:`JobOrchestrator.owner_approves`, which refuses any
+        identity the policy does not know as the owner.
+
+    ``agreed_requirements``
+        The checklist the client actually agreed to. This is not optional and
+        it is deliberately not inferred: a posting's ``needs`` name a *service*
+        ("csv-cleanup"), and its body is attacker-authored prose. Neither is a
+        contract. The checklist is what the owner confirmed with the client, it
+        is what the deliverable is recomputed against, and a cycle without one
+        stops at the contract stage rather than inventing terms and then
+        verifying against its own invention.
+
+    ``simulate_payment``
+        Whether to inject a simulated payment so the back half can be proved.
+        The money is marked simulated by the Ledger and never counts as
+        revenue; :attr:`BusinessCycle.real_revenue_cents` is read back from the
+        Ledger afterwards and is expected to stay at zero.
+
+    Nothing here reaches outside the machine. Delivery goes through the Action
+    Gate exactly as any other external effect does, so it is subject to the
+    egress allowlist, the privacy class and simulation mode, and it is refused
+    rather than performed when any of those say no.
+
+    Returns a :class:`BusinessCycle` describing how far it got. A cycle that
+    stops is not an error: a job the Governor finds unprofitable, or one whose
+    owner has not answered, has reached its correct outcome for now.
+    """
+    cycle = BusinessCycle()
+
+    def stop(stage: str, why: str) -> BusinessCycle:
+        cycle.stopped_at = stage
+        cycle.why_stopped = why
+        if cycle.job_id:
+            cycle.final_state = s.orchestrator.job(cycle.job_id).state.value
+        cycle.audit_chain_ok = s.audit.verify_chain()[0]
+        return cycle
+
+    # --- discover ----------------------------------------------------------
+    # Two doors, deliberately, and this picks between them rather than
+    # blurring them. `poll` is the found-work door: an adapter fetches, and
+    # the posting's body is attacker-authored prose that cannot confirm
+    # anything. `insert` is the Inserted Work door: the owner typed it in, it
+    # makes no network call, and only a registered owner may use it. They
+    # converge immediately afterwards, into the one downstream pipeline.
+    if posting is not None:
+        candidates = s.discovery.insert(source_name, owner_identity=owner_identity,
+                                        postings=[posting])
+    else:
+        candidates = s.discovery.poll(source_name)
+    if not candidates:
+        return stop("discover", f"{source_name!r} returned no opportunities")
+    candidate = candidates[0]
+    cycle.opportunity_ref = candidate.external_ref
+    cycle.quoted_cents = candidate.quoted_cents
+    cycle.stages.append("discover")
+
+    # --- qualify -----------------------------------------------------------
+    survivors, cheap = s.qualification.triage([candidate])
+    if not survivors:
+        decision = cheap[0]
+        cycle.verdict = decision.verdict.value
+        cycle.job_id = decision.job_id or ""
+        return stop("qualify", f"rejected in triage: {decision.reason}")
+
+    decision = s.qualification.qualify(survivors[0])
+    cycle.verdict = decision.verdict.value
+    cycle.reason = getattr(decision, "reason", "")
+    cycle.job_id = decision.job_id or ""
+    cycle.expected_profit_cents = decision.expected_profit_cents
+    cycle.governor_verdict = (decision.governor_verdict.value
+                              if decision.governor_verdict else "")
+    if not cycle.job_id:
+        return stop("qualify", decision.reason)
+    if decision.verdict is Verdict.REJECT:
+        return stop("qualify", decision.reason)
+    if decision.verdict is Verdict.NEEDS_INFORMATION:
+        return stop("qualify", f"more information is needed: {decision.reason}")
+
+    # Rank and select, even for one candidate. Selection is not a formality
+    # here: it is where Qualification *commits*, by applying the Governor's
+    # verdict to the job, and it is where `max_concurrent_jobs` applies. A
+    # cycle that qualified and then executed without it would take work the
+    # capacity limit had already refused, and the job would still be sitting
+    # in QUALIFYING while being delivered.
+    ranked = s.qualification.rank([decision])
+    selected, deferred = s.qualification.select(ranked)
+    if not selected:
+        return stop("qualify",
+                    "not selected: capacity is already committed elsewhere"
+                    if deferred else "nothing was selected")
+    cycle.stages.append("qualify")
+
+    # --- price -------------------------------------------------------------
+    # The Governor has already priced this inside `qualify`; reading its
+    # recorded decision rather than estimating again keeps one price per job.
+    # A second estimate here would be a second pricing authority, and the two
+    # would disagree the first time anything changed between them.
+    governor_rows = s.governor.decisions_for(cycle.job_id)
+    if not governor_rows:
+        return stop("price", "the Governor recorded no decision for this job")
+    priced = governor_rows[-1]
+    cycle.authorised_cents = int(priced["effective_cost_cents"])
+    cycle.stages.append("price")
+
+    verdict = decision.governor_verdict
+    if verdict is GovernorVerdict.REQUIRES_APPROVAL:
+        cycle.owner_approval_required = True
+
+    # --- owner approval ----------------------------------------------------
+    if cycle.owner_approval_required:
+        if not owner_accepts_quote:
+            return stop("owner-approval",
+                        "the Governor requires an owner decision on this quote "
+                        "and none was given; the job is waiting, which is the "
+                        "correct place for it to be")
+        s.orchestrator.owner_approves(
+            job_id=cycle.job_id, owner_identity=owner_identity,
+            why=f"owner accepted the quote for {cycle.opportunity_ref}")
+        cycle.owner_approval_given = True
+    elif verdict is not GovernorVerdict.PROFITABLE:
+        return stop("owner-approval",
+                    f"the Governor did not clear this job: "
+                    f"{verdict.value if verdict else 'no verdict'}")
+    cycle.stages.append("owner-approval")
+
+    # --- contract ----------------------------------------------------------
+    # Qualification recorded what the posting *asked for*. That is a statement
+    # of need, not a checklist: the requirement it writes carries the service
+    # name and no check, because a posting does not know what Solvent's checks
+    # are called. The agreed terms are what bind, and they are committed here
+    # through the same call `run_csv_job` uses, so a job that arrived through
+    # discovery is verified against its checklist exactly as a hand-fed one is.
+    if not agreed_requirements:
+        return stop("contract",
+                    "no agreed checklist was supplied, so there is nothing to "
+                    "verify the deliverable against. A posting's needs name a "
+                    "service, not terms")
+    for requirement in agreed_requirements:
+        s.orchestrator.add_requirement(cycle.job_id, requirement)
+    spec = CAPABILITIES[capability]
+    if spec.derive is not None:
+        # Solvent's own requirement, recorded as DERIVED so it can never be
+        # quoted back to a client as something they asked for.
+        for derived in spec.derive(source_file, list(agreed_requirements)):
+            s.orchestrator.add_requirement(cycle.job_id, derived)
+    try:
+        s.orchestrator.commit_requirements(
+            job_id=cycle.job_id, initiator=owner_identity,
+            known_checks=checks_for(capability))
+    except FailClosed as refusal:
+        return stop("contract", str(refusal))
+    cycle.committed_requirements = len(s.orchestrator.effective_baseline(cycle.job_id))
+    cycle.stages.append("contract")
+
+    # --- budget ------------------------------------------------------------
+    cycle.grant_id = s.governor.grant_budget(
+        job_id=cycle.job_id, decision_id=priced["id"],
+        authorized_cents=cycle.authorised_cents)
+    s.orchestrator.begin_execution(job_id=cycle.job_id, grant_id=cycle.grant_id,
+                                   initiator="business-cycle")
+    cycle.stages.append("budget")
+
+    # --- execute, verify, deliver -----------------------------------------
+    # One call, because these three are one decision: nothing is delivered that
+    # has not been recomputed from the artifact about to leave. Splitting them
+    # here would create a second place where "may this go?" is answered.
+    s.orchestrator.register_artifact(job_id=cycle.job_id, role="SOURCE",
+                                     path=source_file, initiator="business-cycle")
+    report = _execute_job(s, job_id=cycle.job_id, source=source_file,
+                          workdir=workdir, capability=capability)
+    cycle.verification_rounds = len(report.rounds)
+    cycle.delivered = report.delivered
+    if report.artifacts:
+        cycle.deliverable_path = report.artifacts[-1].path
+    if not report.rounds:
+        # Nothing was verified because nothing was produced: the planner
+        # refused, or the worker did. That is an execute-stage stop, and
+        # calling it a verification failure would send the owner looking in
+        # the wrong place.
+        return stop("execute", report.escalated or "no work was produced")
+    if not report.rounds[-1].passed:
+        return stop("verify", report.escalated or "verification did not pass")
+    cycle.stages.extend(("execute", "verify"))
+    if not report.delivered:
+        return stop("deliver", report.escalated or "delivery was refused")
+    cycle.stages.append("deliver")
+
+    # --- invoice -----------------------------------------------------------
+    # The agreed price, not the Governor's cost estimate and not the posting's
+    # headline. `quoted_cents` is what the client's own structured terms said.
+    cycle.invoiced_cents = cycle.quoted_cents
+    payment_id = s.ledger.open_payment(
+        job_id=cycle.job_id, amount_cents=cycle.invoiced_cents,
+        rail=payment_rail, external_ref=external_ref)
+    cycle.stages.append("invoice")
+
+    if not simulate_payment:
+        cycle.final_state = s.orchestrator.job(cycle.job_id).state.value
+        cycle.audit_chain_ok = s.audit.verify_chain()[0]
+        cycle.real_revenue_cents = s.ledger.real_revenue_cents()
+        return stop("payment", "no payment was simulated, so nothing was "
+                               "collected and the job stays awaiting payment")
+
+    # --- payment -----------------------------------------------------------
+    # Marked simulated by the Ledger itself, which is what keeps it out of
+    # `real_revenue_cents`. This function cannot launder fixture money into
+    # revenue because it does not get to choose the verification method.
+    s.ledger.set_payment_state(
+        payment_id, PaymentState.PAID,
+        collected_cents=cycle.invoiced_cents,
+        verification_method=f"{SIMULATED_PREFIX}{payment_rail}")
+    cycle.stages.append("payment")
+
+    # --- reconcile ---------------------------------------------------------
+    s.orchestrator.complete(job_id=cycle.job_id, initiator="business-cycle")
+    cycle.collected_cents = s.ledger.collected_for(cycle.job_id)
+    profit = s.ledger.actual_profit(cycle.job_id)
+    cycle.actual_profit_cents = profit["actual_profit_cents"]
+    cycle.payment_simulated = s.ledger.is_simulated(cycle.job_id)
+    cycle.real_revenue_cents = s.ledger.real_revenue_cents()
+    cycle.stages.append("reconcile")
+
+    # --- audit -------------------------------------------------------------
+    cycle.audit_chain_ok = s.audit.verify_chain()[0]
+    if not cycle.audit_chain_ok:
+        return stop("audit", "the audit chain does not verify")
+    cycle.stages.append("audit")
+
+    cycle.final_state = s.orchestrator.job(cycle.job_id).state.value
+    return cycle
 
 
 # ---------------------------------------------------------------------------
@@ -2247,13 +2579,36 @@ def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
         report.committed = s.orchestrator.effective_baseline(job_id)
     src = next((a for a in s.orchestrator.artifacts(job_id, role="SOURCE")), None)
 
+    # What the worker is *instructed* to do is the subset of the committed
+    # checklist that names a check. A requirement with no check is scope -- the
+    # service the client asked for, recorded with the job -- and there is
+    # nothing to carry out for it. The verification loop below already skips
+    # those for exactly this reason; the planners did not, and three of the
+    # five refused the whole job over one ("'' is not something this capability
+    # does"). csv-cleanup happened to tolerate it, which is why this only
+    # appeared once the other four ran through the business cycle.
+    #
+    # The *brief* handed to verifiers stays whole: `report.committed` still
+    # carries the scope, because a verifier answering a question about the job
+    # should see everything the job was asked for.
+    instructions = [r for r in report.committed if r.check]
+
     # A plan that cannot be made is a refusal, not an attempt. Say so before
     # touching anything.
-    refusals = spec.plan(report.committed)[1] if spec.plan else []
+    refusals = spec.plan(instructions)[1] if spec.plan else []
     if refusals:
         report.refusals = refusals
-        s.orchestrator._transition(job_id, JobState.QUALIFYING, why="planning",
-                                   initiator="execution")
+        # Step back to QUALIFYING first *when that is legal*, so the job
+        # resumes where its requirements can still be changed -- `block`
+        # records the state it was in as the resume state. From EXECUTING that
+        # step is not legal, and forcing it raised rather than blocking: a
+        # governed job whose plan was refused crashed out of the pipeline
+        # instead of stopping on a blocker the owner could see. Blocking in
+        # place is the right outcome there; the job is already accepted and
+        # funded, and it resumes into execution once the brief is fixed.
+        if JobState.QUALIFYING in TRANSITIONS[s.orchestrator.job(job_id).state]:
+            s.orchestrator._transition(job_id, JobState.QUALIFYING,
+                                       why="planning", initiator="execution")
         s.orchestrator.block(job_id=job_id, blocked_on=BlockedOn.INFORMATION,
                              initiator="execution",
                              why="; ".join(refusals)[:400])
@@ -2261,12 +2616,27 @@ def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
         report.final_state = s.orchestrator.job(job_id).state.value
         return report
 
+    # A job reaches here by one of three routes, in different states. A fresh
+    # one from `run_csv_job` is at INTAKE. A resumed one stopped partway to ask
+    # the client something. One from `run_business_cycle` has already been
+    # qualified, approved by its owner and started under a Governor grant, so
+    # it is at EXECUTING and there is nothing to walk.
+    #
+    # This used to walk all three edges unconditionally, skipping only the
+    # state the job was already in, which made the governed route impossible:
+    # ACCEPTED -> QUALIFYING is not a legal transition and the state machine
+    # refused it. Worse, from AWAITING_OWNER_APPROVAL the walk would have gone
+    # straight to ACCEPTED under the initiator "execution" -- the pipeline
+    # answering a question that was put to the owner. So that case is refused
+    # outright, and the rest walks only edges the state machine already allows.
+    if s.orchestrator.job(job_id).state is JobState.AWAITING_OWNER_APPROVAL:
+        raise FailClosed(
+            f"{job_id} is waiting for an owner decision and execution may not "
+            "supply one. Record the owner's own answer through "
+            "`orchestrator.owner_approves` or `owner_declines` first")
     for target in (JobState.QUALIFYING, JobState.ACCEPTED, JobState.EXECUTING):
-        # A resumed job is already partway along this path — it stopped here to
-        # ask the client something. Re-entering the state it is already in is
-        # not a transition, so skip it rather than widen the state machine to
-        # permit self-loops.
-        if s.orchestrator.job(job_id).state is target:
+        state = s.orchestrator.job(job_id).state
+        if state is target or target not in TRANSITIONS[state]:
             continue
         s.orchestrator._transition(job_id, target, why="service pipeline",
                                    initiator="execution")
@@ -2279,7 +2649,7 @@ def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
     for attempt in range(1, limit + 1):
         destination = out_dir / f"deliverable.attempt{attempt}.{spec.extension}"
         work = spec.execute(source=source, destination=destination,
-                            requirements=report.committed)
+                            requirements=instructions)
         report.work_summary = work.summary()
         if work.refused:
             report.refusals = work.refused

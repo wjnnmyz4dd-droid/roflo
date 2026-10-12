@@ -21,7 +21,7 @@ from .branding import ENGINE, PRODUCT
 from .errors import FailClosed
 from .harness import OWNER, Solvent, run_acquisition_cycle, run_first_job
 from .store import TABLE_OWNER
-from .types import OperatingMode
+from .types import OperatingMode, fmt
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -92,6 +92,118 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     blocked = sim or not allow
     print("\nExternal execution:", "FAIL-CLOSED (nothing can leave)" if blocked
           else "ENABLED for allowlisted destinations")
+    return 0
+
+
+def cmd_cycle(args: argparse.Namespace) -> int:
+    """Take one opportunity from an approved source through to reconciled profit.
+
+    **Owner path, and deliberately not an automatic one.** Two decisions bound
+    this command and neither has a default that says yes:
+
+    ``--accept-quote``
+        Your answer when the Governor asks for approval. Without it the job
+        stops in AWAITING_OWNER_APPROVAL, which is where it belongs until you
+        decide.
+
+    ``--simulate-payment``
+        Injects a simulated payment so the back half of the cycle can be
+        exercised. The Ledger marks it simulated and it never counts as
+        revenue. Nothing here can collect real money.
+
+    ``--brief`` is the checklist you agreed with the client, as JSON: a list of
+    ``{"id", "check", "params"}`` objects. It is required, because a posting's
+    `needs` name a service and its body is prose -- neither is terms, and the
+    deliverable is recomputed against the checklist rather than against
+    anything Solvent inferred for itself.
+    """
+    import json as _json
+
+    from .harness import CYCLE_STAGES, run_business_cycle
+    from .types import Criticality, Requirement, RequirementSource
+
+    solvent = _owner_solvent(args)
+    posting = None
+    if args.posting:
+        try:
+            posting = _json.loads(
+                pathlib.Path(args.posting).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as problem:
+            print(f"refused: the opportunity could not be read: {problem}")
+            return 1
+        if not isinstance(posting, dict) or not posting.get("ref"):
+            print('refused: --posting must be a JSON object with at least '
+                  '{"ref", "title", "quoted_cents", "needs", "project_state"}')
+            return 1
+    try:
+        agreed = _json.loads(pathlib.Path(args.brief).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as problem:
+        print(f"refused: the agreed checklist could not be read: {problem}")
+        return 1
+    if not isinstance(agreed, list) or not agreed:
+        print("refused: --brief must be a non-empty JSON list of agreed terms")
+        return 1
+
+    requirements = []
+    for index, term in enumerate(agreed, 1):
+        if not isinstance(term, dict) or not term.get("check"):
+            print(f"refused: term {index} names no check. Each term needs "
+                  f'{{"check": "...", "params": {{...}}}}')
+            return 1
+        requirements.append(Requirement(
+            id=str(term.get("id") or f"R{index}"),
+            text=str(term.get("text") or term["check"]),
+            source=RequirementSource.CLIENT_CONFIRMED_STRUCTURED,
+            acceptance=str(term.get("acceptance") or term["check"]),
+            check=str(term["check"]), params=dict(term.get("params") or {}),
+            criticality=Criticality.MANDATORY))
+
+    cycle = run_business_cycle(
+        solvent, source_name=args.source, source_file=args.file,
+        workdir=args.workdir, capability=args.capability, posting=posting,
+        owner_identity=args.owner, agreed_requirements=requirements,
+        owner_accepts_quote=args.accept_quote,
+        simulate_payment=args.simulate_payment)
+
+    reached = set(cycle.stages)
+    for stage in CYCLE_STAGES:
+        if stage in reached:
+            print(f"  [done]    {stage}")
+        elif stage == cycle.stopped_at:
+            print(f"  [STOPPED] {stage} — {cycle.why_stopped}")
+        else:
+            print(f"  [ ]       {stage}")
+
+    print(f"\nopportunity : {cycle.opportunity_ref or '(none)'}")
+    print(f"job         : {cycle.job_id or '(none)'}")
+    print(f"verdict     : {cycle.verdict or '-'}"
+          + (f" / governor {cycle.governor_verdict}" if cycle.governor_verdict
+             else ""))
+    if cycle.owner_approval_required:
+        print(f"approval    : required; "
+              f"{'given' if cycle.owner_approval_given else 'NOT GIVEN'}")
+    if cycle.grant_id:
+        print(f"budget      : {fmt(cycle.authorised_cents)} under "
+              f"{cycle.grant_id}")
+    if cycle.delivered:
+        print(f"delivered   : {cycle.deliverable_path}")
+    if cycle.invoiced_cents:
+        print(f"invoiced    : {fmt(cycle.invoiced_cents)}")
+    if cycle.collected_cents:
+        print(f"collected   : {fmt(cycle.collected_cents)} "
+              f"({'SIMULATED' if cycle.payment_simulated else 'real'})")
+        print(f"profit      : {fmt(cycle.actual_profit_cents)}")
+    print(f"real revenue: {fmt(cycle.real_revenue_cents)} "
+          "— simulated money is never counted here")
+    print(f"final state : {cycle.final_state or '-'}")
+    print(f"audit chain : {'verifies' if cycle.audit_chain_ok else 'BROKEN'}")
+
+    if not cycle.completed:
+        print(f"\nThe cycle stopped at {cycle.stopped_at}. Nothing beyond that "
+              "stage happened.")
+        return 1
+    print("\nThe cycle completed in simulation. No real money moved, no client "
+          "was contacted, and nothing left this machine.")
     return 0
 
 
@@ -1073,6 +1185,34 @@ def build_parser() -> argparse.ArgumentParser:
                                help="what blocks the first real paid job")
     readiness.add_argument("--db", default=rt.DEFAULT_DB)
     readiness.set_defaults(func=cmd_readiness)
+
+    cycle = sub.add_parser(
+        "cycle", help="take one opportunity from an approved source through "
+                      "to reconciled profit (simulation)")
+    cycle.add_argument("--owner", default=OWNER,
+                       help="the registered owner identity making the "
+                            "decisions this cycle needs")
+    cycle.add_argument("--db", default=rt.DEFAULT_DB)
+    cycle.add_argument("--source", required=True,
+                       help="the registered source this opportunity belongs to")
+    cycle.add_argument("--posting", default="",
+                       help="JSON file: one opportunity you are entering by "
+                            "hand. Without it the source is polled instead")
+    cycle.add_argument("--file", required=True,
+                       help="the client's file to work on")
+    cycle.add_argument("--brief", required=True,
+                       help="JSON file: the checklist agreed with the client")
+    cycle.add_argument("--capability", default="csv-cleanup",
+                       help="which cleared capability performs the work")
+    cycle.add_argument("--workdir", default=".",
+                       help="where the deliverable is written")
+    cycle.add_argument("--accept-quote", action="store_true",
+                       help="your approval of the Governor's quote, if it "
+                            "asks for one. Without it the job waits")
+    cycle.add_argument("--simulate-payment", action="store_true",
+                       help="inject a simulated payment to exercise invoicing "
+                            "and reconciliation. Never counts as revenue")
+    cycle.set_defaults(func=cmd_cycle)
 
     demo = sub.add_parser("demo", help="run the complete-job harness (fixtures only)")
     demo.add_argument("--state", default="CA", help="project jurisdiction")
