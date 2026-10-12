@@ -15,7 +15,20 @@ OWNER = "owner:demo"
 
 
 def rig(board, *, max_concurrent=2, minimum="100", approval_above="2000",
-        max_job_spend="600", capabilities=("spreadsheet",)):
+        max_job_spend="600", capabilities=("spreadsheet",),
+        cost_model="AI_OPERATING", platform_fee=0.0, compute_allowance=0):
+    """One configured Solvent.
+
+    ``cost_model`` decides how DeskPilot's *own* cost is computed.
+    AI_OPERATING -- the default everywhere -- counts what actually leaves:
+    platform cut, processor cut, compute. HUMAN_LABOUR costs the work at a
+    human market wage, which is only true of a job DeskPilot subcontracts to a
+    person, and is kept reachable for exactly those tests.
+
+    ``platform_fee`` is how a job is made genuinely unprofitable. It used to
+    happen for free, because every job was costed at two hours of human labour
+    whatever it actually took.
+    """
     s = Solvent()
     for state, rate in (("CA", 9_500), ("CT", 7_800), ("NC", 5_200)):
         s.pricing.ingest(
@@ -38,6 +51,9 @@ def rig(board, *, max_concurrent=2, minimum="100", approval_above="2000",
         "financial": {"max_job_spend_cents": money(max_job_spend),
                       "max_committed_unverified_cents": money("5000"),
                       "owner_approval_above_cents": money(approval_above)},
+        "commercial": {"cost_model": cost_model,
+                       "platform_fee_fraction": platform_fee,
+                       "compute_allowance_cents": compute_allowance},
     }, OWNER, "test")
     return s
 
@@ -60,10 +76,25 @@ class SolventSaysNo(unittest.TestCase):
     """Optimise for good jobs, not for the number of jobs."""
 
     def test_an_unprofitable_job_is_rejected(self):
-        s = rig([posting("thin", "300")])
+        """Unprofitable for a real reason: the platform keeps most of it.
+
+        This used to need no contrivance, because every job was costed at two
+        hours of human labour. Under a cost model that counts what DeskPilot
+        actually spends, a job is only unprofitable when something actually
+        takes the money -- so the fixture now says what that something is.
+        """
+        s = rig([posting("thin", "300")], platform_fee=0.85)
         _, decisions = run(s)
         self.assertIs(decisions[0].verdict, Verdict.REJECT)
         self.assertIs(decisions[0].reject_reason, RejectReason.MARGIN_TOO_LOW)
+
+    def test_the_same_job_without_that_fee_is_worth_taking(self):
+        """The negative control. Without it the test above passes on a Solvent
+        that rejects everything."""
+        s = rig([posting("thin", "300")])
+        _, decisions = run(s)
+        self.assertIsNot(decisions[0].verdict, Verdict.REJECT,
+                         f"rejected a profitable job: {decisions[0].reason}")
 
     def test_an_unsupported_job_is_rejected(self):
         s = rig([posting("video", "4000", needs=("video_editing",))])
@@ -85,13 +116,32 @@ class SolventSaysNo(unittest.TestCase):
         cheap, _ = run(s)
         self.assertIs(cheap[0].reject_reason, RejectReason.INSUFFICIENT_INFORMATION)
 
-    def test_a_job_with_no_location_cannot_get_a_binding_quote(self):
+    def test_a_subcontracted_job_with_no_location_cannot_get_a_binding_quote(self):
+        """Geography prices human labour, so it gates a job that buys some.
+
+        Under AI_OPERATING there is no geographic cost line at all -- compute
+        and card fees are the same everywhere -- so location cannot gate that
+        estimate and asserting it did would be asserting the old model. The
+        property is real for the case it was written about: a job DeskPilot
+        intends to subcontract to a person, where the wage is the cost and the
+        wage depends on where they are.
+        """
         s = rig([{"ref": "nowhere", "title": "job", "quoted_cents": money("900"),
-                  "needs": ["spreadsheet"], "client_ref": "c", "body": "x"}])
+                  "needs": ["spreadsheet"], "client_ref": "c", "body": "x"}],
+                cost_model="HUMAN_LABOUR")
         _, decisions = run(s)
         self.assertIs(decisions[0].verdict, Verdict.NEEDS_INFORMATION)
         self.assertIs(decisions[0].governor_verdict,
                       GovernorVerdict.PRICING_LOCATION_UNKNOWN)
+
+    def test_deskpilots_own_cost_does_not_depend_on_where_the_client_is(self):
+        """The same posting, priced the way DeskPilot actually works."""
+        s = rig([{"ref": "nowhere", "title": "job", "quoted_cents": money("900"),
+                  "needs": ["spreadsheet"], "client_ref": "c", "body": "x"}])
+        _, decisions = run(s)
+        self.assertIsNot(decisions[0].governor_verdict,
+                         GovernorVerdict.PRICING_LOCATION_UNKNOWN,
+                         "a compute-and-fees cost was blocked on geography")
 
     def test_a_job_from_an_unpermitted_source_is_refused(self):
         s = rig([posting("ok", "900")])
@@ -179,8 +229,14 @@ class Ranking(unittest.TestCase):
 
     def test_ranking_never_overturns_the_governor(self):
         """A rejected job is not rankable at any score."""
-        s = rig([posting("rejected", "300"), posting("good", "900")])
+        s = rig([posting("rejected", "300"), posting("good", "900")],
+                platform_fee=0.85)
         _, decisions = run(s)
+        rejected = [d for d in decisions
+                    if d.opportunity.external_ref == "rejected"]
+        self.assertTrue(rejected and rejected[0].verdict is Verdict.REJECT,
+                        "the fixture did not actually produce a rejection, so "
+                        "this would pass on a ranker that drops everything")
         ranked = s.qualification.rank(decisions)
         refs = [d.opportunity.external_ref for d in ranked]
         self.assertNotIn("rejected", refs)
@@ -209,7 +265,8 @@ class QualificationOwnsNoEconomics(unittest.TestCase):
 
     def test_rejection_reasons_are_recorded_as_a_business_metric(self):
         s = rig([posting("thin", "300"), posting("video", "4000",
-                                                 needs=("video_editing",))])
+                                                 needs=("video_editing",))],
+                platform_fee=0.85)
         run(s)
         reasons = s.qualification.rejection_reasons()
         self.assertIn(RejectReason.MARGIN_TOO_LOW.value, reasons)

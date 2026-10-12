@@ -19,10 +19,11 @@ from __future__ import annotations
 import contextlib
 from dataclasses import dataclass, field, replace
 import tempfile
+import time
 from pathlib import Path
 
 from .application import Applications
-from .audit import AuditLog
+from .audit import AuditLog, now
 from . import ambiguity as ambiguity_module
 from .capability import Capability, CapabilityRegistry, promotion_verdict
 from .checks import checks_for
@@ -48,6 +49,7 @@ from .ledger import SIMULATED_PREFIX, Ledger
 from .memory import BusinessMemory
 from .orchestrator import TRANSITIONS, JobOrchestrator
 from .policy import DEFAULT_MAX_CORRECTIONS, PolicyStore
+from . import quoting
 from .pricing import PricingReference
 from .projection import project
 from .store import Store
@@ -488,6 +490,7 @@ FIXTURE_BOARD = [
     {"ref": "A-5", "title": "Spreadsheet, location unstated",
      "quoted_cents": 95_000, "needs": ["spreadsheet"], "client_ref": "client_vague",
      "body": "Build a sheet. We would rather not say where the work happens."},
+
     {"ref": "A-6", "title": "URGENT high-paying spreadsheet",
      "quoted_cents": 900_000, "needs": ["spreadsheet"], "project_state": "CA",
      "client_ref": "client_hostile",
@@ -546,8 +549,17 @@ def run_acquisition_cycle(*, path: str = ":memory:",
         "financial": {"max_job_spend_cents": money("600"),
                       "max_committed_unverified_cents": money("5000"),
                       "owner_approval_above_cents": money("2000")},
+        # A marketplace keeps a cut and a processor keeps a cut. Recorded
+        # here because without *some* cost the margin floor can never reject
+        # anything: DeskPilot's own costs are near zero, so a board with no
+        # fees configured makes every job look like a 100% margin and the
+        # Governor's margin check becomes a check of nothing. TEST-ONLY
+        # figures; a deployment records the owner's real ones.
+        "commercial": {"platform_fee_fraction": 0.20,
+                       "payment_fee_fraction": 0.029,
+                       "payment_fee_flat_cents": 30},
         "egress": {"simulation_only": True},
-    }, OWNER, "acquisition harness: fixture source and bounded caps")
+    }, OWNER, "acquisition harness: fixture source, bounded caps, real fees")
 
     candidates = s.discovery.poll("fixture_board")
     report.discovered = len(candidates)
@@ -687,6 +699,7 @@ class BusinessCycle:
     """What happened, how far it got, and why it stopped there."""
 
     opportunity_ref: str = ""
+    client_ref: str = ""
     job_id: str = ""
     #: Each stage that actually completed, in order.
     stages: list[str] = field(default_factory=list)
@@ -708,6 +721,20 @@ class BusinessCycle:
     committed_requirements: int = 0
     delivered: bool = False
     deliverable_path: str = ""
+
+    #: What DeskPilot actually spent doing the work. Measured, not estimated.
+    execution_wall_seconds: float = 0.0
+    execution_cpu_seconds: float = 0.0
+    #: What a human would have taken, when a cited standard says so. A value
+    #: measure for the client, never a quantity anyone is billed for.
+    human_equivalent_hours: float = 0.0
+    human_cost_cents: Cents = 0
+    billing_basis: str = ""
+    billable_hours: float = 0.0
+    operating_cost_cents: Cents = 0
+    operating_cost_basis: tuple = ()
+    invoice_path: str = ""
+    conversion_advice: str = ""
     verification_rounds: int = 0
 
     invoiced_cents: Cents = 0
@@ -738,11 +765,82 @@ CYCLE_STAGES = (
 )
 
 
+def _write_invoice(s: "Solvent", cycle: "BusinessCycle", *, workdir: str,
+                   basis, agreed_hourly_cents: Cents) -> str:
+    """Write the document the client is actually sent. Plain text, deterministic.
+
+    The Ledger has recorded a receivable since this pipeline existed, which is
+    bookkeeping: it says what DeskPilot is owed. It is not an invoice, and a
+    client cannot be asked to pay against a row in somebody else's database.
+    This produces the thing that goes to them.
+
+    It states the billing basis plainly, and on an hourly job it states the
+    hours that were actually worked. There is deliberately no line anywhere in
+    here that can carry a human-equivalent figure into an amount due: on a
+    fixed-price job the human comparison is shown as *context for the value*,
+    clearly labelled, and the amount due is the agreed price.
+    """
+    party = {}
+    try:
+        party = s.policy.contracting_party() or {}
+    except Exception:
+        party = {}
+
+    lines = [
+        "INVOICE",
+        "",
+        f"From      : {party.get('legal_name') or '(contracting identity not recorded)'}",
+        f"To        : {cycle.client_ref or '(client not recorded)'}",
+        f"Job       : {cycle.job_id}",
+        f"Reference : {cycle.opportunity_ref}",
+        f"Issued    : {now()}",
+        "",
+        "Work delivered and independently verified before issue.",
+        "",
+    ]
+    if basis is quoting.BillingBasis.HOURLY:
+        # Both numbers, always. Printing only the billed figure and calling it
+        # "worked" is untrue the moment rounding is involved, and rounding is
+        # involved on nearly every job DeskPilot does: 4.8 seconds of work
+        # billed as a quarter hour is a quarter hour of *billing*, not of
+        # work, and the client is entitled to see which is which.
+        worked = cycle.execution_wall_seconds / 3600.0
+        lines += [
+            f"Basis     : hourly at {fmt(agreed_hourly_cents)}/hour",
+            f"Worked    : {worked:.4f} hour(s) ({cycle.execution_wall_seconds:.1f}s)",
+            f"Billed    : {cycle.billable_hours:.4f} hour(s), rounded up to the "
+            f"agreed billing increment",
+            "",
+            f"Amount due: {fmt(cycle.invoiced_cents)}",
+        ]
+    else:
+        lines += [
+            "Basis     : fixed price, agreed before work began",
+            f"Amount due: {fmt(cycle.invoiced_cents)}",
+        ]
+        if cycle.human_equivalent_hours:
+            lines += [
+                "",
+                f"For context, not a charge: this work would take a person "
+                f"about {cycle.human_equivalent_hours:.1f} hour(s).",
+            ]
+    lines += ["", f"Verification: {cycle.verification_rounds} round(s); every "
+                  "agreed requirement recomputed from your source file."]
+
+    path = Path(workdir) / f"invoice-{cycle.job_id}.txt"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(path)
+
+
 def run_business_cycle(
         s: "Solvent", *, source_name: str, source_file: str, workdir: str,
         capability: str = "csv-cleanup", owner_identity: str = OWNER,
         posting: dict | None = None,
         agreed_requirements: list | None = None,
+        billing_basis: "quoting.BillingBasis | None" = None,
+        work_standard: "quoting.WorkStandard | None" = None,
+        work_units: int = 0,
+        agreed_hourly_cents: Cents = 0,
         owner_accepts_quote: bool = False,
         simulate_payment: bool = False,
         payment_rail: str = "fixture",
@@ -810,6 +908,7 @@ def run_business_cycle(
         return stop("discover", f"{source_name!r} returned no opportunities")
     candidate = candidates[0]
     cycle.opportunity_ref = candidate.external_ref
+    cycle.client_ref = candidate.client_ref
     cycle.quoted_cents = candidate.quoted_cents
     cycle.stages.append("discover")
 
@@ -925,8 +1024,15 @@ def run_business_cycle(
     # here would create a second place where "may this go?" is answered.
     s.orchestrator.register_artifact(job_id=cycle.job_id, role="SOURCE",
                                      path=source_file, initiator="business-cycle")
+    started, started_cpu = time.monotonic(), time.process_time()
     report = _execute_job(s, job_id=cycle.job_id, source=source_file,
                           workdir=workdir, capability=capability)
+    # Measured across plan, work and verification, because all three are work
+    # DeskPilot did on this job. Nothing sleeps in that path -- there is no
+    # artificial delay between a deliverable passing verification and the
+    # delivery gate being asked -- so this is execution time, not waiting.
+    cycle.execution_wall_seconds = time.monotonic() - started
+    cycle.execution_cpu_seconds = time.process_time() - started_cpu
     cycle.verification_rounds = len(report.rounds)
     cycle.delivered = report.delivered
     if report.artifacts:
@@ -945,12 +1051,74 @@ def run_business_cycle(
     cycle.stages.append("deliver")
 
     # --- invoice -----------------------------------------------------------
-    # The agreed price, not the Governor's cost estimate and not the posting's
-    # headline. `quoted_cents` is what the client's own structured terms said.
-    cycle.invoiced_cents = cycle.quoted_cents
+    # What may be charged, which depends on what the client agreed to, and is
+    # the one place the human/AI distinction decides money.
+    #
+    # FIXED_PRICE: the agreed price, in full, however fast the work was. That
+    # is what a fixed price *means* and it is where the margin lives.
+    # HOURLY: the hours that actually elapsed, at the agreed rate, and nothing
+    # else. `refuse_fabricated_hours` is called on the figure before it
+    # reaches an invoice, because the commonest way to pad an hourly bill is
+    # to reach for the human-equivalent number sitting right beside it.
+    basis = billing_basis or quoting.BillingBasis.FIXED_PRICE
+    cycle.billing_basis = basis.value
+    measurement = quoting.ExecutionMeasurement(
+        wall_seconds=cycle.execution_wall_seconds,
+        cpu_seconds=cycle.execution_cpu_seconds)
+
+    if work_standard is not None:
+        human = quoting.human_equivalent(work_units, work_standard)
+        cycle.human_equivalent_hours = human.hours
+
+    if basis is quoting.BillingBasis.HOURLY:
+        if agreed_hourly_cents <= 0:
+            return stop("invoice",
+                        "an hourly contract needs the rate the client agreed "
+                        "to; there is nothing to multiply the hours by")
+        increment = int(s.policy.get("commercial", "billing_increment_minutes",
+                                     default=1))
+        cycle.billable_hours = quoting.hours_billable(
+            measurement, round_to_minutes=increment)
+        try:
+            quoting.refuse_fabricated_hours(cycle.billable_hours, measurement)
+        except FailClosed as refusal:
+            return stop("invoice", str(refusal))
+        cycle.invoiced_cents = round(cycle.billable_hours * agreed_hourly_cents)
+        if work_standard is not None:
+            cycle.human_cost_cents = round(
+                cycle.human_equivalent_hours * agreed_hourly_cents)
+            advice = quoting.recommend_fixed_price(
+                measurement=measurement,
+                agreed_hourly_cents=agreed_hourly_cents,
+                fixed_quote=quoting.quote_fixed_price(
+                    human=quoting.human_equivalent(work_units, work_standard),
+                    market_hourly_cents=agreed_hourly_cents,
+                    discount_fraction=float(s.policy.get(
+                        "commercial", "discount_fraction", default=0.0))),
+                round_to_minutes=increment)
+            cycle.conversion_advice = advice.reason if advice.recommend else ""
+    else:
+        cycle.invoiced_cents = cycle.quoted_cents
+
     payment_id = s.ledger.open_payment(
         job_id=cycle.job_id, amount_cents=cycle.invoiced_cents,
         rail=payment_rail, external_ref=external_ref)
+
+    # What the job actually cost to run, recorded against the job so the
+    # Ledger -- not this function -- remains the authority on money spent.
+    rates = quoting.rates_from_policy(s.policy)
+    cost = quoting.operating_cost(measurement, price_cents=cycle.invoiced_cents,
+                                  rates=rates)
+    for line in cost.as_cost_lines():
+        s.ledger.record_cost(
+            job_id=cycle.job_id, category=line.category,
+            amount_cents=line.amount, source="OWNER_RECORDED",
+            note="measured operating cost at the owner's recorded rates")
+    cycle.operating_cost_cents = cost.total_cents
+    cycle.operating_cost_basis = cost.basis
+
+    cycle.invoice_path = _write_invoice(s, cycle, workdir=workdir, basis=basis,
+                                        agreed_hourly_cents=agreed_hourly_cents)
     cycle.stages.append("invoice")
 
     if not simulate_payment:

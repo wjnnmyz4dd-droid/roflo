@@ -164,6 +164,38 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               "per-category jurisdiction binding; unknown material jurisdiction "
               "refuses a binding quote", category=ENGINEERING))
 
+    # What DeskPilot's own work costs. Zero is not a cheap deployment, it is
+    # an unconfigured one -- and an unconfigured one disables a control: the
+    # Governor's margin floor compares revenue against cost, so with every
+    # cost at zero every job shows a 100% margin and the floor can never
+    # reject anything. The check that looks like it is protecting the owner
+    # is protecting nothing until these are recorded.
+    cost_keys = ("compute_cents_per_cpu_hour", "platform_fee_fraction",
+                 "payment_fee_fraction", "payment_fee_flat_cents")
+    recorded = {k: policy.get("commercial", k, default=0) for k in cost_keys}
+    any_cost = any(float(v or 0) > 0 for v in recorded.values())
+    add(Check("operating costs recorded", any_cost,
+              ("costs recorded: "
+               + ", ".join(f"{k}={v}" for k, v in recorded.items() if float(v or 0) > 0))
+              if any_cost else
+              "every operating cost is zero, so the Governor's margin floor "
+              "compares revenue against nothing and cannot reject a job",
+              "" if any_cost else
+              "OD-16: record the platform cut, the payment processor's fee and "
+              "the compute cost per CPU-hour under `commercial` in policy",
+              category=OWNER_CONFIG))
+
+    minimum_fee = int(policy.get("commercial", "minimum_project_fee_cents",
+                                 default=0))
+    add(Check("a minimum project fee", minimum_fee > 0,
+              f"minimum project fee {minimum_fee} cents" if minimum_fee else
+              "no minimum project fee is set, so a job worth almost nothing "
+              "is still worth taking as far as the Governor is concerned",
+              "" if minimum_fee else
+              "OD-17: set `commercial.minimum_project_fee_cents` to the "
+              "smallest job worth the overhead of taking",
+              category=OWNER_CONFIG))
+
     proven = [c.name for c in capability.capabilities() if c.proven]
     add(Check("a proven capability to sell", bool(proven),
               f"proven capabilities: {', '.join(proven) or 'none registered'}",
@@ -290,6 +322,14 @@ _NOT_USED_BY_A_SUPERVISED_TRIAL = (
     "payment rail operational",
     "real revenue to date",
     "external execution posture",
+    # A supervised trial quotes nobody and collects nothing: it produces a
+    # verified file and a drafted message for the owner to read. Both of
+    # these decide what a client is *charged* and whether the margin the
+    # Governor checks means anything, so neither is in a trial's way -- and
+    # both stop a real job, where a price goes to a client and money is
+    # supposed to arrive.
+    "operating costs recorded",
+    "a minimum project fee",
     # The host firewall guards what can reach this machine. A supervised trial
     # run from the terminal sends nothing, collects nothing and listens on
     # nothing, so it does not depend on it.

@@ -115,7 +115,15 @@ class Cycle(unittest.TestCase):
                                       "max_privacy": "CLIENT_CONFIDENTIAL",
                                       "classes": ["C2_EXTERNAL_COMMUNICATION"]}],
                        "simulation_only": True},
-        }, OWNER, "test: one board, one destination, simulation only")
+            # This suite is about owner decisions, so the owner has to actually
+            # be asked. The threshold is set on *revenue* rather than left to
+            # the cost ceiling: once DeskPilot's cost model stopped charging
+            # itself a human wage, a $400 job cost $0.60 and sailed under every
+            # spend ceiling, which silently turned every approval test in this
+            # file into a test of nothing. An owner who wants to see jobs of
+            # this size says so by revenue, and that is what this sets.
+            "financial": {"owner_approval_above_cents": 20_000},
+        }, OWNER, "test: one board, one destination, owner sees jobs over $200")
 
     def run(self, **kwargs):
         defaults = dict(source_name="board", source_file=str(self.source),

@@ -79,12 +79,28 @@ class ManualBridge(unittest.TestCase):
         self.assertEqual(result["requirements_source"], ["OWNER_CONFIRMED"])
 
     def test_the_manual_path_still_obeys_every_authority(self):
-        """A manual job is not a privileged job."""
+        """A manual job is not a privileged job.
+
+        This used to use a $60 job and expect MARGIN_TOO_LOW, which worked
+        only because every job was costed at two hours of human labour. Under
+        a cost model that counts what DeskPilot actually spends, $60 of
+        revenue against compute and card fees is a perfectly good job -- so
+        the refusal this asserts is the one that is still real for work the
+        owner typed in themselves: it is below the minimum they set, and
+        qualification throws it out before spending an estimate on it.
+        """
         result = run_manual_opportunity(
-            title="Unprofitable job", client_ref="c", quote_dollars="60",
+            title="Barely worth the email", client_ref="c", quote_dollars="10",
             needs=["spreadsheet"], project_state="CA")
         self.assertEqual(result["verdict"], "REJECT")
-        self.assertEqual(result["reject_reason"], "MARGIN_TOO_LOW")
+        self.assertEqual(result["reject_reason"], "BELOW_MINIMUM_VALUE")
+
+    def test_a_manual_job_worth_doing_is_not_refused(self):
+        """The negative control: the path is not simply refusing everything."""
+        result = run_manual_opportunity(
+            title="Expense spreadsheet", client_ref="c", quote_dollars="450",
+            needs=["spreadsheet"], project_state="CT")
+        self.assertNotEqual(result["verdict"], "REJECT", result["reason"])
 
     def test_the_manual_source_is_not_a_fixture(self):
         source = ManualSource("owner_entered", [])

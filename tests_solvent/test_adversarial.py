@@ -281,6 +281,7 @@ class HostileBoard(unittest.TestCase):
                           "max_committed_unverified_cents": money("50000"),
                           "owner_approval_above_cents": money("2000"),
                           **policy.get("financial", {})},
+            "commercial": policy.get("commercial", {}),
         }, OWNER, "hostile board test")
         return s
 
@@ -388,22 +389,36 @@ class HostileBoard(unittest.TestCase):
         self.assertEqual(s.ledger.collected_for(decision.job_id or ""), 0)
         self.assertEqual(s.ledger.real_revenue_cents(), 0)
 
-    def test_a_client_stated_jurisdiction_is_used_as_stated(self):
-        """Documents current behaviour: a client picks their pricing jurisdiction.
+    def _estimate_for(self, state, **policy):
+        s = self._rig([{"ref": state.lower(), "title": "Sheet",
+                        "quoted_cents": money("900"), "needs": ["spreadsheet"],
+                        "project_state": state, "client_ref": "c", "body": "x"}],
+                      **policy)
+        self._qualify_one(s)
+        rows = s.store.raw_readonly("SELECT * FROM price_estimates")
+        return int(rows[0]["estimated_cents"]) if rows else 0
 
-        This is a known residual business risk (OD-10), not a control bypass: a
-        misstated location produces a wrong price, which shows up as estimate error
-        in calibration. Recorded here so the behaviour is deliberate and visible.
+    def test_a_client_cannot_move_deskpilots_cost_by_stating_a_location(self):
+        """OD-10, closed for the way DeskPilot actually works.
+
+        A client used to pick DeskPilot's pricing jurisdiction by typing a
+        state into their posting, because DeskPilot's cost was a human wage
+        and wages are geographic. It no longer is: the cost is compute and
+        card fees, which cost the same wherever the client happens to be. So
+        the attack has nothing to move.
         """
-        cheap = self._rig([{"ref": "nc", "title": "Sheet",
-                            "quoted_cents": money("900"), "needs": ["spreadsheet"],
-                            "project_state": "NC", "client_ref": "c", "body": "x"}])
-        self._qualify_one(cheap)
-        nc = int(cheap.store.raw_readonly("SELECT * FROM price_estimates")[0]["estimated_cents"])
+        self.assertEqual(self._estimate_for("NC"), self._estimate_for("CA"),
+                         "a stated location changed a compute-and-fees cost")
 
-        dear = self._rig([{"ref": "ca", "title": "Sheet",
-                           "quoted_cents": money("900"), "needs": ["spreadsheet"],
-                           "project_state": "CA", "client_ref": "c", "body": "x"}])
-        self._qualify_one(dear)
-        ca = int(dear.store.raw_readonly("SELECT * FROM price_estimates")[0]["estimated_cents"])
-        self.assertLess(nc, ca, "stated jurisdiction drives cost, as designed")
+    def test_the_risk_is_real_for_work_deskpilot_subcontracts(self):
+        """And still documented where it still applies.
+
+        OD-10 was never wrong, it was specific: it is a risk for a job whose
+        cost *is* somebody's wage. Kept as a test so switching a deployment to
+        HUMAN_LABOUR does not quietly reintroduce an unflagged exposure.
+        """
+        labour = {"commercial": {"cost_model": "HUMAN_LABOUR"}}
+        self.assertLess(self._estimate_for("NC", **labour),
+                        self._estimate_for("CA", **labour),
+                        "stated jurisdiction drives a subcontracted cost, as "
+                        "designed and as recorded in OD-10")

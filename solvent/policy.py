@@ -62,6 +62,37 @@ DEFAULT_POLICY: dict[str, Any] = {
         "window": 50,
         "degradation_threshold": 2.0,
     },
+    # What DeskPilot charges, what it costs DeskPilot to run, and the floor
+    # below which a job is not worth taking. Every value starts at zero or
+    # empty on purpose: a shipped default here would be an invented rate, and
+    # an invented rate is what a client gets quoted. `quoting` refuses a
+    # binding quote until the owner has recorded evidence.
+    "commercial": {
+        # How DeskPilot's own cost is modelled. AI_OPERATING counts what
+        # DeskPilot actually spends -- compute and fees. HUMAN_LABOUR is the
+        # old model, which costed DeskPilot's work at a human market wage it
+        # does not pay; it stays reachable only so a genuinely
+        # human-subcontracted job can still be priced that way.
+        "cost_model": "AI_OPERATING",
+        "compute_allowance_cents": 0,
+        # The owner's competitive discount against what a human would cost.
+        "discount_fraction": 0.0,
+        # No job below this is worth the overhead of taking it. Zero means
+        # the owner has not set one, not that any price is acceptable.
+        "minimum_project_fee_cents": 0,
+        # What running DeskPilot actually costs. Not a labour rate.
+        "compute_cents_per_cpu_hour": 0,
+        "platform_fee_fraction": 0.0,
+        "payment_fee_fraction": 0.0,
+        "payment_fee_flat_cents": 0,
+        # The rate an hourly contract is billed at, when the owner has one.
+        "hourly_rate_cents": 0,
+        "billing_increment_minutes": 1,
+        # Per-capability market rate and work standard, recorded by the owner
+        # with a citation. Empty until they are.
+        "market_hourly_cents": {},
+        "work_standards": {},
+    },
     "pricing": {
         "materiality_fraction": 0.05,
         "max_age_days": {"DEFAULT": 365, "ON_SITE_LABOR": 180, "REMOTE_LABOR": 180,

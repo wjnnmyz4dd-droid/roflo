@@ -32,6 +32,7 @@ from enum import Enum
 from .audit import AuditLog, new_id, now
 from .content import RequirementSet, confirm, extract_requirements
 from .discovery import Opportunity, OpportunityStatus
+from . import quoting
 from .errors import FailClosed
 from .store import Store
 from .types import (
@@ -217,10 +218,34 @@ class Qualification:
 
         hours = float(self._policy.get("qualification", "default_hours",
                                        default=2.0))
-        estimate = self._governor.estimate(
-            job_id=job_id, revenue_cents=candidate.quoted_cents,
-            signals=candidate.signals,
-            quantities={CostCategory.ON_SITE_LABOR: hours}, job_class=job_class)
+        # What this job costs *DeskPilot*. Two models, and the default is the
+        # one that is true: AI_OPERATING counts the money that actually leaves
+        # -- the platform's cut, the processor's cut, compute -- while
+        # HUMAN_LABOUR costs the work at a human market wage. The second was
+        # the only model there was, and it is why a job taking half a second
+        # of CPU arrived with $294 of "cost" against $400 of revenue. A human
+        # wage is what the client avoids paying; it is not DeskPilot's expense.
+        #
+        # The line construction lives in `quoting`, a calculator, because
+        # Qualification owns no economics and the Governor remains the only
+        # authority that decides whether a job is worth doing.
+        if str(self._policy.get("commercial", "cost_model",
+                                default="AI_OPERATING")) == "AI_OPERATING":
+            estimate = self._governor.estimate(
+                job_id=job_id, revenue_cents=candidate.quoted_cents,
+                signals=candidate.signals, quantities={},
+                direct_lines=quoting.predicted_operating_lines(
+                    price_cents=candidate.quoted_cents,
+                    rates=quoting.rates_from_policy(self._policy),
+                    compute_allowance_cents=int(self._policy.get(
+                        "commercial", "compute_allowance_cents", default=0))),
+                job_class=job_class)
+        else:
+            estimate = self._governor.estimate(
+                job_id=job_id, revenue_cents=candidate.quoted_cents,
+                signals=candidate.signals,
+                quantities={CostCategory.ON_SITE_LABOR: hours},
+                job_class=job_class)
 
         # Held in QUALIFYING: nothing is committed until ranking has seen every
         # candidate, so a later, better opportunity can still win.
