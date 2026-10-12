@@ -680,6 +680,41 @@ class JobOrchestrator:
     def required_tier(self, job_id: str) -> VerificationTier:
         return REQUIRED_TIER[self.job(job_id).consequence]
 
+    def tier_is_reachable(self, job_id: str, *, extension: str = "",
+                          owner_channel=None) -> tuple[bool, str]:
+        """Could this job's required verification tier be satisfied at all?
+
+        Asked **before** committing a budget, which is the whole point. The
+        delivery gate already refuses work that lacks the tier its consequence
+        demands, and that refusal is correct -- but arriving at it means the
+        compute was spent, the client waited, and the answer was knowable from
+        the moment the price was agreed. A job whose required tier nothing
+        here can produce should be declined while it is still a quote.
+
+        Reads; decides nothing and writes nothing. The caller chooses what to
+        do with a no -- decline, ask the owner to stand by as reviewer, or
+        price the job below the threshold that demands the tier.
+        """
+        required = self.required_tier(job_id)
+        if required.rank <= VerificationTier.T1_DETERMINISTIC.rank:
+            return True, (f"{required.value} is produced by the capability's "
+                          "own certified verifier on every job")
+
+        from . import independent
+
+        if required is VerificationTier.T2_INDEPENDENT_REVIEW:
+            report = independent.available(extension=extension,
+                                           owner_channel=owner_channel)
+            if report.any_usable:
+                return True, report.summary()
+            return False, (
+                f"this job needs {required.value} before it may be delivered, "
+                f"and nothing here can produce it: {report.summary()}")
+
+        return False, (
+            f"{required.value} is required and this build has no producer for "
+            "it; an external fact has to come from outside Solvent")
+
     def permit_capabilities_via(self, registry) -> None:
         """Wire the capability authority. Composition-root only.
 

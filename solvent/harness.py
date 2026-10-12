@@ -739,6 +739,13 @@ class BusinessCycle:
     #: Questions the client has to answer before the work can be done. A job
     #: that stops here has not failed; it is waiting for a person.
     clarifications: tuple = ()
+    #: What this job's consequence tier demands before it may be delivered,
+    #: and whether anything here could have produced it. Checked before the
+    #: budget is committed, not after the work is done.
+    required_tier: str = ""
+    tier_reachable: bool = False
+    tier_detail: str = ""
+    independent_review: str = ""
     verification_rounds: int = 0
 
     invoiced_cents: Cents = 0
@@ -764,9 +771,23 @@ class BusinessCycle:
 #: The stages, in order. Named here so a cycle that stops can say where, and so
 #: a test can assert the order rather than restate it.
 CYCLE_STAGES = (
-    "discover", "qualify", "price", "owner-approval", "contract", "budget",
-    "execute", "verify", "deliver", "invoice", "payment", "reconcile", "audit",
+    "discover", "qualify", "price", "owner-approval", "contract",
+    "verification-eligibility", "budget", "execute", "verify",
+    "independent-review", "deliver", "invoice", "payment", "reconcile",
+    "audit",
 )
+
+#: Stages that run only when the job calls for them, so a completed cycle is
+#: not expected to list every stage. A second opinion is required by the
+#: *consequence* of the work: demanding one on a small job would be the
+#: ceremony the verification tiers exist to avoid, and asserting that every
+#: cycle ran every stage would quietly make it compulsory.
+CONDITIONAL_STAGES = ("independent-review",)
+
+
+def stages_without_conditionals(stages=CYCLE_STAGES) -> list:
+    """The stages every completed cycle runs, whatever the job is worth."""
+    return [s for s in stages if s not in CONDITIONAL_STAGES]
 
 
 def _write_invoice(s: "Solvent", cycle: "BusinessCycle", *, workdir: str,
@@ -836,12 +857,94 @@ def _write_invoice(s: "Solvent", cycle: "BusinessCycle", *, workdir: str,
     return str(path)
 
 
+def _obtain_independent_review(s: "Solvent", cycle, *, reviewer) -> str:
+    """Get a second opinion on the delivered artifact, or return "".
+
+    ``reviewer`` is supplied by the caller and is how a *person* reviews: the
+    owner's own tooling hands back a signed approval naming this artifact's
+    digest. Solvent cannot produce one for itself -- the signing key is the
+    owner's -- which is exactly why a human review is independent.
+
+    Where no reviewer is supplied, the automated route is tried: a re-read by
+    an independently authored library. It is weaker than a person and it is
+    not nothing, and it refuses rather than degrading when the library is
+    absent.
+    """
+    from . import independent
+
+    artifact = s.orchestrator.current_deliverable(cycle.job_id)
+    if artifact is None:
+        cycle.tier_detail = "there is no deliverable to review"
+        return ""
+    requirement_ids = [r.id for r in s.orchestrator.effective_baseline(cycle.job_id)
+                       if r.criticality.blocks_delivery]
+    consequence = s.orchestrator.job(cycle.job_id).consequence
+
+    if reviewer is not None:
+        approval = reviewer(job_id=cycle.job_id, artifact=artifact)
+        try:
+            independent.owner_review(
+                s.audit, job_id=cycle.job_id, approval=approval,
+                owner_channel=s.owner,
+                reviewer_identity=getattr(approval, "owner_identity", OWNER),
+                requirement_ids=requirement_ids, artifact=artifact,
+                consequence=consequence)
+        except FailClosed as refusal:
+            cycle.tier_detail = str(refusal)
+            return ""
+        return f"owner review by {getattr(approval, 'owner_identity', OWNER)}"
+
+    try:
+        source_artifact = next(
+            (a for a in s.orchestrator.artifacts(cycle.job_id, role="SOURCE")),
+            None)
+        independent.differential_review(
+            s.audit, job_id=cycle.job_id,
+            source=source_artifact.path if source_artifact else "",
+            artifact=artifact, requirement_ids=requirement_ids,
+            consequence=consequence,
+            requirements=s.orchestrator.effective_baseline(cycle.job_id))
+    except FailClosed as refusal:
+        cycle.tier_detail = str(refusal)
+        return ""
+    return "differential review by an independently authored reader"
+
+
+def _deliver_now(s: "Solvent", job_id: str, report) -> bool:
+    """Ask the delivery gate again, after a review has been recorded.
+
+    Extracted rather than duplicated: this is the same sequence
+    `_execute_job` runs, and a second copy would be a second place where
+    "may this be delivered?" is answered.
+    """
+    ok, why = s.orchestrator.verification_satisfied(job_id)
+    if not ok:
+        report.escalated = f"delivery gate refused: {why}"
+        return False
+    if s.orchestrator.job(job_id).state is not JobState.READY_FOR_DELIVERY:
+        s.orchestrator.mark_verified(job_id=job_id, initiator="qc")
+    delivery = s.gate.request(
+        action_class=ActionClass.C2_EXTERNAL_COMMUNICATION,
+        destination="client.example.com", privacy=PrivacyClass.CLIENT_CONFIDENTIAL,
+        purpose="deliver the reviewed file", job_id=job_id,
+        approval=approval(owner_identity=OWNER, job_id=job_id,
+                          action_class=ActionClass.C2_EXTERNAL_COMMUNICATION,
+                          max_cents=0))
+    if not delivery.allowed:
+        report.escalated = f"action gate refused delivery: {delivery.reason}"
+        return False
+    s.orchestrator.record_delivery(job_id=job_id, initiator="execution",
+                                   gate_request_id=delivery.request_id)
+    return True
+
+
 def run_business_cycle(
         s: "Solvent", *, source_name: str, source_file: str, workdir: str,
         capability: str = "csv-cleanup", owner_identity: str = OWNER,
         posting: dict | None = None,
         agreed_requirements: list | None = None,
         billing_basis: "quoting.BillingBasis | None" = None,
+        independent_reviewer=None,
         work_standard: "quoting.WorkStandard | None" = None,
         work_units: int = 0,
         agreed_hourly_cents: Cents = 0,
@@ -1035,6 +1138,22 @@ def run_business_cycle(
                     + "; ".join(c["question"] for c in unresolved))
     cycle.stages.append("contract")
 
+    # --- verification eligibility -------------------------------------------
+    # Before any money is committed: can this job's required tier actually be
+    # produced? A high-consequence job needs a second opinion from something
+    # that did not do the work, and arriving at the delivery gate to discover
+    # nobody can give one means the compute was spent and the client waited
+    # for an answer that was knowable when the price was agreed.
+    spec = CAPABILITIES[capability]
+    extension = spec.extension_for_requirements(
+        [r for r in s.orchestrator.effective_baseline(cycle.job_id) if r.check])
+    cycle.required_tier = s.orchestrator.required_tier(cycle.job_id).value
+    cycle.tier_reachable, cycle.tier_detail = s.orchestrator.tier_is_reachable(
+        cycle.job_id, extension=extension, owner_channel=s.owner)
+    if not cycle.tier_reachable:
+        return stop("verification-eligibility", cycle.tier_detail)
+    cycle.stages.append("verification-eligibility")
+
     # --- budget ------------------------------------------------------------
     cycle.grant_id = s.governor.grant_budget(
         job_id=cycle.job_id, decision_id=priced["id"],
@@ -1071,6 +1190,27 @@ def run_business_cycle(
     if not report.rounds[-1].passed:
         return stop("verify", report.escalated or "verification did not pass")
     cycle.stages.extend(("execute", "verify"))
+
+    # --- independent review -------------------------------------------------
+    # Only where the consequence tier asks for it. At T1 the capability's own
+    # certified verifier is the whole requirement and adding a ceremonial
+    # second pass would be the theatre the contract warns about.
+    if s.orchestrator.required_tier(cycle.job_id).rank > 1:
+        cycle.independent_review = _obtain_independent_review(
+            s, cycle, reviewer=independent_reviewer)
+        if not cycle.independent_review:
+            return stop("independent-review", cycle.tier_detail
+                        or "no independent review was obtained")
+        cycle.stages.append("independent-review")
+        # The gate is asked again, because the review is what may have
+        # changed its answer. Both the report and the cycle carry the
+        # outcome: reading a flag set before the review would report the
+        # answer to the earlier question.
+        report.delivered = _deliver_now(s, cycle.job_id, report)
+        cycle.delivered = report.delivered
+        if report.artifacts:
+            cycle.deliverable_path = report.artifacts[-1].path
+
     if not report.delivered:
         return stop("deliver", report.escalated or "delivery was refused")
     cycle.stages.append("deliver")

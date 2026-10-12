@@ -300,6 +300,80 @@ class AuditLog:
         )
         return evidence_id
 
+    def record_independent_review(
+        self, *, subject_ref: str, requirement_id: str, artifact_digest: str,
+        artifact_id: str, reviewer_identity: str, consequence,
+        method: str, detail: str, approval_nonce: str = "",
+    ) -> str:
+        """Record T2 evidence from a reviewer that is not a certified program.
+
+        A separate door from :meth:`record_verification`, because the two kinds
+        of attester are trusted by different means and conflating them forces a
+        lie. That method asks "can this *implementation* tell right from wrong?"
+        and answers it with the capability registry's certification. Neither a
+        person nor a third-party library has such a certification, and inventing
+        one so they could use that door would put a fabricated `verifier_ref` in
+        the evidence table -- which is the precise failure the certification
+        control exists to catch.
+
+        So the trust anchor here is different and is checked by the caller in
+        :mod:`solvent.independent`: a signature over this artifact's digest for
+        a person, separate authorship for a third-party reader. What this method
+        enforces is what it can see, and none of it is optional:
+
+        * the evidence names a requirement and the exact artifact digest, so it
+          dies when the artifact changes, exactly like every other row here;
+        * the reviewer is not the executor, because a second opinion from the
+          thing that formed the first is not a second opinion;
+        * a human review names the nonce of the approval that authorised it, so
+          the signature can be found again from the evidence row.
+
+        This door cannot record a FAIL and cannot record below T2. A reviewer
+        who rejects the work says so by not signing, and the delivery gate
+        refuses for want of evidence rather than on the strength of a recorded
+        rejection that a later row could overwrite.
+        """
+        if not requirement_id:
+            raise FailClosed(
+                "independent review evidence must name the requirement it "
+                "covers; evidence that is not about anything cannot be checked")
+        if not artifact_digest:
+            raise FailClosed(
+                "independent review evidence must name the artifact digest it "
+                "inspected, or it cannot be invalidated when the file changes")
+        if not reviewer_identity:
+            raise FailClosed("an independent review needs a reviewer identity")
+        if reviewer_identity in ("worker", "execution"):
+            raise FailClosed(
+                f"{reviewer_identity!r} produced the work; it cannot also be "
+                "the independent review of it")
+
+        from .resilience import redact
+
+        evidence_id = new_id("ver")
+        self._db.execute(
+            "INSERT INTO verification_evidence(id,ts,subject_ref,tier,method,"
+            "executor_identity,verifier_identity,verdict,raw_output,consequence,"
+            "requirement_id,artifact_digest,artifact_id,verifier_ref,verifier_state) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (evidence_id, now(), subject_ref,
+             VerificationTier.T2_INDEPENDENT_REVIEW.value, method, "worker",
+             reviewer_identity, "PASS", redact(detail), consequence.value,
+             requirement_id, artifact_digest, artifact_id,
+             f"review:{reviewer_identity}", "REVIEWED"),
+        )
+        self._db.commit()
+        self.record(
+            event="verification.independent_review", authority="audit",
+            initiator=reviewer_identity,
+            why=f"independent review of {subject_ref}",
+            verification_ref=evidence_id, result="PASS",
+            tier=VerificationTier.T2_INDEPENDENT_REVIEW.value, method=method,
+            requirement=requirement_id, artifact=artifact_digest[:16],
+            approval_nonce=approval_nonce[:8] if approval_nonce else "",
+        )
+        return evidence_id
+
     def passes_for_artifact(self, subject_ref: str, artifact_digest: str) -> dict:
         """``{requirement_id: evidence_row}`` of PASSes for **this exact** artifact.
 

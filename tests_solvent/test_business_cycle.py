@@ -30,6 +30,7 @@ from solvent.discovery import Compliance, FixtureSource, Readiness
 from solvent.errors import FailClosed
 from solvent.harness import (
     CYCLE_STAGES, FIXTURE_RATES, OWNER, Solvent, owner_promotions,
+    stages_without_conditionals,
     promote_capability, run_business_cycle,
 )
 from solvent.types import (
@@ -146,7 +147,8 @@ class TheWholeTransactionCompletes(Cycle):
         self.cycle = self.runCycle()
 
     def test_every_stage_ran_in_order(self):
-        self.assertEqual(self.cycle.stages, list(CYCLE_STAGES),
+        self.assertEqual(stages_without_conditionals(self.cycle.stages),
+                         stages_without_conditionals(),
                          f"stopped at {self.cycle.stopped_at}: "
                          f"{self.cycle.why_stopped}")
         self.assertTrue(self.cycle.completed)
@@ -545,7 +547,8 @@ class EveryClearedSkillEarnsThroughTheSameCycle(Cycle):
             simulate_payment=True)
 
     def assert_earned(self, cycle, capability):
-        self.assertEqual(cycle.stages, list(CYCLE_STAGES),
+        self.assertEqual(stages_without_conditionals(cycle.stages),
+                         stages_without_conditionals(),
                          f"{capability} stopped at {cycle.stopped_at}: "
                          f"{cycle.why_stopped}")
         self.assertTrue(cycle.delivered)
@@ -727,7 +730,7 @@ class TheOwnersCommandIsTheEntryPoint(Cycle):
     def test_with_the_owners_approval_it_runs_to_the_end(self):
         code, out = self.invoke("--accept-quote", "--simulate-payment")
         self.assertEqual(code, 0, out)
-        for stage in CYCLE_STAGES:
+        for stage in stages_without_conditionals():
             self.assertIn(f"[done]    {stage}", out, f"{stage} did not run")
         self.assertIn("final state : COMPLETE", out)
         self.assertIn("audit chain : verifies", out)
