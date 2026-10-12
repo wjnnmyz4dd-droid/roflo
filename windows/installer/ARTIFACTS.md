@@ -17,55 +17,64 @@ See "Signing status" below.
 | File | `DeskPilot-Setup.exe` |
 | Status | **CURRENT — unsigned test build, Windows-unverified** |
 | Installer version | 1.0.0 |
-| Source HEAD | `16b32bd` — built from a clean tree |
-| Size | 1,620,163 bytes |
-| Installer SHA-256 | `bb1525a66c6ad4d5a3783d11d12e4aeffe321589d0df75a948e57f25fd44dad2` |
-| Provenance | `dist/BUILD-16b32bd.txt` |
-| Payload | `DeskPilot-certified-16b32bd.zip` |
-| Payload SHA-256 | `41ced03f6de19293014fa2f3b7db525419132b4f105e1188d6d4f9acfcb64e63` |
+| Source HEAD | `24520a4` — built from a clean tree |
+| Size | 1,641,051 bytes |
+| Installer SHA-256 | `0dab9f3d0edf4e3bfbd2f47d992a07b841a2f4f9ca897d900b4d4322e0f5b524` |
+| Provenance | `dist/BUILD-24520a4.txt` |
+| Payload | `DeskPilot-certified-24520a4.zip` |
+| Payload SHA-256 | `dee6bcc40c970170c71b41c9d955cabbb83e8cdbbff9e387e07ef24ec1718186` |
 | Code signature | **none** |
 | Windows execution | **not verified** |
 
 Verified by extracting the executable rather than by reading the build script:
 the embedded payload's SHA-256 matches the payload built beside it, all
-eighteen engine modules are byte-identical to the repository's, and the five
-capability names were read from the *shipped* `checks.py` and `harness.py`
-syntax trees rather than by searching for strings — `checks.REGISTRY` and
-`harness.CAPABILITIES` each name `csv-cleanup`, `report-builder`,
-`spreadsheet-automation`, `data-entry` and `document-processing`, and
-`harness.UNCERTIFIABLE` names the one check no evidence can certify.
+sixty-six shipped `solvent/` modules are byte-identical to the repository's,
+and what the payload can do was read from the *shipped* syntax trees rather
+than by searching for strings — `checks.REGISTRY` names the five capabilities,
+`harness.UNCERTIFIABLE` names `spreadsheet-automation.number_format` as the one
+check no evidence can certify, and `harness.promote_capability`,
+`harness.owner_promotions` and `harness.certifiable_scope` are all present with
+`solvent setup capability` carrying its `--only` and `--why` flags.
+
+**Why this build exists.** The previous one cannot promote a capability: the
+code for it did not exist yet. The owner's authorisation of 2026-10-12 cleared
+four certified capabilities for client work, and `promote_capability` — the
+path that records LIMITED → APPROVED as a new decision while leaving the
+LIMITED row on the append-only record — ships here for the first time. An
+installation running the previous payload has no `setup capability` command
+that can promote anything; it would refuse with an unrecognised argument, not
+silently do nothing.
 
 What is new in this build, and what it means for an existing installation:
 
-* it carries **five** service capabilities where the previous build carried
-  two. Three are new — spreadsheet automation, data entry and validation, and
-  document processing — along with the two standard-library format layers they
-  read and write (`.xlsx` and `.docx`);
-* four of the five are **not cleared for client work**. They are certified
-  against generated evidence and the owner has not promoted them, so delivery
-  refuses them. Promoting one is an owner act and this installer performs none;
-* a verifier's explanation of a failure quotes the client's own text, and that
-  text is now redacted on the way into the verification table. On the previous
-  build a credential inside a client's document reached the audit journal
-  unredacted;
-* the Capabilities page in the control centre shows every capability in the
-  build with its evidence and the owner's decision in separate columns. The
-  previous build's page showed one row, which under that heading read as a
-  library of one.
+* `harness.promote_capability` and the four refusals that guard it: only a
+  registered owner, only a capability this build has, only a scope the
+  re-run certification covers, and only above the evidence floor — plus a
+  final check that `may_deploy` actually returns true afterwards, so a
+  promotion delivery would still refuse raises instead of reporting success;
+* `solvent setup capability` now reports, per capability, the verifier and its
+  implementation fingerprint, how many of its listed checks are certified, any
+  check withheld *by name*, the black-box evidence summary, and the previous
+  decision where there was one. On a partial refusal it names what *was*
+  cleared as plainly as what was not, because the dangerous reading of a
+  non-zero exit is "nothing happened";
+* the Control Centre's skill library section reads the owner's stance from the
+  registry, so all five now show as cleared with `spreadsheet-automation`'s
+  14-of-15 evidence in its own separate column.
+
+**Installing this still promotes nothing.** No install, repair or upgrade step
+runs `setup capability` — verified against the shipped engine and the wizard
+script, neither of which references it. The promotion records travel in the
+payload as *data*; the decision is the owner running the command. A capability
+already promoted on an existing database stays promoted, because the decision
+lives in the database and not in the payload.
 
 A repair keeps the database, the owner signing key, the control-centre
-password hash, the API keys, the settings and the backups, exactly as before.
-No owner decision in an existing installation is changed by installing this:
-the four new capabilities arrive undecided, and a capability already promoted
-stays promoted.
+password hash, the API keys, the settings and the backups.
 
-This is a **test build, not a production release**: no Authenticode signature,
-and no Windows machine has run it. See `INSTALL-OR-REPAIR.md` for repairing an
-existing installation in place.
+**Do not install this on the VPS without deciding to.** No Windows machine has
+run it.
 
-Throwaway builds made with `--allow-dirty` during development are not listed
-here. Their own provenance file marks them `NOT FOR RELEASE`, and none was
-delivered.
 
 ## Superseded
 
@@ -74,6 +83,7 @@ given. Do not install any of these.
 
 | Installer SHA-256 | HEAD | Superseded because |
 |---|---|---|
+| `bb1525a66c6ad4d5a3783d11d12e4aeffe321589d0df75a948e57f25fd44dad2` | `16b32bd` | **Superseded, not defective.** It was the first build to carry the five-skill library and the redaction of verification evidence, and all of that is carried forward. Superseded because its payload is Solvent *before* `promote_capability` existed: an owner running it cannot clear a certified capability for client work, because `solvent setup capability` on that build has no path from LIMITED to APPROVED. Four of its five capabilities are stuck at LIMITED with no command that can change it. Provenance `dist/BUILD-16b32bd.txt`. |
 | `18f35c8ab2f2d076db293f32b36c812a418547962ba50b2e6eb8772d251c54dd` | `a5bdfc0` | **Superseded, not defective.** It was the first build to confine the control centre to its own Windows identity and to test that boundary as that identity, and all of that is carried forward. Superseded because its payload is Solvent before the five-skill library: it ships `csv-cleanup` and `report-builder` and none of `spreadsheet-automation`, `data-entry` or `document-processing`, nor the `.xlsx` and `.docx` layers they need. It also predates the redaction of verification evidence, so a credential inside a client's document would reach the audit journal in plain text on that build. |
 | `a0e64d00711b1950b3546080e06a7c5e4198593ff02f4e00c6fc654ee6d48361` | `237b63d` | **Superseded, not defective.** Installed, repaired and started both services correctly. Superseded because both services ran as SYSTEM with the same token, so the control centre's confinement was enforced by its own code rather than by Windows; its launcher read the file containing the owner signing key on every boot and filtered it in Python; and nothing recorded `runtime.heartbeat_path`, so the runtime wrote its liveness file to `C:\var\lib\solvent\heartbeat` and the control centre had no way to tell whether the runtime was running. |
 | `cf529639c9bf68468154106191dab8ec386136282fc54909d2fda40594e0e3c9` | `5789392` | **Superseded.** Installed and repaired correctly, but shipped a runtime that could not start: `DEFAULT_INTERVALS` had no `heartbeat` cadence and `interval()` used a bare subscript, so registering the first task raised `KeyError` out of `serve()` — after `start()` had already recorded `runtime.started` with `health=HEALTHY`. The runtime died before its first tick on every launch, so no diagnostics were ever recorded. The heartbeat tick also used `Path` without importing it. |

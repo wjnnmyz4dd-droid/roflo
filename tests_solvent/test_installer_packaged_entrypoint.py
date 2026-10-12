@@ -502,10 +502,44 @@ class TheRealApplicationCommandsWork(unittest.TestCase):
         self.assertIn("registered owner", done.stdout + done.stderr)
 
     def test_05_the_capability_registers_with_solvents_own_owner(self):
-        """No --owner: the installer must not invent a governance identity."""
+        """No --owner: the installer must not invent a governance identity.
+
+        Asserted against the shipped build's own promotion records rather than
+        a word in the output. This test used to look for "proven", which the
+        command stopped printing when the promotion path was added -- and it
+        kept passing, because the staged payload it runs was built before that
+        change. A stale stage is exactly what this file exists to catch, so the
+        assertion now names what the build says it will clear.
+        """
         done = self.solvent("setup", "capability", "--db", str(self.db))
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-        self.assertIn("proven", done.stdout)
+        expected = self.promoted_versions()
+        for version in expected:
+            self.assertIn(f"[APPROVED] {version} — cleared for client work",
+                          done.stdout)
+        self.assertIn(f"{len(expected)} capability(ies) cleared for client "
+                      "work", done.stdout)
+        self.assertIn("no money moved", done.stdout,
+                      "the command must still say what it did not do")
+
+    def promoted_versions(self) -> list[str]:
+        """What the *shipped* payload's own records say it will clear.
+
+        Read out of the staged application with its own interpreter, so this
+        describes the build under test and not the repository the test file
+        happens to sit in.
+        """
+        script = ("import json\n"
+                  "from solvent.harness import owner_promotions\n"
+                  "print(json.dumps(sorted(c.version for c in "
+                  "owner_promotions().values())))\n")
+        done = subprocess.run(
+            [str(self.python), "-I", "-c", script],
+            capture_output=True, text=True, timeout=300, cwd=str(self.app))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        versions = json.loads(done.stdout.strip())
+        self.assertTrue(versions, "the shipped build carries no promotions")
+        return versions
 
     def test_06_the_capability_reads_back_as_deployable(self):
         """The exact script the engine runs, with the import it now uses."""
