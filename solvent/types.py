@@ -549,3 +549,24 @@ class PricingContext:
 
     def jurisdiction_for(self, category: CostCategory) -> Jurisdiction | None:
         return self.bindings.get(category)
+
+
+def check_of(requirement) -> str:
+    """The registered check a requirement names, however it reached us.
+
+    Two spellings exist and both are real. :class:`Requirement` calls the field
+    ``check``; the ``requirements`` table calls the column ``check_name``, and a
+    row read straight from the store carries that name. A worker that reads only
+    one of them works perfectly against whichever objects its own tests build
+    and refuses every requirement the other kind of caller supplies — which is
+    not a test gap so much as two halves that were never introduced.
+
+    ``check`` wins when both are present: it is the committed dataclass field,
+    and the orchestrator builds it *from* the column, so they cannot disagree
+    without the dataclass being the later of the two.
+    """
+    for attribute in ("check", "check_name"):
+        value = getattr(requirement, attribute, "")
+        if value:
+            return str(value)
+    return ""

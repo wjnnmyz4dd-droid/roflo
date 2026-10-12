@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from . import xlsx
+from . import types, xlsx
 
 VERSION = "spreadsheet-automation/1.0"
 
@@ -172,7 +172,7 @@ def plan(requirements: list) -> tuple[list[Step], list[str]]:
     steps: list[Step] = []
     refusals: list[str] = []
     for requirement in requirements:
-        name = str(getattr(requirement, "check_name", "") or "")
+        name = types.check_of(requirement)
         params = dict(getattr(requirement, "params", {}) or {})
         rid = str(getattr(requirement, "id", "") or "")
         if name in VERIFY_ONLY:

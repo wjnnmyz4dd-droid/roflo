@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from . import xlsx
+from . import types, xlsx
 
 PASS, FAIL, UNVERIFIABLE = "PASS", "FAIL", "UNVERIFIABLE"
 
@@ -297,7 +297,7 @@ def verify(*, source: str | Path, output: str | Path, requirements: list,
     # reading the code.
     consolidated = next(
         (dict(getattr(r, "params", {}) or {}) for r in requirements
-         if str(getattr(r, "check_name", "")) == "consolidate_sheets"), None)
+         if types.check_of(r) == "consolidate_sheets"), None)
     if consolidated:
         names = [str(n) for n in consolidated.get("sheets", [])]
         if all(n in source_sheets for n in names) and names:
@@ -314,12 +314,12 @@ def verify(*, source: str | Path, output: str | Path, requirements: list,
     # Found by running the two halves against each other: the verifier failed
     # a correct delivery, reporting the totals row as a computed value that
     # did not match its inputs.
-    has_total = any(str(getattr(r, "check_name", "")) == "total_row"
+    has_total = any(types.check_of(r) == "total_row"
                     for r in requirements)
     data_body = out_body[:-1] if (has_total and out_body) else out_body
 
     for requirement in requirements:
-        check = str(getattr(requirement, "check_name", "") or "")
+        check = types.check_of(requirement)
         params = dict(getattr(requirement, "params", {}) or {})
         rid = str(getattr(requirement, "id", "") or "")
         if check not in CHECKS:
@@ -515,7 +515,7 @@ def _formulas_agree(rid, requirements, output, has_total) -> Finding:
     """
     computed = [dict(getattr(r, "params", {}) or {})
                 for r in requirements
-                if str(getattr(r, "check_name", "")) == "compute_column"]
+                if types.check_of(r) == "compute_column"]
     if not computed:
         return Finding(rid, "formulas_agree", UNVERIFIABLE,
                        "no requirement asked for a computed column, so there "
