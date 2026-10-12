@@ -60,10 +60,17 @@ PREPARE_MESSAGE = "PREPARE_MESSAGE"
 SEND_MESSAGE = "SEND_MESSAGE"
 #: Application credits, membership fees, lead fees, boosts.
 SPEND_MONEY = "SPEND_MONEY"
+#: Billing an agreed minimum engagement on an hourly contract from this
+#: source. Separate from every other permission because platforms differ on
+#: it, and because charging a minimum the platform forbids is a chargeback
+#: and a terms breach rather than a pricing decision. Never granted by
+#: registration: the owner grants it per source, having read that source's
+#: terms.
+HOURLY_MINIMUM = "HOURLY_MINIMUM"
 
 PERMISSIONS = (DISCOVER, READ, IMPORT, PREPARE_APPLICATION, SUBMIT_APPLICATION,
                PREPARE_BID, SUBMIT_BID, PREPARE_MESSAGE, SEND_MESSAGE,
-               SPEND_MONEY)
+               SPEND_MONEY, HOURLY_MINIMUM)
 
 #: What registering a source grants. The read side, and nothing else.
 DEFAULT_PERMISSIONS = (DISCOVER, READ, IMPORT)

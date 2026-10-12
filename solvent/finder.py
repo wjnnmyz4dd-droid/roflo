@@ -6,10 +6,19 @@ so a "job finder" that polled its own sources would be a second discovery
 agent with its own compliance surface -- the thing the operating rules forbid.
 
 What was actually missing sits one layer up: of the opportunities discovery
-has already found, **which one should be done next, and is it worth doing at
-all**. That is this module. It reads; it does not poll, qualify, price,
-commit, execute or decide. Qualification still qualifies. The Governor still
-holds the money. The owner still approves what needs approving.
+has already found, **which are worth putting through the pipeline at all**.
+That is this module, and the boundary is worth stating precisely, because
+getting it wrong would create the overlapping authority the rules forbid.
+
+``Qualification.rank`` already orders work best-first, scoring the Governor's
+real economics against client history and completion risk. It is the
+authority on *what to do next*, and nothing here overrides it. This module
+sits before it and answers a cheaper question: is this posting worth the cost
+of qualifying -- can anything here do it, could its verification tier be
+reached, does it clear the owner's floor, and is the money real? What comes
+out is a triage order for qualification's inbox, not a work queue.
+
+It reads. It does not poll, qualify, price, commit, execute or decide.
 
 Three things make this honest rather than a scoring function:
 
@@ -37,6 +46,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from . import quoting
+from . import sourceaccess
 from .discovery import Opportunity
 from .quoting import BillingBasis
 from .types import Cents, ConsequenceTier, VerificationTier
@@ -219,7 +229,7 @@ class Finder:
             return False, "the owner has not configured a minimum engagement"
 
         permitted, why = self._discovery.may(opportunity.source,
-                                             "hourly_minimum")
+                                             sourceaccess.HOURLY_MINIMUM)
         if not permitted:
             return False, f"the source does not permit it: {why}"
 
@@ -230,6 +240,45 @@ class Finder:
             return (False, "the posting's terms are unconfirmed, and a "
                            "minimum may only be billed where it was agreed")
         return True, f"{configured:g} hour minimum, configured and permitted"
+
+    def configuration_gaps(self) -> list[str]:
+        """Commercial terms the owner has not set, or has set in conflict.
+
+        Separate from assessing any one posting, because these are answers
+        only the owner can give and each one silently changes every
+        assessment. A floor that no hourly job can clear rejects them all
+        with a correct-sounding reason, and nothing in the per-job output
+        would ever say why.
+        """
+        gaps: list[str] = []
+
+        rate = self.hourly_rate_cents
+        minimum_hours = float(self._commercial("minimum_hours", 0) or 0)
+        floor = self.minimum_fee_cents
+        if rate > 0 and minimum_hours > 0 and floor > rate * minimum_hours:
+            gaps.append(
+                f"the minimum project fee ({floor / 100:,.2f}) is above a "
+                f"full minimum engagement at the hourly rate "
+                f"({rate * minimum_hours / 100:,.2f}), so no hourly job of "
+                f"{minimum_hours:g} hour(s) or less can ever be accepted")
+        if floor <= 0:
+            gaps.append(
+                "no minimum project fee is set, so work worth less than the "
+                "overhead of taking it will still be recommended")
+        if not self._commercial("market_hourly_cents", {}):
+            gaps.append(
+                "no cited market rates are recorded, so a fixed price can "
+                "only be taken from what the client already offered, never "
+                "proposed from evidence")
+        if not float(self._commercial("compute_cents_per_cpu_hour", 0) or 0):
+            gaps.append(
+                "compute is costed at zero, so every margin shown is better "
+                "than the real one")
+        if float(self._commercial("minimum_margin_fraction", 0) or 0) <= 0:
+            gaps.append(
+                "no minimum margin is set, so a job clearing cost by one "
+                "cent counts as profitable")
+        return gaps
 
     # ---- the three questions -------------------------------------------
 
@@ -374,18 +423,7 @@ class Finder:
         if reachable is None:
             unknowns.append(tier_detail)
 
-        conversion = ""
-        if (econ.contract_type is ContractType.HOURLY
-                and econ.human_hours is not None
-                and econ.worked_hours is not None
-                and econ.human_hours > econ.worked_hours * 2):
-            conversion = (
-                f"a human would spend about {econ.human_hours:.1f} hour(s) on "
-                f"this; billed hourly it would honestly earn "
-                f"{econ.billable_hours or 0:.2f} hour(s). Where the platform "
-                "permits it, proposing a fixed price for the same scope "
-                "reflects the value delivered without billing hours nobody "
-                "worked")
+        conversion = self._conversion_advice(opportunity, econ)
 
         verdict, why = self._verdict(
             opportunity, econ, feasible, feasibility_detail, reachable,
@@ -400,6 +438,40 @@ class Finder:
             tier_detail=tier_detail, feasible=feasible,
             feasibility_detail=feasibility_detail, risks=tuple(risks),
             unknowns=tuple(unknowns), conversion_note=conversion)
+
+    def _conversion_advice(self, opportunity, econ) -> str:
+        """Say when the same scope is worth more as a fixed price.
+
+        The evidence is the client's own number. A posting that offers a
+        budget far above what the hours will honestly bill is a client who
+        has priced the *outcome*, not the time -- and billing them two
+        minutes is both correct and a poor trade for everyone. The advice is
+        to propose a fixed price for the same scope, never to pad the hours.
+
+        Deliberately not based on a human-equivalent estimate: those need a
+        cited work standard, almost none are recorded, and an uncited one is
+        an opinion. The budget in front of us is a fact.
+        """
+        if econ.contract_type is not ContractType.HOURLY:
+            return ""
+        if econ.revenue_cents is None or econ.revenue_cents <= 0:
+            return ""
+
+        offered = opportunity.net_budget_cents
+        if offered > econ.revenue_cents * 2:
+            note = (
+                f"billed honestly by the hour this earns "
+                f"{econ.revenue_cents / 100:,.2f}, against the "
+                f"{offered / 100:,.2f} the posting budgets for it. Where the "
+                "platform permits it, proposing a fixed price for the same "
+                "scope reflects what is delivered; the hours must not be "
+                "padded to close the gap")
+            if econ.human_hours is not None and econ.worked_hours is not None:
+                note += (f" (a person would spend about "
+                         f"{econ.human_hours:.1f} hour(s); this takes "
+                         f"{econ.worked_hours * 60:.1f} minute(s))")
+            return note
+        return ""
 
     def _verdict(self, opportunity, econ, feasible, feasibility_detail,
                  reachable, tier_detail, unknowns):
@@ -435,11 +507,16 @@ class Finder:
             f"{econ.revenue_cents / 100:,.2f}; {econ.basis}")
 
     def _score(self, econ, verdict, opportunity) -> float:
-        """Expected profit, discounted by how much of it is actually known.
+        """How promising this looks, for triage only.
 
         Deliberately not a weighted basket of tunable factors: a score nobody
         can explain is a score nobody can challenge. Anything not worth
         pursuing scores zero rather than competing on a technicality.
+
+        It is also deliberately cruder than ``Qualification._score``, which
+        has the Governor's priced estimate, the client's history and a
+        completion probability to work with. Making this one match it would
+        be a second opinion on a question this layer is not asking.
         """
         if verdict is not Verdict.PURSUE or not econ.profit_cents:
             return 0.0
@@ -450,12 +527,25 @@ class Finder:
         return round(score, 2)
 
     def rank(self, opportunities, **kwargs) -> list[Assessment]:
-        """Best first. Ties keep discovery's order, so ranking is repeatable."""
+        """Triage order for qualification's inbox. Not a work queue.
+
+        Most promising first, so that a limited qualification budget is spent
+        on the postings most likely to survive it. ``Qualification.rank``
+        decides the actual order of work afterwards, on the Governor's
+        figures; this ordering has no authority over that one and is not
+        consulted again once a Decision exists.
+
+        Ties keep discovery's order, so the triage is repeatable.
+        """
         assessed = [self.assess(o, **kwargs) for o in opportunities]
         return sorted(assessed, key=lambda a: -a.score)
 
-    def next_job(self, opportunities, **kwargs) -> Assessment | None:
-        """The one to do next, or None when nothing qualifies."""
+    def next_to_qualify(self, opportunities, **kwargs) -> Assessment | None:
+        """The posting worth qualifying first, or None when none is.
+
+        Deliberately not called ``next_job``: nothing here selects a job.
+        Qualification, the Governor and the owner decide that, in that order.
+        """
         for assessment in self.rank(opportunities, **kwargs):
             if assessment.pursue:
                 return assessment

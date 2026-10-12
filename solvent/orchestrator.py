@@ -680,6 +680,30 @@ class JobOrchestrator:
     def required_tier(self, job_id: str) -> VerificationTier:
         return REQUIRED_TIER[self.job(job_id).consequence]
 
+    def record_execution(self, job_id: str, *, capability: str,
+                         wall_seconds: float, cpu_seconds: float = 0.0,
+                         units: int = 0, outcome: str = "") -> str:
+        """Keep what this execution actually took.
+
+        Measured on every job already; this is what makes it survive the
+        process. Without a history there is no honest way to tell a client in
+        advance what an hourly job will cost -- only a guess wearing an
+        estimate's confidence -- and no way to check a quoted price against
+        what the work turned out to need.
+
+        Append-only, like the artifacts it describes.
+        """
+        measurement_id = new_id("em")
+        self._db.execute(
+            "INSERT INTO execution_measurements "
+            "(id, ts, job_id, capability, wall_seconds, cpu_seconds, units, "
+            " outcome) VALUES (?,?,?,?,?,?,?,?)",
+            (measurement_id, now(), job_id, capability,
+             round(float(wall_seconds), 4), round(float(cpu_seconds), 4),
+             int(units), outcome))
+        self._db.commit()
+        return measurement_id
+
     def tier_is_reachable(self, job_id: str, *, extension: str = "",
                           owner_channel=None) -> tuple[bool, str]:
         """Could this job's required verification tier be satisfied at all?

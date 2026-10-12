@@ -85,9 +85,17 @@ DEFAULT_POLICY: dict[str, Any] = {
         "platform_fee_fraction": 0.0,
         "payment_fee_fraction": 0.0,
         "payment_fee_flat_cents": 0,
-        # The rate an hourly contract is billed at, when the owner has one.
-        "hourly_rate_cents": 0,
+        # The rate an hourly contract is billed at. The owner's preferred
+        # rate; it is what *they* charge, not a market observation, and the
+        # Finder never presents it as evidence of what work is worth.
+        "hourly_rate_cents": 4_000,
         "billing_increment_minutes": 1,
+        # The owner's preferred minimum engagement, in hours. Configuring it
+        # is only the first of three conditions: it may be billed solely
+        # where the client agreed to it and the platform permits it, which
+        # the Finder checks separately. An hourly contract is otherwise
+        # billed for the hours actually worked, however few.
+        "minimum_hours": 1.0,
         # Per-capability market rate and work standard, recorded by the owner
         # with a citation. Empty until they are.
         "market_hourly_cents": {},

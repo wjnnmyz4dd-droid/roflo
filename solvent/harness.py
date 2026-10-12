@@ -790,6 +790,27 @@ def stages_without_conditionals(stages=CYCLE_STAGES) -> list:
     return [s for s in stages if s not in CONDITIONAL_STAGES]
 
 
+def _record_measurement(s, cycle, *, capability: str, outcome: str) -> None:
+    """Hand the measurement to the authority that owns the job record.
+
+    A failure here must not cost the client their delivery, so it is caught --
+    but it is not swallowed. An unrecorded measurement reads downstream as
+    "no history", and a history that is empty because writes are failing
+    looks exactly like a history that is empty because nothing has run yet.
+    The audit note is what tells those two apart.
+    """
+    try:
+        s.orchestrator.record_execution(
+            cycle.job_id, capability=capability,
+            wall_seconds=cycle.execution_wall_seconds,
+            cpu_seconds=cycle.execution_cpu_seconds, outcome=outcome)
+    except Exception as exc:  # pragma: no cover - exercised by fault injection
+        s.audit.record(
+            actor="business-cycle", action="MEASUREMENT_NOT_RECORDED",
+            subject_ref=cycle.job_id, result="DEGRADED",
+            why=f"{type(exc).__name__}: {exc}")
+
+
 def _write_invoice(s: "Solvent", cycle: "BusinessCycle", *, workdir: str,
                    basis, agreed_hourly_cents: Cents) -> str:
     """Write the document the client is actually sent. Plain text, deterministic.
@@ -1177,6 +1198,8 @@ def run_business_cycle(
     # delivery gate being asked -- so this is execution time, not waiting.
     cycle.execution_wall_seconds = time.monotonic() - started
     cycle.execution_cpu_seconds = time.process_time() - started_cpu
+    _record_measurement(s, cycle, capability=capability,
+                        outcome="DELIVERED" if report.delivered else "HELD")
     cycle.verification_rounds = len(report.rounds)
     cycle.delivered = report.delivered
     if report.artifacts:

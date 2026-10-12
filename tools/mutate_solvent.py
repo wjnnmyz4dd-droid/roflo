@@ -136,6 +136,159 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_evidence_without_a_requirement_or_digest_is_refused",
         "review evidence could not be invalidated when the file it reviewed "
         "is corrected"),
+
+    # ---- the Job Finder ---------------------------------------------
+    # RULES 1-8. Each mutant removes one thing that keeps a recommendation
+    # honest, and the ninety-scenario matrix is what has to notice.
+
+    Mutant(
+        "finder-minimum-without-platform-permission",
+        "solvent/finder.py",
+        "        if not permitted:",
+        "        if False:",
+        "tests_solvent.test_finder.TheMinimumNeedsAllThreeConditions"
+        ".test_the_owner_configuring_it_is_not_enough",
+        "a minimum engagement would be billed on platforms whose terms "
+        "forbid it"),
+
+    Mutant(
+        "finder-minimum-without-agreed-terms",
+        "solvent/finder.py",
+        "        if not opportunity.structured_terms and not opportunity.owner_entered:",
+        "        if False:",
+        "tests_solvent.test_finder.TheMinimumNeedsAllThreeConditions"
+        ".test_the_platform_permitting_it_is_not_enough",
+        "a minimum would be billed to a client who never agreed to one"),
+
+    Mutant(
+        "finder-minimum-ignores-the-postings-exclusion",
+        "solvent/finder.py",
+        '        if "no minimum" in text or "without minimum" in text:',
+        "        if False:",
+        "tests_solvent.test_finder.NinetyPostings.test_the_matrix",
+        "a posting that says 'no minimum charge' would be billed one anyway"),
+
+    Mutant(
+        "finder-guesses-hourly-revenue-without-history",
+        "solvent/finder.py",
+        "            if worked_hours is None:",
+        "            if False:",
+        "tests_solvent.test_finder.ItWillNotInventTheNumbersItLacks"
+        ".test_no_history_means_unknown_not_zero_and_not_an_average",
+        "an hourly job would be quoted from no measurement at all"),
+
+    Mutant(
+        "finder-invents-an-hourly-rate",
+        "solvent/finder.py",
+        "            if rate <= 0:",
+        "            if False:",
+        "tests_solvent.test_finder.ItWillNotInventTheNumbersItLacks"
+        ".test_no_configured_rate_means_unknown",
+        "revenue would be computed at a rate the owner never set"),
+
+    Mutant(
+        "finder-guesses-an-ambiguous-contract-type",
+        "solvent/finder.py",
+        "    if fixed and not hourly:",
+        "    if fixed:",
+        "tests_solvent.test_finder.ReadingTheContractType"
+        ".test_a_posting_naming_both_is_not_guessed",
+        "a posting naming both an hourly rate and a project budget would be "
+        "treated as fixed price, and the client billed on terms they never "
+        "agreed"),
+
+    Mutant(
+        "finder-skips-feasibility",
+        "solvent/finder.py",
+        "        if not feasible:",
+        "        if False:",
+        "tests_solvent.test_finder.NinetyPostings.test_the_matrix",
+        "work would be recommended that no certified capability can do"),
+
+    Mutant(
+        "finder-ignores-the-owners-floor",
+        "solvent/finder.py",
+        "        if minimum > 0 and econ.revenue_cents < minimum:",
+        "        if False:",
+        "tests_solvent.test_finder.NinetyPostings.test_the_matrix",
+        "work below the owner's minimum project fee would be recommended"),
+
+    Mutant(
+        "finder-recommends-unprofitable-work",
+        "solvent/finder.py",
+        "        if econ.profit_cents is not None and econ.profit_cents <= 0:",
+        "        if False:",
+        "tests_solvent.test_finder.NinetyPostings.test_the_matrix",
+        "a job costing more than it pays would be recommended (RULE 7)"),
+
+    Mutant(
+        "finder-scores-work-it-declined",
+        "solvent/finder.py",
+        "        if verdict is not Verdict.PURSUE or not econ.profit_cents:",
+        "        if not econ.profit_cents:",
+        "tests_solvent.test_finder.NinetyPostings.test_the_matrix",
+        "declined work would compete in the ranking it was excluded from"),
+
+    Mutant(
+        "finder-hides-an-impossible-floor",
+        "solvent/finder.py",
+        "        if rate > 0 and minimum_hours > 0 and floor > rate * minimum_hours:",
+        "        if False:",
+        "tests_solvent.test_finder.TermsOnlyTheOwnerCanSet"
+        ".test_a_floor_no_hourly_job_can_clear_is_reported",
+        "a configuration that rejects every hourly job would do so silently, "
+        "one correct-sounding refusal at a time"),
+
+    # ---- customer service classification ----------------------------
+    # Every one of these routes to a person either way. What the mutants
+    # break is *what the person is told it is* -- and an owner handed a
+    # queue of identical AMBIGUOUS rows has been given the triage back.
+
+    Mutant(
+        "cs-defect-report-is-unclassifiable",
+        "solvent/feedback.py",
+        "        for pattern in _DEFECT_PATTERNS:",
+        "        for pattern in ():",
+        "tests_solvent.test_customer_service_personas.EveryPersonaIsHandled"
+        ".test_the_classifications_that_are_unambiguous_are_read_correctly",
+        "a client describing a fault in their own words -- the commonest "
+        "message a services business gets -- is filed as 'nobody understood "
+        "this'"),
+
+    Mutant(
+        "cs-injection-is-filed-as-noise",
+        "solvent/feedback.py",
+        '    "ignore all previous instructions", "ignore previous instructions",',
+        '    "__never_matches_a",  "__never_matches_b",',
+        "tests_solvent.test_customer_service_personas.EveryPersonaIsHandled"
+        ".test_the_classifications_that_are_unambiguous_are_read_correctly",
+        "a prompt injection is recorded as an unreadable complaint, losing "
+        "the only fact that matters about it: somebody tried"),
+
+    Mutant(
+        "cs-narrow-bypass-window",
+        "solvent/feedback.py",
+        '     r"\\b(skip|bypass|disable|turn off|ignore|override)\\b.{0,60}"',
+        '     r"\\b(skip|bypass|disable|turn off|ignore|override)\\b.{0,30}"',
+        "tests_solvent.test_customer_service_personas.EveryPersonaIsHandled"
+        ".test_the_classifications_that_are_unambiguous_are_read_correctly",
+        "padding eight characters between the verb and its object walks an "
+        "injection past the governance check"),
+
+    Mutant(
+        "cs-politeness-hides-a-question",
+        "solvent/feedback.py",
+        "        for pattern in _QUESTION_PATTERNS:\n"
+        "            if re.search(pattern, lowered):\n"
+        "                return (Classification.GENERAL_QUESTION,\n"
+        '                        "the message asks something rather than reporting a "\n'
+        '                        "problem", "MATCHED")\n\n'
+        "        if not asks:",
+        "        if not asks:",
+        "tests_solvent.test_customer_service_personas.EveryPersonaIsHandled"
+        ".test_the_classifications_that_are_unambiguous_are_read_correctly",
+        "a politely worded question is filed as unclassifiable because it "
+        "contained the word 'could'"),
 )
 
 

@@ -101,6 +101,9 @@ APPEND_ONLY = (
     "audit_log", "verification_evidence", "ledger_entries",
     "governor_decisions", "action_requests", "price_estimates", "policy_versions",
     "qualification_verdicts", "payment_events", "artifacts",
+    # What a job actually took. One row per execution: a second attempt is a
+    # second row, so a slow run cannot be quietly improved after the fact.
+    "execution_measurements",
     # A proposal and the owner's answer to it are history. Editing either would
     # let a denial become an approval with nothing to show for the change.
     "capability_proposals",
@@ -137,6 +140,7 @@ TABLE_OWNER = {
     "requirements": "orchestrator",
     "job_clarifications": "orchestrator",
     "artifacts": "orchestrator",
+    "execution_measurements": "orchestrator",
     "client_feedback": "feedback",
     "client_responses": "relations",
     "capability_assessments": "capability",
@@ -264,6 +268,19 @@ CREATE TABLE IF NOT EXISTS requirements (
   committed_at TEXT,
   PRIMARY KEY (job_id, id)
 );
+CREATE TABLE IF NOT EXISTS execution_measurements (
+  -- What a job actually cost in machine time. Recorded because an hourly
+  -- contract may only be billed for hours actually worked, and because
+  -- without a history there is no honest way to say in advance what a job
+  -- will take -- only a guess dressed as an estimate. One row per execution,
+  -- never updated: a second attempt is a second row, not a correction.
+  id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL,
+  capability TEXT NOT NULL DEFAULT '', wall_seconds REAL NOT NULL DEFAULT 0,
+  cpu_seconds REAL NOT NULL DEFAULT 0, units INTEGER NOT NULL DEFAULT 0,
+  outcome TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_measurements_capability
+  ON execution_measurements(capability);
 CREATE TABLE IF NOT EXISTS job_clarifications (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, job_id TEXT NOT NULL,
   client_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL,

@@ -138,9 +138,23 @@ class ClientFeedbackIntake(unittest.TestCase):
         self.assertEqual(record.routed_to, "OWNER")
 
     def test_a_model_proposal_is_recorded_as_a_proposal(self):
-        record = self.receive("there is still a duplicate row",
+        """Provenance: which classifications a rule made, and which a model.
+
+        The message is deliberately one no rule claims. A rule now reads
+        "there is still a duplicate row" directly, and a test that used it
+        here would stop exercising the proposal path without failing.
+        """
+        record = self.receive("the thing we discussed on the call",
                               proposed=Classification.DEFECT)
         self.assertEqual(record.confidence, "PROPOSED")
+        self.assertEqual(record.classification, Classification.DEFECT)
+
+    def test_a_rule_outranks_a_proposal_and_says_so(self):
+        """A model proposing something does not downgrade what was read."""
+        record = self.receive("there is still a duplicate row",
+                              proposed=Classification.CLARIFICATION)
+        self.assertEqual(record.classification, Classification.DEFECT)
+        self.assertEqual(record.confidence, "MATCHED")
 
     def test_an_unknown_proposed_classification_is_not_honoured(self):
         record = self.receive("something", proposed="DEFINITELY_FINE")
