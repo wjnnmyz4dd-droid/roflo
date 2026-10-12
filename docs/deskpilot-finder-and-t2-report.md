@@ -268,9 +268,15 @@ refuses to carry a credential-shaped string caught a credential-shaped string
 the moment one appeared, in a test whose entire purpose was handling
 credentials safely.
 
-After the fix, the seven guard tests and the three leak tests were re-run
-and pass. A full re-run of all 3563 is reported below rather than assumed
-from those ten.
+After the fix, the whole suite was re-run rather than inferred from the ten
+affected tests:
+
+```
+Ran 3573 tests in 535.431s
+OK (skipped=2)
+```
+
+**3573 tests, 0 failures, 2 skipped.**
 
 ### Mutation
 
@@ -282,16 +288,61 @@ from those ten.
 | Owner authentication | 1 | 1 | 0 | 0 |
 | **total (new)** | **24** | **24** | **0** | **0** |
 
+Final run, whole battery, clean tree, fixed harness:
+
+```
+24/24 killed  (0 survived, 0 not applied or harness)
+```
+
 `tools/mutate_solvent.py` makes the Solvent-side battery reproducible rather
 than ad hoc. It reports `NOT_APPLIED` as its own outcome and never counts it
 as a kill — a stale mutant whose target text has moved proves nothing.
 
-**One mutant initially survived, and it mattered.** The concurrency test for
-single-use owner approvals used one barrier, which let each thread run
-`verify` *and* `consume` before the next began — so `verify` saw `used_at`
-already set, refused, and the test passed whether or not the claim was
-atomic. It took two barriers, everyone verifying before anyone claims, to
-force the interleaving the fix defends against.
+Getting to 24/24 took three runs and two repairs, and the repairs are the
+part worth reading.
+
+#### The harness itself was wrong, and every earlier figure withdrawn
+
+CPython decides a `.pyc` is current by comparing the source mtime it
+recorded, **at one-second granularity**. A mutation harness rewrites a file,
+runs a test and rewrites it back, routinely inside the same second — so
+tests ran against bytecode compiled from the *previous* contents.
+
+Both failure directions were observed: a mutant reading SURVIVED because the
+test never saw it, and a revert reading "did not recover" because the
+restored source was never recompiled. The symptom that exposed it was a
+regex reading `.{0,30}` in memory while the file on disk said `.{0,60}`.
+
+`tools/mutate_installer.py` already solved this, with a docstring describing
+the exact failure mode. It was fixed there in an earlier pass, and then a
+new runner was written without carrying the lesson across. The installer's
+results are unaffected. Every figure the Solvent battery produced before the
+fix was withdrawn, and the whole battery re-run with bytecode purged and
+`-B`.
+
+#### Three survivors, and what each one was
+
+**1. The concurrency test was theatre.** The single-use owner approval test
+used one barrier, which let each thread run `verify` *and* `consume` before
+the next began — so `verify` saw `used_at` already set, refused, and the
+test passed whether or not the claim was atomic. Two barriers, everyone
+verifying before anyone claims, forces the interleaving the fix defends
+against.
+
+**2 and 3. Two injection defences, neither individually pinned.** A phrase
+list and a bypass pattern each catch the attack alone. That redundancy is
+worth keeping, but it meant a mutant could delete either and every test
+still passed — two controls nobody can remove safely, with nothing saying
+so, is how both eventually get removed. Each now has a probe only it can
+catch: a message with no bypass verb anywhere (phrase list only), and a
+padded `ignore … requirement` with a 47-character gap that is not a listed
+phrase (pattern only, and only at the widened window).
+
+**One of those two was also a defective mutant.** It replaced the first two
+of six injection phrases and left `"mark every requirement as passed"` —
+the very phrase its own test probes — in place, so it never removed the
+defence it claimed to test. A mutant that does not disable its control is
+noise. It now replaces the whole block.
 
 ### Security findings
 
