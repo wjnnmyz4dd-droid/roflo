@@ -436,6 +436,22 @@ def _not_plausibly_csv(rows: list[list[str]]) -> str:
 _SLASHED_DATE = re.compile(r"^\s*(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})\s*$")
 
 
+def _same_day(year: int, first: int, second: int) -> bool:
+    """Do both readings of a slashed date land on the same day?
+
+    True when the two components are equal and make a real date. Asked rather
+    than assumed, so 13/13/2025 -- which is no date at all under either
+    reading -- is still refused.
+    """
+    if first != second:
+        return False
+    try:
+        date(year, first, second)
+    except ValueError:
+        return False
+    return True
+
+
 def _to_iso(raw: str, declared: str = "") -> str | None:
     """Parse a date, or return None. Never guesses between ambiguous formats.
 
@@ -463,6 +479,14 @@ def _to_iso(raw: str, declared: str = "") -> str | None:
     elif first > 12 and second <= 12:
         order = [(second, first)]          # only one reading is a real date
     elif second > 12 and first <= 12:
+        order = [(first, second)]
+    elif _same_day(year, first, second):
+        # 10/10/2025 is the tenth of October whichever convention the client
+        # uses, and so is every date whose day and month coincide. Refusing
+        # it as "genuinely two days" was reading the *shape* rather than the
+        # readings: both components are twelve or under, but they denote one
+        # day. A whole job stopped on it, and the client was asked a question
+        # with one possible answer.
         order = [(first, second)]
     else:
         return None                         # genuinely two days; do not choose

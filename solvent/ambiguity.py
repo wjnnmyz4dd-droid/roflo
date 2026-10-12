@@ -183,9 +183,16 @@ def csv_ambiguities(source, requirements) -> list[Ambiguity]:
 #: Fields: term, kind, readings, pinning checks, pinning params, the parameter
 #: an answer supplies, and the question.
 _LOADED_TERMS = (
+    # `deduplicate_by` and its `fields` pin this as firmly as anything can:
+    # the brief has named the columns that make two records the same record.
+    # They were missing, so a data-entry job whose terms said "deduplicate by
+    # Reference" was asked what a duplicate is -- the unnecessary question
+    # this table's own comment warns about, and the kind that teaches a client
+    # to stop reading the questions.
     ("duplicate", "DUPLICATE_IDENTITY",
      ("an exactly identical row", "another row for the same customer or key"),
-     ("drop_exact_duplicates", "row_reconciliation"), ("duplicate_key",),
+     ("drop_exact_duplicates", "row_reconciliation", "deduplicate_by"),
+     ("duplicate_key", "fields"),
      "duplicate_key",
      "Does 'duplicate' mean a row that is identical in every column, or a "
      "second row for the same customer or reference?"),

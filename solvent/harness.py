@@ -56,6 +56,7 @@ from .store import Store
 from . import (csvverify, csvwork, docverify, docwork, entryverify,
                entrywork, reportverify, reportwork, sheetverify, sheetwork)
 from .policy import DEFAULT_MAX_CORRECTIONS
+from . import types
 from .types import (
     ActionClass, BlockedOn, ConsequenceTier, Criticality, CostCategory, CostLine, GovernorVerdict, JobState,
     Jurisdiction, LocationSignals, PaymentState, PricingTier, PrivacyClass,
@@ -735,6 +736,9 @@ class BusinessCycle:
     operating_cost_basis: tuple = ()
     invoice_path: str = ""
     conversion_advice: str = ""
+    #: Questions the client has to answer before the work can be done. A job
+    #: that stops here has not failed; it is waiting for a person.
+    clarifications: tuple = ()
     verification_rounds: int = 0
 
     invoiced_cents: Cents = 0
@@ -1008,6 +1012,27 @@ def run_business_cycle(
     except FailClosed as refusal:
         return stop("contract", str(refusal))
     cycle.committed_requirements = len(s.orchestrator.effective_baseline(cycle.job_id))
+
+    # Before any work: is anything in this source capable of meaning two
+    # things? `run_csv_job` has asked this since the ambiguity detector was
+    # written; the business cycle did not, so a discovered job with a date
+    # like 05/10/2026 ground through three correction attempts and stopped
+    # with "R4 still failing" -- which is true, unhelpful, and not a question
+    # anyone can answer. The client is the only one who knows whether that is
+    # May or October, and they are entitled to be asked plainly.
+    baseline = s.orchestrator.effective_baseline(cycle.job_id)
+    for ambiguity in ambiguity_module.detect(capability, source_file, baseline):
+        s.orchestrator.record_ambiguity(job_id=cycle.job_id, ambiguity=ambiguity)
+    unresolved = s.orchestrator.open_clarifications(cycle.job_id)
+    if unresolved:
+        s.orchestrator.block(
+            job_id=cycle.job_id, blocked_on=BlockedOn.CLIENT,
+            initiator="business-cycle",
+            why=("; ".join(c["question"] for c in unresolved))[:400])
+        cycle.clarifications = tuple(c["question"] for c in unresolved)
+        return stop("contract",
+                    "waiting on the client: "
+                    + "; ".join(c["question"] for c in unresolved))
     cycle.stages.append("contract")
 
     # --- budget ------------------------------------------------------------
@@ -1776,6 +1801,23 @@ class ServiceCapability:
     #: ``(requirements) -> (steps, refusals)``, or None when planning is implicit
     plan: object = None
     extension: str = "csv"
+    #: ``(requirements) -> extension``, for a capability whose deliverable
+    #: format is decided by the brief rather than fixed.
+    #:
+    #: document-processing is the one that needs it. It has three deliverable
+    #: shapes and one of them, conversion, is told its target format by the
+    #: client: convert this to Markdown. With a fixed extension the pipeline
+    #: handed the worker ``deliverable.attempt1.json`` for a job whose brief
+    #: said ``.md``, the worker refused the contradiction — correctly — and
+    #: **no conversion job could ever be delivered**. The refusal was right;
+    #: the destination was wrong, and only the brief knows what it should be.
+    extension_for: object = None
+
+    def extension_for_requirements(self, requirements: list) -> str:
+        """The deliverable's extension for this particular job."""
+        if self.extension_for is None:
+            return self.extension
+        return self.extension_for(requirements) or self.extension
 
 
 def nothing_derived(source: str, requirements: list) -> list:
@@ -2020,6 +2062,28 @@ def _document_derived(source: str, requirements: list) -> list:
             for rid, check, text, acceptance in wanted if check not in present]
 
 
+def _document_extension(requirements: list) -> str:
+    """What a document job delivers as, read off the agreed brief.
+
+    A conversion states its target; an extraction has nowhere to go but JSON;
+    a template produces a document. Asking the requirements rather than the
+    capability is the point: the client decides the format of a conversion,
+    and they say so in the terms.
+    """
+    for requirement in requirements:
+        if types.check_of(requirement) == "convert_format":
+            target = str((requirement.params or {}).get("to", "")).lstrip(".")
+            if target:
+                return target.lower()
+        if types.check_of(requirement) == "apply_template":
+            # A filled template is a structured text document: the blocks
+            # carry styles (Title, Heading1) and `docwork` renders them as
+            # Markdown headings. Naming it .docx sent the worker to the ZIP
+            # writer for a job whose output is text.
+            return "md"
+    return "json"
+
+
 CAPABILITIES = {
     "csv-cleanup": ServiceCapability(
         version=csvwork.VERSION, execute=csvwork.execute, verify=csvverify.run,
@@ -2039,7 +2103,7 @@ CAPABILITIES = {
     "document-processing": ServiceCapability(
         version=docwork.VERSION, execute=docwork.execute,
         verify=docverify.run, plan=docwork.plan, derive=_document_derived,
-        extension="json"),
+        extension="json", extension_for=_document_extension),
 }
 
 
@@ -2815,7 +2879,9 @@ def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for attempt in range(1, limit + 1):
-        destination = out_dir / f"deliverable.attempt{attempt}.{spec.extension}"
+        destination = out_dir / (
+            f"deliverable.attempt{attempt}."
+            f"{spec.extension_for_requirements(instructions)}")
         work = spec.execute(source=source, destination=destination,
                             requirements=instructions)
         report.work_summary = work.summary()

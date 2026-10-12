@@ -72,6 +72,18 @@ class Classification:
     REFUND_REQUEST = "REFUND_REQUEST"
     HOSTILE_OR_ABUSIVE = "HOSTILE_OR_ABUSIVE"
 
+    # Commercial traffic. Every one of these already reached the owner, as
+    # AMBIGUOUS, with a reply saying a person would look at it -- which is
+    # safe and useless: an owner opening a queue of thirty identical
+    # AMBIGUOUS rows has been handed the triage, not relieved of it. These
+    # change *what the owner is told it is*, and nothing else. All of them
+    # still route to the owner, because answering a client about money,
+    # dates or cancellation is not a decision this system gets to make.
+    PAYMENT_CHASE = "PAYMENT_CHASE"         # "has invoice 1042 been received?"
+    SCHEDULE_CHANGE = "SCHEDULE_CHANGE"     # earlier, later, rush
+    PRICE_REQUEST = "PRICE_REQUEST"         # discount, budget, cheaper
+    CANCELLATION = "CANCELLATION"           # stop work
+
 
 #: Who deals with each kind. Nothing routes to "the worker decides".
 ROUTING = {
@@ -93,6 +105,10 @@ ROUTING = {
     # A refund is money, and money is never the client's to decide or
     # Solvent's to grant. It routes to the only party who can.
     Classification.REFUND_REQUEST: "OWNER",
+    Classification.PAYMENT_CHASE: "OWNER",
+    Classification.SCHEDULE_CHANGE: "OWNER",
+    Classification.PRICE_REQUEST: "OWNER",
+    Classification.CANCELLATION: "OWNER",
     Classification.HOSTILE_OR_ABUSIVE: "OWNER",
 }
 
@@ -215,6 +231,67 @@ _PAYMENT_ISSUE_PATTERNS = (
 #: Region column is still lowercase" is a defect report that happens to start
 #: with "also"; "also add a Region column" is a second job. Getting that wrong
 #: in the other direction would file real defects as upsells.
+#: Chasing money that is owed, which is not the same as saying the charge is
+#: wrong. PAYMENT_ISSUE means "you billed me incorrectly"; this means "I think
+#: I have paid, or I am about to, and where are we?" The owner's answer is
+#: completely different, so filing them together helps nobody.
+_PAYMENT_CHASE_PATTERNS = (
+    r"\b(follow(ing)? up|chasing|checking)\b.{0,30}\b(invoice|payment|bill)\b",
+    r"\binvoice\b.{0,30}\b(received|arrived|got|outstanding|unpaid|due)\b",
+    r"\b(has|have)\b.{0,20}\binvoice\b.{0,20}\b(been|arrived)\b",
+    r"\bremittance\b", r"\bwhen (will|should) (i|we) (be )?pay\b",
+)
+
+#: Moving the date, in either direction, including a rush.
+_SCHEDULE_PATTERNS = (
+    r"\b(deadline|due date|timeline|turnaround)\b",
+    r"\b(by|before)\b.{0,15}\b(today|tomorrow|tonight|thursday|friday|monday|"
+    r"tuesday|wednesday|saturday|sunday)\b",
+    r"\b(sooner|earlier|faster|expedite|rush|urgent(ly)?)\b",
+    r"\bpush (it )?back\b", r"\bmore time\b", r"\bextend\b.{0,20}\bdate\b",
+)
+
+#: Asking about the price. Not a refund (money back) and not a billing error
+#: (the charge is wrong) -- a negotiation, which is the owner's to have.
+_PRICE_REQUEST_PATTERNS = (
+    r"\b(discount|cheaper|reduce the price|lower the price|better price)\b",
+    r"\b(above|over|outside|beyond)\b.{0,20}\bbudget\b",
+    r"\bbudget\b.{0,20}\b(is|of|around|about)\b",
+    r"\b(do it for|come down to|meet us at)\b.{0,20}\b(less|\$|cheaper)\b",
+    r"\bcould you do it for\b",
+)
+
+#: Stopping work. Distinguished from a refund: a client may cancel work that
+#: has not been paid for, and may ask for money back on work that is finished.
+_CANCELLATION_PATTERNS = (
+    r"\b(stop|halt|pause|cease)\b.{0,20}\bwork\b",
+    r"\b(cancel|call off|withdraw)\b.{0,20}\b(the )?(job|project|order|"
+    r"contract|engagement)\b",
+    r"\bno longer (need|require|want)\b",
+    r"\b(priorities|plans) (have )?changed\b",
+)
+
+#: The client has the file and cannot use it. DELIVERY_PROBLEM and
+#: FORMAT_PROBLEM both existed in the routing table and nothing ever produced
+#: them, so "Excel says it is corrupted" -- which is urgent, and which the
+#: owner would want at the top of the queue -- arrived as AMBIGUOUS.
+_FORMAT_PROBLEM_PATTERNS = (
+    r"\b(wo?n'?t|cannot|can'?t|unable to|failed to)\b.{0,20}\b(open|read|"
+    r"load|import)\b",
+    r"\b(corrupt|damaged|unreadable|garbled|broken)\b",
+    r"\b(excel|word|numbers|sheets)\b.{0,30}\b(error|says|complain)\w*\b",
+    r"\bwrong (format|file type|extension)\b",
+)
+
+#: The client has the wrong thing, or nothing.
+_DELIVERY_PROBLEM_PATTERNS = (
+    r"\b(wrong|different|someone ?else'?s|somebody ?else'?s|another client'?s)"
+    r"\b.{0,25}\b(file|data|one|document|spreadsheet)\b",
+    r"\b(attached|sent|delivered)\b.{0,20}\bwrong\b",
+    r"\b(did ?n[o']?t|have ?n[o']?t|never)\b.{0,20}\b(receive|get|arrive)\w*\b",
+    r"\bnot (what|the file) (we|i) (asked|ordered|expected)\b",
+)
+
 _NEW_SCOPE_PATTERNS = (
     r"\b(also|additionally|as well|on top of that)\b.{0,40}"
     r"\b(add|include|create|build|make|produce|generate|throw in|put in)\b",
@@ -388,6 +465,42 @@ class ClientFeedback:
                 return (Classification.HOSTILE_OR_ABUSIVE,
                         "the message is hostile or threatening; it is recorded "
                         "as such and still investigated on its merits",
+                        "MATCHED")
+        for pattern in _DELIVERY_PROBLEM_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.DELIVERY_PROBLEM,
+                        "the client says they have the wrong file or no file; "
+                        "that is checked against what was actually delivered",
+                        "MATCHED")
+        for pattern in _FORMAT_PROBLEM_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.FORMAT_PROBLEM,
+                        "the client cannot open what was delivered; the file "
+                        "is re-checked rather than the client re-instructed",
+                        "MATCHED")
+        for pattern in _CANCELLATION_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.CANCELLATION,
+                        "the client is stopping the work; what is owed for "
+                        "what is already done is the owner's to settle",
+                        "MATCHED")
+        for pattern in _PAYMENT_CHASE_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.PAYMENT_CHASE,
+                        "the client is asking where an invoice stands; only "
+                        "the owner can see what has actually arrived",
+                        "MATCHED")
+        for pattern in _PRICE_REQUEST_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.PRICE_REQUEST,
+                        "the client is asking about the price; a quote already "
+                        "given is the owner's to change and nobody else's",
+                        "MATCHED")
+        for pattern in _SCHEDULE_PATTERNS:
+            if re.search(pattern, lowered):
+                return (Classification.SCHEDULE_CHANGE,
+                        "the client is asking about timing; committing to a "
+                        "date is a promise, and only the owner makes those",
                         "MATCHED")
         for pattern in _NEW_SCOPE_PATTERNS:
             if re.search(pattern, lowered):

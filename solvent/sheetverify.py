@@ -834,7 +834,8 @@ def _consolidated(rid, params, source_sheets, out_header, data_body,
             supplied[key] = supplied.get(key, 0) + 1
             if counts.get(key, 0) > 0:
                 present += 1
-        if body and not present:
+        if body and not present and not _all_removable(header, body,
+                                                       requirements):
             absent.append(name)
         contributed.append((name, present, len(body)))
     evidence = "; ".join(f"{n}: {p}/{total}" for n, p, total in contributed)
@@ -857,6 +858,75 @@ def _consolidated(rid, params, source_sheets, out_header, data_body,
                    f"each of {len(names)} named worksheet(s) contributed, and "
                    "no delivered row appears more often than they supply it",
                    evidence=evidence)
+
+
+def _reverse_renames(requirements) -> dict:
+    """Delivered column name -> the name it had in the source."""
+    from .types import check_of
+
+    back = {}
+    for requirement in requirements:
+        if check_of(requirement) != "rename_headers":
+            continue
+        mapping = (getattr(requirement, "params", {}) or {}).get("mapping", {})
+        for old_name, new_name in dict(mapping).items():
+            back[str(new_name).strip().lower()] = str(old_name).strip().lower()
+    return back
+
+
+def _emptiness_columns(requirements) -> list:
+    """The columns `drop_empty_rows` was told to judge emptiness by, if any.
+
+    Asking the brief rather than assuming "every cell is blank": the rule the
+    worker applies is per-column, and a row with a stray reference in an
+    untouched column is still an empty row by the client's definition.
+    """
+    from .types import check_of
+
+    for requirement in requirements:
+        if check_of(requirement) == "drop_empty_rows":
+            return [str(c) for c in
+                    (getattr(requirement, "params", {}) or {}).get("columns", [])]
+    return []
+
+
+def _all_removable(header, body, requirements) -> bool:
+    """Were *all* of this worksheet's rows ones the brief told us to remove?
+
+    A worksheet that contributes nothing is normally a consolidation that
+    silently lost a quarter of the client's data, which is why this check
+    fails on it. But it is not always: a quarter that is entirely blank rows,
+    with `drop_empty_rows` in the agreed brief, correctly contributes nothing,
+    and the deliverable is right.
+
+    An unseen exam scenario was exactly that, and this check refused correct
+    work over it -- the worker consolidated both sheets and then dropped the
+    blanks it had been asked to drop. A control that blocks a legitimate
+    delivery is not a safe control, it is a broken one, so the question is
+    narrowed: did every row of this sheet qualify for removal under a rule the
+    client agreed to? If even one did not, the sheet is still absent and this
+    still fails.
+    """
+    columns = _emptiness_columns(requirements)
+    if not columns:
+        return False
+    # The brief names columns as they appear in the *deliverable*, and this
+    # is reading a *source* worksheet, where a renamed column still has its
+    # old name. `drop_empty_rows` on "Quantity" has to find "Units" here.
+    back = _reverse_renames(requirements)
+    lowered = {str(name).strip().lower(): index
+               for index, name in enumerate(header)}
+    targets = []
+    for name in columns:
+        key = str(name).strip().lower()
+        index = lowered.get(key, lowered.get(back.get(key, ""), None))
+        if index is None:
+            return False
+        targets.append(index)
+    return all(
+        not any(str(row[i]).strip() for i in targets
+                if i < len(row) and row[i] is not None)
+        for row in body)
 
 
 def _authorised_names(requirements) -> set:

@@ -1503,6 +1503,41 @@ _LIBRARY_MUTANTS: tuple[Mutant, ...] = (
            ".KLeanTheJournalDoesNotKeepTheClientsSecrets"
            ".test_the_journals_own_evidence_is_not_redacted_away",
            "an artifact digest is evidence, and redaction leaves it alone"),
+    # --- found by the 45-scenario matrices ---------------------------------
+    Mutant("a-conversion-job-is-written-to-the-wrong-format",
+           "solvent/harness.py",
+           "        if types.check_of(requirement) == \"convert_format\":",
+           "        if False:",
+           "tests_solvent.test_skill_matrices.AnUnseenFinalExam"
+           ".test_every_scenario_passes",
+           "a conversion delivers the format the client asked for"),
+    Mutant("the-cycle-guesses-instead-of-asking", "solvent/harness.py",
+           "    for ambiguity in ambiguity_module.detect(capability, source_file, baseline):",
+           "    for ambiguity in []:",
+           "tests_solvent.test_skill_matrices.ADevelopmentMatrix"
+           ".test_some_scenarios_expect_a_question_rather_than_a_file",
+           "an ambiguous source produces a question, not a coin flip"),
+    Mutant("a-date-that-reads-the-same-both-ways-is-refused",
+           "solvent/csvwork.py",
+           "    elif _same_day(year, first, second):",
+           "    elif False:",
+           "tests_solvent.test_skill_matrices.AnUnseenFinalExam"
+           ".test_every_scenario_passes",
+           "10/10/2025 is one day, so there is nothing to ask"),
+    Mutant("consolidation-refuses-a-correctly-emptied-sheet",
+           "solvent/sheetverify.py",
+           "        if body and not present and not _all_removable(header, body,\n                                                       requirements):",
+           "        if body and not present:",
+           "tests_solvent.test_skill_matrices.AnUnseenFinalExam"
+           ".test_every_scenario_passes",
+           "a control that blocks correct work is broken, not safe"),
+    Mutant("a-pinned-duplicate-key-is-asked-about-anyway",
+           "solvent/ambiguity.py",
+           '     ("drop_exact_duplicates", "row_reconciliation", "deduplicate_by"),\n     ("duplicate_key", "fields"),',
+           '     ("drop_exact_duplicates", "row_reconciliation"), ("duplicate_key",),',
+           "tests_solvent.test_skill_matrices.ADevelopmentMatrix"
+           ".test_every_scenario_passes",
+           "a brief that already says what a duplicate is is not questioned"),
     Mutant("the-journals-reasons-keep-the-clients-secrets",
            "solvent/audit.py",
            "        why = redact(why)\n        payload = {key:",
