@@ -1224,6 +1224,182 @@ MUTANTS: tuple[Mutant, ...] = (
 )
 
 
+
+# ===========================================================================
+# The five-skill library
+# ===========================================================================
+#
+# Twenty-three controls, each of which is either a defect found while building
+# the library or a check a client's deliverable rests on. Every "before" string
+# below is the fix; the mutant restores the defect, and a named test has to
+# notice.
+#
+# These live beside the installer's mutants rather than in a battery of their
+# own because the honesty rules are the same ones and there should be one place
+# that enforces them: a kill counts only when the mutation actually applied,
+# the designated test newly failed, and the failure went away on revert.
+
+_LIBRARY_MUTANTS: tuple[Mutant, ...] = (
+    Mutant("requirement-check-accessor-reads-one-spelling", "solvent/types.py",
+           '    for attribute in ("check", "check_name"):',
+           '    for attribute in ("check_name",):',
+           "tests_solvent.test_entry_capability.TheRealRequirementType"
+           ".test_a_committed_requirement_plans_through_the_worker",
+           "a worker reads the requirement field the orchestrator supplies"),
+    Mutant("select-columns-leaves-formulas-behind", "solvent/sheetwork.py",
+           "        _reposition(step, picks, len(header), formulas, formats)",
+           "        pass",
+           "tests_solvent.test_sheet_capability"
+           ".ColumnsMoveAndFormulasMoveWithThem"
+           ".test_a_reordering_selection_keeps_working_formulas",
+           "formulas move with the columns a selection reorders"),
+    Mutant("select-columns-drops-an-input-silently", "solvent/sheetwork.py",
+           "            if index not in moved_to:\n                raise _Refused(",
+           "            if index not in moved_to:\n                return match.group(0)\n                raise _Refused(",
+           "tests_solvent.test_sheet_capability"
+           ".ColumnsMoveAndFormulasMoveWithThem"
+           ".test_a_selection_that_removes_an_input_is_refused_with_the_reason",
+           "a figure whose inputs are removed is refused, not shipped"),
+    Mutant("rename-planned-after-everything-that-names-a-column",
+           "solvent/sheetwork.py",
+           '        "consolidate_sheets", "rename_headers", "require_columns",\n        "trim_whitespace", "drop_empty_rows", "compute_column",',
+           '        "consolidate_sheets", "require_columns", "trim_whitespace",\n        "drop_empty_rows", "rename_headers", "compute_column",',
+           "tests_solvent.test_sheet_capability.OneNamePerColumn"
+           ".test_the_rename_is_planned_before_anything_that_names_a_column",
+           "one name per column, from the first step onwards"),
+    Mutant("reconciliation-counts-without-tracing", "solvent/sheetverify.py",
+           "    touched = _authorised_names(requirements)\n    pairs = [(out_header.index(name), in_header.index(name))",
+           '    touched = _authorised_names(requirements)\n    if True:\n        return Finding(rid, "row_reconciliation", PASS, "counted")\n    pairs = [(out_header.index(name), in_header.index(name))',
+           "tests_solvent.test_sheet_capability.CountingIsNotReconciling"
+           ".test_a_correct_workbook_from_another_job_does_not_reconcile",
+           "delivered rows trace to this source, not merely count"),
+    Mutant("consolidation-only-checks-the-sheets-exist",
+           "solvent/sheetverify.py",
+           "    touched = _authorised_names(requirements)\n    first = source_sheets",
+           '    if True:\n        return Finding(rid, "consolidate_sheets", PASS, "sheets exist")\n    touched = _authorised_names(requirements)\n    first = source_sheets',
+           "tests_solvent.test_sheet_capability.WhichWorksheetsDidTheRowsComeFrom"
+           ".test_one_worksheet_stacked_twice_instead_of_two_is_caught",
+           "which worksheets the delivered rows came from"),
+    Mutant("opens-as-workbook-left-unanswered", "solvent/sheetverify.py",
+           '    if check == "opens_as_workbook":\n        # Reaching here means both files were read',
+           '    if check == "opens_as_workbook" and False:\n        # Reaching here means both files were read',
+           "tests_solvent.test_sheet_capability.CountingIsNotReconciling"
+           ".test_opens_as_workbook_is_answered_when_a_requirement_names_it",
+           "a requirement nobody answers is UNVERIFIABLE, not passed"),
+    Mutant("sheet-finding-passes-on-unverifiable", "solvent/sheetverify.py",
+           # Report.passed has the same body, so the anchor reaches back into
+           # Finding.passed's own docstring to name one of them.
+           '        verifier.\n        """\n        return self.verdict == PASS',
+           '        verifier.\n        """\n        return self.verdict != FAIL',
+           "tests_solvent.test_sheet_capability.CountingIsNotReconciling"
+           ".test_an_unverifiable_finding_does_not_count_as_passed",
+           "UNVERIFIABLE blocks delivery exactly as FAIL does"),
+    Mutant("exceptions-justified-checks-one-direction",
+           "solvent/entryverify.py",
+           "    wrongly_held = sorted(held_rows - expected_rows)",
+           "    wrongly_held = []",
+           "tests_solvent.test_entry_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_valid_record_held_back_as_an_exception",
+           "a valid record held back is a short deliverable nobody can see"),
+    Mutant("rejection-reason-not-compared", "solvent/entryverify.py",
+           '        if sorted(entry["rules"]) != want:',
+           "        if False:",
+           "tests_solvent.test_entry_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_rejection_reason_that_names_the_wrong_rule",
+           "a rejection reason that matches the defect it names"),
+    Mutant("invented-values-by-set-membership", "solvent/entryverify.py",
+           "            if position is None:\n                invented.append(f\"record {index}: {name}={text!r}\")\n                continue\n            pool.pop(position)",
+           "            if position is None:\n                invented.append(f\"record {index}: {name}={text!r}\")\n                continue",
+           "tests_solvent.test_entry_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_value_delivered_more_often_than_the_source_holds_it",
+           "multiset containment, not set membership"),
+    Mutant("traceability-compares-counts-only", "solvent/entryverify.py",
+           "        if tuple(sorted(want.items())) != tuple(sorted(got.items())):",
+           "        if False:",
+           "tests_solvent.test_entry_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_record_grafted_together_from_two_source_records",
+           "a delivered record is the source record it claims to be"),
+    Mutant("reconcile-ignores-the-arithmetic", "solvent/entryverify.py",
+           "    if counted != total:",
+           "    if False:",
+           "tests_solvent.test_entry_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_record_in_neither_file_is_simply_lost",
+           "every source record is accounted for exactly once"),
+    Mutant("entry-unparseable-figure-becomes-zero", "solvent/entrywork.py",
+           "    if not _plain_number(text):\n        return None",
+           "    if not _plain_number(text):\n        return Decimal(0)",
+           "tests_solvent.test_entry_capability"
+           ".TwoImplementationsOfOneSpecification"
+           ".test_non_numbers_are_non_numbers_on_both_sides",
+           "a figure that will not parse is not zero"),
+    Mutant("required-field-absence-checked-one-way", "solvent/docverify.py",
+           "        if expected.get(name) not in _MARKERS and claimed[name] in _MARKERS:",
+           "        if False:",
+           "tests_solvent.test_document_capability.BothDirectionsOfAnAbsence"
+           ".test_a_stated_field_delivered_as_not_stated_is_caught",
+           "a field reported absent from a document that states it"),
+    Mutant("invented-content-ignores-the-tables", "solvent/docverify.py",
+           "        for position, table in enumerate(\n                _delivered_tables(extraction, delivered), start=1):",
+           "        for position, table in enumerate([], start=1):",
+           "tests_solvent.test_document_capability.BothDirectionsOfAnAbsence"
+           ".test_a_table_row_invented_is_not_in_the_document",
+           "a fabricated line item is invented content"),
+    Mutant("absences-disclosed-accepts-a-filled-gap", "solvent/docverify.py",
+           "        if got != want:\n            return Finding(\n                rid, check, FAIL,\n                f\"{name} is not stated in the document and the deliverable \"",
+           "        if False:\n            return Finding(\n                rid, check, FAIL,\n                f\"{name} is not stated in the document and the deliverable \"",
+           "tests_solvent.test_document_capability"
+           ".TheVerifierCatchesAWrongWorker"
+           ".test_a_gap_filled_in_with_something_plausible",
+           "a gap filled with something plausible"),
+    Mutant("extracted-value-needs-no-evidence", "solvent/docverify.py",
+           "            if not evidence.strip():",
+           "            if False:",
+           "tests_solvent.test_document_capability"
+           ".TheVerifierCatchesAWrongWorker"
+           ".test_a_value_with_no_evidence_behind_it",
+           "a value with no evidence is a value nobody should report"),
+    Mutant("deleted-text-read-as-what-the-document-says", "solvent/docx.py",
+           '        if tag == "t":\n            if _inside(element, node, "delText"):\n                continue',
+           '        if tag in ("t", "delText"):\n            if False:\n                continue',
+           "tests_solvent.test_docx_format.TrackedChanges"
+           ".test_deleted_text_is_not_what_the_document_says",
+           "a struck-out figure is not what the document says"),
+    Mutant("pdf-read-approximately-instead-of-refused", "solvent/docwork.py",
+           "    if suffix in READABLE:\n        return \"\"",
+           "    if True:\n        return \"\"",
+           "tests_solvent.test_document_capability.UnsupportedFormats"
+           ".test_a_pdf_is_refused_with_the_reason_and_a_way_forward",
+           "an unreliable extraction is worse than a visible refusal"),
+    Mutant("markdown-cell-pipe-not-unescaped", "solvent/docwork.py",
+           '            current.append(character if character == "|" else "\\\\" + character)',
+           '            current.append("\\\\" + character)',
+           "tests_solvent.test_document_capability.Conversion"
+           ".test_a_pipe_inside_a_cell_survives_the_round_trip",
+           "a client's pipe inside a cell survives the round trip"),
+    Mutant("overlap-gate-treats-unknown-as-different",
+           "solvent/skillslab.py",
+           "        if not reads or not theirs:\n            return False",
+           "        if not reads or not theirs:\n            return True",
+           "tests_solvent.test_five_skill_library.TheSkillsLabLifecycle"
+           ".test_an_unstated_domain_on_the_existing_side_is_not_a_difference",
+           "a missing input domain is not a licence for a second authority"),
+    Mutant("verification-loop-withholds-the-brief", "solvent/harness.py",
+           '        params.setdefault("requirements", baseline)',
+           "        pass",
+           "tests_solvent.test_five_skill_library"
+           ".TheWholePipelineRunsEachCapability"
+           ".test_a_data_entry_job_is_delivered_with_its_exceptions",
+           "a verifier is told what the job asked for"),
+    Mutant("certifiable-scope-claims-everything", "solvent/harness.py",
+           "    return (frozenset(checks_for(capability))\n            - set(UNCERTIFIABLE.get(capability, {})))",
+           "    return frozenset(checks_for(capability))",
+           "tests_solvent.test_five_skill_library.WhatEvidenceCannotCover"
+           ".test_the_certifiable_scope_is_narrower_than_the_check_list",
+           "a promotion may not claim what no evidence covers"),
+)
+
+MUTANTS = MUTANTS + _LIBRARY_MUTANTS
+
 def purge_bytecode() -> None:
     """Delete cached bytecode for the package under mutation.
 

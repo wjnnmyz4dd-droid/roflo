@@ -17,12 +17,22 @@ guess starts being wrong.
 
 from __future__ import annotations
 
-from . import csvverify, reportverify
+from . import csvverify, docverify, entryverify, reportverify, sheetverify
 
 #: ``capability name -> (checks, run)``. Keyed by name; versions resolve to it.
+#:
+#: Five entries, one per capability in the library. Adding one here is not a
+#: promotion and not a certification: it says which library knows how to
+#: re-check this capability's output, and nothing about whether that library
+#: has earned any trust. The registry of verifier certifications answers that,
+#: per (verifier, capability version, check), and a capability listed here with
+#: no certification is still refused at delivery.
 REGISTRY = {
     "csv-cleanup": (csvverify.CHECKS, csvverify.run),
     "report-builder": (reportverify.CHECKS, reportverify.run),
+    "spreadsheet-automation": (sheetverify.CHECKS, sheetverify.run),
+    "data-entry": (entryverify.CHECKS, entryverify.run),
+    "document-processing": (docverify.CHECKS, docverify.run),
 }
 
 

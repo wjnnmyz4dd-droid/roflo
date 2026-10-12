@@ -51,9 +51,14 @@ def _under_evaluation(name: str):
     the whole certification reads as a capability defect.
     """
     from solvent.capability import Capability
-    from solvent.checks import checks_for
+    from solvent.harness import certifiable_scope
 
-    covers = frozenset(checks_for(name))
+    # The scope evidence can cover, not every check the verifier lists. Two of
+    # spreadsheet-automation's checks can never be certified by any battery --
+    # see ``harness.UNCERTIFIABLE`` -- and registering a capability over them
+    # is refused, correctly, by the same control that stops a promotion
+    # claiming more than the evidence supports.
+    covers = certifiable_scope(name)
     if not covers:
         return None
     return Capability(name=name, covers=covers, version=f"{name}/1.0",

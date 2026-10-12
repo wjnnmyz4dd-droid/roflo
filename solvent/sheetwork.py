@@ -163,10 +163,20 @@ def plan(requirements: list) -> tuple[list[Step], list[str]]:
     computed column, or it would total figures that are not there yet. A plan
     that honoured the client's ordering would produce a different answer
     depending on how they happened to write the brief.
+
+    **Renaming comes before anything that names a column**, and it did not.
+    With the rename later in the pipeline, a brief that renames ``Units`` to
+    ``Quantity`` left every other requirement with two possible readings --
+    this worker checked ``require_columns`` against the heading the client
+    sent, and the verifier checked it against the heading in the file it
+    received, so the two halves disagreed about what the requirement meant and
+    a perfectly reasonable brief could not be delivered. One name, from the
+    first step onwards: a requirement that says ``Quantity`` means the column
+    the deliverable calls ``Quantity``.
     """
     order = {op: i for i, op in enumerate((
-        "consolidate_sheets", "require_columns", "trim_whitespace",
-        "drop_empty_rows", "rename_headers", "compute_column",
+        "consolidate_sheets", "rename_headers", "require_columns",
+        "trim_whitespace", "drop_empty_rows", "compute_column",
         "select_columns", "sort_rows", "number_format", "total_row",
         "preserve_columns"))}
     steps: list[Step] = []
@@ -587,6 +597,21 @@ def _apply(step: Step, header: list[str], body: list[list],
 
     if op == "select_columns":
         picks = [_index(header, n) for n in params["columns"]]
+        # Choosing the delivered columns moves them, and a formula names cells
+        # by position. Left alone, every formula written by an earlier step
+        # either points at whatever now sits in that column or falls outside
+        # the new width and is dropped on the way to the file -- which is what
+        # happened: a delivered workbook whose computed column held correct
+        # numbers and no formulas at all, so the verifier could not check the
+        # arithmetic against anything and refused to deliver a job that was
+        # perfectly reasonable to ask for.
+        #
+        # So the formulas move with the columns, references and all. A formula
+        # that refers to a column the selection removes cannot be kept
+        # honestly, and that is a refusal rather than a quiet drop: a client
+        # who asked for a figure and for its inputs to be taken away has asked
+        # for a number nobody can check.
+        _reposition(step, picks, len(header), formulas, formats)
         step.outcome = (f"kept {len(picks)} column(s) in the order asked, "
                         f"dropped {len(header) - len(picks)}")
         return ([header[i] for i in picks],
@@ -628,6 +653,64 @@ def _apply(step: Step, header: list[str], body: list[list],
         return _total_row(step, header, body, formulas)
 
     raise _Refused(f"{op!r} reached the executor without an implementation")
+
+
+#: A single cell reference inside a formula this module writes.
+_CELL_REF = re.compile(r"(?<![A-Z0-9$])(\$?)([A-Z]{1,3})(\$?)(\d+)")
+
+
+def _reposition(step: Step, picks: list[int], width: int, formulas: dict,
+                formats: dict) -> None:
+    """Move formulas and formats onto the columns the selection keeps.
+
+    ``picks`` is the source column index for each delivered column, 0-based.
+    Both dictionaries are keyed 1-based, which is the spreadsheet's own
+    convention and the writer's.
+    """
+    moved_to = {old: new for new, old in enumerate(picks)}
+
+    def rewrite(formula: str) -> str:
+        def one(match):
+            dollar_column, letters, dollar_row, row = match.groups()
+            index = _column_index(letters) - 1
+            if index not in moved_to:
+                raise _Refused(
+                    f"the delivered columns leave out a column that "
+                    f"{step.requirement_id or 'a computed column'} computes "
+                    f"from ({letters}), so its formula could not be kept. "
+                    "Either deliver that column or drop the computation: a "
+                    "figure whose inputs are not in the file is a figure "
+                    "nobody can check")
+            return (f"{dollar_column}{xlsx.column_name(moved_to[index] + 1)}"
+                    f"{dollar_row}{row}")
+        return _CELL_REF.sub(one, formula)
+
+    rebuilt = {}
+    for (row, column), formula in formulas.items():
+        index = column - 1
+        if index not in moved_to:
+            # The formula's own cell is not delivered. Dropping the formula is
+            # correct here: the cell it belonged to is gone.
+            continue
+        rebuilt[(row, moved_to[index] + 1)] = rewrite(formula)
+    formulas.clear()
+    formulas.update(rebuilt)
+
+    rebuilt_formats = {}
+    for column, code in formats.items():
+        index = column - 1
+        if index in moved_to:
+            rebuilt_formats[moved_to[index] + 1] = code
+    formats.clear()
+    formats.update(rebuilt_formats)
+
+
+def _column_index(letters: str) -> int:
+    """``A`` -> 1. The inverse of :func:`solvent.xlsx.column_name`."""
+    index = 0
+    for character in letters:
+        index = index * 26 + (ord(character) - ord("A") + 1)
+    return index
 
 
 def _compute_column(step, header, body, formulas, formats):

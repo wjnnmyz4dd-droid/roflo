@@ -65,6 +65,24 @@ class Finding:
     evidence: str = ""
 
     @property
+    def result(self):
+        """The pipeline's verdict type for this finding.
+
+        Two vocabularies for one answer, and they have to be the same answer.
+        This capability reports PASS / FAIL / UNVERIFIABLE; the job pipeline
+        reads :class:`solvent.types.CheckResult`. Deriving one from the other
+        rather than storing both means they cannot drift apart -- and they are
+        the same three words deliberately, because UNVERIFIABLE blocks delivery
+        in the pipeline exactly as it refuses an opinion here.
+        """
+        return types.CheckResult(self.verdict)
+
+    @property
+    def computed(self) -> dict:
+        """What was measured, for the audit record the pipeline writes."""
+        return {"requirement": self.requirement_id, "evidence": self.evidence}
+
+    @property
     def passed(self) -> bool:
         """For the dispatch contract. UNVERIFIABLE is not passed."""
         return self.verdict == PASS

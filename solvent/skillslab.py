@@ -262,6 +262,7 @@ class SkillsLab:
     # ---------------------------------------------------------- overlap gate
     def check_overlap(self, *, project_id: str,
                       target_covers: frozenset | None = None,
+                      target_inputs: tuple | frozenset | None = None,
                       needs_human: bool = False,
                       impossible: str = "",
                       defect: str = "") -> tuple[str, str]:
@@ -278,6 +279,23 @@ class SkillsLab:
         a capability could never be repaired. A defect must be described, so that
         "it is broken" is a statement somebody made rather than a way round the
         gate.
+
+        ``target_inputs`` names the media types the proposed skill reads, and it
+        exists because the gate's model was too coarse in one specific way.
+        Overlap was computed from check *names* over a single global namespace,
+        so a skill that cleans whitespace in a worksheet looked like a widening
+        of the skill that cleans whitespace in a CSV. They ask the same question
+        and they are not the same capability: different format, different code,
+        different evidence, and nothing in one is reusable by the other. Asked
+        to widen csv-cleanup to cover spreadsheets, the honest answer is that
+        there is nothing there to widen.
+
+        It is deliberately opt-in. A caller that states no input domain gets
+        exactly the old verdict, so the narrower answer has to be *asked for*
+        with a claim about what the skill reads — it can never be obtained by
+        leaving a field out. The overlap is still named in the reason either
+        way, because a reader needs to know that two capabilities answer
+        similarly-named questions even when both should exist.
         """
         project = self.project(project_id)
         if impossible.strip():
@@ -289,6 +307,7 @@ class SkillsLab:
                 "should not pretend otherwise")
 
         wanted = frozenset(target_covers or ())
+        reads = frozenset(str(i) for i in (target_inputs or ()) if str(i))
         existing = {c.name: c for c in self._capability.capabilities()}
         current = existing.get(project.skill)
 
@@ -316,6 +335,15 @@ class SkillsLab:
         # same checks is still an overlap, whatever it is called.
         for name, capability in sorted(existing.items()):
             if wanted and wanted <= frozenset(capability.covers):
+                if self._different_domain(reads, capability):
+                    return self._settle_overlap(
+                        project, NEW_SKILL_REQUIRED,
+                        f"{name} {capability.version} covers the same check "
+                        f"names, and it reads "
+                        f"{', '.join(sorted(capability.inputs)) or 'an unrecorded format'} "
+                        f"where this reads {', '.join(sorted(reads))}. The same "
+                        "question about a different format is a different "
+                        "capability: there is nothing in that one to widen")
                 return self._settle_overlap(
                     project, EXISTING_SUFFICIENT,
                     f"{name} {capability.version} already covers "
@@ -326,6 +354,16 @@ class SkillsLab:
             name for name, capability in existing.items()
             if wanted & frozenset(capability.covers))
         if overlapping:
+            foreign = [name for name in overlapping
+                       if self._different_domain(reads, existing[name])]
+            if foreign and len(foreign) == len(overlapping):
+                return self._settle_overlap(
+                    project, NEW_SKILL_REQUIRED,
+                    f"{overlapping} answer similarly-named checks and each "
+                    f"reads a different format from this one "
+                    f"({', '.join(sorted(reads))}), so none of them is a "
+                    "capability this could be a widening of. The overlap in "
+                    "names is real and is not an overlap in authority")
             return self._settle_overlap(
                 project, UPGRADE_EXISTING,
                 f"{overlapping} already cover part of {sorted(wanted)}; "
@@ -333,6 +371,22 @@ class SkillsLab:
                 "second capability over the same checks is not")
         return self._settle_overlap(project, NEW_SKILL_REQUIRED,
                                     f"nothing covers {sorted(wanted)}")
+
+    @staticmethod
+    def _different_domain(reads: frozenset, capability) -> bool:
+        """Do these two read entirely different kinds of file?
+
+        False whenever the question cannot be answered — no stated domain on
+        either side, or any media type in common. A gate that treated "I do not
+        know" as "they are different" would let a second capability over the
+        same authority through on a missing field, which is the opposite of
+        what this gate is for.
+        """
+        theirs = frozenset(str(i) for i in (getattr(capability, "inputs", ())
+                                            or ()) if str(i))
+        if not reads or not theirs:
+            return False
+        return not (reads & theirs)
 
     def _settle_overlap(self, project: Project, verdict: str, why: str,
                         base_version: str = "") -> tuple[str, str]:

@@ -541,20 +541,56 @@ def run_generated(verify, *, capability: str, verifier_ref: str, seed: int,
     try:
         for index, case in enumerate(generated):
             source = workdir / f"{index}_{case.source_name}"
-            source.write_text(case.source_text, encoding="utf-8")
-            suffix = ".csv" if case.source_name.endswith(".csv") else ".md"
-            output = workdir / f"{index}_deliverable{suffix}"
-            output.write_text(case.output_text, encoding="utf-8")
+            if case.source_bytes:
+                source.write_bytes(case.source_bytes)
+            else:
+                source.write_text(case.source_text, encoding="utf-8")
+
+            # The deliverable's extension decides how it is read, so a case
+            # that names one is written under that name. The older capabilities
+            # name none, and their deliverable is text whose extension follows
+            # the source's.
+            if case.output_name:
+                stem, _, extension = case.output_name.rpartition(".")
+                output = workdir / f"{index}_{stem}.{extension}"
+            else:
+                suffix = ".csv" if case.source_name.endswith(".csv") else ".md"
+                output = workdir / f"{index}_deliverable{suffix}"
+            if case.output_bytes:
+                output.write_bytes(case.output_bytes)
+            else:
+                output.write_text(case.output_text, encoding="utf-8")
+
+            # A deliverable that is two files is certified as two files, or the
+            # check that reconciles them is never exercised. Each companion is
+            # written as <stem><suffix> beside the deliverable, which is how a
+            # data-entry job's exceptions file is found.
+            for suffix, blob in (case.companions or {}).items():
+                beside = output.with_name(output.stem + suffix)
+                beside.write_bytes(blob)
+
+            digest_material = (case.source_bytes or
+                               case.source_text.encode("utf-8"))
+            digest_material += b"\x00" + (case.output_bytes or
+                                          case.output_text.encode("utf-8"))
+            for blob in (case.companions or {}).values():
+                digest_material += b"\x00" + blob
             trial = Trial(
                 name=case.name, check=case.check, expect=case.expect,
                 params=dict(case.params), defect_class=case.defect_class,
-                content_digest=hashlib.sha256(
-                    (case.source_text + "\x00" + case.output_text).encode()
-                ).hexdigest()[:24],
+                content_digest=hashlib.sha256(digest_material).hexdigest()[:24],
                 note=case.note)
+
+            # The brief, where the capability has one. Some checks are
+            # properties of the whole job rather than of one parameter set, and
+            # a verifier is entitled to the committed requirements. It is never
+            # told which trials carry the defect.
+            params = dict(case.params)
+            if case.requirements:
+                params["requirements"] = list(case.requirements)
             try:
                 outcome = verify(case.check, source=str(source),
-                                 output=str(output), params=dict(case.params))
+                                 output=str(output), params=params)
             except Exception as exc:  # noqa: BLE001 - a crash is not an answer
                 report.results.append(TrialResult(
                     trial, "ERROR", f"{type(exc).__name__}: {exc}"))

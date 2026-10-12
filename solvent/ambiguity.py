@@ -203,7 +203,7 @@ _LOADED_TERMS = (
      "named person whose approval counts?"),
     ("total", "TOTAL_BASIS",
      ("gross", "net", "subtotal before tax", "tax-inclusive"),
-     (), ("total_basis", "column", "columns"), "total_basis",
+     (), ("total_basis", "column", "columns", "aggregates"), "total_basis",
      "Which total is wanted: gross, net, subtotal before tax, or tax-inclusive?"),
     ("normalise names", "NAME_NORMALISATION",
      ("capitalisation and spacing only", "changing the recorded legal name"),
@@ -284,9 +284,40 @@ def requirement_ambiguities(requirements) -> list[Ambiguity]:
 #: shape as :mod:`solvent.checks`, and for the same reason: which detector reads
 #: which work should be answered by a lookup rather than by whichever module
 #: happened to be imported at the top of a file.
+def no_data_ambiguities(source, requirements) -> list[Ambiguity]:
+    """A capability whose data holds no silent choice, said in a sentence.
+
+    Three of the five capabilities are here, and each for a reason worth
+    writing down rather than expressing as an empty lambda:
+
+    ``report-builder`` renders facts it was handed. It reads no values it might
+    have read two ways; a fact nobody supplied is disclosed as absent.
+
+    ``spreadsheet-automation`` performs only operations whose parameters name
+    the columns and the arithmetic explicitly. There is no reading to choose
+    between, because nothing is inferred from a cell's appearance -- a figure
+    that will not parse as a number leaves the computed cell blank rather than
+    being guessed at.
+
+    ``data-entry`` and ``document-processing`` meet ambiguity head-on and
+    **report** it rather than resolving it: a date that is not ISO 8601 makes
+    the record an exception, and a field a document states twice with two
+    different values is delivered as having been stated twice. The competing
+    readings reach the client, which is what this module exists to ensure, so
+    there is nothing left for a detector to raise.
+
+    If any of those stops being true, this function is where the sentence has
+    to change.
+    """
+    return []
+
+
 DETECTORS = {
     "csv-cleanup": csv_ambiguities,
-    "report-builder": lambda source, requirements: [],
+    "report-builder": no_data_ambiguities,
+    "spreadsheet-automation": no_data_ambiguities,
+    "data-entry": no_data_ambiguities,
+    "document-processing": no_data_ambiguities,
 }
 
 

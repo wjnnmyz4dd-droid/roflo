@@ -564,5 +564,237 @@ class FormulaReferencesAreParsedNotGuessed(unittest.TestCase):
                          [("D", 2), ("D", 3), ("E", 9)])
 
 
+class ColumnsMoveAndFormulasMoveWithThem(Base):
+    """Choosing the delivered columns moves them, and a formula names cells
+    by position.
+
+    Left alone, every formula an earlier step wrote either points at whatever
+    now sits in that column or falls outside the new width and is dropped on
+    the way to the file. That is what happened: a delivered workbook whose
+    computed column held correct numbers and no formulas at all, so the
+    verifier could not check the arithmetic against anything and refused to
+    deliver a job that was perfectly reasonable to ask for.
+    """
+
+    def book(self):
+        return [["Item", "Client ref", "Units", "Rate"],
+                ["Alpha", "CR-2", 3, "20.00"],
+                ["Zeta", "CR-1", 2, "10.00"]]
+
+    def test_a_reordering_selection_keeps_working_formulas(self):
+        self.given([self.sheet("Client data", self.book())])
+        requirements = [
+            Requirement("r1", "compute_column",
+                        {"into": "Amount", "expression": "product",
+                         "using": ["Units", "Rate"]}),
+            Requirement("r2", "select_columns",
+                        {"columns": ["Item", "Amount", "Units", "Rate"]}),
+            Requirement("r3", "formulas_agree", {}),
+        ]
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=requirements)
+        self.assertEqual(report.refused, [])
+        book = xlsx.read_workbook(self.output.read_bytes())
+        formulas = [cell.formula for row in book.first.rows for cell in row
+                    if cell.formula]
+        self.assertEqual(formulas, ["C2*D2", "C3*D3"],
+                         "the formulas must name the columns Units and Rate "
+                         "where the selection put them")
+        verdict = verifier.verify(source=self.source, output=self.output,
+                                  requirements=requirements)
+        self.assertEqual(verdict.verdict, verifier.PASS, verdict.summary())
+
+    def test_a_selection_that_removes_an_input_is_refused_with_the_reason(self):
+        self.given([self.sheet("Client data", self.book())])
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=[
+            Requirement("r1", "compute_column",
+                        {"into": "Amount", "expression": "product",
+                         "using": ["Units", "Rate"]}),
+            Requirement("r2", "select_columns",
+                        {"columns": ["Item", "Amount"]})])
+        self.assertFalse(report.clean)
+        self.assertIn("could not be kept", report.refused[0])
+        self.assertIn("nobody can check", report.refused[0])
+
+    def test_a_display_format_moves_with_its_column_too(self):
+        self.given([self.sheet("Client data", self.book())])
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=[
+            Requirement("r1", "compute_column",
+                        {"into": "Amount", "expression": "product",
+                         "using": ["Units", "Rate"], "format": "#,##0.00"}),
+            Requirement("r2", "select_columns",
+                        {"columns": ["Item", "Amount", "Units", "Rate"]})])
+        self.assertEqual(report.refused, [])
+        book = xlsx.read_workbook(self.output.read_bytes())
+        formats = {cell.number_format for row in book.first.rows[1:]
+                   for cell in row if cell.number_format}
+        self.assertIn("#,##0.00", formats)
+
+
+class OneNamePerColumn(Base):
+    """Renaming comes before anything that names a column, and it did not.
+
+    With the rename later in the pipeline, a brief that renames ``Units`` to
+    ``Quantity`` left every other requirement with two possible readings: the
+    worker checked ``require_columns`` against the heading the client sent and
+    the verifier checked it against the heading in the file it received, so
+    the two halves disagreed about what the requirement meant and a reasonable
+    brief could not be delivered at all.
+    """
+
+    def test_the_rename_is_planned_before_anything_that_names_a_column(self):
+        steps, refusals = worker.plan([
+            Requirement("r1", "require_columns",
+                        {"columns": ["Item", "Quantity"]}),
+            Requirement("r2", "rename_headers", {"mapping": {"Units": "Quantity"}}),
+            Requirement("r3", "trim_whitespace", {"columns": ["Item"]})])
+        self.assertEqual(refusals, [])
+        self.assertEqual(steps[0].operation, "rename_headers")
+
+    def test_a_brief_using_the_new_name_throughout_runs_and_verifies(self):
+        self.given([self.sheet("Client data", [["Item", "Client ref", "Units", "Rate"],
+                    ["  Alpha ", "CR-2", 3, "20.00"]])])
+        requirements = [
+            Requirement("r1", "rename_headers",
+                        {"mapping": {"Units": "Quantity"}}),
+            Requirement("r2", "require_columns",
+                        {"columns": ["Item", "Quantity", "Rate"]}),
+            Requirement("r3", "trim_whitespace", {"columns": ["Item"]}),
+            Requirement("r4", "compute_column",
+                        {"into": "Amount", "expression": "product",
+                         "using": ["Quantity", "Rate"]}),
+            Requirement("r5", "formulas_agree", {}),
+        ]
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=requirements)
+        self.assertEqual(report.refused, [])
+        verdict = verifier.verify(source=self.source, output=self.output,
+                                  requirements=requirements)
+        self.assertEqual(verdict.verdict, verifier.PASS, verdict.summary())
+
+    def test_a_requirement_naming_the_old_heading_is_refused_not_guessed_at(self):
+        self.given([self.sheet("Client data", [["Item", "Client ref", "Units", "Rate"],
+                    ["Alpha", "CR-2", 3, "20.00"]])])
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=[
+            Requirement("r1", "rename_headers",
+                        {"mapping": {"Units": "Quantity"}}),
+            Requirement("r2", "require_columns",
+                        {"columns": ["Item", "Units"]})])
+        self.assertFalse(report.clean)
+        self.assertIn("Units", report.refused[0])
+
+
+class CountingIsNotReconciling(Base):
+    """A deliverable from a different job, with the same number of rows."""
+
+    def brief(self):
+        return [
+            Requirement("r1", "trim_whitespace", {"columns": ["Item"]}),
+            Requirement("r2", "compute_column",
+                        {"into": "Amount", "expression": "product",
+                         "using": ["Units", "Rate"]}),
+            Requirement("r3", "row_reconciliation", {}),
+            Requirement("r4", "opens_as_workbook", {}),
+        ]
+
+    def test_a_correct_workbook_from_another_job_does_not_reconcile(self):
+        self.given([self.sheet("Client data", [["Item", "Client ref", "Units", "Rate"],
+                    ["Alpha", "CR-2", 3, "20.00"],
+                    ["Zeta", "CR-1", 2, "10.00"]])])
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=self.brief())
+        self.assertEqual(report.refused, [])
+        # The deliverable is correct. It is simply not this source's file.
+        other = self.dir / "another-client.xlsx"
+        other.write_bytes(xlsx.write_workbook([xlsx.SheetOut(
+            name="Client data",
+            rows=[["Item", "Client ref", "Units", "Rate"],
+                  ["Borealis", "CR-9", 5, "30.00"],
+                  ["Cyngor", "CR-8", 1, "40.00"]])]))
+        verdict = verifier.verify(source=other, output=self.output,
+                                  requirements=self.brief())
+        finding = next(f for f in verdict.findings
+                       if f.check == "row_reconciliation")
+        self.assertEqual(finding.verdict, verifier.FAIL)
+        self.assertIn("do not correspond", finding.detail)
+
+    def test_opens_as_workbook_is_answered_when_a_requirement_names_it(self):
+        self.given([self.sheet("Client data", [["Item", "Client ref", "Units", "Rate"],
+                    ["Alpha", "CR-2", 3, "20.00"]])])
+        worker.execute(source=self.source, destination=self.output,
+                       requirements=self.brief())
+        findings = [f for f in verifier.verify(
+            source=self.source, output=self.output,
+            requirements=self.brief()).findings
+            if f.check == "opens_as_workbook" and f.requirement_id == "r4"]
+        self.assertTrue(findings, "the requirement produced no finding")
+        self.assertEqual(findings[0].verdict, verifier.PASS,
+                         "a requirement nobody answers is UNVERIFIABLE, which "
+                         "is the verdict that says nobody checked it")
+
+    def test_an_unverifiable_finding_does_not_count_as_passed(self):
+        finding = verifier.Finding("r1", "number_format",
+                                   verifier.UNVERIFIABLE, "no value to recompute")
+        self.assertFalse(finding.passed)
+        self.assertEqual(finding.result.value, "UNVERIFIABLE")
+
+
+class WhichWorksheetsDidTheRowsComeFrom(Base):
+    """Consolidation's own question, which reconciliation cannot answer."""
+
+    def source_book(self):
+        header = ["Item", "Client ref", "Units", "Rate"]
+        return xlsx.write_workbook([
+            xlsx.SheetOut(name="Q1 data", rows=[header,
+                                                ["Consulting", "CR-1001", 4, "250.00"]]),
+            xlsx.SheetOut(name="Q2 data", rows=[header,
+                                                ["Support", "CR-2001", 2, "75.50"]])])
+
+    def brief(self):
+        return [
+            Requirement("r1", "consolidate_sheets",
+                        {"sheets": ["Q1 data", "Q2 data"]}),
+            Requirement("r2", "trim_whitespace", {"columns": ["Item"]}),
+        ]
+
+    def test_both_named_worksheets_contributing_verifies(self):
+        self.source.write_bytes(self.source_book())
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=self.brief())
+        self.assertEqual(report.refused, [])
+        verdict = verifier.verify(source=self.source, output=self.output,
+                                  requirements=self.brief())
+        self.assertEqual(verdict.verdict, verifier.PASS, verdict.summary())
+
+    def test_one_worksheet_stacked_twice_instead_of_two_is_caught(self):
+        """The counts can work out. The client receives half their data twice."""
+        self.source.write_bytes(self.source_book())
+        header = ["Item", "Client ref", "Units", "Rate"]
+        self.output.write_bytes(xlsx.write_workbook([xlsx.SheetOut(
+            name="Q1 data",
+            rows=[header, ["Consulting", "CR-1001", 4, "250.00"],
+                  ["Consulting", "CR-1001", 4, "250.00"]])]))
+        verdict = verifier.verify(source=self.source, output=self.output,
+                                  requirements=self.brief())
+        finding = next(f for f in verdict.findings
+                       if f.check == "consolidate_sheets")
+        self.assertEqual(finding.verdict, verifier.FAIL)
+        self.assertIn("Q2 data", finding.detail)
+
+    def test_a_worksheet_the_source_does_not_have_is_unverifiable(self):
+        self.source.write_bytes(self.source_book())
+        self.output.write_bytes(self.source_book())
+        verdict = verifier.verify(
+            source=self.source, output=self.output,
+            requirements=[Requirement("r1", "consolidate_sheets",
+                                      {"sheets": ["Q1 data", "Q9 data"]})])
+        finding = verdict.findings[-1]
+        self.assertEqual(finding.verdict, verifier.UNVERIFIABLE)
+        self.assertIn("Q9 data", finding.detail)
+
+
 if __name__ == "__main__":
     unittest.main()

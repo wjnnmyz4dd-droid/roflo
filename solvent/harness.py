@@ -51,12 +51,13 @@ from .policy import DEFAULT_MAX_CORRECTIONS, PolicyStore
 from .pricing import PricingReference
 from .projection import project
 from .store import Store
-from . import csvverify, csvwork, reportverify, reportwork
+from . import (csvverify, csvwork, docverify, docwork, entryverify,
+               entrywork, reportverify, reportwork, sheetverify, sheetwork)
 from .policy import DEFAULT_MAX_CORRECTIONS
 from .types import (
     ActionClass, BlockedOn, ConsequenceTier, Criticality, CostCategory, CostLine, GovernorVerdict, JobState,
     Jurisdiction, LocationSignals, PaymentState, PricingTier, PrivacyClass,
-    Requirement, RequirementSource, VerificationTier, fmt, money,
+    Requirement, RequirementSource, VerificationTier, check_of, fmt, money,
 )
 
 OWNER = "owner:demo"
@@ -1370,6 +1371,155 @@ def _report_derived(source: str, requirements: list) -> list:
     return derived
 
 
+def _sheet_derived(source: str, requirements: list) -> list:
+    """Every spreadsheet job carries "it opens, nothing was lost, and the
+    formulas say what the arithmetic did".
+
+    Each of these is a property of the result rather than a step in it, and a
+    job is not correct without them however the brief was written. They are
+    recorded as DERIVED so none can be quoted back to a client as something
+    they asked for.
+    """
+    present = {check_of(r) for r in requirements}
+    derived = []
+    if "opens_as_workbook" not in present:
+        derived.append(Requirement(
+            id="R-OPENS",
+            text="The delivered file must open as a workbook.",
+            source=RequirementSource.DERIVED,
+            acceptance="The deliverable is read back through the format layer "
+                       "and has a usable header row",
+            check="opens_as_workbook", params={}))
+    if "row_reconciliation" not in present:
+        added = 1 if "total_row" in present else 0
+        derived.append(Requirement(
+            id="R-ROWS",
+            text="No row may be lost, and every delivered row must come from "
+                 "this source.",
+            source=RequirementSource.DERIVED,
+            acceptance="The counts reconcile and each delivered row traces to a "
+                       "distinct source row on the columns nobody authorised "
+                       "changing",
+            check="row_reconciliation", params={"expected_added": added}))
+    if "compute_column" in present and "formulas_agree" not in present:
+        # A computed cell carries a number and a formula, and they are two
+        # separate claims. A right number beside a formula naming the wrong
+        # column passes the arithmetic and fails the client the moment they
+        # change an input.
+        derived.append(Requirement(
+            id="R-FORMULAS",
+            text="Every formula must refer to the columns its requirement named.",
+            source=RequirementSource.DERIVED,
+            acceptance="Each computed cell's formula is parsed back to the "
+                       "cells it names and compared with the requirement",
+            check="formulas_agree", params={}))
+    if "no_unauthorised_changes" not in present:
+        authorised, added_columns = [], []
+        for requirement in requirements:
+            check = check_of(requirement)
+            said = dict(getattr(requirement, "params", {}) or {})
+            if check in ("trim_whitespace", "sort_rows"):
+                authorised += [str(c) for c in (said.get("columns") or [])]
+            if check == "rename_headers":
+                mapping = said.get("mapping") or {}
+                authorised += [str(k) for k in mapping]
+                added_columns += [str(v) for v in mapping.values()]
+            if check == "compute_column":
+                added_columns.append(str(said.get("into", "")))
+            if check == "number_format":
+                authorised.append(str(said.get("column", "")))
+        derived.append(Requirement(
+            id="R-NOCHANGE",
+            text="No column may change except those the agreed work requires.",
+            source=RequirementSource.DERIVED,
+            acceptance="Every unauthorised column holds only values that were "
+                       "in the source",
+            check="no_unauthorised_changes",
+            params={"authorised_columns": sorted({c for c in authorised if c}),
+                    "added_columns": sorted({c for c in added_columns if c})}))
+    return derived
+
+
+def _entry_derived(source: str, requirements: list) -> list:
+    """Every data-entry job carries the four properties of its own split.
+
+    A data-entry deliverable is two files, and what makes it right is not that
+    each delivered record is correct -- it is that the split between delivered
+    and held is the split the client's rules imply. A worker that holds back
+    the records it found awkward produces a file that is short, consistent with
+    itself, and passes every field-level check. None of these four is a step to
+    carry out; each is a property to establish afterwards.
+    """
+    present = {check_of(r) for r in requirements}
+    wanted = (
+        ("R-PARSES", "parses_as_delivered",
+         "The deliverable must be readable as what it claims to be.",
+         "Every delivered row has as many values as the header names"),
+        ("R-RECONCILE", "records_reconcile",
+         "Every source record must be accounted for exactly once.",
+         "Delivered plus held plus authorised duplicates equals the records "
+         "read, with no record in two places"),
+        ("R-JUSTIFIED", "exceptions_justified",
+         "Every held record must break the rules named, and no valid record "
+         "may be held.",
+         "The split is re-derived from the source and the stated rules and "
+         "compared in both directions"),
+        ("R-NOINVENT", "no_invented_values",
+         "Every delivered value must come from the source or a declared "
+         "constant.",
+         "Each delivered value consumes one occurrence of it in the source "
+         "column it was mapped from"),
+        ("R-TRACE", "record_traceability",
+         "Each delivered record must be one distinct source record.",
+         "Delivered records are compared whole against the source records they "
+         "claim to be"),
+    )
+    return [Requirement(id=rid, text=text,
+                        source=RequirementSource.DERIVED,
+                        acceptance=acceptance, check=check, params={})
+            for rid, check, text, acceptance in wanted if check not in present]
+
+
+def _document_derived(source: str, requirements: list) -> list:
+    """Every document job carries "it opens, nothing was invented, and what the
+    document does not say is marked as not said".
+
+    ``absences_disclosed`` is only derived when the job extracts fields, which
+    is the only case where there is an absence to disclose.
+    """
+    present = {check_of(r) for r in requirements}
+    extracting = {"extract_fields"} & present
+    wanted = [
+        ("R-OPENS", "document_opens",
+         "The deliverable must be readable as what it claims to be.",
+         "The deliverable is read back and parses as the format it names"),
+        ("R-REFUSED", "unsupported_declared",
+         "A source this capability cannot process must produce a refusal and "
+         "no deliverable.",
+         "No deliverable exists for a source whose format is refused"),
+        ("R-NOINVENT", "no_invented_content",
+         "Nothing may appear in the deliverable that is not in the document, "
+         "the template, or a disclosed absence.",
+         "Every delivered line and table row is traced to the document"),
+    ]
+    if extracting:
+        wanted += [
+            ("R-TRACEABLE", "fields_traceable",
+             "Every extracted value must appear verbatim in the document.",
+             "Each delivered value is found in a line the document states, and "
+             "the evidence cited is a line the document contains"),
+            ("R-DISCLOSED", "absences_disclosed",
+             "A field the document does not state must be marked as not "
+             "stated, never filled.",
+             "Each field the document does not state carries the absence "
+             "marker in the deliverable"),
+        ]
+    return [Requirement(id=rid, text=text,
+                        source=RequirementSource.DERIVED,
+                        acceptance=acceptance, check=check, params={})
+            for rid, check, text, acceptance in wanted if check not in present]
+
+
 CAPABILITIES = {
     "csv-cleanup": ServiceCapability(
         version=csvwork.VERSION, execute=csvwork.execute, verify=csvverify.run,
@@ -1378,6 +1528,18 @@ CAPABILITIES = {
         version=reportwork.VERSION, execute=reportwork.build,
         verify=reportverify.run, plan=None, derive=_report_derived,
         extension="md"),
+    "spreadsheet-automation": ServiceCapability(
+        version=sheetwork.VERSION, execute=sheetwork.execute,
+        verify=sheetverify.run, plan=sheetwork.plan, derive=_sheet_derived,
+        extension="xlsx"),
+    "data-entry": ServiceCapability(
+        version=entrywork.VERSION, execute=entrywork.execute,
+        verify=entryverify.run, plan=entrywork.plan, derive=_entry_derived,
+        extension="csv"),
+    "document-processing": ServiceCapability(
+        version=docwork.VERSION, execute=docwork.execute,
+        verify=docverify.run, plan=docwork.plan, derive=_document_derived,
+        extension="json"),
 }
 
 
@@ -1430,6 +1592,15 @@ def _owner_promoted(name: str):
 _DEVELOPMENT_ONLY = {
     "report-builder": "technically certified; the owner has not cleared it for "
                       "client delivery, so it may be built and tested only",
+    "spreadsheet-automation":
+        "built and verified against generated evidence; the owner authorised "
+        "building and testing it and has not cleared it for client delivery",
+    "data-entry":
+        "built and verified against generated evidence; the owner authorised "
+        "building and testing it and has not cleared it for client delivery",
+    "document-processing":
+        "built and verified against generated evidence; the owner authorised "
+        "building and testing it and has not cleared it for client delivery",
 }
 
 
@@ -1520,6 +1691,65 @@ def verifier_ref(spec: "ServiceCapability") -> str:
 #: evidence floor to be met by a real verifier and missed by a lucky one.
 CERTIFICATION_CASES = 14
 
+#: Capabilities whose battery needs more cases than the default, with the
+#: reason. Not a dial to turn when a certification comes up short: each entry
+#: is a capability that produces more than one *kind* of deliverable, and the
+#: battery has to cover each kind with enough distinct instances to clear the
+#: evidence floor on its own.
+CASES_FOR = {
+    # Extracts to JSON, converts between document formats, and fills a
+    # template. Three shapes, so three times the cases.
+    "document-processing": 30,
+}
+
+
+def certification_cases(capability: str) -> int:
+    return CASES_FOR.get(capability, CERTIFICATION_CASES)
+
+
+#: Checks a verifier lists that **no** evidence can ever certify, and why.
+#:
+#: Not a list of things that are hard. Each entry is a check whose question has
+#: no defect of its own to be shown, so a battery can only ever put correct
+#: artifacts in front of it -- and a check that has only ever said yes has
+#: demonstrated nothing, which the evidence floor already says. Recording them
+#: here, with the reason, keeps two things from happening: a promoted scope that
+#: claims them, and a battery that generates trials a correct verifier must fail.
+#:
+#: The honest consequence is that a capability's *certifiable* scope is narrower
+#: than its check list, and a client job resting on one of these checks cannot
+#: be delivered on its evidence alone.
+#:
+#: ``consolidate_sheets`` was here and is not any more, and the difference is
+#: worth recording. It confirmed that the named worksheets existed and left the
+#: rest to row_reconciliation, which made it a check that could only ever say
+#: yes. The fix was not to exempt it: it was to give it the question it should
+#: always have owned -- *which* worksheets the delivered rows came from, which
+#: reconciliation cannot answer because the source side it compares against is
+#: built from this very requirement. A job that stacked one quarter twice
+#: satisfied reconciliation and is now caught. An exemption would have left
+#: that client receiving half their data twice.
+UNCERTIFIABLE = {
+    "spreadsheet-automation": {
+        "number_format":
+            "a display format changes how a figure is shown and not what it "
+            "is, so there is no value to recompute and nothing a wrong answer "
+            "would look like. The verifier answers UNVERIFIABLE by design",
+    },
+}
+
+
+def certifiable_scope(capability: str) -> frozenset:
+    """The checks evidence can cover for this capability.
+
+    What a promotion may claim, and what the black-box run registers. Anything
+    wider is refused by :func:`provision_capability`, which is the control
+    working rather than an obstacle: a scope the evidence does not support is a
+    promise nobody measured.
+    """
+    return (frozenset(checks_for(capability))
+            - set(UNCERTIFIABLE.get(capability, {})))
+
 
 def ensure_verifier_certified(s: "Solvent", capability: str) -> dict:
     """Put this capability's verifier through a generated battery before use.
@@ -1550,8 +1780,8 @@ def ensure_verifier_certified(s: "Solvent", capability: str) -> dict:
             return existing
     report = verifiercert.run_generated(
         spec.verify, capability=capability, verifier_ref=ref,
-        seed=certgen.CERTIFICATION_SEED, cases=CERTIFICATION_CASES,
-        stream="certification")
+        seed=certgen.CERTIFICATION_SEED,
+        cases=certification_cases(capability), stream="certification")
     return s.capability.certify_verifier(
         verifier_ref=ref, capability_version=spec.version, report=report,
         fingerprint=fingerprint)
@@ -1639,15 +1869,31 @@ def verify_against_baseline(s: "Solvent", *, job_id: str, source: str,
     # The same list the worker was handed: clarified semantics folded in once,
     # by the Orchestrator, for both. Neither side resolves an ambiguity on its
     # own, because neither side is asked to.
-    for req in s.orchestrator.effective_baseline(job_id):
+    baseline = list(s.orchestrator.effective_baseline(job_id))
+    for req in baseline:
         if not req.check:
             # Advisory and untestable. Recorded at commitment, reported to the
             # owner, and deliberately not given evidence it cannot earn.
             continue
         if req.criticality.blocks_delivery:
             round_.mandatory.add(req.id)
+        # The committed checklist travels with every check, because some
+        # questions are properties of the whole job rather than of one
+        # parameter set: whether an accept/reject split is the split the rules
+        # imply, whether a formula names the column its own requirement named,
+        # whether a totals row the brief asked for should be excluded from a
+        # per-row comparison. A verifier handed one requirement in isolation
+        # cannot answer those, and the ones that need the brief say
+        # UNVERIFIABLE without it rather than guessing -- which would have
+        # blocked delivery on every such job with no visible cause.
+        #
+        # This is the brief, not the answer. Nothing here tells a verifier
+        # whether the work is correct; it tells it what was asked for, which is
+        # the only thing it could possibly check against.
+        params = dict(req.params)
+        params.setdefault("requirements", baseline)
         outcome = CAPABILITIES[capability].verify(
-            req.check, source=source, output=artifact.path, params=req.params)
+            req.check, source=source, output=artifact.path, params=params)
         round_.results[req.id] = outcome
         s.audit.record_verification(
             subject_ref=job_id, tier=VerificationTier.T1_DETERMINISTIC,

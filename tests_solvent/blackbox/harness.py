@@ -170,7 +170,7 @@ def judge(scenario: Scenario, report, solvent) -> tuple[Outcome, str]:
 
     # Delivered, and expected to. Now check the artifact itself.
     artifact = solvent.orchestrator.current_deliverable(report.job_id)
-    text = pathlib.Path(artifact.path).read_text(encoding="utf-8")
+    text = _readable(artifact.path)
     if scenario.runs_on != "csv-cleanup":
         # A document is judged by its lines. Ground truth for these scenarios
         # names strings that must and must not appear, exactly.
@@ -246,6 +246,31 @@ def judge(scenario: Scenario, report, solvent) -> tuple[Outcome, str]:
         return (Outcome.PASS_AFTER_AUTHORIZED_CORRECTION,
                 f"corrected itself in {report.attempts} attempts")
     return Outcome.PASS, "delivered and independently verified"
+
+
+def _readable(path) -> str:
+    """The delivered file as text a ground truth can name strings in.
+
+    A workbook is a ZIP of XML, so reading it as text would compare a ground
+    truth against compressed bytes. Its cells and formulas are flattened here
+    instead -- by the harness, through the format layer, not by asking Solvent
+    what it wrote.
+    """
+    path = pathlib.Path(path)
+    if path.suffix.lower() != ".xlsx":
+        return path.read_text(encoding="utf-8")
+    from solvent import xlsx
+
+    lines = []
+    for sheet in xlsx.read_workbook(path.read_bytes()).sheets:
+        lines.append(f"[{sheet.name}]")
+        for row in sheet.rows:
+            lines.append("\t".join(
+                "" if cell.value is None else str(cell.value) for cell in row))
+            for cell in row:
+                if getattr(cell, "formula", ""):
+                    lines.append(f"={cell.formula}")
+    return "\n".join(lines) + "\n"
 
 
 _SOURCES: dict = {}

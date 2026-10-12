@@ -63,6 +63,36 @@ class Finding:
     #: What was compared, for somebody re-reading the decision later.
     evidence: str = ""
 
+    @property
+    def result(self):
+        """The pipeline's verdict type for this finding.
+
+        Two vocabularies for one answer, and they have to be the same answer.
+        This capability reports PASS / FAIL / UNVERIFIABLE; the job pipeline
+        reads :class:`solvent.types.CheckResult`. Deriving one from the other
+        rather than storing both means they cannot drift apart -- and they are
+        the same three words deliberately, because UNVERIFIABLE blocks delivery
+        in the pipeline exactly as it refuses an opinion here.
+        """
+        return types.CheckResult(self.verdict)
+
+    @property
+    def computed(self) -> dict:
+        """What was measured, for the audit record the pipeline writes."""
+        return {"requirement": self.requirement_id, "evidence": self.evidence}
+
+    @property
+    def passed(self) -> bool:
+        """For the dispatch contract. UNVERIFIABLE is not passed.
+
+        Absent, every trial in a certification battery came back as "verifier
+        returned no usable outcome" -- an ERROR, counted against the verifier,
+        for a finding that was perfectly correct. A missing property, not a
+        wrong answer, and it would have read as a comprehensively failed
+        verifier.
+        """
+        return self.verdict == PASS
+
 
 @dataclass
 class Report:
@@ -378,6 +408,22 @@ def _check(rid, check, params, in_header, in_body, out_header, out_body,
     if data_body is None:
         data_body = out_body
 
+    if check == "opens_as_workbook":
+        # Reaching here means both files were read through the format layer
+        # and the delivered worksheet had a usable header row; a failure at
+        # either point returned before this dispatcher was called.
+        #
+        # This branch was missing. ``verify`` emitted an unconditional
+        # opens_as_workbook finding of its own, so the check looked covered --
+        # and a *requirement* naming it was answered UNVERIFIABLE, which is the
+        # verdict that says nobody checked it. Found by running a generated
+        # battery's correct case through the verifier and reading all eleven
+        # findings rather than the verdict.
+        return Finding(rid, check, PASS,
+                       f"the delivered workbook opens and has a header row of "
+                       f"{len(out_header)} column(s) over {len(out_body)} row(s)",
+                       evidence=f"headers: {', '.join(out_header)}")
+
     if check in ("require_columns", "preserve_columns"):
         missing = []
         for name in params.get("columns", []):
@@ -464,18 +510,8 @@ def _check(rid, check, params, in_header, in_body, out_header, out_body,
         return _totalled(rid, params, out_header, out_body)
 
     if check == "consolidate_sheets":
-        names = [str(n) for n in params.get("sheets", [])]
-        expected = 0
-        for name in names:
-            if name not in source_sheets:
-                return Finding(rid, check, UNVERIFIABLE,
-                               f"the source has no worksheet named {name!r}, "
-                               f"so what should have been stacked is unknown")
-            expected += len(source_sheets[name][1])
-        return Finding(rid, check, PASS,
-                       f"{len(names)} worksheet(s) contributing {expected} "
-                       f"source row(s) were available to stack",
-                       evidence=f"row counts checked by row_reconciliation")
+        return _consolidated(rid, params, source_sheets, out_header, data_body,
+                             requirements or [])
 
     if check == "number_format":
         return Finding(rid, check, UNVERIFIABLE,
@@ -484,7 +520,8 @@ def _check(rid, check, params, in_header, in_body, out_header, out_body,
                        "there is no value to recompute")
 
     if check == "row_reconciliation":
-        return _reconciled(rid, params, in_body, out_body)
+        return _reconciled(rid, params, in_header, in_body, out_header,
+                           out_body, data_body, requirements or [])
 
     if check == "formulas_agree":
         # Not a hand-wave: compute_column checks the *value*, and a value that
@@ -732,25 +769,184 @@ def _sorted(rid, params, out_header, out_body) -> Finding:
                    f"first difference is at row {first_wrong + 2}")
 
 
-def _reconciled(rid, params, in_body, out_body) -> Finding:
-    """Whether rows were lost without being asked for.
+def _consolidated(rid, params, source_sheets, out_header, data_body,
+                  requirements) -> Finding:
+    """Did every named worksheet contribute, and did no other one?
 
-    The expected count comes from the requirement rather than from the
-    worker's report, because a worker that miscounted would report a figure
-    that matched its own mistake.
+    This check used to confirm only that the named worksheets existed, and then
+    say in its own evidence that the row counts were row_reconciliation's
+    business. That made it a check with no defect of its own to catch -- it
+    could only ever say yes -- so no battery could certify it and a
+    consolidation job could not be delivered at all.
+
+    Its question, stated so that it is not reconciliation's: **which**
+    worksheets the delivered rows came from. Reconciliation counts rows and
+    traces them against the source side it was given, and that side is built
+    *from this requirement*, so a job that stacked Q1 twice instead of Q1 and
+    Q2 can satisfy it: the count is right and every delivered row is a real
+    source row. Only asking "did each named sheet contribute, and did nothing
+    else" catches that, and a client who sent two quarters and received one of
+    them twice is the person it catches it for.
+
+    Traced on the columns no requirement authorised changing, for the same
+    reason reconciliation uses them: those are the values that must still be
+    the source's.
+    """
+    names = [str(n) for n in params.get("sheets", [])]
+    missing = [name for name in names if name not in source_sheets]
+    if missing:
+        return Finding(rid, "consolidate_sheets", UNVERIFIABLE,
+                       f"the source has no worksheet named "
+                       f"{', '.join(repr(n) for n in missing)}, so what should "
+                       "have been stacked is unknown")
+    touched = _authorised_names(requirements)
+    first = source_sheets[names[0]][0] if names else []
+    pairs = [(out_header.index(name), first.index(name))
+             for name in out_header
+             if name in first and name.strip().lower() not in touched]
+    if not pairs:
+        return Finding(
+            rid, "consolidate_sheets", UNVERIFIABLE,
+            "every delivered column is one the brief authorised changing, so "
+            "there is no column whose values must still be the source's and "
+            "nothing identifies which worksheet a delivered row came from")
+
+    delivered = [tuple(_comparable(row[i]) for i, _ in pairs)
+                 for row in data_body]
+    counts: dict = {}
+    for key in delivered:
+        counts[key] = counts.get(key, 0) + 1
+
+    contributed, absent = [], []
+    for name in names:
+        header, body = source_sheets[name]
+        keys = [tuple(_comparable(row[header.index(column)])
+                      for _, column_index in pairs
+                      for column in [first[column_index]])
+                for row in body]
+        present = sum(1 for key in keys if counts.get(key, 0) > 0)
+        if body and not present:
+            absent.append(name)
+        contributed.append((name, present, len(body)))
+    if absent:
+        return Finding(
+            rid, "consolidate_sheets", FAIL,
+            f"worksheet(s) {', '.join(absent)} were named and contributed no "
+            "row to the deliverable",
+            evidence="; ".join(f"{n}: {p}/{total}" for n, p, total in contributed))
+
+    named_keys: dict = {}
+    for name in names:
+        header, body = source_sheets[name]
+        for row in body:
+            key = tuple(_comparable(row[header.index(first[column_index])])
+                        for _, column_index in pairs)
+            named_keys[key] = named_keys.get(key, 0) + 1
+    foreign = [key for key, count in counts.items()
+               if count > named_keys.get(key, 0)]
+    if foreign:
+        return Finding(
+            rid, "consolidate_sheets", FAIL,
+            f"{len(foreign)} delivered row pattern(s) appear more often than "
+            "the named worksheets supply them, so the deliverable holds rows "
+            "from somewhere else or the same worksheet twice",
+            evidence=f"first: {foreign[0]}")
+    return Finding(rid, "consolidate_sheets", PASS,
+                   f"each of {len(names)} named worksheet(s) contributed, and "
+                   "no delivered row appears more often than they supply it",
+                   evidence="; ".join(f"{n}: {p}/{total}"
+                                      for n, p, total in contributed))
+
+
+def _authorised_names(requirements) -> set:
+    """Column names some requirement authorised changing, adding or renaming."""
+    touched = set()
+    for requirement in requirements:
+        said = dict(getattr(requirement, "params", {}) or {})
+        for key in ("authorised_columns", "added_columns"):
+            value = said.get(key)
+            if isinstance(value, (dict, list, tuple)):
+                touched |= {str(c).strip().lower() for c in value}
+        check = types.check_of(requirement)
+        if check == "compute_column":
+            touched.add(str(said.get("into", "")).strip().lower())
+        if check == "rename_headers":
+            mapping = said.get("mapping") or {}
+            touched |= {str(k).strip().lower() for k in mapping}
+            touched |= {str(v).strip().lower() for v in mapping.values()}
+        if check == "trim_whitespace":
+            touched |= {str(c).strip().lower()
+                        for c in (said.get("columns") or [])}
+    return touched
+
+
+def _reconciled(rid, params, in_header, in_body, out_header, out_body,
+                data_body, requirements) -> Finding:
+    """Whether the delivered rows are this source's rows. Two questions.
+
+    *The count.* Expected from the requirement rather than from the worker's
+    report, because a worker that miscounted would report a figure matching
+    its own mistake.
+
+    *Where the rows came from.* Counting is not reconciling, and this check
+    used to do only the first. A deliverable from a *different job* with the
+    same number of rows passed it -- the file was internally consistent, every
+    computed value really was the product of its own inputs, and nothing
+    tied it to the source in front of the verifier. Found by a generated
+    battery that pairs a correct deliverable with another job's source, which
+    is a real way to deliver the wrong file to a client.
+
+    The tracing uses the columns no requirement authorised changing, because
+    those are the ones whose values must still be the source's. When the brief
+    authorises changing all of them there is nothing left to trace by, and
+    that is reported as UNVERIFIABLE rather than passed on the count alone.
     """
     dropped = int(params.get("expected_dropped", 0) or 0)
     added = int(params.get("expected_added", 0) or 0)
     expected = len(in_body) - dropped + added
-    if len(out_body) == expected:
-        return Finding(rid, "row_reconciliation", PASS,
-                       f"{len(in_body)} row(s) in, {len(out_body)} out, "
-                       f"with {dropped} dropped and {added} added as asked",
-                       evidence="counted from both files")
-    return Finding(rid, "row_reconciliation", FAIL,
-                   f"{len(in_body)} row(s) in and {len(out_body)} out, where "
-                   f"{expected} was expected after {dropped} dropped and "
-                   f"{added} added")
+    if len(out_body) != expected:
+        return Finding(rid, "row_reconciliation", FAIL,
+                       f"{len(in_body)} row(s) in and {len(out_body)} out, where "
+                       f"{expected} was expected after {dropped} dropped and "
+                       f"{added} added")
+
+    touched = _authorised_names(requirements)
+    pairs = [(out_header.index(name), in_header.index(name))
+             for name in out_header
+             if name in in_header and name.strip().lower() not in touched]
+    if not pairs:
+        return Finding(
+            rid, "row_reconciliation", UNVERIFIABLE,
+            f"the counts reconcile ({len(in_body)} in, {len(out_body)} out), "
+            "and every delivered column is one the brief authorised changing, "
+            "so there is no column left whose values must still be the "
+            "source's and nothing ties these rows to this source")
+
+    source_keys: dict = {}
+    for row in in_body:
+        key = tuple(_comparable(row[i]) for _, i in pairs)
+        source_keys[key] = source_keys.get(key, 0) + 1
+    stray = []
+    for index, row in enumerate(data_body, start=1):
+        key = tuple(_comparable(row[i]) for i, _ in pairs)
+        if source_keys.get(key, 0) > 0:
+            source_keys[key] -= 1
+        else:
+            stray.append(index)
+    if stray:
+        names = [out_header[i] for i, _ in pairs]
+        return Finding(
+            rid, "row_reconciliation", FAIL,
+            f"{len(stray)} delivered row(s) do not correspond to any row in "
+            f"this source; the first is delivered row {stray[0]}",
+            evidence=f"traced on {', '.join(names)}, which no requirement "
+                     "authorised changing")
+    return Finding(rid, "row_reconciliation", PASS,
+                   f"{len(in_body)} row(s) in, {len(out_body)} out, with "
+                   f"{dropped} dropped and {added} added as asked, and every "
+                   f"delivered row traces to a distinct source row",
+                   evidence=f"traced on "
+                            f"{', '.join(out_header[i] for i, _ in pairs)}")
 
 
 def _preserved(rid, params, in_header, in_body, out_header, out_body) -> Finding:
@@ -864,3 +1060,54 @@ def _comparable(value):
     if numeric is not None:
         return (0, numeric, "")
     return (1, Decimal(0), "" if value is None else str(value).strip())
+
+
+#: Checks a single call can decide on its own parameters. Everything else needs
+#: the committed requirements, and the reason is specific rather than cautious:
+#: a workbook's per-row checks depend on whether the job *added* a totals row
+#: or consolidated worksheets, because a totals row's cells hold aggregates
+#: rather than their own row's arithmetic. Asked without the brief, those checks
+#: would reject a correct delivery — a false reject, which disqualifies a
+#: verifier exactly as a false accept does.
+SELF_CONTAINED = frozenset({"opens_as_workbook", "require_columns",
+                            "rename_headers", "select_columns",
+                            "number_format"})
+
+
+def run(check_name: str, *, source, output, params: dict):
+    """One check, for the capability dispatch table.
+
+    ``params["requirements"]`` carries the committed requirements when the
+    caller has them. Without them, only :data:`SELF_CONTAINED` checks are
+    answered; the rest are reported UNVERIFIABLE rather than guessed at.
+    """
+    if check_name not in CHECKS:
+        return Finding("", check_name, UNVERIFIABLE,
+                       f"no registered check named {check_name!r}")
+    requirements = list((params or {}).get("requirements") or [])
+    if not requirements:
+        if check_name not in SELF_CONTAINED:
+            return Finding(
+                "", check_name, UNVERIFIABLE,
+                f"{check_name} depends on what else the job did — whether a "
+                "totals row was added, whether worksheets were consolidated — "
+                "and this call carried no committed requirements, so answering "
+                "it would mean guessing at the brief")
+        requirements = [_One(check_name, dict(params or {}))]
+    report = verify(source=source, output=output, requirements=requirements,
+                    sheet_name=str((params or {}).get("sheet_name", "")))
+    for finding in report.findings:
+        if finding.check == check_name:
+            return finding
+    return Finding("", check_name, UNVERIFIABLE,
+                   f"{check_name} produced no finding, which is a defect in "
+                   "this module")
+
+
+@dataclass(frozen=True, slots=True)
+class _One:
+    """A single requirement, for the one-check entry point."""
+
+    check: str
+    params: dict
+    id: str = ""

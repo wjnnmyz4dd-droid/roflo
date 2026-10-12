@@ -761,6 +761,47 @@ class ConversionDefects(Base):
                          "table_preserved").verdict, verifier.FAIL)
 
 
+class BothDirectionsOfAnAbsence(Base):
+    """A field reported absent from a document that states it.
+
+    As misleading as an undisclosed gap and rather harder to argue with: the
+    client goes looking for the field, finds it in the first line of their own
+    document, and the deliverable told them it was not there.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.requirements = extraction_brief() + [
+            Requirement("r9", "require_fields",
+                        {"fields": ["Invoice Number", "Client"]})]
+        self.extract_to(requirements=self.requirements)
+        self.assertEqual(self.verify(self.requirements).verdict, verifier.PASS)
+
+    def test_a_stated_field_delivered_as_not_stated_is_caught(self):
+        payload = self.read_json()
+        for entry in payload["fields"]:
+            if entry["field"] == "Client":
+                entry.update(value=worker.NOT_FOUND, evidence="", found=True)
+        payload["not_stated"] = sorted(set(payload["not_stated"]) | {"Client"})
+        self.write_json(payload)
+        report = self.verify(self.requirements)
+        finding = self.finding(report, "require_fields")
+        self.assertEqual(finding.verdict, verifier.FAIL)
+        self.assertIn("the document states it", finding.detail)
+        self.assertIn("go looking for", finding.evidence)
+
+    def test_a_table_row_invented_is_not_in_the_document(self):
+        payload = self.read_json()
+        payload["tables"][0].append(["Expedited handling", "150.00"])
+        self.write_json(payload)
+        finding = self.finding(self.verify(self.requirements),
+                               "no_invented_content")
+        self.assertEqual(finding.verdict, verifier.FAIL,
+                         "a check that looked only at the field values called "
+                         "a fabricated line item content")
+        self.assertIn("table", finding.detail)
+
+
 class TheVerifierSaysWhenItCannotTell(Base):
 
     def test_an_unknown_check_is_unverifiable_rather_than_passed(self):

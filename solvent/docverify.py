@@ -76,6 +76,24 @@ class Finding:
     evidence: str = ""
 
     @property
+    def result(self):
+        """The pipeline's verdict type for this finding.
+
+        Two vocabularies for one answer, and they have to be the same answer.
+        This capability reports PASS / FAIL / UNVERIFIABLE; the job pipeline
+        reads :class:`solvent.types.CheckResult`. Deriving one from the other
+        rather than storing both means they cannot drift apart -- and they are
+        the same three words deliberately, because UNVERIFIABLE blocks delivery
+        in the pipeline exactly as it refuses an opinion here.
+        """
+        return types.CheckResult(self.verdict)
+
+    @property
+    def computed(self) -> dict:
+        """What was measured, for the audit record the pipeline writes."""
+        return {"requirement": self.requirement_id, "evidence": self.evidence}
+
+    @property
     def passed(self) -> bool:
         return self.verdict == PASS
 
@@ -545,6 +563,22 @@ def _required(rid, check, params, spec, lines, extraction, delivered) -> Finding
             return Finding(rid, check, FAIL,
                            f"{name} is required, is not stated in the document, "
                            f"and the deliverable gives it as {claimed[name]!r}")
+        # The other direction, which this check did not ask. A required field
+        # the document plainly states, delivered as not stated, passed: the
+        # loop above only looked at fields the document *omits*, and the
+        # summary below only counted those too. So a deliverable could tell a
+        # client their invoice number was missing while it sat in the first
+        # line of their own document -- a disclosed gap that is not a gap,
+        # which is as misleading as an undisclosed one and rather harder to
+        # argue with. Found by a generated battery, not by reading the code.
+        if expected.get(name) not in _MARKERS and claimed[name] in _MARKERS:
+            return Finding(
+                rid, check, FAIL,
+                f"{name} is required, the document states it as "
+                f"{expected.get(name)!r}, and the deliverable reports it as "
+                f"{claimed[name]}",
+                "a field reported absent from a document that states it is a "
+                "gap the client will go looking for and find")
     absent = [n for n in named if expected.get(n) in _MARKERS]
     if absent:
         return Finding(
@@ -808,13 +842,27 @@ def _not_invented(rid, check, spec, lines, document, extraction,
                  if str(e.get("value", "")) not in _MARKERS
                  and str(e.get("value", "")).strip()
                  and str(e.get("value")) not in haystack]
+        # The tables, too. This check looked only at the field values, so a
+        # delivered table with a row appended out of nowhere passed it --
+        # a fabricated line item in a client's invoice, which is the most
+        # expensive thing an extraction can invent. Found by a generated
+        # battery, not by reading the code.
+        source_rows = [tuple(str(cell) for cell in row)
+                       for rows in document.tables for row in rows]
+        for position, table in enumerate(
+                _delivered_tables(extraction, delivered), start=1):
+            for index, row in enumerate(table, start=1):
+                if tuple(str(cell) for cell in row) not in source_rows:
+                    stray.append(f"table {position} row {index}: "
+                                 f"{[str(c) for c in row]}")
         if stray:
             return Finding(rid, check, FAIL,
-                           f"{len(stray)} extracted value(s) are not in the "
-                           f"document. First: {stray[0]}")
+                           f"{len(stray)} extracted value(s) or table row(s) "
+                           f"are not in the document. First: {stray[0]}")
         return Finding(rid, check, PASS,
-                       f"every value in the extraction appears in the document, "
-                       f"and {len(extraction.get('not_stated') or [])} absence(s) "
+                       f"every value and every table row in the extraction "
+                       f"appears in the document, and "
+                       f"{len(extraction.get('not_stated') or [])} absence(s) "
                        "are marked rather than filled")
 
     literals = [str(b.get("text", "")) for b in spec["template"]

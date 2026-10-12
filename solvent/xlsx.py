@@ -42,6 +42,17 @@ Not implemented at all
     for its values; those features are not carried through to the output, and
     :func:`read_workbook` records what it dropped so a caller can say so.
 
+**Numbers come back as Python numbers, and the scale does not survive.** A
+cell written from ``Decimal("1000.00")`` is stored as ``1000.00`` and read
+back as the float ``1000.0``: the *value* is the same figure and the number of
+decimal places shown is not. That is correct for a spreadsheet -- how many
+places a figure displays is what a number format decides, which is why
+``number_format`` exists -- and it has one consequence worth naming. A figure
+carrying more than about fifteen significant digits would not round-trip
+exactly, because that is where a float stops being able to represent a decimal
+string uniquely. Money does not reach fifteen significant digits, and anything
+that does belongs in a text column rather than a numeric one.
+
 **The shared-parser risk, stated plainly.** The worker and the verifier both
 use this module, exactly as both use the standard library's ``csv``. So a bug
 *here* would fool both sides, which is the one way the two-sided design can
