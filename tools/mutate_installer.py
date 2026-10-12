@@ -935,6 +935,92 @@ MUTANTS: tuple[Mutant, ...] = (
            "tests_solvent.test_platform_rules.EveryPlatformTheOwnerNamedIsCatalogued"
            ".test_every_marketplace_is_unverified_rather_than_assumed",
            "an unread platform is UNVERIFIED, never assumed"),
+    # Spreadsheet automation. The verifier is the thing under test in most of
+    # these: a worker whose mistakes nobody catches is the failure mode.
+    Mutant("a-missing-input-becomes-a-zero", "solvent/sheetwork.py",
+           "    if any(v is None for v in values):\n        return None",
+           "    values = [Decimal(0) if v is None else v for v in values]",
+           "tests_solvent.test_sheet_capability.TheArithmeticIsExact"
+           ".test_a_missing_input_leaves_the_computed_cell_blank",
+           "a gap in the inputs is a gap in the output, never a zero"),
+    Mutant("a-blank-cell-is-read-as-zero", "solvent/sheetwork.py",
+           "    if not text:\n        return None",
+           "    if not text:\n        return Decimal(0)",
+           "tests_solvent.test_sheet_capability.TheArithmeticIsExact"
+           ".test_a_blank_cell_is_not_a_zero",
+           "a blank in a column of money is not a zero"),
+    Mutant("the-verifier-accepts-a-wrong-figure", "solvent/sheetverify.py",
+           "    return stated == expected",
+           "    return True",
+           "tests_solvent.test_sheet_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_wrong_computed_value_is_caught",
+           "a figure that does not match its inputs is a failure"),
+    Mutant("the-verifier-stops-parsing-formulas", "solvent/sheetverify.py",
+           "        if columns != wanted:",
+           "        if False:",
+           "tests_solvent.test_sheet_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_right_value_with_a_formula_on_the_wrong_column_is_caught",
+           "a right value beside a wrong formula is still a defect"),
+    Mutant("a-formula-may-name-another-row", "solvent/sheetverify.py",
+           "        elif rows_named != {row_index}:",
+           "        elif False:",
+           "tests_solvent.test_sheet_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_formula_referring_to_another_row_is_caught",
+           "a formula refers to its own row"),
+    Mutant("an-invented-value-is-not-noticed", "solvent/sheetverify.py",
+           "        if available.get(key, 0) > 0:",
+           "        if True:",
+           "tests_solvent.test_sheet_capability.TheVerifierCatchesAWrongWorker"
+           ".test_a_changed_preserved_column_is_caught",
+           "a value that was never in the source is a changed figure"),
+    Mutant("unverifiable-is-folded-into-pass", "solvent/sheetverify.py",
+           "        if UNVERIFIABLE in kinds:\n            return UNVERIFIABLE",
+           "        pass",
+           "tests_solvent.test_sheet_capability.TheVerifierSaysWhenItCannotTell"
+           ".test_unverifiable_outranks_pass_in_the_overall_verdict",
+           "a job half of which could not be checked is not verified"),
+    Mutant("an-empty-report-reads-as-passed", "solvent/sheetverify.py",
+           "        if not kinds:\n            return UNVERIFIABLE",
+           "        if not kinds:\n            return PASS",
+           "tests_solvent.test_sheet_capability.TheVerifierSaysWhenItCannotTell"
+           ".test_no_findings_at_all_is_unverifiable_not_pass",
+           "a verifier that checked nothing has not passed anything"),
+    Mutant("the-planner-accepts-any-operation", "solvent/sheetwork.py",
+           "        if name not in OPERATIONS:",
+           "        if False:",
+           "tests_solvent.test_sheet_capability.ThePlanRefusesWhatItCannotDo"
+           ".test_an_operation_it_does_not_perform_is_refused_by_name",
+           "an unsupported ask is refused, not improvised"),
+    Mutant("a-clients-column-can-be-overwritten", "solvent/sheetwork.py",
+           "    if into.strip().lower() in [h.strip().lower() for h in header]:",
+           "    if False:",
+           "tests_solvent.test_sheet_capability.TheWorkerRefusesRatherThanImprovising"
+           ".test_it_will_not_overwrite_a_column_the_client_supplied",
+           "a column the client supplied is not replaced silently"),
+    Mutant("sheets-are-stacked-by-position", "solvent/sheetwork.py",
+           '        elif [h.lower() for h in this_header] != [h.lower() for h in header]:',
+           "        elif False:",
+           "tests_solvent.test_sheet_capability.TheWorkerRefusesRatherThanImprovising"
+           ".test_sheets_with_different_columns_are_not_stacked",
+           "stacking by position would move figures between columns"),
+    Mutant("a-macro-workbook-is-opened-anyway", "solvent/xlsx.py",
+           "        if part in names:",
+           "        if False:",
+           "tests_solvent.test_xlsx_format.AFileItCannotReadIsRefused"
+           ".test_a_macro_enabled_workbook",
+           "a file whose behaviour depends on code we ignore is refused"),
+    Mutant("the-phantom-leap-day-becomes-a-date", "solvent/xlsx.py",
+           "    if days == 60:",
+           "    if False:",
+           "tests_solvent.test_xlsx_format.ValuesAreReadAsWhatTheyAre"
+           ".test_excels_phantom_leap_day_is_not_turned_into_a_date",
+           "a day that did not exist is not given a name"),
+    Mutant("dates-are-a-day-out", "solvent/xlsx.py",
+           "    shift = days if days < 60 else days - 1",
+           "    shift = days",
+           "tests_solvent.test_xlsx_format.ValuesAreReadAsWhatTheyAre"
+           ".test_dates_either_side_of_the_phantom_day_are_right",
+           "every date in a client file is the date it was"),
     # The drop box: the surface writes intents and holds no reader.
     Mutant("the-surface-is-handed-a-reader", "solvent/web/server.py",
            "        intent_writer=intents_module.WriteOnlySpool(",
