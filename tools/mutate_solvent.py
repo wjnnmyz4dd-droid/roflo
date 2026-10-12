@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import os
 import pathlib
 import subprocess
 import sys
@@ -260,8 +261,8 @@ MUTANTS: tuple[Mutant, ...] = (
         "solvent/feedback.py",
         '    "ignore all previous instructions", "ignore previous instructions",',
         '    "__never_matches_a",  "__never_matches_b",',
-        "tests_solvent.test_customer_service_personas.EveryPersonaIsHandled"
-        ".test_the_classifications_that_are_unambiguous_are_read_correctly",
+        "tests_solvent.test_review_leaks.EachInjectionDefenceCarriesItsOwnWeight"
+        ".test_the_phrase_list_catches_what_the_pattern_cannot",
         "a prompt injection is recorded as an unreadable complaint, losing "
         "the only fact that matters about it: somebody tried"),
 
@@ -270,8 +271,8 @@ MUTANTS: tuple[Mutant, ...] = (
         "solvent/feedback.py",
         '     r"\\b(skip|bypass|disable|turn off|ignore|override)\\b.{0,60}"',
         '     r"\\b(skip|bypass|disable|turn off|ignore|override)\\b.{0,30}"',
-        "tests_solvent.test_customer_service_personas.EveryPersonaIsHandled"
-        ".test_the_classifications_that_are_unambiguous_are_read_correctly",
+        "tests_solvent.test_review_leaks.EachInjectionDefenceCarriesItsOwnWeight"
+        ".test_the_pattern_catches_what_the_phrase_list_cannot",
         "padding eight characters between the verb and its object walks an "
         "injection past the governance check"),
 
@@ -305,10 +306,33 @@ MUTANTS: tuple[Mutant, ...] = (
 )
 
 
+def _drop_bytecode() -> None:
+    """Delete every __pycache__ before running.
+
+    This is load-bearing, not hygiene. CPython decides a .pyc is current by
+    comparing the source mtime it recorded against the source's mtime, at
+    **one-second granularity**. A mutation harness rewrites a file, runs a
+    test and rewrites it back, often inside the same second -- so the
+    interpreter happily imports bytecode compiled from the *previous*
+    contents.
+
+    When that happens the results are not merely noisy, they are wrong in
+    both directions: a mutant can read as SURVIVED because the test ran
+    against unmutated bytecode, and a revert can read as "did not recover"
+    because the restored source was never recompiled. Both were observed
+    here before this existed.
+    """
+    for cache in ROOT.rglob("__pycache__"):
+        for pyc in cache.glob("*.pyc"):
+            pyc.unlink(missing_ok=True)
+
+
 def run(test: str) -> tuple[bool, str]:
+    _drop_bytecode()
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     done = subprocess.run(
-        [sys.executable, "-m", "unittest", test, "-v"],
-        cwd=ROOT, capture_output=True, text=True, timeout=1800)
+        [sys.executable, "-B", "-m", "unittest", test, "-v"],
+        cwd=ROOT, capture_output=True, text=True, timeout=1800, env=env)
     return done.returncode == 0, (done.stdout + done.stderr)[-400:]
 
 
