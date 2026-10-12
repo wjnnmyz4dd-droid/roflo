@@ -1298,8 +1298,12 @@ _LIBRARY_MUTANTS: tuple[Mutant, ...] = (
            "solvent/entryverify.py",
            "    wrongly_held = sorted(held_rows - expected_rows)",
            "    wrongly_held = []",
+           # Designated against the no-rule-named case, which is the one only
+           # this check can catch: with a rule named, the comparison of stated
+           # against broken rules one line down also rejects it, and this
+           # mutant survived against that test for exactly that reason.
            "tests_solvent.test_entry_capability.TheVerifierCatchesAWrongWorker"
-           ".test_a_valid_record_held_back_as_an_exception",
+           ".test_a_valid_record_held_with_no_rule_named_at_all",
            "a valid record held back is a short deliverable nobody can see"),
     Mutant("rejection-reason-not-compared", "solvent/entryverify.py",
            '        if sorted(entry["rules"]) != want:',

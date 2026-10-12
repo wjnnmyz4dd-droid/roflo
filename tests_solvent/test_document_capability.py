@@ -528,6 +528,59 @@ class Templates(Base):
                       "not one to delete")
 
 
+class ATemplateMayNameAFieldTwice(Base):
+    """A field in both a heading and a body line is an ordinary template.
+
+    Read back, it used to raise: each placeholder became a capture group with
+    the same name, which is a regex error rather than a wrong answer. The
+    second mention is a backreference now, which also means a deliverable that
+    filled the two mentions differently does not read as a fine one.
+    """
+
+    #: Only the fields the templates below mention. A brief that extracts four
+    #: fields and a template that states two is a contradiction the
+    #: extract_fields check correctly reports, and it is not what these tests
+    #: are about.
+    LABELS = {"Invoice Number": ["Invoice Number"],
+              "Amount Due": ["Amount Due"]}
+
+    def fill(self, template, requirements=None):
+        self.output = self.dir / "statement.docx"
+        requirements = requirements or [
+            Requirement("r1", "extract_fields", {"labels": self.LABELS}),
+            Requirement("r2", "apply_template", {"blocks": template}),
+            Requirement("r3", "fields_traceable", {}),
+            Requirement("r4", "no_invented_content", {}),
+        ]
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=requirements)
+        self.assertEqual(report.refused, [], report.summary())
+        return requirements
+
+    def test_a_repeated_placeholder_is_filled_and_verifies(self):
+        requirements = self.fill([
+            {"style": "Heading1", "text": "Invoice {Invoice Number}"},
+            {"text": "Reference {Invoice Number} is due: {Amount Due}"}])
+        read = docx.read_document(self.output.read_bytes())
+        texts = [p.text for p in read.paragraphs]
+        self.assertIn("Invoice A-1001", texts)
+        self.assertIn("Reference A-1001 is due: 1,250.00", texts)
+        report = self.verify(requirements)
+        self.assertEqual(report.verdict, verifier.PASS, report.summary())
+
+    def test_two_mentions_filled_differently_do_not_read_as_one_value(self):
+        requirements = self.fill([
+            {"text": "Reference {Invoice Number} and {Invoice Number}"}])
+        read = docx.read_document(self.output.read_bytes())
+        self.assertIn("Reference A-1001 and A-1001",
+                      [p.text for p in read.paragraphs])
+        # Now corrupt one of the two mentions.
+        self.output.write_bytes(docx.write_document([docx.Out(
+            text="Reference A-1001 and B-2002")]))
+        report = self.verify(requirements)
+        self.assertEqual(report.verdict, verifier.FAIL)
+
+
 class TwoImplementationsOfOneSpecification(Base):
     """The worker and the verifier match labels separately. They must agree."""
 

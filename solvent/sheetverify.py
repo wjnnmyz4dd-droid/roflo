@@ -811,39 +811,41 @@ def _consolidated(rid, params, source_sheets, out_header, data_body,
             "there is no column whose values must still be the source's and "
             "nothing identifies which worksheet a delivered row came from")
 
-    delivered = [tuple(_comparable(row[i]) for i, _ in pairs)
-                 for row in data_body]
+    # One key per row: its values in the columns nobody authorised changing,
+    # which is what makes a delivered row recognisable as a source row.
+    traced = [name for _, name in sorted(
+        (index, first[column_index]) for index, column_index in pairs)]
+
+    def key_of(header, row):
+        return tuple(_comparable(row[header.index(column)]) for column in traced)
+
     counts: dict = {}
-    for key in delivered:
+    for row in data_body:
+        key = tuple(_comparable(row[index]) for index, _ in pairs)
         counts[key] = counts.get(key, 0) + 1
 
+    supplied: dict = {}
     contributed, absent = [], []
     for name in names:
         header, body = source_sheets[name]
-        keys = [tuple(_comparable(row[header.index(column)])
-                      for _, column_index in pairs
-                      for column in [first[column_index]])
-                for row in body]
-        present = sum(1 for key in keys if counts.get(key, 0) > 0)
+        present = 0
+        for row in body:
+            key = key_of(header, row)
+            supplied[key] = supplied.get(key, 0) + 1
+            if counts.get(key, 0) > 0:
+                present += 1
         if body and not present:
             absent.append(name)
         contributed.append((name, present, len(body)))
+    evidence = "; ".join(f"{n}: {p}/{total}" for n, p, total in contributed)
     if absent:
         return Finding(
             rid, "consolidate_sheets", FAIL,
             f"worksheet(s) {', '.join(absent)} were named and contributed no "
-            "row to the deliverable",
-            evidence="; ".join(f"{n}: {p}/{total}" for n, p, total in contributed))
+            "row to the deliverable", evidence=evidence)
 
-    named_keys: dict = {}
-    for name in names:
-        header, body = source_sheets[name]
-        for row in body:
-            key = tuple(_comparable(row[header.index(first[column_index])])
-                        for _, column_index in pairs)
-            named_keys[key] = named_keys.get(key, 0) + 1
     foreign = [key for key, count in counts.items()
-               if count > named_keys.get(key, 0)]
+               if count > supplied.get(key, 0)]
     if foreign:
         return Finding(
             rid, "consolidate_sheets", FAIL,
@@ -854,8 +856,7 @@ def _consolidated(rid, params, source_sheets, out_header, data_body,
     return Finding(rid, "consolidate_sheets", PASS,
                    f"each of {len(names)} named worksheet(s) contributed, and "
                    "no delivered row appears more often than they supply it",
-                   evidence="; ".join(f"{n}: {p}/{total}"
-                                      for n, p, total in contributed))
+                   evidence=evidence)
 
 
 def _authorised_names(requirements) -> set:

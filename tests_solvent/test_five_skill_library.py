@@ -686,6 +686,107 @@ class TheWholePipelineRunsEachCapability(unittest.TestCase):
         self.assertEqual(payload["tables"][0][1], ["Consulting", "1,000.00"])
 
 
+class TheControlCentreSaysWhereEachSkillStands(unittest.TestCase):
+    """A page headed Capabilities that shows one of five is not truthful.
+
+    The registrations table answers "what may be sold", which has one row,
+    correctly. Read under that heading it says the library is one capability,
+    and four skills that are built, certified and cleared for development read
+    as four skills that do not exist. Two columns, two different sentences:
+    what the evidence shows, and what the owner decided.
+    """
+
+    def setUp(self):
+        from solvent.harness import CSV_PROMOTION, provision_capability
+
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.path = pathlib.Path(self.dir.name) / "owner.db"
+        s = Solvent(str(self.path))
+        provision_capability(s, CSV_PROMOTION, owner_identity=OWNER,
+                             record_decision=False)
+        for name in ("report-builder", "spreadsheet-automation", "data-entry",
+                     "document-processing"):
+            ensure_verifier_certified(s, name)
+            provision_development_only(s, name, certifiable_scope(name),
+                                       owner_identity=OWNER)
+        s.store.close()
+
+    def library(self):
+        from solvent.web.readmodel import ReadModel
+
+        return {row["name"]: row for row in ReadModel(str(self.path)).library()}
+
+    def test_every_capability_in_the_build_appears(self):
+        self.assertEqual(sorted(self.library()), sorted(LIBRARY))
+
+    def test_the_certified_count_is_read_from_the_registry(self):
+        rows = self.library()
+        for name in LIBRARY:
+            with self.subTest(name=name):
+                self.assertEqual(rows[name]["state"], "CERTIFIED")
+                self.assertEqual(rows[name]["checks_certified"],
+                                 len(certifiable_scope(name)))
+                self.assertEqual(rows[name]["checks_listed"],
+                                 len(checks.checks_for(name)))
+
+    def test_the_one_uncertifiable_check_shows_as_a_shortfall(self):
+        row = self.library()["spreadsheet-automation"]
+        self.assertEqual(row["checks_listed"] - row["checks_certified"], 1,
+                         "the page must not round a shortfall away")
+
+    def test_certified_and_cleared_are_reported_separately(self):
+        rows = self.library()
+        self.assertEqual(rows["csv-cleanup"]["stance"], "PROMOTED")
+        self.assertTrue(rows["csv-cleanup"]["deliverable"])
+        for name in ("report-builder", "spreadsheet-automation", "data-entry",
+                     "document-processing"):
+            with self.subTest(name=name):
+                self.assertEqual(rows[name]["stance"], "LIMITED")
+                self.assertFalse(rows[name]["deliverable"],
+                                 "certified is not cleared")
+                self.assertIn("not cleared", rows[name]["note"])
+
+    def test_a_capability_with_no_owner_answer_says_so(self):
+        """Not "certified" standing in for "you may sell this"."""
+        from solvent.web.readmodel import ReadModel
+
+        fresh = pathlib.Path(self.dir.name) / "untouched.db"
+        s = Solvent(str(fresh))
+        ensure_verifier_certified(s, "data-entry")
+        s.store.close()
+        rows = {r["name"]: r for r in ReadModel(str(fresh)).library()}
+        self.assertEqual(rows["data-entry"]["stance"], "NO DECISION")
+        self.assertIn("has not answered", rows["data-entry"]["note"])
+        self.assertEqual(rows["csv-cleanup"]["state"], "UNTESTED")
+        self.assertEqual(rows["csv-cleanup"]["checks_certified"], 0)
+
+    def test_the_page_renders_the_library_and_names_the_distinction(self):
+        from solvent.web import auth as web_auth
+        from solvent.web import server as web_server
+        from solvent.web.app import Request
+
+        password = "TEST-ONLY-library-page-password"
+        spool = pathlib.Path(tempfile.mkdtemp())
+        centre = web_server.build(str(self.path),
+                                  password_hash=web_auth.hash_password(password),
+                                  spool=str(spool))
+        self.addCleanup(centre.read.close)
+        signed_in = centre.handle(Request(
+            "POST", "/login", form={"password": password}, source="10.0.0.1"))
+        cookies = {"solvent_session": signed_in.set_session}
+        response = centre.handle(Request("GET", "/capabilities",
+                                         cookies=cookies))
+        self.assertEqual(response.status, 200)
+        body = response.body.decode("utf-8")
+        self.assertIn("The skill library", body)
+        for name in LIBRARY:
+            self.assertIn(name, body)
+        self.assertIn("5 capability(ies) in this build", body)
+        self.assertIn("1 cleared for client work", body)
+        self.assertIn("different sentences", body)
+
+
 class NoneOfThisIsPermissionToSell(unittest.TestCase):
     """Certification is evidence about a verifier. Promotion is a decision."""
 

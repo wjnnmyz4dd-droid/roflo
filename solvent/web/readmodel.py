@@ -487,6 +487,70 @@ class ReadModel:
     def capability_proposals(self) -> list[dict]:
         return self.rows("SELECT * FROM capability_proposals ORDER BY rowid")
 
+    def library(self) -> list[dict]:
+        """Every capability this build has, and where each one stands.
+
+        The Capabilities page showed the *registrations* -- one row, because
+        one capability is owner-promoted -- and left the other four in a
+        proposals table at the bottom as a bare "LIMITED". An owner reading a
+        page headed Capabilities saw a library of one and would reasonably
+        conclude the rest did not exist. Four skills that are built, certified
+        and cleared for development is a different sentence from four skills
+        that are absent, and a page that cannot say the first is not
+        truthful about the second.
+
+        Derived, and from registry data only. The names come from the check
+        dispatch table, which is what this build can verify; the state comes
+        from the certification rows and the owner's decisions. Nothing is
+        hard-coded and nothing is imported from the composition root, so a
+        sixth capability appears here because the registry gained one.
+        """
+        from .. import checks
+
+        certified = {}
+        for row in self.verifier_certifications():
+            name = str(row.get("capability_version", "")).split("/", 1)[0]
+            certified[name] = row
+        promoted = {row["name"]: row for row in self.capabilities()
+                    if row.get("proven")}
+        decided: dict[str, dict] = {}
+        for row in self.capability_proposals():
+            if str(row.get("decision") or "").strip():
+                decided[row["name"]] = row
+
+        out = []
+        for name in sorted(checks.REGISTRY):
+            certification = certified.get(name, {})
+            listed = sorted(checks.checks_for(name))
+            earned = [c for c in
+                      str(certification.get("certified_checks", "")).split(",")
+                      if c]
+            decision = str((decided.get(name) or {}).get("decision") or "")
+            if name in promoted:
+                stance, note = "PROMOTED", "cleared by the owner for client work"
+            elif decision == "LIMITED":
+                stance, note = ("LIMITED",
+                                str((decided.get(name) or {}).get("why") or "")
+                                or "build and test only")
+            elif decision:
+                stance, note = decision, "the owner's recorded answer"
+            else:
+                stance, note = ("NO DECISION",
+                                "the owner has not answered a proposal for this")
+            out.append({
+                "name": name,
+                "version": certification.get("capability_version")
+                           or (promoted.get(name) or {}).get("version") or "",
+                "state": certification.get("state") or "UNTESTED",
+                "checks_listed": len(listed),
+                "checks_certified": len(earned),
+                "stance": stance,
+                "note": note,
+                "verifier": certification.get("verifier_ref") or "",
+                "deliverable": stance == "PROMOTED",
+            })
+        return out
+
     def verifier_certifications(self) -> list[dict]:
         latest: dict[tuple, dict] = {}
         for row in self.rows(

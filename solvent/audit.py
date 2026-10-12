@@ -228,13 +228,29 @@ class AuditLog:
                 verifier_ref, capability_version)
 
         evidence_id = new_id("ver")
+        # A verifier explaining a failure quotes the client's own text, which is
+        # exactly what makes the explanation useful: "Amount Due is delivered as
+        # X where the document states Y" is the sentence somebody can act on.
+        # It is also how a credential inside a client's contract reaches this
+        # table -- and this table is read by the control centre, copied by every
+        # backup, and handed to anyone investigating a job. Redaction already
+        # exists and was simply not applied here.
+        #
+        # Deliberately only on Solvent's *own* record. The deliverable keeps the
+        # client's content untouched, because redacting a client's file would be
+        # altering their data without authorisation, and a data-entry exception
+        # whose values had been removed would not tell them which record failed.
+        # The line is: their file is theirs; what Solvent writes about it is
+        # Solvent's, and Solvent does not store secrets.
+        from .resilience import redact  # local: resilience imports this module
+
         self._db.execute(
             "INSERT INTO verification_evidence(id,ts,subject_ref,tier,method,"
             "executor_identity,verifier_identity,verdict,raw_output,consequence,"
             "requirement_id,artifact_digest,artifact_id,verifier_ref,verifier_state) "
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (evidence_id, now(), subject_ref, tier.value, method, executor_identity,
-             verifier_identity, "PASS" if verdict else "FAIL", raw_output,
+             verifier_identity, "PASS" if verdict else "FAIL", redact(raw_output),
              consequence.value, requirement_id, artifact_digest, artifact_id,
              verifier_ref, verifier_state),
         )

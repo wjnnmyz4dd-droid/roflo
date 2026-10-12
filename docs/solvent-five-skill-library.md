@@ -148,6 +148,56 @@ carries its own adversarial suite rather than being covered incidentally.
 document with a struck-out price contains two prices, and a reader that
 collects every text run returns the one the author deleted.
 
+## The two advisory gates
+
+Both are advisory. Neither can override owner authority, a security control,
+capability certification, a platform restriction, a financial control, the
+runtime's execution authority, or the requirement that a capability be
+promoted before it is sold.
+
+**K-LEAN**, whose method is to key on what a secret *looks like* rather than
+on what a field is called, found one path worth closing. A verifier explaining
+a failure quotes the client's own text — which is exactly what makes the
+explanation useful: "Amount Due is delivered as X where the document states Y"
+is a sentence somebody can act on. It is also how a credential inside a
+client's contract reaches the `verification_evidence` table, which the control
+centre reads and every backup copies. The redactor already existed and was
+simply not applied there; it is now, at the write rather than the read,
+because a secret that reached the table is already stored.
+
+The deliverable is deliberately left alone. Redacting a client's file would be
+altering their data without authorisation, and a data-entry exception whose
+values had been removed would not tell them which record failed. The line is:
+their file is theirs, and what Solvent writes *about* it is Solvent's.
+
+**iFixAi**, whose method is to establish that a control refused for the right
+reason, produced the chain tests: each brief is given several defects, they are
+fixed one at a time, and the refusal has to move each time. A chain where the
+same message survives every fix is one control wearing several names; a chain
+that still refuses once every defect is fixed was never a chain of controls. It
+also found the weakest test in this work — a mutation of the "no valid record
+is held back" check survived, because the test asserted a FAIL plus two loose
+substrings and a *different* branch produced a message matching both. A test
+that cannot say which check caught something cannot establish that the check
+works.
+
+## What the Control Centre shows
+
+The Capabilities page carries a **skill library** section listing every
+capability in the build with two separate columns: what the evidence shows,
+and what the owner decided. They are separate because collapsing them is the
+whole problem — a capability can be certified on every check it lists and
+still not be sellable.
+
+Before it existed, the page showed one row, correctly: one capability is
+owner-promoted. Under a heading reading "Capabilities" that says the library
+is one skill, and four skills that are built, certified and cleared for
+development read as four skills that do not exist.
+
+Nothing on the page is hard-coded. The names come from the check dispatch
+table, the state from the certification rows and the owner's recorded
+decisions, so a sixth capability appears because the registry gained one.
+
 ## Evidence
 
 - `tests_solvent/test_five_skill_library.py` — the certification record as a
@@ -166,3 +216,11 @@ collects every text run returns the one the author deleted.
   faces ordinary work at three complexity levels, boundaries, hostile input,
   false-success traps and real client behaviour, graded against ground truth
   written before any run.
+- `tests_solvent/test_library_advisory_review.py` — the two advisory gates:
+  planted credentials must not reach Solvent's tables, the client's own file
+  must keep its content, each refusal names its own cause, and satisfying one
+  control does not unlock the rest.
+- `tools/mutate_installer.py` — twenty-four mutants for this library, each
+  restoring a defect found while building it or breaking a check a client's
+  deliverable rests on. A kill counts only when the mutation applied, the
+  designated test newly failed, and the failure went away on revert.

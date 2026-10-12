@@ -421,7 +421,13 @@ def _decide(rid, check, params, spec, document, lines, extraction, delivered,
 
 
 def _claimed(extraction, delivered, spec) -> dict[str, str]:
-    """What the deliverable says each field is, whichever shape it took."""
+    """What the deliverable says each field is, whichever shape it took.
+
+    For an extraction the deliverable states each field directly. For a filled
+    template it does not: the values are inside the template's own sentences,
+    so each literal is turned into a pattern and the delivered line is read
+    back through it.
+    """
     if extraction is not None:
         return {str(f.get("field")): str(f.get("value", ""))
                 for f in extraction["fields"]}
@@ -429,18 +435,49 @@ def _claimed(extraction, delivered, spec) -> dict[str, str]:
     text = "\n".join(t for t, _ in (delivered.paragraphs if delivered else []))
     for block in spec["template"]:
         literal = str(block.get("text", ""))
-        names = _PLACEHOLDER.findall(literal)
+        names = _ordered_unique(_PLACEHOLDER.findall(literal))
         if not names:
             continue
-        pattern = re.escape(literal)
-        for name in names:
-            pattern = pattern.replace(re.escape("{" + name + "}"), "(?P<f%d>.*)"
-                                      % names.index(name))
+        pattern, groups = _template_pattern(literal, names)
         match = re.search(pattern, text)
         if match:
-            for index, name in enumerate(names):
-                values[name.strip()] = match.group("f%d" % index).strip()
+            for index, name in enumerate(groups):
+                values[name] = match.group("f%d" % index).strip()
     return values
+
+
+def _ordered_unique(names) -> list[str]:
+    out = []
+    for name in names:
+        trimmed = str(name).strip()
+        if trimmed not in out:
+            out.append(trimmed)
+    return out
+
+
+def _template_pattern(literal: str, names: list[str]) -> tuple[str, list[str]]:
+    """``(pattern, group order)`` for reading a filled template line back.
+
+    A placeholder used twice gets one capture group and a backreference, not
+    two groups with the same name -- which is a regex error, so a template
+    that mentioned a field in both its heading and its body made this function
+    raise rather than return. Backreference rather than a second group because
+    the same placeholder must have been filled with the same value, and a
+    pattern that allowed two different ones would read a corrupted deliverable
+    as a fine one.
+    """
+    pattern = re.escape(literal)
+    for index, name in enumerate(names):
+        token = re.escape("{" + name + "}")
+        spaced = re.escape("{" + name + " }")
+        for form in (token, spaced):
+            first = pattern.find(form)
+            if first == -1:
+                continue
+            pattern = (pattern[:first] + "(?P<f%d>.*)" % index
+                       + pattern[first + len(form):].replace(
+                           form, "(?P=f%d)" % index))
+    return pattern, names
 
 
 def _extracted(rid, check, params, lines, extraction, delivered, spec) -> Finding:

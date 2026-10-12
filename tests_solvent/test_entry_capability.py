@@ -527,8 +527,35 @@ class TheVerifierCatchesAWrongWorker(Base):
         self.assertEqual(report.verdict, verifier.FAIL)
         finding = self.finding(report, "exceptions_justified")
         self.assertEqual(finding.verdict, verifier.FAIL)
-        self.assertIn("break", finding.detail)
-        self.assertIn("3", finding.detail)
+        # The precise branch, not merely a FAIL. Asserting only "FAIL plus two
+        # substrings" let a mutation of the valid-record check survive: the
+        # rules-mismatch branch one line down produced a message that matched
+        # the same substrings, so the test passed with the control switched
+        # off. A test that cannot say *which* check caught something cannot
+        # establish that the check works.
+        self.assertIn("break none of the stated rules", finding.detail)
+        self.assertIn("should have been delivered", finding.detail)
+
+    def test_a_valid_record_held_with_no_rule_named_at_all(self):
+        """The case only the valid-record check can catch.
+
+        Held with an empty rules list, so the comparison of stated rules
+        against broken rules has nothing to disagree with, and with a detail
+        that reads plausibly so the empty-detail check passes too. Everything
+        else about the exceptions file is well-formed. Only re-deriving which
+        records *should* have been held finds it.
+        """
+        header, rows = self.delivered()
+        dropped = rows.pop(0)
+        self.rewrite(header, rows)
+        with self.exceptions.open("a", encoding="utf-8", newline="") as handle:
+            csv.writer(handle, lineterminator="\n").writerow([
+                "2", "", "held pending a client query",
+                json.dumps({"Ref": dropped[0]})])
+        finding = self.finding(self.verify(), "exceptions_justified")
+        self.assertEqual(finding.verdict, verifier.FAIL)
+        self.assertIn("break none of the stated rules", finding.detail)
+        self.assertIn("2", finding.detail)
 
     def test_a_rejection_reason_that_names_the_wrong_rule(self):
         held = verifier.read_exceptions(self.exceptions)

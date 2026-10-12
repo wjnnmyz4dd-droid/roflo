@@ -1277,6 +1277,8 @@ class ControlCentre:
         return ("<h1>Capabilities</h1>"
                 f'<p class="sub">What {PRODUCT} is allowed to sell, and on what '
                 "evidence. Derived from the registry, never a second list.</p>"
+                + self._library_section()
+                + "<h2>Registered for client work</h2>"
                 + table(["capability", "version", "proven", "scope", "evidence"],
                         [[esc(r.get("name", "")), esc(r.get("version", "")),
                           pill("proven" if r.get("proven") else "not promoted",
@@ -1300,6 +1302,50 @@ class ControlCentre:
                          for p in self.read.capability_proposals()],
                         empty="None."),
                 "Capabilities")
+
+    def _library_section(self) -> str:
+        """Every capability this build has, and where each one stands.
+
+        This section exists because the page above it answers a narrower
+        question than its heading suggests. "Registered for client work" has
+        one row, correctly -- one capability is owner-promoted. An owner
+        reading a page headed Capabilities saw a library of one, and four
+        skills that are built, certified and cleared for development read as
+        four skills that do not exist.
+
+        Two columns say the two different things, because collapsing them is
+        the whole problem: *certified* is what the evidence shows, *stance* is
+        what the owner decided. A capability can be certified on every check
+        it lists and still not be sellable, and that is not a defect to
+        explain away -- it is the control, and the page should make it
+        obvious rather than leave it to be inferred from an absence.
+        """
+        rows = self.read.library()
+        if not rows:
+            return ('<h2>The skill library</h2>'
+                    + self._refusal(
+                        "No capability is registered in this build, which "
+                        "would mean the dispatch table is empty. That is a "
+                        "defect rather than an empty library."))
+        body = []
+        for row in rows:
+            earned, listed = row["checks_certified"], row["checks_listed"]
+            evidence = pill(f"{row['state']} on {earned} of {listed}",
+                            "ok" if row["state"] == "CERTIFIED" and earned
+                            else "warn" if earned else "bad")
+            stance = pill(row["stance"],
+                          "ok" if row["stance"] == "PROMOTED"
+                          else "warn" if row["stance"] == "LIMITED" else "neutral")
+            body.append([esc(row["name"]), esc(row["version"]), evidence,
+                         stance, esc(row["note"])[:70]])
+        promoted = sum(1 for r in rows if r["deliverable"])
+        return ('<h2>The skill library</h2>'
+                f'<p class="sub">{len(rows)} capability(ies) in this build; '
+                f'{promoted} cleared for client work. Certified is what the '
+                f'evidence shows. Cleared is what you decided, and they are '
+                f'different sentences.</p>'
+                + table(["capability", "version", "evidence", "your decision",
+                         "what that means"], body))
 
     # ------------------------------------------------------ customer service
     def learning(self, request: Request):
