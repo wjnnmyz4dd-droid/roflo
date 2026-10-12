@@ -76,6 +76,43 @@ class AuditLog:
         Every field the P0 contract requires is a named parameter, so a caller
         cannot quietly omit *who authorised this* by burying it in a dict.
         """
+        from .resilience import redact  # local: resilience imports this module
+
+        # K-LEAN, applied at the write. `record_verification` has redacted its
+        # raw output since the day a verifier's explanation was found quoting
+        # the client's own text into this table; `why` had the same exposure
+        # and not the same treatment. Externally-authored strings do reach it
+        # -- a posting's title and its `needs` travel into the reason an owner
+        # approval and a planning refusal are recorded under, and a posting is
+        # written by whoever placed it. The redactor keys on what a secret
+        # looks like rather than on what a field is called, so an owner's own
+        # prose passes through untouched; only secret-shaped text is rewritten.
+        #
+        # Done here rather than at each caller because a secret that reached
+        # the table is already stored: the control centre reads this table and
+        # every backup copies it.
+        #
+        # `why` and the payload's strings, and deliberately not `result`.
+        #
+        # Those two are where externally-authored text arrives: a reason
+        # quotes the opportunity's reference, and `job.intake` records the job
+        # title, which on a discovered job is whatever the posting said. The
+        # first version of this covered `why` alone and a planted credential
+        # still landed, in the payload.
+        #
+        # `result` is left alone because it carries Solvent's own evidence,
+        # and redacting it destroyed some: the redactor treats a long hex run
+        # as a raw key, which is exactly what an artifact digest looks like,
+        # so a SOURCE artifact's registration came back as "a9f[REDACTED]d8a…
+        # 104 bytes" -- a record that can no longer prove which file was
+        # worked on. A control that eats the evidence is worse than the
+        # exposure it closes.
+        #
+        # The controlled vocabularies (event, authority, initiator, decision,
+        # permission) and the identifiers are left alone for the same reason.
+        why = redact(why)
+        payload = {key: redact(value) if isinstance(value, str) else value
+                   for key, value in payload.items()}
         prev = self._head_hash()
         ts = now()
         body = {

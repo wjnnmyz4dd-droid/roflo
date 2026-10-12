@@ -757,3 +757,269 @@ class TheOwnersCommandIsTheEntryPoint(Cycle):
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["state"], JobState.COMPLETE.value)
         self.assertTrue(solvent.audit.verify_chain()[0])
+
+
+class KLeanTheJournalDoesNotKeepTheClientsSecrets(Cycle):
+    """Advisory. Keys on what a secret *looks like*, not what a field is called.
+
+    A posting is written by whoever placed it. Its title and its `needs` travel
+    into the reasons an owner approval and a planning refusal are recorded
+    under, and `audit.record` wrote them down verbatim -- while
+    `record_verification` beside it had redacted its raw output since the day a
+    verifier was caught quoting a client's text into the same database. Same
+    exposure, same table, different treatment.
+
+    The deliverable is still left alone, for the same reason as before:
+    redacting a client's own file would be altering their data without
+    authorisation.
+    """
+
+    def planted(self) -> str:
+        # Assembled at run time: a literal here trips the repository's own
+        # credential scanner, which is the scanner working.
+        return "_".join(["sk", "live", "51H8" + "A" * 20 + "QsT"])
+
+    def test_a_credential_in_a_posting_does_not_reach_the_audit_journal(self):
+        secret = self.planted()
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "planted.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board([{**CSV_POSTING, "ref": "cycle-planted",
+                              "title": f"Clean this export {secret}"}])
+        cycle = self.runCycle()
+        self.assertTrue(cycle.completed,
+                        f"stopped at {cycle.stopped_at}: {cycle.why_stopped}")
+
+        journal = repr([dict(row) for row in self.s.store.raw_readonly(
+            "SELECT * FROM audit_log")])
+        self.assertNotIn(secret, journal,
+                         "a credential inside a client's posting was written "
+                         "to the audit journal verbatim")
+
+    def test_a_credential_in_the_job_reference_does_not_reach_the_reasons(self):
+        """A second path, because the first proved only one field.
+
+        The title travels in the audit `payload`; the opportunity's reference
+        travels in `why`, which is where the owner's acceptance of the quote
+        is recorded. Redacting one and not the other leaves the journal
+        holding the secret just the same, and a single test over the whole
+        table cannot tell which field saved it.
+        """
+        secret = self.planted()
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "planted-ref.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board([{**CSV_POSTING, "ref": f"job-{secret}"}])
+        cycle = self.runCycle()
+        self.assertTrue(cycle.completed,
+                        f"stopped at {cycle.stopped_at}: {cycle.why_stopped}")
+
+        reasons = [str(row["why"]) for row in self.s.store.raw_readonly(
+            "SELECT why FROM audit_log")]
+        self.assertTrue(any("owner accepted the quote" in r for r in reasons),
+                        "the reason this test is about was never recorded, so "
+                        "it would pass on a Solvent that recorded nothing")
+        for reason in reasons:
+            self.assertNotIn(secret, reason,
+                             "a credential inside a client's job reference "
+                             "was written into an audit reason")
+
+    def test_the_owners_own_reason_is_not_mangled(self):
+        """The negative control. A redactor that ate ordinary prose would make
+        the journal useless, and this would pass on one that redacted
+        everything."""
+        cycle = self.runCycle()
+        reasons = [str(row["why"]) for row in self.s.store.raw_readonly(
+            "SELECT why FROM audit_log WHERE job_id = ?", (cycle.job_id,))]
+        self.assertTrue(
+            any("owner accepted the quote" in reason for reason in reasons),
+            f"the owner's own reason did not survive: {reasons[:5]}")
+
+    def test_the_journals_own_evidence_is_not_redacted_away(self):
+        """A control that eats the evidence is worse than the exposure.
+
+        An artifact's digest is a long hex run, which is exactly what the
+        redactor treats as a raw key. Redacting `result` as well as `why`
+        turned a SOURCE artifact's registration into "a9f[REDACTED]d8a… 104
+        bytes" -- a record that can no longer say which file was worked on.
+        This asserts the digest the whole audit chain rests on is still there.
+        """
+        cycle = self.runCycle()
+        self.assertTrue(cycle.completed, cycle.why_stopped)
+        source_digest = next(
+            a.digest for a in self.s.orchestrator.artifacts(cycle.job_id,
+                                                            role="SOURCE"))
+        results = " ".join(str(row["result"]) for row in
+                           self.s.store.raw_readonly(
+                               "SELECT result FROM audit_log WHERE job_id = ?",
+                               (cycle.job_id,)))
+        self.assertIn(source_digest[:16], results,
+                      "the source artifact's digest is not in the journal")
+        self.assertNotIn("[REDACTED]", results,
+                         "the journal's own evidence was redacted")
+
+    def test_the_deliverable_itself_is_untouched(self):
+        """The client's file is their data. Solvent does not edit it to make
+        its own logs tidier."""
+        secret = self.planted()
+        source = self.dir / "with-secret.csv"
+        source.write_text(f"Name,Note\nAcme Ltd,{secret}\n", encoding="utf-8")
+        cycle = self.runCycle(source_file=str(source), agreed_requirements=[
+            req("R1", "parses_as_csv"), req("R2", "trim_whitespace")])
+        self.assertTrue(cycle.delivered,
+                        f"stopped at {cycle.stopped_at}: {cycle.why_stopped}")
+        delivered = pathlib.Path(cycle.deliverable_path).read_text(
+            encoding="utf-8")
+        self.assertIn(secret, delivered,
+                      "Solvent altered the client's own content")
+
+
+class IFixAiTheRefusalMovesEachTimeADefectIsFixed(Cycle):
+    """Advisory. Did the control refuse for the *right* reason?
+
+    A test asserting only "it stopped" passes when the stop came from
+    somewhere else entirely, and that is how a chain of controls rots into one
+    control wearing several names. So: start with several things wrong, fix
+    exactly one at a time, and require the refusal to move further down the
+    pipeline on each fix. A control that was never doing anything shows up
+    here as a stage the refusal skips straight past.
+    """
+
+    def stage_index(self, stage: str) -> int:
+        return list(CYCLE_STAGES).index(stage) if stage else len(CYCLE_STAGES)
+
+    def test_each_fix_moves_the_refusal_one_control_further(self):
+        reached = []
+
+        # 1. Nobody can do the work at all.
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "chain.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board([{**CSV_POSTING, "ref": "chain",
+                              "needs": ["video_editing"]}])
+        first = self.runCycle(owner_accepts_quote=False,
+                              agreed_requirements=None,
+                              simulate_payment=False)
+        self.assertEqual(first.stopped_at, "qualify")
+        self.assertIn("video_editing", first.why_stopped)
+        reached.append(first)
+
+        # 2. A capability that can. Now the owner has not answered.
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "chain2.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board()
+        second = self.runCycle(owner_accepts_quote=False,
+                               agreed_requirements=None,
+                               simulate_payment=False)
+        self.assertEqual(second.stopped_at, "owner-approval")
+        reached.append(second)
+
+        # 3. The owner answers. Now there are no agreed terms.
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "chain3.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board()
+        third = self.runCycle(agreed_requirements=None, simulate_payment=False)
+        self.assertEqual(third.stopped_at, "contract")
+        reached.append(third)
+
+        # 4. Terms, but one names a check nobody performs. Same stage, and it
+        #    must be a different reason -- otherwise the contract stage is one
+        #    refusal with two labels.
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "chain4.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board()
+        fourth = self.runCycle(simulate_payment=False, agreed_requirements=[
+            req("R1", "drop_exact_duplicates"), req("R9", "make_it_shine")])
+        self.assertEqual(fourth.stopped_at, "contract")
+        self.assertNotEqual(fourth.why_stopped, third.why_stopped,
+                            "two different defects produced the same refusal")
+        self.assertIn("no registered check", fourth.why_stopped)
+        self.assertIn("R9", fourth.why_stopped,
+                      "the refusal does not say which term it was")
+
+        # 5. Real terms, but the client's destination is not approved.
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "chain5.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board()
+        self.s.policy.amend(
+            {"egress": {"allowlist": [], "simulation_only": True}},
+            OWNER, "test: nowhere is approved")
+        fifth = self.runCycle(simulate_payment=False)
+        self.assertEqual(fifth.stopped_at, "deliver",
+                         f"expected the gate to refuse; got "
+                         f"{fifth.stopped_at}: {fifth.why_stopped}")
+        self.assertIn("gate", fifth.why_stopped.lower())
+        reached.append(fifth)
+
+        # 6. Destination approved. Now nothing has been paid.
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "chain6.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board()
+        sixth = self.runCycle(simulate_payment=False)
+        self.assertEqual(sixth.stopped_at, "payment")
+        self.assertTrue(sixth.delivered)
+        reached.append(sixth)
+
+        # 7. Paid. Nothing is left to refuse.
+        self.s.store.close()
+        self.s = Solvent(str(self.dir / "chain7.db"))
+        self.clear_for_client_work()
+        self.load_pricing()
+        self.register_board()
+        seventh = self.runCycle()
+        self.assertTrue(seventh.completed,
+                        f"stopped at {seventh.stopped_at}: "
+                        f"{seventh.why_stopped}")
+        reached.append(seventh)
+
+        positions = [self.stage_index(c.stopped_at) for c in reached]
+        self.assertEqual(positions, sorted(positions),
+                         f"the refusal did not move forward: "
+                         f"{[(c.stopped_at or 'complete') for c in reached]}")
+        self.assertEqual(len(set(positions)), len(positions),
+                         "two different defects were caught by the same "
+                         "control, so one of these stages is not a control")
+
+    def test_satisfying_the_gate_does_not_also_satisfy_the_ledger(self):
+        """The specific rot this guards: one control standing in for the next.
+
+        A delivered job is not a paid job. If clearing the Action Gate also
+        moved the Ledger, a client who never paid would read as revenue.
+        """
+        cycle = self.runCycle(simulate_payment=False)
+        self.assertTrue(cycle.delivered)
+        self.assertEqual(cycle.collected_cents, 0)
+        self.assertEqual(self.s.ledger.collected_for(cycle.job_id), 0)
+        self.assertEqual(self.s.orchestrator.job(cycle.job_id).state,
+                         JobState.AWAITING_PAYMENT)
+
+    def test_satisfying_the_ledger_does_not_retrospectively_verify_the_work(self):
+        """And the other direction: money arriving does not make a failed
+        deliverable acceptable."""
+        from solvent.types import PaymentState
+
+        cycle = self.runCycle(simulate_payment=False)
+        payment = self.s.ledger.payment_for(cycle.job_id)
+        self.s.ledger.set_payment_state(
+            payment["id"], PaymentState.PAID,
+            collected_cents=cycle.invoiced_cents,
+            verification_method="SIMULATED:test")
+        ok, why = self.s.orchestrator.verification_satisfied(cycle.job_id)
+        self.assertTrue(ok, why)
+        evidence = self.s.store.raw_readonly(
+            "SELECT * FROM verification_evidence WHERE subject_ref = ?",
+            (cycle.job_id,))
+        self.assertTrue(evidence, "a job was paid with no verification on record")

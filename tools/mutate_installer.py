@@ -1488,6 +1488,29 @@ _LIBRARY_MUTANTS: tuple[Mutant, ...] = (
            "tests_solvent.test_business_cycle.SimulatedMoneyIsNeverRevenue"
            ".test_the_ledger_reports_no_real_revenue",
            "fixture money is never counted, displayed or reported as earnings"),
+    Mutant("the-journals-payload-keeps-the-clients-secrets",
+           "solvent/audit.py",
+           "        payload = {key: redact(value) if isinstance(value, str) else value\n                   for key, value in payload.items()}",
+           "        payload = dict(payload)",
+           "tests_solvent.test_business_cycle"
+           ".KLeanTheJournalDoesNotKeepTheClientsSecrets"
+           ".test_a_credential_in_a_posting_does_not_reach_the_audit_journal",
+           "a credential in a posting's title never reaches the journal"),
+    Mutant("redaction-eats-the-journals-own-evidence", "solvent/audit.py",
+           "        why = redact(why)\n        payload = {key: redact(value) if isinstance(value, str) else value",
+           "        why = redact(why)\n        result = redact(result)\n        payload = {key: redact(value) if isinstance(value, str) else value",
+           "tests_solvent.test_business_cycle"
+           ".KLeanTheJournalDoesNotKeepTheClientsSecrets"
+           ".test_the_journals_own_evidence_is_not_redacted_away",
+           "an artifact digest is evidence, and redaction leaves it alone"),
+    Mutant("the-journals-reasons-keep-the-clients-secrets",
+           "solvent/audit.py",
+           "        why = redact(why)\n        payload = {key:",
+           "        payload = {key:",
+           "tests_solvent.test_business_cycle"
+           ".KLeanTheJournalDoesNotKeepTheClientsSecrets"
+           ".test_a_credential_in_the_job_reference_does_not_reach_the_reasons",
+           "a credential in a posting's reference never reaches a reason"),
 )
 
 MUTANTS = MUTANTS + _LIBRARY_MUTANTS
