@@ -17,39 +17,47 @@ See "Signing status" below.
 | File | `DeskPilot-Setup.exe` |
 | Status | **CURRENT — unsigned test build, Windows-unverified** |
 | Installer version | 1.0.0 |
-| Source HEAD | `a5bdfc0` — built from a clean tree |
-| Size | 1,437,233 bytes |
-| Installer SHA-256 | `18f35c8ab2f2d076db293f32b36c812a418547962ba50b2e6eb8772d251c54dd` |
-| Provenance | `dist/BUILD-a5bdfc0.txt` |
-| Payload | `DeskPilot-certified-a5bdfc0.zip` |
-| Payload SHA-256 | `71d3c0bcebe60c628ddd39177ead6dff2402e2c9d8ae66d861db7a09227550ba` |
+| Source HEAD | `16b32bd` — built from a clean tree |
+| Size | 1,620,163 bytes |
+| Installer SHA-256 | `bb1525a66c6ad4d5a3783d11d12e4aeffe321589d0df75a948e57f25fd44dad2` |
+| Provenance | `dist/BUILD-16b32bd.txt` |
+| Payload | `DeskPilot-certified-16b32bd.zip` |
+| Payload SHA-256 | `41ced03f6de19293014fa2f3b7db525419132b4f105e1188d6d4f9acfcb64e63` |
 | Code signature | **none** |
 | Windows execution | **not verified** |
 
 Verified by extracting the executable rather than by reading the build script:
 the embedded payload's SHA-256 matches the payload built beside it, all
-eighteen engine modules are byte-identical to the repository's, and the shipped
-`integration.py` — read from its syntax tree, not by searching for strings —
-carries `solvent run … --always-on` for the runtime, `solvent web …` for the
-control centre, `isolation.WEB_SID` and `layout.web_env_file` on the control
-centre's service entry, and `ServiceAccount`/`LeastPrivilege` in the task
-principal. The shipped `layout.py` defines `WEB_HOST = '127.0.0.1'` and
-`WEB_PORT = 8765`, so the control centre still binds loopback only.
-`services.nsh` is compiled into the wizard rather than shipped beside it, so
-the uninstaller's Python-less path is covered by the generated include.
+eighteen engine modules are byte-identical to the repository's, and the five
+capability names were read from the *shipped* `checks.py` and `harness.py`
+syntax trees rather than by searching for strings — `checks.REGISTRY` and
+`harness.CAPABILITIES` each name `csv-cleanup`, `report-builder`,
+`spreadsheet-automation`, `data-entry` and `document-processing`, and
+`harness.UNCERTIFIABLE` names the one check no evidence can certify.
 
 What is new in this build, and what it means for an existing installation:
 
-* the control centre's scheduled task logs on as `S-1-5-19`
-  (`NT AUTHORITY\LOCAL SERVICE`) at `LeastPrivilege` instead of SYSTEM;
-* the owner signing key moves to a file whose ACL does not mention that
-  identity, and the control-centre password hash moves to `Config\web.env`.
-  A repair migrates an installation made before the split and keeps both;
-* the installer applies Windows ACLs and then **tests them as the control
-  centre's own identity**, and stops the installation if the boundary does not
-  hold;
-* `runtime.heartbeat_path` is recorded, so the runtime stops writing its
-  liveness file to `C:\var\lib\solvent\heartbeat` on the system drive.
+* it carries **five** service capabilities where the previous build carried
+  two. Three are new — spreadsheet automation, data entry and validation, and
+  document processing — along with the two standard-library format layers they
+  read and write (`.xlsx` and `.docx`);
+* four of the five are **not cleared for client work**. They are certified
+  against generated evidence and the owner has not promoted them, so delivery
+  refuses them. Promoting one is an owner act and this installer performs none;
+* a verifier's explanation of a failure quotes the client's own text, and that
+  text is now redacted on the way into the verification table. On the previous
+  build a credential inside a client's document reached the audit journal
+  unredacted;
+* the Capabilities page in the control centre shows every capability in the
+  build with its evidence and the owner's decision in separate columns. The
+  previous build's page showed one row, which under that heading read as a
+  library of one.
+
+A repair keeps the database, the owner signing key, the control-centre
+password hash, the API keys, the settings and the backups, exactly as before.
+No owner decision in an existing installation is changed by installing this:
+the four new capabilities arrive undecided, and a capability already promoted
+stays promoted.
 
 This is a **test build, not a production release**: no Authenticode signature,
 and no Windows machine has run it. See `INSTALL-OR-REPAIR.md` for repairing an
@@ -66,6 +74,7 @@ given. Do not install any of these.
 
 | Installer SHA-256 | HEAD | Superseded because |
 |---|---|---|
+| `18f35c8ab2f2d076db293f32b36c812a418547962ba50b2e6eb8772d251c54dd` | `a5bdfc0` | **Superseded, not defective.** It was the first build to confine the control centre to its own Windows identity and to test that boundary as that identity, and all of that is carried forward. Superseded because its payload is Solvent before the five-skill library: it ships `csv-cleanup` and `report-builder` and none of `spreadsheet-automation`, `data-entry` or `document-processing`, nor the `.xlsx` and `.docx` layers they need. It also predates the redaction of verification evidence, so a credential inside a client's document would reach the audit journal in plain text on that build. |
 | `a0e64d00711b1950b3546080e06a7c5e4198593ff02f4e00c6fc654ee6d48361` | `237b63d` | **Superseded, not defective.** Installed, repaired and started both services correctly. Superseded because both services ran as SYSTEM with the same token, so the control centre's confinement was enforced by its own code rather than by Windows; its launcher read the file containing the owner signing key on every boot and filtered it in Python; and nothing recorded `runtime.heartbeat_path`, so the runtime wrote its liveness file to `C:\var\lib\solvent\heartbeat` and the control centre had no way to tell whether the runtime was running. |
 | `cf529639c9bf68468154106191dab8ec386136282fc54909d2fda40594e0e3c9` | `5789392` | **Superseded.** Installed and repaired correctly, but shipped a runtime that could not start: `DEFAULT_INTERVALS` had no `heartbeat` cadence and `interval()` used a bare subscript, so registering the first task raised `KeyError` out of `serve()` — after `start()` had already recorded `runtime.started` with `health=HEALTHY`. The runtime died before its first tick on every launch, so no diagnostics were ever recorded. The heartbeat tick also used `Path` without importing it. |
 | `ce724f84f6875ada13b3f83a199551b3d7c9a5048642c6ced0e1f1576c8fc960` | `30113a9` | **Superseded, not defective.** Installed and repaired correctly, but could only ever run the `install` phase: the engine's `repair` was unreachable, so the only route to a broken installation was a full reinstall. It also verified nothing — the "Verify installation" page displayed a label saying it was checking and ran no check, and the finish screen's title was the fixed string "DeskPilot is installed". |

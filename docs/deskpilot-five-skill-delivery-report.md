@@ -87,12 +87,18 @@ codebase performs it, and a test asserts that.
 
 | | |
 |---|---|
-| Full suite | (filled below) |
+| Full suite | **3357 pass, 2 skips** |
 | Tests for this library | 343 across seven files |
 | Certification trials | 2485, all correct |
 | Surprise-battery trials | 3152 from a third seed, all correct |
 | Black-box scenarios | 115 total, 54 of them new |
-| Mutation battery | (filled below) |
+| Mutation battery | **174 of 174 killed** — no survivors, none unapplied, none invalid |
+
+A mutant counts as killed only when the baseline was green, the mutation
+actually reached the file, the *designated* test newly failed, and the failure
+went away on revert. Twenty-four of the 174 are for this library: each
+restores a defect found while building it or breaks a check a client's
+deliverable rests on.
 
 Every capability faces the black-box matrix: ordinary work at three complexity
 levels, boundaries, hostile input, false-success traps and real client
@@ -190,7 +196,40 @@ registry gained one.
 
 ## 8. The Windows installer
 
-**IMPLEMENTED BUT WINDOWS-UNVERIFIED.** (filled below)
+**IMPLEMENTED BUT WINDOWS-UNVERIFIED.**
+
+| | |
+|---|---|
+| File | `windows/installer/dist/DeskPilot-Setup.exe` |
+| Source HEAD | `16b32bd`, from a clean tree |
+| Size | 1,620,163 bytes |
+| Installer SHA-256 | `bb1525a66c6ad4d5a3783d11d12e4aeffe321589d0df75a948e57f25fd44dad2` |
+| Payload | `DeskPilot-certified-16b32bd.zip` |
+| Payload SHA-256 | `41ced03f6de19293014fa2f3b7db525419132b4f105e1188d6d4f9acfcb64e63` |
+| Code signature | none |
+| Windows execution | not verified |
+
+Verified by extracting the compiled executable rather than by reading the
+build script. The embedded payload's SHA-256 matches the payload built beside
+it; all eighteen engine modules are byte-identical to the repository's; and
+the five capability names were read from the *shipped* `checks.py` and
+`harness.py` syntax trees rather than by searching for strings.
+`harness.UNCERTIFIABLE` in the shipped payload names the one check no evidence
+can certify, so the limit travels with the build rather than living only in
+this report.
+
+A repair keeps the database, the owner signing key, the control-centre
+password hash, the API keys, the settings and the backups. The four new
+capabilities arrive **undecided**: installing this does not promote anything,
+and a capability already promoted stays promoted.
+
+The previous build (`18f35c8a…`, HEAD `a5bdfc0`) is marked superseded in
+`windows/installer/ARTIFACTS.md` with the reason — not defective, but its
+payload is Solvent before this library and before the audit redaction.
+
+**Do not install this on the VPS yet.** You asked for the package to stay
+under development, and nothing here changes that. No Windows machine has run
+it.
 
 ## 9. What was not done
 
