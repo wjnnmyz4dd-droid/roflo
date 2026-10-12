@@ -64,22 +64,44 @@ wrong answer would look like. It is recorded in `harness.UNCERTIFIABLE` with
 that reason, excluded from `certifiable_scope`, and a promotion that claims it
 is refused.
 
-## 3. Promotion — one of five
+## 3. Promotion — five of five, on the owner's authorisation of 2026-10-12
 
-**IMPLEMENTED AND VERIFIED**, and the answer is deliberately not five.
+**IMPLEMENTED AND VERIFIED.** Read back from `registered_capabilities` in a
+separate process from the database the owner's own command wrote:
 
-| Capability | Owner decision |
-|---|---|
-| `csv-cleanup` | APPROVED — cleared for client work |
-| `report-builder` | LIMITED — build and test only |
-| `spreadsheet-automation` | LIMITED — build and test only |
-| `data-entry` | LIMITED — build and test only |
-| `document-processing` | LIMITED — build and test only |
+| Capability | Owner decision | Registered | Checks covered |
+|---|---|---|---|
+| `csv-cleanup` | APPROVED — cleared for client work | proven | 11 of 11 |
+| `report-builder` | APPROVED — cleared for client work | proven | 8 of 8 |
+| `spreadsheet-automation` | APPROVED — cleared for client work | proven | **14 of 15** |
+| `data-entry` | APPROVED — cleared for client work | proven | 16 of 16 |
+| `document-processing` | APPROVED — cleared for client work | proven | 14 of 14 |
 
-The four LIMITED capabilities are technically certified and cannot be used for
-client delivery: delivery asks the registry for permission and there is no
-promotion to show it. Clearing any of them is your act. Nothing in this
-codebase performs it, and a test asserts that.
+Four capabilities moved LIMITED → APPROVED. That is a **new decision**, not an
+edit: the LIMITED rows stay on the append-only record beside the new APPROVED
+rows, so "when did this become sellable, and on what evidence" stays
+answerable. csv-cleanup's existing approval is neither re-decided nor
+restamped with this authorisation's reason.
+
+`spreadsheet-automation` is promoted on fourteen checks of fifteen.
+`number_format` is not certifiable by any evidence, so it is not in the
+promoted scope, so a job resting on cell formatting is refused at delivery
+exactly as it was before — `may_authorize_delivery(..., check="number_format")`
+still returns false while `compute_column` returns true.
+
+Promotion clears a skill to be *delivered* and grants nothing else. No job is
+accepted, no proposal sent, no client contacted, no money moved, no platform
+restriction relaxed, and simulation mode is untouched. Verified after a real
+promotion run: the operational tables are empty, no `gate.*`, `governor.*`,
+`ledger.*`, `payment.*` or `submission.*` event exists, the policy values are
+identical before and after, and the `capability` authority is the only one that
+wrote anything.
+
+Nothing in this codebase promotes a capability on its own. The promotion
+records exist as data; the decision is `solvent setup capability`, run as the
+owner. `docs/solvent-commercial-promotion.md` is the full record, including why
+there is no signature step (limitation OD-5: `policy.is_owner` checks
+registration, not authentication).
 
 ## 4. Testing
 
@@ -87,18 +109,19 @@ codebase performs it, and a test asserts that.
 
 | | |
 |---|---|
-| Full suite | **3357 pass, 2 skips** |
-| Tests for this library | 343 across seven files |
+| Full suite | **3388 pass, 2 skips** |
+| Tests for this library | 440 across ten files |
 | Certification trials | 2485, all correct |
 | Surprise-battery trials | 3152 from a third seed, all correct |
 | Black-box scenarios | 115 total, 54 of them new |
-| Mutation battery | **174 of 174 killed** — no survivors, none unapplied, none invalid |
+| Mutation battery | **178 of 178 killed** — no survivors, none unapplied, none invalid |
 
 A mutant counts as killed only when the baseline was green, the mutation
 actually reached the file, the *designated* test newly failed, and the failure
-went away on revert. Twenty-four of the 174 are for this library: each
-restores a defect found while building it or breaks a check a client's
-deliverable rests on.
+went away on revert. Twenty-eight of the 178 are for this library: each
+restores a defect found while building it, breaks a check a client's
+deliverable rests on, or removes one of the four refusals that stand between
+a capability and commercial clearance.
 
 Every capability faces the black-box matrix: ordinary work at three complexity
 levels, boundaries, hostile input, false-success traps and real client
@@ -132,7 +155,7 @@ a FAIL plus two loose substrings that a *different* branch also produced.
 
 ## 6. Defects found and fixed
 
-Thirteen, listed because the count is the useful part of a report like this.
+Fourteen, listed because the count is the useful part of a report like this.
 
 Found by integration, not by either unit suite:
 
@@ -176,6 +199,17 @@ Found by reading for a crash rather than a wrong answer:
 
 13. A template naming the same field twice made the verifier raise, because
     each placeholder became a capture group with the same name.
+
+Found by the regression, after the promotion:
+
+14. `setup capability` reported a partial refusal by naming only what was
+    *not* promoted. One capability's verifier being revoked says nothing about
+    another's evidence, so the others are still cleared — but the dangerous
+    reading of a non-zero exit is "nothing happened", and four capabilities had
+    just become sellable without the summary saying so. It now names both
+    sides, and a negative control pins the other direction: with every verifier
+    revoked, nothing is cleared and the summary says that rather than printing
+    a count of zero as success.
 
 Two more are worth naming as near-misses rather than defects: the Skills Lab's
 overlap gate compared check names over one global namespace, so a skill that
@@ -247,5 +281,13 @@ it.
   approvals)**: both have working surfaces from earlier sessions, and neither
   was re-examined in this one. They are IMPLEMENTED and **not re-verified
   this session**, which is a different claim from verified.
-- **Promotion of the four LIMITED capabilities**: NOT IMPLEMENTED, by design.
-  It is your decision.
+- **Promotion of the four LIMITED capabilities**: DONE, on the owner's
+  authorisation of 2026-10-12 — see section 3 and
+  `docs/solvent-commercial-promotion.md`. It was the owner's decision and it
+  was made by the owner running the command; nothing in this codebase performs
+  it unasked, and a test still asserts that.
+- **Authentication of the owner making that decision**: NOT IMPLEMENTED, and
+  recorded as limitation OD-5. `policy.is_owner` checks that the identity
+  making a request is the registered owner identity; it cannot check that the
+  person typing is that owner. The authentication is terminal access to the
+  machine.

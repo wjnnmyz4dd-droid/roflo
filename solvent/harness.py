@@ -24,7 +24,7 @@ from pathlib import Path
 from .application import Applications
 from .audit import AuditLog
 from . import ambiguity as ambiguity_module
-from .capability import Capability, CapabilityRegistry
+from .capability import Capability, CapabilityRegistry, promotion_verdict
 from .checks import checks_for
 from .content import RequirementSet, confirm, extract_requirements, quarantine
 from .clientrelations import ClientRelations
@@ -1543,18 +1543,22 @@ CAPABILITIES = {
 }
 
 
-#: The owner's promotion of csv-cleanup, as a record rather than as a sentence.
+#: The owner's promotions, as records rather than as sentences.
 #:
-#: OD-12 approved nine checks; OD-14 added ``rename_headers`` and ``sort_rows``
-#: once they met the same evidence standard. The scope is a list of *checks*,
-#: because that is what certification is per: an operation is in scope only once
-#: a verifier has been shown work that was wrong in that way and caught it,
-#: enough times, on artifacts it had never seen.
+#: The scope of each is a list of *checks*, because that is what certification
+#: is per: an operation is in scope only once a verifier has been shown work
+#: that was wrong in that way and caught it, enough times, on artifacts it had
+#: never seen.
 #:
-#: It lives here rather than in a test because a promotion that exists only in
-#: the suite is not a promotion — a real deployment would find nothing proven
-#: and refuse every job. Registering it is still an owner act, and there is no
-#: code path that does it unasked.
+#: These live here rather than in a test because a promotion that exists only
+#: in the suite is not a promotion — a real deployment would find nothing
+#: proven and refuse every job. Registering one is still an owner act, and
+#: there is no code path that does it unasked.
+#:
+#: OD-12 approved nine csv-cleanup checks; OD-14 added ``rename_headers`` and
+#: ``sort_rows`` once they met the same evidence standard. OD-15 is the owner's
+#: clearance of the other four capabilities for client work, on their recorded
+#: certification and black-box evidence.
 CSV_CERTIFIED_SCOPE = (
     "drop_exact_duplicates", "map_values", "no_unauthorised_changes",
     "normalise_dates", "parses_as_csv", "preserve_columns", "rename_headers",
@@ -1572,42 +1576,142 @@ CSV_PROMOTION = Capability(
     fixtures_passed=34, fixtures_total=34, false_completions=0)
 
 
-def _owner_promoted(name: str):
-    """The registration a configured deployment carries for this capability.
+#: Media types each capability reads and writes. Recorded because the overlap
+#: gate needs it: the same check name over a different format is a different
+#: capability, and without the domain the gate can only see that two skills
+#: both have a check called ``trim_whitespace``.
+_MEDIA = {
+    "report-builder": (("application/json",), ("text/markdown",)),
+    "spreadsheet-automation": (
+        ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",),
+        ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",)),
+    "data-entry": (("text/csv", "application/json"), ("text/csv",)),
+    "document-processing": (
+        ("application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+         "text/plain", "text/markdown"),
+        ("application/json", "text/markdown", "text/plain",
+         "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+}
 
-    ``report-builder`` is deliberately absent. It is technically certified and
-    the owner has not promoted it, and this function is what that sentence means
-    in code: returning something here is a promotion decision, so there is one
-    place to look for which capabilities an owner has actually cleared for
-    client work.
-    """
-    return {"csv-cleanup": CSV_PROMOTION}.get(name)
+#: Black-box evidence behind each promotion: how many frozen scenarios the
+#: capability faced, at how many complexity levels, and how many of them it
+#: shipped wrong work for while reporting success.
+#:
+#: These are counts of scenarios that were actually run, not a floor somebody
+#: chose. ``false_completions`` is the one number that cannot be traded away
+#: and it is zero for all five, measured by the harness re-reading each
+#: delivered file rather than by reading Solvent's own report of itself.
+_BLACKBOX_EVIDENCE = {
+    "report-builder": (27, ("L1", "L2", "L3", "BOUNDARY", "HOSTILE", "TRAP",
+                            "CLIENT", "GAP")),
+    "spreadsheet-automation": (17, ("L1", "L2", "L3", "BOUNDARY", "HOSTILE",
+                                    "TRAP", "CLIENT")),
+    "data-entry": (17, ("L1", "L2", "L3", "BOUNDARY", "HOSTILE", "TRAP",
+                        "CLIENT")),
+    "document-processing": (20, ("L1", "L2", "L3", "BOUNDARY", "HOSTILE",
+                                 "TRAP", "CLIENT")),
+}
 
-
-#: Capabilities the owner has cleared to **build and test** and not to deploy.
-#: This is what ``LIMITED`` is for, and report-builder is the case it was
-#: written for: the evidence is there, the owner has not said "sell it", and
-#: those are different sentences. Recording it this way means the boundary is
-#: enforced by the registry rather than by everyone remembering.
-_DEVELOPMENT_ONLY = {
-    "report-builder": "technically certified; the owner has not cleared it for "
-                      "client delivery, so it may be built and tested only",
-    "spreadsheet-automation":
-        "built and verified against generated evidence; the owner authorised "
-        "building and testing it and has not cleared it for client delivery",
-    "data-entry":
-        "built and verified against generated evidence; the owner authorised "
-        "building and testing it and has not cleared it for client delivery",
-    "document-processing":
-        "built and verified against generated evidence; the owner authorised "
-        "building and testing it and has not cleared it for client delivery",
+_EVIDENCE_REF = {
+    "report-builder": "tests_solvent/test_report_capability.py; "
+                      "tests_solvent/blackbox/scenarios.py",
+    "spreadsheet-automation": "docs/solvent-five-skill-library.md; "
+                              "tests_solvent/test_sheet_capability.py; "
+                              "tests_solvent/test_xlsx_format.py; "
+                              "tests_solvent/test_five_skill_library.py; "
+                              "tests_solvent/blackbox/scenarios.py",
+    "data-entry": "docs/solvent-five-skill-library.md; "
+                  "tests_solvent/test_entry_capability.py; "
+                  "tests_solvent/test_five_skill_library.py; "
+                  "tests_solvent/blackbox/scenarios.py",
+    "document-processing": "docs/solvent-five-skill-library.md; "
+                           "tests_solvent/test_document_capability.py; "
+                           "tests_solvent/test_docx_format.py; "
+                           "tests_solvent/test_five_skill_library.py; "
+                           "tests_solvent/blackbox/scenarios.py",
 }
 
 
+def _promotion_for(name: str) -> Capability:
+    """Build the promotion record for a capability from its own evidence.
+
+    ``covers`` is **derived** from :func:`certifiable_scope` rather than typed
+    out, and that is the safety property rather than a convenience. A hardcoded
+    list can drift from the evidence silently; a derived one cannot, because
+    :func:`provision_capability` compares it against what the battery actually
+    certified and refuses the registration if the evidence no longer reaches
+    that far. If a sixth check appeared in a verifier's list tomorrow with no
+    evidence behind it, this would claim it and the registration would be
+    refused — which is the direction a mistake should fail in.
+
+    ``number_format`` is the reason this matters today. It is excluded by
+    :data:`UNCERTIFIABLE`, so it is not in ``covers``, so the promotion does not
+    claim it, and a job resting on it is refused. Fourteen of fifteen, said in
+    code rather than in a footnote.
+    """
+    covers = certifiable_scope(name)
+    if not covers:
+        raise FailClosed(
+            f"{name!r} has no certifiable scope, so there is nothing a "
+            "promotion could cover")
+    fixtures, levels = _BLACKBOX_EVIDENCE[name]
+    inputs, outputs = _MEDIA[name]
+    return Capability(
+        name=name, covers=covers, proven=True,
+        version=CAPABILITIES[name].version, inputs=inputs, outputs=outputs,
+        verifiable_by=tuple(sorted(covers)), proven_levels=levels,
+        evidence_ref=_EVIDENCE_REF[name],
+        fixtures_passed=fixtures, fixtures_total=fixtures,
+        false_completions=0)
+
+
+#: Every capability the owner has cleared for client work, keyed by name.
+#: Built lazily so that a change to a verifier's check list is reflected here
+#: and then caught by the registration control, rather than baked in at import.
+def _owner_promoted(name: str):
+    """The registration a configured deployment carries for this capability.
+
+    Returning something here is a promotion decision, so there is one place to
+    look for which capabilities an owner has actually cleared for client work.
+    All five are cleared: csv-cleanup under OD-12/OD-14, the other four under
+    OD-15. A capability absent from this function has not been cleared, and a
+    sixth one would start that way.
+    """
+    if name == "csv-cleanup":
+        return CSV_PROMOTION
+    if name in _BLACKBOX_EVIDENCE:
+        return _promotion_for(name)
+    return None
+
+
+def owner_promotions() -> dict:
+    """Every promotion this build carries. Derived, never a second list."""
+    return {name: _owner_promoted(name) for name in CAPABILITIES
+            if _owner_promoted(name) is not None}
+
+
+#: Capabilities the owner has cleared to **build and test** and not to deploy.
+#: This is what ``LIMITED`` is for.
+#:
+#: Empty, and that is a state rather than an absence of one. Four capabilities
+#: sat here while they were certified and uncleared, which is exactly the
+#: distinction LIMITED exists to hold: "you may build and test this" and "you
+#: may sell this" are different sentences. The owner has now said the second
+#: about all four, so none is LIMITED any more. The mechanism stays because a
+#: sixth capability starts here, and :func:`provision_development_only` takes
+#: an explicit reason so it does not depend on an entry existing.
+_DEVELOPMENT_ONLY: dict[str, str] = {}
+
+
 def provision_development_only(s: "Solvent", name: str, covers,
-                               *, owner_identity: str = OWNER) -> None:
+                               *, owner_identity: str = OWNER,
+                               why: str = "") -> None:
     """Record a LIMITED owner decision: build and test it, do not deploy it."""
-    why = _DEVELOPMENT_ONLY[name]
+    why = why or _DEVELOPMENT_ONLY.get(name, "")
+    if not why:
+        raise FailClosed(
+            f"recording a LIMITED decision for {name!r} needs a stated reason; "
+            "a scope bound by nothing is not a bound scope")
     if not s.capability.proposals(name):
         s.capability.propose(name=name, covers=frozenset(covers), why=why,
                              requested_by=owner_identity)
@@ -1616,6 +1720,104 @@ def provision_development_only(s: "Solvent", name: str, covers,
         s.capability.decide(name=name, decision=s.capability.LIMITED,
                             owner_identity=owner_identity, why=why,
                             scope="development and testing")
+
+
+def promote_capability(s: "Solvent", name: str, *, owner_identity: str = OWNER,
+                       why: str = "") -> dict:
+    """Clear a capability for client work. **Owner act, and a separate one.**
+
+    Why this is not ``provision_capability``: that function records an APPROVED
+    decision only when there is no decision yet, deliberately. A capability the
+    owner cleared for development carries a LIMITED answer, and silently
+    turning that into APPROVED because somebody re-ran a provisioning command
+    is precisely the conflation the two words exist to prevent. Moving from
+    LIMITED to APPROVED is a new decision and is recorded as one; the LIMITED
+    row stays exactly where it is, because the table is append-only and the
+    question "when did this become sellable, and on what" has to stay
+    answerable.
+
+    Four checks, in this order, and any one of them refuses:
+
+    1. The capability is one this build has, with a verifier in the dispatch
+       table. A promotion of something that is not here promotes nothing.
+    2. Its certification is re-run against the *current* implementation and
+       must still cover every check the promotion claims. An edited verifier is
+       different code and starts again.
+    3. The evidence floor in :func:`solvent.capability.promotion_verdict` must
+       pass: enough fixtures, enough complexity levels, and zero false
+       completions. One shipped-wrong-while-reporting-success resets the answer
+       to no.
+    4. Afterwards ``may_deploy`` must actually return True. Reporting a
+       successful promotion while delivery would still refuse is the failure
+       this returns an error for rather than a cheerful message.
+
+    Returns the certification record. Raises :class:`FailClosed` with the
+    reason otherwise, and writes nothing on the way out.
+    """
+    if not s.policy.is_owner(owner_identity):
+        # Asked here as well as inside `decide`, so a component's attempt
+        # leaves no PROPOSED row behind on its way to being refused. This is
+        # not a second authority: it is the same `policy.is_owner`, and the
+        # registry still refuses independently if this check were removed.
+        raise FailClosed(
+            f"only a registered owner clears a capability for client work "
+            f"(got {owner_identity!r}); nothing was recorded")
+    if name not in CAPABILITIES:
+        raise FailClosed(
+            f"{name!r} is not a capability this build has; it has "
+            f"{', '.join(sorted(CAPABILITIES))}")
+    capability = _owner_promoted(name)
+    if capability is None:
+        raise FailClosed(
+            f"{name!r} carries no owner promotion record, so there is nothing "
+            "to register. A promotion is a decision somebody wrote down, not a "
+            "command that can be run")
+
+    verdict, reason = promotion_verdict(capability)
+    if not verdict:
+        raise FailClosed(
+            f"the evidence does not support promoting {name}: {reason}. "
+            "Nothing was recorded")
+
+    record = ensure_verifier_certified(s, name)
+    certified = {c for c in record["certified_checks"].split(",") if c}
+    missing = sorted(set(capability.covers) - certified)
+    if record["state"] != "CERTIFIED" or missing:
+        raise FailClosed(
+            f"the verifier for {name} is {record['state']} and certified for "
+            f"{len(certified)} check(s); this promotion claims "
+            f"{len(capability.covers)}"
+            + (f"; not certified: {', '.join(missing)}" if missing else "")
+            + ". The evidence does not support this scope. Nothing was "
+              "recorded")
+
+    if not s.capability.proposals(name):
+        s.capability.propose(
+            name=name, covers=capability.covers,
+            why=f"clearing {capability.version} for client work",
+            requested_by=owner_identity)
+    previous, previous_scope = s.capability.development_decision(name)
+    if previous != s.capability.APPROVED:
+        s.capability.decide(
+            name=name, decision=s.capability.APPROVED,
+            owner_identity=owner_identity,
+            why=why or (f"the owner cleared {capability.version} for client "
+                        f"work on {len(certified)} certified check(s) and "
+                        f"{capability.fixtures_passed} black-box scenario(s) "
+                        f"with {capability.false_completions} false "
+                        f"completion(s)"),
+            scope="")
+    if not any(c.version == capability.version and c.proven
+               for c in s.capability.capabilities()):
+        s.capability.register(capability, owner_identity=owner_identity)
+
+    permitted, reason = s.capability.may_deploy(name)
+    if not permitted:
+        raise FailClosed(
+            f"the decision and the registration were recorded and delivery "
+            f"would still be refused: {reason}. That is a defect rather than a "
+            "promotion, and the records above say what was attempted")
+    return record
 
 
 def _csv_header(path: str) -> list[str]:

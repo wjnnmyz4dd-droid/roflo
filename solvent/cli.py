@@ -246,34 +246,88 @@ def cmd_setup_model(args: argparse.Namespace) -> int:
 
 
 def cmd_setup_capability(args: argparse.Namespace) -> int:
-    """Register the owner's promotion of csv-cleanup/1.0 in this database.
+    """Register the owner's promotions in this database. **Owner path.**
 
-    The decision was made in OD-12 and widened in OD-14; this applies it to the
-    deployment the owner actually runs. Before recording anything it re-runs the
-    verifier's certification against the *current* implementation, so a scope
-    the evidence no longer supports cannot be registered by rerunning a command.
+    The decisions live in :func:`solvent.harness.owner_promotions`: csv-cleanup
+    under OD-12 and OD-14, the other four under OD-15. This applies them to the
+    deployment the owner actually runs.
+
+    Before recording anything, each capability's verifier certification is
+    re-run against the *current* implementation and the evidence floor is
+    re-checked, so a scope the evidence no longer supports cannot be registered
+    by rerunning a command. A capability already APPROVED is left alone and
+    reported as such — this is idempotent, because an owner may reasonably run
+    it twice and a restart must not need it again.
+
+    Moving a capability from LIMITED to APPROVED is a *new* decision and is
+    recorded as one. The LIMITED row stays exactly where it is: the table is
+    append-only, and "when did this become sellable, and on what evidence" has
+    to stay answerable.
     """
-    from .harness import CSV_PROMOTION, provision_capability
+    from .checks import checks_for
+    from .harness import owner_promotions, promote_capability
 
     solvent = _owner_solvent(args)
-    try:
-        record = provision_capability(solvent, CSV_PROMOTION,
-                                      owner_identity=args.owner)
-    except FailClosed as exc:
-        print(f"refused: {exc}")
+    promotions = owner_promotions()
+    if args.only:
+        if args.only not in promotions:
+            print(f"refused: {args.only!r} carries no owner promotion record. "
+                  f"This build has: {', '.join(sorted(promotions))}")
+            return 1
+        promotions = {args.only: promotions[args.only]}
+
+    failures = []
+    for name, capability in sorted(promotions.items()):
+        already, _ = solvent.capability.development_decision(name)
+        try:
+            record = promote_capability(solvent, name,
+                                        owner_identity=args.owner,
+                                        why=args.why)
+        except FailClosed as exc:
+            print(f"[REFUSED] {name}: {exc}")
+            failures.append(name)
+            continue
+        listed = len(checks_for(name))
+        covered = len(capability.covers)
+        print(f"[APPROVED] {capability.version} — cleared for client work")
+        print(f"  verifier  {record['verifier_ref']} @ {record['fingerprint']}")
+        print(f"  certified {covered} of {listed} check(s) this verifier lists")
+        if covered < listed:
+            withheld = sorted(set(checks_for(name)) - set(capability.covers))
+            print(f"  NOT certified, and not claimed: {', '.join(withheld)}")
+        print(f"  evidence  {capability.evidence_summary}")
+        if already and already != solvent.capability.APPROVED:
+            print(f"  previously {already}; that row stays on the record")
+
+    for name in sorted(promotions):
+        permitted, why = solvent.capability.may_deploy(name)
+        if not permitted and name not in failures:
+            print(f"[DEFECT] {name}: recorded as promoted and delivery would "
+                  f"still be refused: {why}")
+            failures.append(name)
+
+    if failures:
+        # One capability's evidence going bad says nothing about another's, so
+        # the others are still promoted -- but the dangerous reading of a
+        # non-zero exit is "nothing happened". Whatever did happen is now
+        # sellable, so it is named on the same screen as the refusal rather
+        # than left to be inferred from the lines above.
+        cleared = sorted(set(promotions) - set(failures))
+        print()
+        if cleared:
+            print(f"{len(cleared)} capability(ies) ARE now cleared for client "
+                  f"work: {', '.join(cleared)}")
+        else:
+            print("Nothing was cleared for client work.")
+        print(f"{len(set(failures))} capability(ies) were not promoted: "
+              f"{', '.join(sorted(set(failures)))}. Each refusal above says "
+              "what the evidence does not support. Nothing else changed: no "
+              "job was accepted, no proposal sent, no money moved, and "
+              "simulation mode is exactly as you left it.")
         return 1
-    permitted, why = solvent.capability.may_deploy(CSV_PROMOTION.name)
-    if not permitted:
-        # Provisioning is only done when the capability can actually be
-        # delivered. Reporting success while delivery would refuse is the
-        # failure this command existed to prevent and did not.
-        print(f"refused: provisioning completed but delivery would still be "
-              f"refused: {why}")
-        return 1
-    print(f"registered {CSV_PROMOTION.version} as proven, covering "
-          f"{len(CSV_PROMOTION.covers)} certified check(s).")
-    print(f"  verifier {record['verifier_ref']} @ {record['fingerprint']}")
-    print("  Nothing else was promoted. report-builder remains unregistered.")
+    print(f"\n{len(promotions)} capability(ies) cleared for client work. "
+          "Nothing else changed: no job was accepted, no proposal sent, no "
+          "money moved, and simulation mode is exactly as you left it.")
     return 0
 
 
@@ -1123,7 +1177,14 @@ def build_parser() -> argparse.ArgumentParser:
     model.set_defaults(func=cmd_setup_model)
 
     capability = owned(setup_sub.add_parser(
-        "capability", help="register the owner's promotion of csv-cleanup/1.0"))
+        "capability", help="register the owner's promotions in this database"))
+    capability.add_argument(
+        "--only", default="",
+        help="promote one named capability instead of every promotion this "
+             "build carries")
+    capability.add_argument(
+        "--why", default="",
+        help="the owner's reason, recorded with the decision")
     capability.set_defaults(func=cmd_setup_capability)
 
     notifications = owned(setup_sub.add_parser(

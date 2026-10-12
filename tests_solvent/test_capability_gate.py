@@ -257,14 +257,36 @@ class TheVersionThatProducedTheFileIsTheVersionThatMustBeProven(unittest.TestCas
 class TheShippedConfiguration(unittest.TestCase):
     """What a real deployment promotes, asserted rather than assumed."""
 
-    def test_csv_cleanup_is_the_only_promoted_capability(self):
-        self.assertIsNotNone(_owner_promoted("csv-cleanup"))
-        self.assertEqual(_owner_promoted("csv-cleanup").version, "csv-cleanup/1.0")
+    def test_every_promotion_names_its_own_capability_version(self):
+        from solvent.harness import CAPABILITIES, owner_promotions
 
-    def test_report_builder_is_not_promoted(self):
-        self.assertIsNone(_owner_promoted("report-builder"),
-                          "report-builder is technically certified and the "
-                          "owner has not cleared it for client work")
+        promotions = owner_promotions()
+        self.assertEqual(sorted(promotions), sorted(CAPABILITIES),
+                         "the owner has cleared all five; a sixth capability "
+                         "would have to be cleared separately")
+        for name, capability in promotions.items():
+            with self.subTest(name=name):
+                self.assertEqual(capability.name, name)
+                self.assertEqual(capability.version,
+                                 CAPABILITIES[name].version)
+                self.assertTrue(capability.proven)
+
+    def test_a_capability_this_build_does_not_have_carries_no_promotion(self):
+        """The mechanism still distinguishes. It is not "yes" for everything."""
+        self.assertIsNone(_owner_promoted("render-pdf"))
+        self.assertIsNone(_owner_promoted(""))
+
+    def test_no_promotion_claims_a_check_no_evidence_covers(self):
+        from solvent.checks import checks_for
+        from solvent.harness import UNCERTIFIABLE, owner_promotions
+
+        for name, capability in owner_promotions().items():
+            with self.subTest(name=name):
+                exempt = set(UNCERTIFIABLE.get(name, {}))
+                self.assertEqual(set(capability.covers) & exempt, set(),
+                                 "a promotion claims a check that no battery "
+                                 "can certify")
+                self.assertTrue(set(capability.covers) <= set(checks_for(name)))
 
     def test_a_configured_deployment_promotes_nothing_else(self):
         solvent = Solvent()

@@ -72,22 +72,33 @@ very requirement, so a job that stacked one quarter twice instead of two
 different quarters satisfied it. An exemption would have left that client
 receiving half their data twice.
 
-## Promotion: one of five
+## Promotion: five of five, since 2026-10-12
 
-| Capability | Owner decision |
-|---|---|
-| `csv-cleanup` | **APPROVED** — registered, proven, cleared for client work |
-| `report-builder` | LIMITED — build and test only |
-| `spreadsheet-automation` | LIMITED — build and test only |
-| `data-entry` | LIMITED — build and test only |
-| `document-processing` | LIMITED — build and test only |
+| Capability | Owner decision | Checks covered |
+|---|---|---|
+| `csv-cleanup` | **APPROVED** — registered, proven, cleared for client work | 11 of 11 |
+| `report-builder` | **APPROVED** — registered, proven, cleared for client work | 8 of 8 |
+| `spreadsheet-automation` | **APPROVED** — registered, proven, cleared for client work | **14 of 15** |
+| `data-entry` | **APPROVED** — registered, proven, cleared for client work | 16 of 16 |
+| `document-processing` | **APPROVED** — registered, proven, cleared for client work | 14 of 14 |
 
 "The owner said build and test this" and "the owner said sell this" are
-different sentences, and the registry keeps them apart. The four LIMITED
-capabilities are technically certified and cannot be used for client delivery:
-delivery asks the registry for permission and the registry has no promotion to
-show it. Clearing any of them is the owner's act and nothing in this codebase
-performs it.
+different sentences, and the registry still keeps them apart. Four of these
+capabilities spent their development under the first sentence; the owner's
+authorisation of 2026-10-12 recorded the second. The LIMITED rows stay on the
+append-only record beside the new APPROVED ones, because superseding an answer
+and erasing it are also different sentences.
+
+`spreadsheet-automation` is cleared on fourteen checks, not fifteen.
+`number_format` is not certifiable by any evidence, so it is not in the
+promoted scope, so a job resting on cell formatting is refused at delivery just
+as it was before the promotion.
+
+Clearing a capability is still the owner's act, and nothing in this codebase
+performs it: the promotion records are data, and the decision is
+`solvent setup capability` run as the owner. `docs/solvent-commercial-promotion.md`
+is the record of what was verified before each one was granted, and what
+promotion deliberately does not grant.
 
 ## Where each one stops
 
@@ -220,7 +231,13 @@ decisions, so a sixth capability appears because the registry gained one.
   planted credentials must not reach Solvent's tables, the client's own file
   must keep its content, each refusal names its own cause, and satisfying one
   control does not unlock the rest.
-- `tools/mutate_installer.py` — twenty-four mutants for this library, each
+- `tests_solvent/test_commercial_promotion.py` — the owner's clearance of
+  these capabilities and its limits: the evidence floor, a promotion wider
+  than its certification, who may decide, LIMITED → APPROVED without losing
+  the LIMITED row, `number_format` still refused, a promoted capability
+  delivering a real job while an unpromoted one escalates, and every
+  restriction the authorisation did not grant.
+- `tools/mutate_installer.py` — twenty-eight mutants for this library, each
   restoring a defect found while building it or breaking a check a client's
   deliverable rests on. A kill counts only when the mutation applied, the
   designated test newly failed, and the failure went away on revert.

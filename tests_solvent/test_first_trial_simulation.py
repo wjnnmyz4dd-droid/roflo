@@ -24,7 +24,9 @@ from contextlib import redirect_stdout
 from solvent import cli, payments
 from solvent.payments import JOB_METADATA_KEY
 from solvent.errors import FailClosed
-from solvent.harness import OWNER, Solvent, ingest_payment_spool, run_csv_job
+from solvent.harness import (
+    OWNER, Solvent, ingest_payment_spool, owner_promotions, run_csv_job,
+)
 from solvent.readiness import (
     assert_may_attempt_first_real_job, assert_may_attempt_supervised_trial,
 )
@@ -33,6 +35,11 @@ from tests_solvent import fixtures_csv as fx
 from tests_solvent.test_controlled_trial import AGREED, CLIENT_FILE, workspace
 
 WEBHOOK_SECRET = "whsec_TEST-ONLY-first-trial-endpoint-secret-0123456789"
+
+#: What `setup capability` is expected to leave registered, read off the build
+#: rather than written out. A sixth capability should make the assertions below
+#: cover it, not pass while ignoring it.
+PROMOTED_VERSIONS = sorted(c.version for c in owner_promotions().values())
 
 
 def run_cli(*argv) -> tuple[int, str]:
@@ -334,9 +341,29 @@ class TheNegativeFirstTrial(unittest.TestCase):
                 fx.req("R-X", "Deliver as .xlsx.", "render_xlsx"), fx.OPENS])
         self.assertIn("no registered check", str(caught.exception))
 
-    def test_a_report_builder_request_is_refused_because_it_is_not_promoted(self):
-        proven = {c.name for c in self.s.capability.capabilities() if c.proven}
-        self.assertNotIn("report-builder", proven)
+    def test_a_cell_formatting_request_is_refused_though_the_skill_is_promoted(self):
+        """What a first client cannot get from a capability that *is* cleared.
+
+        This used to assert that report-builder was unpromoted, which stopped
+        being true when the owner cleared it. The property worth keeping is the
+        sharper one underneath: a promotion is bounded by its evidence.
+        spreadsheet-automation is cleared on fourteen checks of fifteen, and
+        the fifteenth is refused at delivery by the same registry that cleared
+        the other fourteen.
+        """
+        permitted, why = self.s.capability.may_authorize_delivery(
+            verifier_ref="solvent.sheetverify.run",
+            capability_version="spreadsheet-automation/1.0",
+            check="number_format")
+        self.assertFalse(permitted)
+        self.assertIn("not certified to decide", why)
+
+        allowed, _ = self.s.capability.may_authorize_delivery(
+            verifier_ref="solvent.sheetverify.run",
+            capability_version="spreadsheet-automation/1.0",
+            check="compute_column")
+        self.assertTrue(allowed, "the refusal above is about the capability, "
+                                 "not the one check it withholds")
 
     def test_an_unpromoted_check_fails_closed(self):
         with self.assertRaises(FailClosed):
@@ -405,10 +432,25 @@ class TheConfigurationSurvivesARestart(unittest.TestCase):
         self.s = Solvent(self.db)
         return self.s
 
-    def test_the_promotion_survives(self):
-        proven = [c.version for c in self.restart().capability.capabilities()
-                  if c.proven]
-        self.assertEqual(proven, ["csv-cleanup/1.0"])
+    def test_the_promotions_survive(self):
+        proven = sorted(c.version for c in
+                        self.restart().capability.capabilities() if c.proven)
+        self.assertEqual(proven, PROMOTED_VERSIONS)
+
+    def test_the_withheld_check_is_still_withheld_after_a_restart(self):
+        """The dangerous direction for a *scope*: a restart that widens one.
+
+        spreadsheet-automation is promoted on fourteen checks of fifteen. A
+        reload that read the version and assumed the capability's whole check
+        list would quietly make `number_format` sellable, and nothing about the
+        delivered file would look different.
+        """
+        permitted, why = self.restart().capability.may_authorize_delivery(
+            verifier_ref="solvent.sheetverify.run",
+            capability_version="spreadsheet-automation/1.0",
+            check="number_format")
+        self.assertFalse(permitted, "a restart widened a promoted scope")
+        self.assertIn("not certified to decide", why)
 
     def test_the_work_source_can_still_be_polled(self):
         """The defect this file exists to keep closed: the record survived and
@@ -546,9 +588,9 @@ class PromotingRequiresTheEvidenceToStillHold(unittest.TestCase):
         """Guards the test below."""
         code, out = run_cli("setup", "capability", "--db", self.db)
         self.assertEqual(code, 0, out)
-        proven = [c.version for c in Solvent(self.db).capability.capabilities()
-                  if c.proven]
-        self.assertEqual(proven, ["csv-cleanup/1.0"])
+        proven = sorted(c.version for c in
+                        Solvent(self.db).capability.capabilities() if c.proven)
+        self.assertEqual(proven, PROMOTED_VERSIONS)
 
     def test_it_refuses_and_registers_nothing_when_the_verifier_is_revoked(self):
         solvent = Solvent(self.db)
@@ -562,9 +604,50 @@ class PromotingRequiresTheEvidenceToStillHold(unittest.TestCase):
         solvent.store.close()
 
         code, out = run_cli("setup", "capability", "--db", self.db)
-        self.assertEqual(code, 1)
-        self.assertIn("refused", out)
-        self.assertIn("Nothing was registered", out)
+        self.assertEqual(code, 1, out)
+        self.assertIn("[REFUSED] csv-cleanup", out)
+        self.assertIn("The evidence does not support this scope", out)
+        self.assertIn("Nothing was recorded", out)
+
+        proven = {c.name for c in
+                  Solvent(self.db).capability.capabilities() if c.proven}
+        self.assertNotIn("csv-cleanup", proven,
+                         "a revoked verifier's capability was registered")
+
+        # The other four are promoted, which is the right answer rather than a
+        # leak: csv-cleanup's surprise battery failing says nothing about
+        # data-entry's evidence, and refusing those four would be coupling
+        # dressed up as caution. What would be wrong is a non-zero exit that
+        # left the owner thinking nothing happened, so the output has to name
+        # what *was* cleared as plainly as what was not.
+        self.assertEqual(proven,
+                         {v.split("/")[0] for v in PROMOTED_VERSIONS}
+                         - {"csv-cleanup"})
+        self.assertIn("ARE now cleared for client work", out)
+        self.assertIn("were not promoted: csv-cleanup", out)
+
+    def test_a_revoked_verifier_alone_clears_nothing(self):
+        """The negative control for the test above.
+
+        Were the refusal to stop the whole command, the assertion that four
+        others are promoted would be the thing that failed -- so this pins the
+        other direction: with *every* verifier revoked, nothing is cleared and
+        the summary says so rather than printing a count of zero as success.
+        """
+        solvent = Solvent(self.db)
+        from solvent.harness import CAPABILITIES, ensure_verifier_certified
+
+        for name, spec in CAPABILITIES.items():
+            record = ensure_verifier_certified(solvent, name)
+            solvent.capability.revoke_verifier(
+                verifier_ref=record["verifier_ref"],
+                capability_version=spec.version,
+                why="test: every surprise battery failed", decided_by=OWNER)
+        solvent.store.close()
+
+        code, out = run_cli("setup", "capability", "--db", self.db)
+        self.assertEqual(code, 1, out)
+        self.assertIn("Nothing was cleared for client work.", out)
         self.assertEqual(
             [c for c in Solvent(self.db).capability.capabilities() if c.proven],
             [])

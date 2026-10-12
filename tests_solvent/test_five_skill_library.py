@@ -401,7 +401,10 @@ class TheSkillsLabLifecycle(unittest.TestCase):
         # refuses to specify a skill nobody decided should exist, which is the
         # control rather than a step to route around: four separate questions
         # have to hold before a line is written, and this is the first.
-        provision_development_only(self.s, name, covers, owner_identity=OWNER)
+        provision_development_only(
+            self.s, name, covers, owner_identity=OWNER,
+            why="the owner's answer to 'may this be built and tested?', which "
+                "is a narrower question than 'may this be sold?'")
         claim = self.s.skillslab.record_claim(
             project_id=project_id,
             claim=f"the {name} verifier decides {len(covers)} named checks",
@@ -697,7 +700,9 @@ class TheControlCentreSaysWhereEachSkillStands(unittest.TestCase):
     """
 
     def setUp(self):
-        from solvent.harness import CSV_PROMOTION, provision_capability
+        """The owner's actual state: all five cleared for client work."""
+        from solvent.harness import (CSV_PROMOTION, promote_capability,
+                                     provision_capability)
 
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
@@ -707,9 +712,8 @@ class TheControlCentreSaysWhereEachSkillStands(unittest.TestCase):
                              record_decision=False)
         for name in ("report-builder", "spreadsheet-automation", "data-entry",
                      "document-processing"):
-            ensure_verifier_certified(s, name)
-            provision_development_only(s, name, certifiable_scope(name),
-                                       owner_identity=OWNER)
+            promote_capability(s, name, owner_identity=OWNER,
+                               why="TEST-ONLY: the owner's clearance")
         s.store.close()
 
     def library(self):
@@ -735,17 +739,34 @@ class TheControlCentreSaysWhereEachSkillStands(unittest.TestCase):
         self.assertEqual(row["checks_listed"] - row["checks_certified"], 1,
                          "the page must not round a shortfall away")
 
-    def test_certified_and_cleared_are_reported_separately(self):
+    def test_all_five_read_as_cleared_for_client_work(self):
         rows = self.library()
-        self.assertEqual(rows["csv-cleanup"]["stance"], "PROMOTED")
-        self.assertTrue(rows["csv-cleanup"]["deliverable"])
-        for name in ("report-builder", "spreadsheet-automation", "data-entry",
-                     "document-processing"):
+        for name in LIBRARY:
             with self.subTest(name=name):
-                self.assertEqual(rows[name]["stance"], "LIMITED")
-                self.assertFalse(rows[name]["deliverable"],
-                                 "certified is not cleared")
-                self.assertIn("not cleared", rows[name]["note"])
+                self.assertEqual(rows[name]["stance"], "PROMOTED")
+                self.assertTrue(rows[name]["deliverable"])
+
+    def test_the_page_can_still_say_limited(self):
+        """Promoted is not the only word it knows.
+
+        The two columns exist because certified and cleared are different
+        sentences, and a page that could only ever print one of them would
+        have lost the distinction the moment every capability was cleared.
+        """
+        from solvent.web.readmodel import ReadModel
+
+        held = pathlib.Path(self.dir.name) / "held.db"
+        s = Solvent(str(held))
+        ensure_verifier_certified(s, "data-entry")
+        provision_development_only(
+            s, "data-entry", certifiable_scope("data-entry"),
+            owner_identity=OWNER,
+            why="TEST-ONLY: certified and not cleared for client delivery")
+        s.store.close()
+        row = {r["name"]: r for r in ReadModel(str(held)).library()}["data-entry"]
+        self.assertEqual(row["stance"], "LIMITED")
+        self.assertFalse(row["deliverable"], "certified is not cleared")
+        self.assertIn("not cleared", row["note"])
 
     def test_a_capability_with_no_owner_answer_says_so(self):
         """Not "certified" standing in for "you may sell this"."""
@@ -783,8 +804,9 @@ class TheControlCentreSaysWhereEachSkillStands(unittest.TestCase):
         for name in LIBRARY:
             self.assertIn(name, body)
         self.assertIn("5 capability(ies) in this build", body)
-        self.assertIn("1 cleared for client work", body)
+        self.assertIn("5 cleared for client work", body)
         self.assertIn("different sentences", body)
+        self.assertIn("PROMOTED", body)
 
 
 class NoneOfThisIsPermissionToSell(unittest.TestCase):
@@ -811,49 +833,58 @@ class NoneOfThisIsPermissionToSell(unittest.TestCase):
                          "a certification registered a capability, which "
                          "would make the evidence its own permission")
 
-    def test_the_three_new_skills_are_not_owner_promoted_in_this_codebase(self):
-        """``_owner_promoted`` is where a deployment's promotions live."""
-        from solvent.harness import _owner_promoted
+    def test_a_promotion_record_exists_for_each_capability(self):
+        """``owner_promotions`` is where a deployment's promotions live.
 
-        for name in ("spreadsheet-automation", "data-entry",
-                     "document-processing", "report-builder"):
+        All five are cleared: csv-cleanup under OD-12 and OD-14, the other
+        four under OD-15. What this asserts is not the count but the property
+        that matters -- a promotion names a capability this build has, at the
+        version this build runs, and claims only checks the evidence reaches.
+        """
+        from solvent.harness import CAPABILITIES, owner_promotions
+
+        promotions = owner_promotions()
+        self.assertEqual(sorted(promotions), sorted(LIBRARY))
+        for name, capability in promotions.items():
             with self.subTest(name=name):
-                self.assertIsNone(_owner_promoted(name),
-                                  f"{name} is recorded as owner-promoted; "
-                                  "promotion is the owner's act, not a build's")
+                self.assertEqual(capability.version,
+                                 CAPABILITIES[name].version)
+                self.assertEqual(set(capability.covers),
+                                 set(certifiable_scope(name)))
+                self.assertEqual(capability.false_completions, 0)
+                self.assertGreaterEqual(capability.fixtures_total, 8)
 
-    def test_the_four_unpromoted_skills_are_recorded_as_development_only(self):
-        """Two different sentences, and the registry keeps them apart.
+    def test_nothing_is_recorded_as_development_only_any_more(self):
+        """Two different sentences, and the registry still keeps them apart.
 
         "The owner said build and test this" and "the owner said sell this"
-        are not the same decision. LIMITED is the first; nothing here is the
-        second.
+        are not the same decision, and four capabilities sat in the first
+        state until the owner said the second. The dictionary is empty now and
+        the mechanism is not: a sixth capability starts there.
         """
         from solvent.harness import _DEVELOPMENT_ONLY
 
-        self.assertEqual(
-            sorted(_DEVELOPMENT_ONLY),
-            ["data-entry", "document-processing", "report-builder",
-             "spreadsheet-automation"])
-        for name, why in _DEVELOPMENT_ONLY.items():
-            with self.subTest(name=name):
-                self.assertIn("not cleared", why)
+        self.assertEqual(_DEVELOPMENT_ONLY, {})
 
-    def test_a_development_decision_is_limited_and_not_approved(self):
+    def test_the_limited_path_still_refuses_deployment(self):
+        """Empty is not the same as gone. The state must still be reachable."""
         name = "spreadsheet-automation"
-        covers = certifiable_scope(name)
-        provision_development_only(self.s, name, covers, owner_identity=OWNER)
+        provision_development_only(
+            self.s, name, certifiable_scope(name), owner_identity=OWNER,
+            why="TEST-ONLY: a capability the owner has not cleared")
         decision, why = self.s.capability.development_decision(name)
         self.assertEqual(decision, self.s.capability.LIMITED, why)
         may_deploy, why = self.s.capability.may_deploy(name)
         self.assertFalse(may_deploy,
                          "a LIMITED decision authorised deployment")
+        self.assertIn("development and testing only", why)
 
-    def test_only_csv_cleanup_carries_an_owner_promotion(self):
-        from solvent.harness import _owner_promoted
-
-        promoted = [n for n in LIBRARY if _owner_promoted(n) is not None]
-        self.assertEqual(promoted, ["csv-cleanup"])
+    def test_a_limited_decision_needs_a_stated_reason(self):
+        with self.assertRaises(FailClosed) as caught:
+            provision_development_only(self.s, "data-entry",
+                                       certifiable_scope("data-entry"),
+                                       owner_identity=OWNER)
+        self.assertIn("needs a stated reason", str(caught.exception))
 
 
 if __name__ == "__main__":

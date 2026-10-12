@@ -465,13 +465,23 @@ class NothingPartialIsEverWritten(Base):
 class AdvisoryMeansAdvisory(unittest.TestCase):
     """Neither gate may override anything that decides whether work ships."""
 
-    def test_nothing_in_this_file_promotes_a_capability(self):
-        from solvent.harness import _owner_promoted
+    def test_nothing_in_this_file_registers_or_decides_anything(self):
+        """The gates read and report. They do not promote.
 
-        for name in ("spreadsheet-automation", "data-entry",
-                     "document-processing", "report-builder"):
-            with self.subTest(name=name):
-                self.assertIsNone(_owner_promoted(name))
+        The owner has since cleared all five capabilities for client work,
+        which is their decision and not these gates'. What has to stay true is
+        that running an advisory review changes no registration and records no
+        owner answer -- so a fresh database is still empty afterwards.
+        """
+        import pathlib as _p
+        import tempfile as _t
+
+        directory = _t.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        solvent = Solvent(str(_p.Path(directory.name) / "advisory.db"))
+        self.addCleanup(lambda: solvent.store.close())
+        self.assertEqual([c.name for c in solvent.capability.capabilities()], [])
+        self.assertEqual(solvent.capability.proposals(), [])
 
     def test_the_redaction_is_applied_at_the_write_not_at_the_read(self):
         """A secret that reached the table is already stored."""

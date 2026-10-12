@@ -1400,6 +1400,35 @@ _LIBRARY_MUTANTS: tuple[Mutant, ...] = (
            "tests_solvent.test_five_skill_library.WhatEvidenceCannotCover"
            ".test_the_certifiable_scope_is_narrower_than_the_check_list",
            "a promotion may not claim what no evidence covers"),
+    Mutant("promotion-skips-the-evidence-floor", "solvent/harness.py",
+           "    verdict, reason = promotion_verdict(capability)\n    if not verdict:",
+           "    verdict, reason = promotion_verdict(capability)\n    if False:",
+           "tests_solvent.test_commercial_promotion"
+           ".TheEvidenceIsCheckedBeforeAnythingIsRecorded"
+           ".test_a_capability_with_a_false_completion_is_refused",
+           "one shipped-wrong-while-reporting-success blocks a promotion"),
+    Mutant("promotion-claims-checks-it-is-not-certified-for",
+           "solvent/harness.py",
+           '    if record["state"] != "CERTIFIED" or missing:\n        raise FailClosed(\n            f"the verifier for {name} is {record[\'state\']} and certified for "',
+           '    if record["state"] != "CERTIFIED":\n        raise FailClosed(\n            f"the verifier for {name} is {record[\'state\']} and certified for "',
+           "tests_solvent.test_commercial_promotion"
+           ".TheEvidenceIsCheckedBeforeAnythingIsRecorded"
+           ".test_a_promotion_claiming_more_than_the_evidence_is_refused",
+           "number_format cannot be sold as certified"),
+    Mutant("promotion-asks-nobody-who-is-asking", "solvent/harness.py",
+           "    if not s.policy.is_owner(owner_identity):\n        # Asked here as well as inside `decide`",
+           "    if False:\n        # Asked here as well as inside `decide`",
+           "tests_solvent.test_commercial_promotion.OnlyTheOwnerDecides"
+           ".test_a_component_asking_about_an_undecided_capability_writes_nothing",
+           "an unauthorised attempt leaves no row behind"),
+    Mutant("promotion-appends-a-second-approval-each-run",
+           "solvent/harness.py",
+           "    if previous != s.capability.APPROVED:",
+           "    if True:",
+           "tests_solvent.test_commercial_promotion"
+           ".LimitedBecomesApprovedWithoutLosingTheRecord"
+           ".test_promoting_twice_changes_nothing",
+           "re-running the owner's command is not a second decision"),
 )
 
 MUTANTS = MUTANTS + _LIBRARY_MUTANTS
