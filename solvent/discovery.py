@@ -692,6 +692,14 @@ class Discovery:
             return True, ""
         if permission not in sourcecatalog.GOVERNED_BY_TERMS:
             return True, ""
+        # An in-process fixture named after a real marketplace is not that
+        # marketplace, and holding it to Freelancer.com's terms of service
+        # would be a category error. Not a loophole: a fixture can never be
+        # an active source (`source_suitability` returns FIXTURE first), so
+        # nothing registered this way is a live route to anything.
+        state = self.source_state(name)
+        if state is not None and int(state.get("is_fixture", 0)):
+            return True, ""
 
         finding = entry.terms_for(permission)
         if finding.allows:

@@ -12,7 +12,9 @@ says so instead of estimating.
 | `4b56629` | the inbound storefront, feeding the existing pipeline |
 | `925a6e2` | the skipped tests investigated — and the bug one was hiding |
 | `74bcd44` | the ninety-scenario business matrix across both channels |
-| `(this)` | source resilience, one shared instruction detector, the report |
+| `2d2b62d` | source resilience, one shared instruction detector |
+| `dfd4c5a` | the unseen exam's finding: risk before price |
+| `(this)` | the regression it broke, repaired; the report |
 
 ---
 
@@ -319,16 +321,139 @@ would make it one somebody rephrases past.
 
 ## J. Mutation testing
 
-*(filled from the final run)*
+Run with the repaired harness, which purges bytecode before every run --
+CPython validates a `.pyc` by source mtime at one-second granularity, and a
+mutation harness rewrites files faster than that.
+
+| | |
+|---|---|
+| **Generated** | 41 |
+| **Applied** | 41 |
+| **Killed** | 41 |
+| **Survived** | 0 |
+| **Invalid / not applied** | 0 |
+
+Nine are new in this sweep: the terms check, the robots check, two
+storefront controls, three prospector controls, the posting-instruction
+detector, and the heartbeat read.
+
+**One survived on its first run, and the control was fine.**
+`robots-disallow-ignored` was pointed at the grants-feed test, which
+excludes that source by *work type* — so removing the robots check changed
+nothing there and the mutant proved nothing about the control it was named
+for. Re-pointed at a marketplace excluded by robots and nothing else:
+permitted, enabled, healthy, carrying exactly the right work, and still
+refused because the platform said no. A mutant whose test does not depend
+on the control is noise, and reporting it as a survivor would be as
+misleading as counting it as a kill.
+
+`NOT_APPLIED` is a distinct outcome and is never counted as a kill.
+
+---
+
+## Full regression
+
+```
+Ran 3754 tests in 356.713s
+OK (skipped=1)
+```
+
+| | before this sweep | now |
+|---|---|---|
+| total | 3,649 | **3,754** |
+| passed | 3,647 | **3,753** |
+| failed | 0 | **0** |
+| skipped | 2 | **1** |
+
+**A regression I caused, found and fixed.** An intermediate run showed 37
+failures and 16 errors, all in the submission suites. My first instinct was
+that the run had been contaminated by editing source while it ran — it had
+not. They were real.
+
+The cause: the submission fixtures register an in-process `FixtureSource`
+under the name `"freelancer"`, which collides with the real catalogue entry
+for Freelancer.com whose terms this sweep had just recorded. The new terms
+check correctly refused `SUBMIT_BID` on a source called "freelancer".
+
+A fixture named after a marketplace is not that marketplace, so the
+exemption turns on *being a fixture*, not on the name — and it is not a
+loophole, because a fixture can never be an active source at all.
+Suitability returns FIXTURE before any of this is reached. Three tests pin
+that: the fixture is exempt, a real source with the same name is not, and a
+fixture is never active.
 
 ---
 
 ## K. Remaining blockers
 
-*(filled below)*
+| # | blocker | owner | exact next action |
+|---|---|---|---|
+| 1 | Contracting identity | **owner** | `solvent setup identity` with legal name, address, email. Until then no invoice is valid. |
+| 2 | Operating-cost rates | **owner** | Record compute, platform and payment rates under `commercial` in policy. At zero, every margin shown is better than the real one. |
+| 3 | Minimum margin | **owner** | Unset: a job clearing cost by one cent reads as profitable. |
+| 4 | Cited market rates / work standards | **owner** | Until recorded, a fixed price can be accepted from a client but never proposed from evidence. |
+| 5 | Upwork API terms | **owner** | Read the developer terms in a browser — the docs return HTTP 403 to automated fetch — and record a finding. Then apply for a key. |
+| 6 | PeoplePerHour / Guru / Contra terms | **owner** | robots.txt came back empty, 403, and unread respectively. Read each in a browser and record findings. |
+| 7 | `SAM_GOV_API_KEY` | **external** | Free key from a SAM.gov account; separately establish bid eligibility. |
+| 8 | Payment rail verification signal | **external** | Choosing Stripe does not create a webhook secret. Without the signal, PAID is unreachable from a real payment. |
+| 9 | Storefront publication | **owner + platform** | An account somewhere, and the decision to advertise. Offers are drafts; nothing can publish them from here. |
+| 10 | Windows verification | **hardware** | Nothing in this sweep ran on Windows. The T2 packaging fix is specifically a Windows behaviour change and has not been observed there. |
+| 11 | Real-world pilot evidence | **a customer** | Simulation enabled throughout. No client, no payment, no marketplace interaction. |
+
+Of the eleven, six are the owner's to enter or read, two external, one
+needs a platform account, one a Windows host, one a customer. **None is
+waiting on more code in this repository.**
 
 ---
 
 ## L. Final classification
 
-*(stated with the evidence below)*
+### READY WITH RESTRICTIONS
+
+For a supervised first job arriving through one of the two working
+channels: owner-entered work, or an inbound storefront order the owner
+handles privately. Not for unattended operation, not on a public
+marketplace, and not yet on Windows.
+
+**Evidence for "ready".** Both channels run end to end and were executed,
+not inspected. An inbound order completes all fourteen stages of the same
+pipeline a discovered job uses, and a test compares the two stage lists.
+3,754 tests pass, 41 of 41 mutants die, the ninety-scenario matrix is clean
+across both channels, and two unseen exams drawn after the freeze scored
+45/45 and 60/60-after-repair.
+
+**Evidence for "with restrictions".** Eleven blockers are open and four of
+them mean the system cannot presently issue a valid invoice or state a true
+margin. More pointedly: **of the six freelance marketplaces in the original
+list, none is an automated route, and three forbid it in their own terms.**
+That is not a gap to close with code. It is what the platforms say.
+
+### What actually changed about finding customers
+
+Before this sweep the interface listed websites. It now lists **two active
+sources**: owner-entered work and the new storefront. The other eleven
+entries are still recorded, with the reason each is not a route — forbidden
+by robots.txt, missing a credential, carrying grant funding rather than
+client work, or a fixture.
+
+That is a smaller number and a more useful one. The goal was never to
+display the most websites.
+
+### On the open-internet prototype
+
+It works, it filters well, and it is not promoted. Six of eight URLs were
+correctly rejected, including one offering "great exposure" instead of
+money and one attempting prompt injection.
+
+But the comparison it was built for cannot yet be made honestly. Two
+actionable candidates against one active curated source is not evidence
+that broad discovery beats curation — the curated side is small because its
+sources are *forbidden or uncredentialed*, not because curation is weak.
+The comparison worth running is against a working marketplace integration,
+and there is not one to run it against.
+
+**Recommendation: the fastest route to a first paid job is not a
+marketplace integration.** It is the owner entering work they found
+themselves, or a storefront order, through a pipeline that already works —
+after the four configuration blockers are cleared so the invoice is valid
+and the margin is true.

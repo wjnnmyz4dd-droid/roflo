@@ -226,3 +226,54 @@ class AFindingNeedsEvidence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AFixtureIsNotTheMarketplaceItIsNamedAfter(unittest.TestCase):
+    """The exemption, and the reason it is not a loophole.
+
+    A `FixtureSource` called "freelancer" is an in-process test double, not
+    Freelancer.com, and holding it to that platform's terms of service is a
+    category error. It is safe to exempt because a fixture can never be an
+    active source at all -- suitability returns FIXTURE before any of this
+    is reached -- so nothing registered that way is a route to anywhere.
+    """
+
+    def setUp(self):
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.s = Solvent(f"{self.box.name}/fx.db")
+        self.addCleanup(self.close)
+
+    def close(self):
+        try:
+            self.s.store.close()
+        except Exception:
+            pass
+
+    def register(self, source):
+        self.s.discovery.register_source(
+            source, owner_identity=OWNER,
+            readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED, determination="test")
+
+    def test_a_fixture_named_after_a_marketplace_is_not_held_to_its_terms(self):
+        self.register(FixtureSource("freelancer", []))
+        self.s.discovery.grant("freelancer", access.SUBMIT_BID,
+                               owner_identity=OWNER, why="test")
+        allowed, why = self.s.discovery.may("freelancer", access.SUBMIT_BID)
+        self.assertTrue(allowed, why)
+
+    def test_but_a_real_source_with_that_name_still_is(self):
+        """The exemption turns on being a fixture, not on the name."""
+        self.register(Board("freelancer", []))
+        self.s.discovery.grant("freelancer", access.SUBMIT_BID,
+                               owner_identity=OWNER, why="test")
+        allowed, why = self.s.discovery.may("freelancer", access.SUBMIT_BID)
+        self.assertFalse(allowed)
+        self.assertIn("nobody has read", why)
+
+    def test_a_fixture_can_never_be_an_active_source_anyway(self):
+        self.register(FixtureSource("freelancer", []))
+        verdict, _ = self.s.discovery.source_suitability("freelancer")
+        self.assertEqual(verdict, "FIXTURE")
+        self.assertEqual(self.s.discovery.active_sources(), [])
