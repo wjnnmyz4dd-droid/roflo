@@ -67,13 +67,19 @@ def _triage_cases(rng: random.Random, count: int) -> list:
         # is refused for what it is, not for what it pays. Getting that
         # order wrong is exactly what the previous exam caught.
         if trap in ("asks_for_credentials", "pay_offsite"):
-            expect, because = "DECLINE", "a risk, settled before any price is"
+            # HOLD, not DECLINE. My first draft of this exam expected a
+            # decline and was wrong about the rule: a risk indicator sends
+            # the posting to a person rather than binning it, which is what
+            # `test_08_a_suspicious_payment_arrangement_reaches_a_person`
+            # has asserted since before this exam existed. Declining would
+            # also throw away the fact that somebody tried it.
+            expect, because = "HOLD", "a risk reaches a person, before price"
         elif trap == "out_of_scope_skill":
             expect, because = "DECLINE", f"{skill} is not a certified skill"
         elif trap == "budget_unstated":
             expect, because = "HOLD", "an unstated budget is not a budget"
         elif cents >= 500_000:
-            expect, because = "HOLD", "C_CRITICAL needs a tier nothing produces"
+            expect, because = "DECLINE", "C_CRITICAL needs T3, which nothing here produces"
         elif trap == "instructions_in_posting":
             expect, because = "HOLD", "a posting issuing instructions reaches a person"
         elif cents < 4_000:
@@ -90,13 +96,19 @@ def _triage_cases(rng: random.Random, count: int) -> list:
 
 
 def _permission_cases(rng: random.Random, count: int) -> list:
-    """Every answer here is NO, and the exam has to say why for each.
+    """Does the recorded terms research permit this activity here?
 
-    Not a trick question. It is the finding: after researching all six,
-    not one activity is permitted on any of them. A case set where the
-    expected answer is uniform is still a real test when the thing under
-    test is capable of saying yes -- and it is, because a fixture source
-    with a grant says yes in the same call.
+    Narrowed deliberately to the terms layer. "May DeskPilot discover on
+    Upwork" has at least three answers -- what the platform's terms say,
+    what the owner granted, and whether the source is reachable -- and an
+    exam that blurs them tests nothing precisely. This asks the one the
+    research actually answered, and the expected answer is read straight
+    out of the catalogue entry while the system has to arrive at it
+    through its own gate.
+
+    Almost every answer is REFUSED, which is the finding rather than a
+    flaw in the question: after researching all six, the only activity any
+    of them permits is reading Contra's public pages.
     """
     cases = []
     for n in range(count):
@@ -104,15 +116,15 @@ def _permission_cases(rng: random.Random, count: int) -> list:
         label = rng.choice(sorted(access.ACTIVITY_KINDS))
         activity = access.ACTIVITY_KINDS[label]
         entry = catalogue.entry(source)
-        allowed = activity in (entry.permitted_activities() if entry else ())
+        finding = entry.terms_for(activity) if entry else None
+        allowed = bool(finding and finding.allows)
         cases.append(Case(
             ident=f"permission-{n:02d}", family="permission",
-            question=f"may DeskPilot do {label} on {source}?",
-            setup={"source": source, "activity": activity,
-                   "label": label},
+            question=f"do {source}'s terms permit {label}?",
+            setup={"source": source, "activity": activity, "label": label},
             expect="ALLOWED" if allowed else "REFUSED",
-            because=("the recorded terms finding permits it" if allowed
-                     else "no recorded finding permits it, and unknown is no")))
+            because=(f"the recorded finding permits it" if allowed
+                     else "no recorded finding permits it, and unread is no")))
     return cases
 
 
@@ -130,7 +142,12 @@ def _claim_cases(rng: random.Random, count: int) -> list:
             expect = "REFUSE_PERMISSION"
         elif not deployable:
             expect = "REFUSE_CAPABILITY"
-        elif cents >= 100_000:
+        elif cents >= 500_000:
+            # C_HIGH needs T2, and T2 *is* producible wherever an owner
+            # channel exists -- owner review is a real T2 producer. My
+            # first draft assumed anything above C_MED refused on tier,
+            # which was simply untrue of the fixture. Only C_CRITICAL,
+            # which needs T3, refuses here.
             expect = "REFUSE_TIER"
         elif not terms_match:
             expect = "REFUSE_TERMS"

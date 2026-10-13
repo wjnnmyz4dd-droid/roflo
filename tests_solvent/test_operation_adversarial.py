@@ -59,9 +59,13 @@ class Attack(unittest.TestCase):
 class RunningLongerThanAllowed(Attack):
 
     def test_a_caller_cannot_widen_the_job_limit(self):
+        """The job limit must be the binding one, so the caller names a
+        spend ceiling too. Without one the run stops on *that* instead,
+        and the test would pass while proving something else."""
         self.enable(max_jobs_per_run=2)
         report = Operator(self.s).run(self.counting(),
                                       bounds=Bounds(max_jobs=1_000,
+                                                    max_committed_cents=90_000,
                                                     max_seconds=9_999))
         self.assertEqual(self.calls, 2)
         self.assertIs(report.stopped, StopReason.JOB_LIMIT)
@@ -305,3 +309,184 @@ class SubmittingUnderAttack(SubmissionBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ZerosTheOwnerActuallyMeant(Attack):
+    """Found by the sealed exam: two zeros that were being read as
+    something other than zero."""
+
+    def test_zero_jobs_per_run_does_no_jobs(self):
+        self.enable(max_jobs_per_run=0)
+        report = Operator(self.s).run(self.counting())
+        self.assertEqual(self.calls, 0,
+                         "the owner's zero was rounded up to one")
+        self.assertIs(report.stopped, StopReason.JOB_LIMIT)
+
+    def test_zero_jobs_is_not_widened_by_a_caller_either(self):
+        self.enable(max_jobs_per_run=0)
+        report = Operator(self.s).run(
+            self.counting(), bounds=Bounds(max_jobs=100, max_seconds=60))
+        self.assertEqual(self.calls, 0)
+
+    def test_a_negative_job_limit_is_treated_the_same(self):
+        self.enable(max_jobs_per_run=-5)
+        Operator(self.s).run(self.counting())
+        self.assertEqual(self.calls, 0)
+
+    def test_a_ceiling_of_zero_permits_no_commitment(self):
+        """Bounds() documents "no spending" as its default. Read as a
+        sentinel for "unlimited" it meant the opposite."""
+        self.enable(max_jobs_per_run=10, max_committed_cents=0)
+        report = Operator(self.s).run(self.counting(invoiced_cents=1))
+        self.assertEqual(self.calls, 1)
+        self.assertIs(report.stopped, StopReason.SPEND_LIMIT)
+        self.assertIn("ceiling of nothing", report.why)
+
+    def test_a_ceiling_of_zero_still_allows_work_that_commits_nothing(self):
+        """A job that commits no money is not spending, so the zero
+        ceiling has nothing to say about it."""
+        self.enable(max_jobs_per_run=3, max_committed_cents=0)
+        report = Operator(self.s).run(self.counting(invoiced_cents=0))
+        self.assertEqual(self.calls, 3)
+        self.assertIs(report.stopped, StopReason.JOB_LIMIT)
+
+    def test_an_owner_who_set_no_ceiling_does_not_erase_the_callers(self):
+        """effective_bounds takes the minimum, so a zero meaning
+        "unlimited" on either side used to win over a real number."""
+        self.enable(max_jobs_per_run=10, max_committed_cents=0)
+        report = Operator(self.s).run(
+            self.counting(invoiced_cents=5_000),
+            bounds=Bounds(max_jobs=10, max_committed_cents=1_000_000,
+                          max_seconds=60))
+        self.assertIs(report.stopped, StopReason.SPEND_LIMIT)
+        self.assertEqual(self.calls, 1)
+
+
+class APostingThatNamesNoPrice(unittest.TestCase):
+    """Also from the sealed exam. A listing with no budget was being
+    declined as though it had offered zero dollars."""
+
+    def setUp(self):
+        from solvent.harness import owner_promotions, promote_capability
+        from solvent.discovery import Compliance, FixtureSource, Readiness
+        from solvent.finder import Finder
+
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.s = Solvent(f"{self.box.name}/price.db")
+        self.addCleanup(self.close)
+        for name in owner_promotions():
+            promote_capability(self.s, name, owner_identity=OWNER, why="test")
+        self.s.discovery.register_source(
+            FixtureSource("board", []), owner_identity=OWNER,
+            readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED, determination="test")
+        self.s.policy.amend(
+            {"commercial": {"minimum_project_fee_cents": 4_000}},
+            OWNER, "test: the owner's floor")
+        self.finder = Finder(self.s.discovery, self.s.policy,
+                             self.s.capability, self.s.orchestrator,
+                             self.s.store)
+
+    def close(self):
+        try:
+            self.s.store.close()
+        except Exception:
+            pass
+
+    def listing(self, **over):
+        from solvent.content import quarantine
+        from solvent.discovery import Opportunity
+        from solvent.types import PrivacyClass
+
+        fields = {"id": "o1", "source": "board", "external_ref": "r1",
+                  "title": "Tidy a spreadsheet", "quoted_cents": 0,
+                  "needs": ("csv-cleanup",), "payment_structure": "FIXED",
+                  "posting": quarantine("Budget to be discussed.",
+                                        source="board",
+                                        privacy=PrivacyClass.PUBLIC)}
+        fields.update(over)
+        return Opportunity(**fields)
+
+    def test_no_stated_price_is_unknown_not_zero(self):
+        from solvent.finder import Verdict
+
+        assessment = self.finder.assess(self.listing(), extension="xlsx")
+        self.assertIs(assessment.verdict, Verdict.HOLD)
+        self.assertIsNone(assessment.economics.revenue_cents)
+        self.assertNotIn("below the", assessment.why,
+                         "a posting naming no figure was called too cheap")
+
+    def test_a_price_eaten_by_fees_is_still_a_decline(self):
+        """The distinction the fix turns on: a stated price that nets to
+        nothing really does earn nothing."""
+        from solvent.finder import Verdict
+
+        assessment = self.finder.assess(
+            self.listing(quoted_cents=10_000, platform_fee_cents=10_000),
+            extension="xlsx")
+        self.assertIs(assessment.verdict, Verdict.DECLINE)
+
+    def test_a_stated_price_above_the_floor_still_pursues(self):
+        from solvent.finder import Verdict
+
+        assessment = self.finder.assess(
+            self.listing(quoted_cents=60_000), extension="xlsx")
+        self.assertIs(assessment.verdict, Verdict.PURSUE)
+
+
+class PollingObeysThePlatformsOwnAnswer(unittest.TestCase):
+    """The robots finding gated what the interface showed, not what the
+    code did. An owner marking a source PERMITTED could still have it
+    crawled against its own stated terms."""
+
+    def setUp(self):
+        from solvent.discovery import Compliance, Readiness, WorkSource
+
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.s = Solvent(f"{self.box.name}/poll.db")
+        self.addCleanup(self.close)
+
+        class Catalogued(WorkSource):
+            """Registered under a real catalogue id, and not a fixture."""
+
+            def __init__(self, name):
+                self.name = name
+                self.host = "www.upwork.com"
+
+            def request(self):
+                return {"url": f"https://{self.host}/jobs"}
+
+            def parse(self, payload):
+                return []
+
+        self.source = Catalogued("upwork")
+        self.s.discovery.register_source(
+            self.source, owner_identity=OWNER,
+            readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED,
+            determination="test: the owner believes this is permitted")
+        self.s.policy.amend({"discovery": {"approved_sources": ["upwork"]}},
+                            OWNER, "test: approved")
+
+    def close(self):
+        try:
+            self.s.store.close()
+        except Exception:
+            pass
+
+    def test_a_source_whose_robots_forbids_reading_is_not_polled(self):
+        found = self.s.discovery.poll("upwork")
+        self.assertEqual(found, [])
+        refusals = [r for r in self.s.audit.events()
+                    if r["event"] == "discovery.poll_refused"]
+        self.assertTrue(refusals, "the refusal was not recorded")
+        self.assertIn("disallows automated reading", refusals[-1]["why"])
+
+    def test_the_owners_determination_does_not_override_the_platform(self):
+        """Compliance is a human judgement about a platform. It is not the
+        platform's own statement, and it cannot stand in for one."""
+        self.s.discovery.grant("upwork", "DISCOVER", owner_identity=OWNER,
+                               why="test: the owner grants discovery")
+        self.assertEqual(self.s.discovery.poll("upwork"), [])

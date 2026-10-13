@@ -19,18 +19,60 @@ import tempfile
 import unittest
 
 from solvent import sourceaccess as access
-from solvent.discovery import Compliance, FixtureSource, Opportunity, Readiness
+from solvent.discovery import (
+    Compliance, FixtureSource, Opportunity, Readiness, WorkSource,
+)
 from solvent.finder import Finder, Verdict
 from solvent.harness import OWNER, Solvent, owner_promotions, promote_capability
 from solvent.ledger import SIMULATED_PREFIX
 from solvent.operation import Bounds, Operator
 from tests_solvent.lifecycleexam import exam
+from tests_solvent.test_claiming import Claiming as _ClaimingFixture
 
-#: Drawn after the freeze. Recorded here so the exam is reproducible and
-#: so anyone can see it was not chosen to flatter the result.
-SEED = int(os.environ.get("SOLVENT_EXAM_SEED", "0"))
+#: The commit the implementation was frozen at before the exam was drawn.
+FROZEN_AT = "0609ff983695525dc9aa38aa6b9316be7725fcf9"
+
+#: Derived from that hash rather than picked: ``int(FROZEN_AT[:8], 16)``.
+#: A seed chosen by hand after seeing the code is a seed that can be
+#: chosen again if the first one scores badly. This one is fixed by a
+#: commit that existed before any case was drawn, and anyone can
+#: recompute it. Committed rather than passed in, so the exam runs in
+#: every regression instead of only when somebody remembers an
+#: environment variable -- the first full run after this was written
+#: failed for exactly that reason.
+SEED = int(os.environ.get("SOLVENT_EXAM_SEED") or int(FROZEN_AT[:8], 16))
 
 BOARD = "exam-board"
+
+
+class _Catalogued(WorkSource):
+    """A source registered under a real catalogue id, and not a fixture.
+
+    Not a FixtureSource on purpose: fixtures are exempt from the real
+    platform's terms, which is correct and would make this question
+    answer itself.
+    """
+
+    kind = "api"
+    is_fixture = False
+    work_type = access.CLIENT_SERVICES
+
+    def __init__(self, name):
+        self.name = name
+        self.host = f"www.{name}.com"
+
+    def request(self):
+        return {"url": f"https://{self.host}/jobs"}
+
+    def parse(self, payload):
+        return []
+
+
+class _ClaimProbe(_ClaimingFixture):
+    """The claiming fixture, instantiable. It has no test of its own."""
+
+    def runs_nothing(self):
+        raise AssertionError("this exists only so the fixture can be built")
 
 
 class Exam(unittest.TestCase):
@@ -50,6 +92,7 @@ class Exam(unittest.TestCase):
         self.s.policy.amend(
             {"commercial": {"minimum_project_fee_cents": 4_000}},
             OWNER, "exam: the owner's floor")
+        self._registered = set()
         self.finder = Finder(self.s.discovery, self.s.policy,
                              self.s.capability, self.s.orchestrator,
                              self.s.store)
@@ -113,20 +156,36 @@ class Exam(unittest.TestCase):
     # -------------------------------------------------------- permission
 
     def answer_permission(self, case):
+        """Through the gate the system really uses, on a source that is
+        not a fixture -- a fixture named after a marketplace is exempt
+        from that marketplace's terms, and rightly so, but it would make
+        this question answer itself."""
         setup = case.setup
-        self.s.discovery.register_source(
-            FixtureSource(setup["source"], []), owner_identity=OWNER,
-            readiness=Readiness.MANUAL_ONLY, compliance=Compliance.UNKNOWN,
-            determination="exam: registered, nothing granted")
-        allowed, _ = self.s.discovery.may(setup["source"], setup["activity"])
+        name = setup["source"]
+        if name not in self._registered:
+            self.s.discovery.register_source(
+                _Catalogued(name), owner_identity=OWNER,
+                readiness=Readiness.RESEARCHED,
+                compliance=Compliance.UNDETERMINED,
+                determination="exam: registered so its terms can be asked")
+            self._registered.add(name)
+        if setup["activity"] == access.DISCOVER:
+            allowed, _ = self.s.discovery._public_discovery_allowed(name)
+        else:
+            allowed, _ = self.s.discovery._terms_allow(name,
+                                                       setup["activity"])
         return "ALLOWED" if allowed else "REFUSED"
 
     # ------------------------------------------------------------- claim
 
     def answer_claim(self, case):
-        from tests_solvent.test_claiming import Claiming
+        """Borrows the claiming fixture rather than rebuilding it.
 
-        probe = Claiming("test_with_the_permission_it_gets_past_that_gate")
+        A second hand-built claiming fixture in the exam would be a second
+        thing that could be wrong, and it would be wrong in a way that
+        flattered whichever version I wrote last.
+        """
+        probe = _ClaimProbe("runs_nothing")
         probe.setUp()
         try:
             setup = case.setup
@@ -176,18 +235,32 @@ class Exam(unittest.TestCase):
         """
         from solvent.types import PaymentState
 
+        # A fresh installation per case. The first run of this exam shared
+        # one ledger across all twelve revenue cases, so each answer was
+        # the running total of every case before it -- eight failures that
+        # said nothing about the ledger and everything about the harness.
+        box = tempfile.TemporaryDirectory()
+        self.addCleanup(box.cleanup)
+        solvent = Solvent(f"{box.name}/{case.ident}.db")
+        self.addCleanup(lambda: self._quietly_close(solvent))
+
         for n, row in enumerate(case.setup["rows"]):
-            payment = self.s.ledger.open_payment(
+            payment = solvent.ledger.open_payment(
                 job_id=f"job_{case.ident}_{n}", amount_cents=row["cents"],
                 rail="exam")
             if not row["collected"]:
                 continue
             method = (f"{SIMULATED_PREFIX}fixture" if row["simulated"]
                       else "bank_statement_2026_10")
-            self.s.ledger.set_payment_state(
+            solvent.ledger.set_payment_state(
                 payment, PaymentState.PAID, collected_cents=row["cents"],
                 verification_method=method)
-        return str(self.s.ledger.real_revenue_cents())
+        return str(solvent.ledger.real_revenue_cents())
+
+    @staticmethod
+    def _quietly_close(solvent):
+        with contextlib.suppress(Exception):
+            solvent.store.close()
 
     # ------------------------------------------------------------ bounds
 
@@ -219,7 +292,11 @@ class Exam(unittest.TestCase):
     # -------------------------------------------------------------- run
 
     def test_the_sealed_exam(self):
-        self.assertTrue(SEED, "the exam seed must be supplied, not defaulted")
+        if not os.environ.get("SOLVENT_EXAM_SEED"):
+            self.assertEqual(
+                SEED, int(FROZEN_AT[:8], 16),
+                "the committed seed must be the one the frozen commit "
+                "derives, or the exam is no longer the sealed one")
         answer = {"triage": self.answer_triage,
                   "permission": self.answer_permission,
                   "claim": self.answer_claim,

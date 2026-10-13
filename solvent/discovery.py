@@ -548,6 +548,14 @@ class Discovery:
             # The owner reading a page and typing what they found involves
             # no automated access and so no robots directive.
             return True, ""
+        state = self.source_state(name)
+        if state is not None and int(state.get("is_fixture", 0)):
+            # Same reasoning as `_terms_allow`: an in-process fixture named
+            # after a real marketplace is not that marketplace. Needed here
+            # too now that `_may_poll` asks this question, which it did not
+            # when only `source_suitability` did -- and that returns FIXTURE
+            # before ever reaching this.
+            return True, ""
 
         finding = entry.terms_for(access.DISCOVER)
         if finding.allows:
@@ -851,6 +859,17 @@ class Discovery:
         permitted, why = self.may(source.name, access.DISCOVER)
         if not permitted:
             return False, why
+        # The platform's own machine-readable answer, which is a different
+        # fact from the owner's compliance determination and from the
+        # DISCOVER grant. Checked here as well as in `source_suitability`
+        # because that one governs what the interface *shows*: without this
+        # line a catalogued source whose robots.txt disallows automated
+        # reading could still be polled, as long as somebody had marked it
+        # PERMITTED. Public discovery is not in GOVERNED_BY_TERMS, so
+        # `may` does not cover it. Found by the sealed exam.
+        readable, readable_why = self._public_discovery_allowed(source.name)
+        if not readable:
+            return False, readable_why
         rested, rest_why = self._rate_limit_respected(source, state)
         if not rested:
             return False, rest_why

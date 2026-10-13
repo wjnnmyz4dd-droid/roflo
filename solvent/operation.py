@@ -113,14 +113,30 @@ class Operator:
         return bool(self._s.policy.get("operations", "halted", default=False))
 
     def owner_bounds(self) -> Bounds:
-        """The owner's own ceiling, from policy."""
+        """The owner's own ceiling, from policy.
+
+        ``max_jobs_per_run`` of zero is not read here. ``Bounds`` refuses to
+        exist with no jobs, so this used to coerce a zero up to one -- which
+        meant an owner who wrote 0 got one job per run and was never told.
+        Widening an owner's own limit is the one thing this class exists to
+        prevent, so the zero is handled in ``run``, which can stop instead
+        of rounding. Found by the sealed exam.
+        """
         get = lambda k, d: self._s.policy.get("operations", k, default=d)  # noqa: E731
         return Bounds(
-            max_jobs=max(1, int(get("max_jobs_per_run", 1) or 1)),
+            max_jobs=max(1, self._configured_jobs()),
             max_committed_cents=int(get("max_committed_cents", 0) or 0),
             max_seconds=float(get("max_run_seconds", 300) or 300),
             max_consecutive_failures=max(
                 1, int(get("max_consecutive_failures", 1) or 1)))
+
+    def _configured_jobs(self) -> int:
+        """What the owner actually wrote, zero included."""
+        value = self._s.policy.get("operations", "max_jobs_per_run", default=1)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 1
 
     def effective_bounds(self, asked: Bounds | None = None) -> Bounds:
         """The stricter of what the caller asked for and what the owner set.
@@ -162,6 +178,12 @@ class Operator:
             report.stopped, report.why = StopReason.NOT_PERMITTED, why
             return report
 
+        if self._configured_jobs() < 1:
+            report.stopped = StopReason.JOB_LIMIT
+            report.why = ("the owner set max_jobs_per_run below one, so this "
+                          "run may do no jobs")
+            return report
+
         limits = self.effective_bounds(bounds)
         consecutive = 0
 
@@ -196,10 +218,21 @@ class Operator:
                 # known once the job ran -- but the *next* iteration is
                 # refused if this pushed it over.
                 report.committed_cents += invoiced
-                if (limits.max_committed_cents
+                # A ceiling of zero means nothing may be committed, not "no
+                # ceiling". Read as a sentinel it did the opposite of what
+                # ``Bounds`` documents -- the default says "no spending" and
+                # imposed no limit at all -- and because ``effective_bounds``
+                # takes the *minimum*, an owner who had set no ceiling erased
+                # the caller's. The left-hand test is what keeps a run that
+                # commits nothing from stopping against a zero ceiling.
+                if (report.committed_cents > 0
                         and report.committed_cents >= limits.max_committed_cents):
                     report.stopped = StopReason.SPEND_LIMIT
                     report.why = (
+                        f"committed {report.committed_cents / 100:,.2f} "
+                        "against a ceiling of nothing; this run was not "
+                        "permitted to commit anything"
+                        if not limits.max_committed_cents else
                         f"committed {report.committed_cents / 100:,.2f}, "
                         f"reaching the "
                         f"{limits.max_committed_cents / 100:,.2f} ceiling")

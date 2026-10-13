@@ -340,6 +340,20 @@ class Finder:
         worked_hours = (seconds / 3600.0) if seconds is not None else None
 
         if contract is ContractType.FIXED_PRICE:
+            if opportunity.quoted_cents <= 0:
+                # No stated price is not a price of zero. Treating it as
+                # zero declined the posting as "$0.00 is below the $40.00
+                # minimum", which is a false statement about a posting that
+                # named no figure -- and on a real board a large share of
+                # listings name none. Unknown revenue is a HOLD: a person
+                # asks what the budget is. Deliberately keyed on the quoted
+                # figure, not the net: a stated price eaten by platform fees
+                # really does earn nothing, and that is a decline.
+                return Economics(
+                    contract, None, None, None, None, Confidence.UNKNOWN,
+                    "the posting states no price, and a posting that names "
+                    "no figure is not a posting offering nothing",
+                    human_hours=human_hours)
             revenue = opportunity.net_budget_cents
             basis = ("the client's stated price, which a fixed-price contract "
                      "earns in full however long the work actually takes")

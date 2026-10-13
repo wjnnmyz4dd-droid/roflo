@@ -496,6 +496,135 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_09_a_posting_issuing_instructions_changes_nothing",
         "a posting trying to command the system would be pursued like any "
         "other listing, throwing away the one fact worth keeping about it"),
+
+    # ---- accepting a contract ---------------------------------------
+    # Seven submission gates plus three that only matter once the
+    # commitment is binding. Each mutant removes one.
+
+    Mutant(
+        "claim-needs-no-accept-permission",
+        "solvent/application.py",
+        "        permitted, why = self._s.discovery.may(source, access.ACCEPT_CONTRACT)",
+        "        permitted, why = (True, 'permitted')",
+        "tests_solvent.test_claiming.AcceptingNeedsItsOwnPermission"
+        ".test_submit_permission_does_not_let_it_accept",
+        "permission to bid would be read as permission to accept, which is "
+        "the exact distinction the seven activity kinds exist to keep apart"),
+
+    Mutant(
+        "claim-does-not-recheck-the-capability",
+        "solvent/application.py",
+        "        deployable, why = self._s.capability.may_deploy(capability)",
+        "        deployable, why = (True, 'deployable')",
+        "tests_solvent.test_claiming.CanTheWorkStillBeDone"
+        ".test_a_withdrawn_capability_stops_the_commitment",
+        "a contract would be accepted for work whose skill was withdrawn "
+        "between the bid and the acceptance"),
+
+    Mutant(
+        "claim-accepts-terms-nobody-approved",
+        "solvent/application.py",
+        "        if approved_cents and offered_cents != approved_cents:",
+        "        if False:",
+        "tests_solvent.test_claiming.AreTheseTheTermsTheOwnerApproved"
+        ".test_a_client_accepting_at_their_own_number_needs_the_owner",
+        "a client could accept at their own number and bind DeskPilot to it"),
+
+    Mutant(
+        "claim-may-be-made-twice",
+        "solvent/application.py",
+        '            if attempt["phase"] == "CLAIM" and attempt["outcome"] in tx.NO_RETRY:',
+        "            if False:",
+        "tests_solvent.test_claiming.AtMostOneObligation"
+        ".test_an_unknown_outcome_also_blocks_a_second_attempt",
+        "one piece of work could become two obligations after a network "
+        "failure left the first outcome unknown"),
+
+    # ---- running unattended -----------------------------------------
+
+    Mutant(
+        "a-caller-may-widen-the-owners-job-limit",
+        "solvent/operation.py",
+        "            max_jobs=min(asked.max_jobs, owner.max_jobs),",
+        "            max_jobs=asked.max_jobs,",
+        "tests_solvent.test_operation_adversarial.RunningLongerThanAllowed"
+        ".test_a_caller_cannot_widen_the_job_limit",
+        "code could grant itself more jobs than the person who carries the "
+        "consequences allowed"),
+
+    Mutant(
+        "the-halt-is-checked-only-once",
+        "solvent/operation.py",
+        "            if self._halted():",
+        "            if False:",
+        "tests_solvent.test_operation_adversarial.TurningItOffMustAlwaysWork"
+        ".test_disabling_mid_run_stops_the_next_iteration",
+        "the emergency halt would not stop a run already going round"),
+
+    Mutant(
+        "zero-jobs-is-rounded-up-to-one",
+        "solvent/operation.py",
+        "        if self._configured_jobs() < 1:",
+        "        if False:",
+        "tests_solvent.test_operation_adversarial.ZerosTheOwnerActuallyMeant"
+        ".test_zero_jobs_per_run_does_no_jobs",
+        "an owner setting zero jobs per run would get one anyway, and would "
+        "not be told their limit had been widened"),
+
+    Mutant(
+        "a-zero-ceiling-means-unlimited-again",
+        "solvent/operation.py",
+        "                if (report.committed_cents > 0",
+        "                if (limits.max_committed_cents",
+        "tests_solvent.test_operation_adversarial.ZerosTheOwnerActuallyMeant"
+        ".test_a_ceiling_of_zero_permits_no_commitment",
+        "a ceiling of nothing would be read as no ceiling at all, which is "
+        "what Bounds' own docstring says it is not"),
+
+    # ---- the platform's own answer ----------------------------------
+
+    Mutant(
+        "polling-ignores-the-robots-finding",
+        "solvent/discovery.py",
+        "        readable, readable_why = self._public_discovery_allowed(source.name)",
+        "        readable, readable_why = (True, '')",
+        "tests_solvent.test_operation_adversarial"
+        ".PollingObeysThePlatformsOwnAnswer"
+        ".test_a_source_whose_robots_forbids_reading_is_not_polled",
+        "a site whose robots.txt disallows automated reading would be "
+        "crawled as long as somebody had marked it PERMITTED"),
+
+    Mutant(
+        "an-unstated-price-is-worth-nothing",
+        "solvent/finder.py",
+        "            if opportunity.quoted_cents <= 0:",
+        "            if False:",
+        "tests_solvent.test_operation_adversarial.APostingThatNamesNoPrice"
+        ".test_no_stated_price_is_unknown_not_zero",
+        "a posting naming no budget would be declined as too cheap, which "
+        "is a false statement about a posting that named no figure"),
+
+    # ---- what reaches the append-only log ---------------------------
+
+    Mutant(
+        "a-failing-transport-logs-its-credential",
+        "solvent/application.py",
+        '                    f"{type(exc).__name__} while accepting: {exc}")',
+        '                    f"{type(exc).__name__} while accepting: {exc}"',
+        "tests_solvent.test_operation_adversarial.ClaimingUnderAttack"
+        ".test_a_transport_failure_does_not_leak_a_credential_into_the_log",
+        "an HTTP client's exception quotes the request it was making, and "
+        "the request carries the source's credential"),
+
+    Mutant(
+        "the-redactor-knows-only-field-names",
+        "solvent/resilience.py",
+        '    (re.compile(r"\\bgh[pousr]_[A-Za-z0-9]{16,}"), "[REDACTED]"),',
+        "",
+        "tests_solvent.test_redaction_shapes.EveryShapeIsCaught"
+        ".test_each_shape_is_redacted_under_an_unhelpful_label",
+        "a provider-shaped token under a label the list does not know "
+        "would be stored in full"),
 )
 
 
