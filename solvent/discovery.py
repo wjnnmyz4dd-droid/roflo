@@ -161,6 +161,10 @@ class WorkSource(ABC):
     #: commitment; the free-text body never can, however it is worded. A source
     #: that scrapes prose must leave this False.
     structured_offer_terms: bool = False
+    #: What this source carries. Declared, never inferred: a source that does
+    #: not say is UNDECLARED and stays out of the active interface. See
+    #: ``sourceaccess.WORK_TYPES``.
+    work_type: str = access.UNDECLARED
 
     @abstractmethod
     def parse(self, payload: object) -> list[Opportunity]:
@@ -181,6 +185,10 @@ class FixtureSource(WorkSource):
 
     kind = "fixture"
     is_fixture = True
+    #: A fixture carries invented postings. It is excluded from the active
+    #: interface by ``is_fixture`` long before this matters, but declaring it
+    #: means no source anywhere is silently UNDECLARED by omission.
+    work_type = access.UNDECLARED
 
     def __init__(self, name: str, postings: list[dict], *,
                  structured: bool = True) -> None:
@@ -239,6 +247,9 @@ class ManualSource(FixtureSource):
     kind = "manual"
     is_fixture = False
     owner_entered_source = True
+    #: Whatever the owner entered. They saw the work and said what it is,
+    #: which is a stronger statement about scope than any feed can make.
+    work_type = access.OWNER_DECLARED
 
 
 class Discovery:
@@ -450,6 +461,111 @@ class Discovery:
     def sources(self) -> list[dict]:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM work_sources ORDER BY name")]
+
+    def source_suitability(self, name: str) -> tuple[str, str]:
+        """Should this source appear as a live route to paid work?
+
+        Four separate questions, and a source has to pass all of them. They
+        are kept apart because they fail for different reasons and only the
+        owner can fix some of them:
+
+        * is it allowed (compliance, and not a fixture)?
+        * can it be reached (health, credentials)?
+        * is it switched on?
+        * **does it carry work this installation can actually be paid for?**
+
+        The last one is the one that is easy to leave out, and leaving it out
+        is how an interface comes to list a feed that answers every request
+        in 200 milliseconds, is perfectly compliant, and has never once
+        contained a job any certified skill could do. Every field on that row
+        is true and the row as a whole is a lie.
+
+        Returns ``(verdict, why)``. The verdict is one of ``ACTIVE``,
+        ``FIXTURE``, ``SUSPENDED``, ``DISABLED``, ``NEEDS_CREDENTIAL``,
+        ``UNREACHABLE``, ``OUT_OF_SCOPE`` or ``UNKNOWN_SOURCE``.
+        """
+        state = self.source_state(name)
+        if state is None:
+            return "UNKNOWN_SOURCE", f"{name!r} is not registered"
+
+        if int(state.get("is_fixture", 0)):
+            return "FIXTURE", ("an in-process fixture; it exists for tests "
+                               "and demonstrations and is never real work")
+
+        compliance = state.get("compliance", "")
+        if compliance == Compliance.SUSPENDED.value:
+            return "SUSPENDED", (state.get("last_error")
+                                 or "suspended on a compliance question")
+        if compliance != Compliance.PERMITTED.value:
+            return "SUSPENDED", f"compliance is {compliance or 'undetermined'}"
+
+        health = state.get("health") or access.HEALTHY
+        if health == access.DISABLED:
+            return "DISABLED", "the owner has switched this source off"
+        if health == access.AUTH_REQUIRED or (
+                self._needs_credential(name)
+                and not int(state.get("credential_configured", 0))):
+            return "NEEDS_CREDENTIAL", (
+                f"{name} needs a credential that is not configured")
+        if health in access.NOT_POLLABLE:
+            return "UNREACHABLE", (
+                f"health is {health}: {state.get('failure_reason') or 'no detail'}")
+
+        work_type = self._work_type(name)
+        if work_type not in access.SERVES_COMMERCIAL_SKILLS:
+            return "OUT_OF_SCOPE", (
+                f"carries {work_type}, which the certified commercial skills "
+                "are not paid for; the owner decides whether to bring it "
+                "into scope")
+
+        return "ACTIVE", f"permitted, reachable and carrying {work_type}"
+
+    def _work_type(self, name: str) -> str:
+        source = self._sources.get(name)
+        declared = getattr(source, "work_type", access.UNDECLARED)
+        return declared if declared in access.WORK_TYPES else access.UNDECLARED
+
+    def _needs_credential(self, name: str) -> bool:
+        source = self._sources.get(name)
+        if source is None:
+            return False
+        try:
+            request = source.request()
+        except Exception:
+            return False
+        return bool(isinstance(request, dict)
+                    and request.get("requires_credential"))
+
+    def active_sources(self) -> list[dict]:
+        """The sources an owner should see as live routes to paid work.
+
+        Everything else stays registered and keeps its history -- a source is
+        never deleted, because its determination, its permission grants and
+        the opportunities it produced are the record of a decision somebody
+        made. It is simply not presented as somewhere money might come from.
+        """
+        out = []
+        for row in self.sources():
+            verdict, why = self.source_suitability(row["name"])
+            if verdict == "ACTIVE":
+                out.append({**row, "suitability": verdict, "why": why})
+        return out
+
+    def source_report(self) -> list[dict]:
+        """Every source with its verdict. For the audit, not the interface."""
+        out = []
+        for row in self.sources():
+            verdict, why = self.source_suitability(row["name"])
+            out.append({
+                "name": row["name"], "kind": row.get("kind", ""),
+                "work_type": self._work_type(row["name"]),
+                "compliance": row.get("compliance", ""),
+                "health": row.get("health", ""),
+                "is_fixture": bool(int(row.get("is_fixture", 0))),
+                "suitability": verdict, "why": why,
+                "permissions": self.permissions(row["name"]),
+            })
+        return out
 
     def suspend_source(self, name: str, why: str) -> None:
         """Stop polling a source. Used when its terms or behaviour change.

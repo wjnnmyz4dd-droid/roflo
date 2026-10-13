@@ -79,7 +79,7 @@ class GrantsGovSource(WorkSource):
     access_method = access.PUBLIC_FEED
     auth_required = False
     manual_import = True
-    work_type = "GRANT_FUNDING"
+    work_type = access.GRANT_FUNDING
     verified_on = VERIFIED_ON
     rate_limit_note = ("no published rate limit; polled on a slow schedule "
                        "because a public service with no stated limit is one "
@@ -206,7 +206,7 @@ class SamGovOpportunitiesSource(WorkSource):
     access_method = access.OFFICIAL_API
     auth_required = True
     manual_import = True
-    work_type = "CONTRACT_WORK"
+    work_type = access.CONTRACT_WORK
     verified_on = VERIFIED_ON
     rate_limit_note = ("per GSA documentation, limits depend on the account "
                        "role; a personal key is far more restricted than one "

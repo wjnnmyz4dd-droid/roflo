@@ -18,6 +18,14 @@ dependencies = [
 [project.optional-dependencies]
 local = ["transformers>=4.40", "torch>=2.2", "accelerate>=0.29"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+# Independent (T2) verification. These are not conveniences: a job above the
+# C_HIGH threshold needs a second opinion from a reader DeskPilot did not
+# write, and without them the only remaining producer is the owner signing
+# each review by hand. Solvent itself runs fine without them and says so --
+# `solvent.independent.available()` reports what this host can actually
+# produce, and the business cycle declines such a job while it is still a
+# quote rather than discovering it at delivery.
+verification = ["openpyxl>=3.1.5", "python-docx>=1.1.2"]
 
 [project.scripts]
 roflo = "roflo.cli:main"
@@ -27,7 +35,10 @@ roflo = "roflo.cli:main"
 solvent = "solvent.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["roflo*"]
+# solvent is included because the `solvent` console script below points into
+# it. Declaring the entry point while excluding the package produced an
+# install whose advertised command could not import its own module.
+include = ["roflo*", "solvent*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

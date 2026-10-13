@@ -255,6 +255,55 @@ def _answers_row(transfer) -> Row:
                facts={"source": transfer.source})
 
 
+#: Third-party readers that make independent (T2) verification possible.
+#:
+#: DeskPilot's own code reads and writes these formats. That is exactly why a
+#: second opinion cannot use it: a reader checking its own writer agrees with
+#: itself. Independent review needs a library somebody else wrote, and
+#: without one the only remaining producer is the owner signing each review
+#: by hand.
+#:
+#: These are NOT installer dependencies -- the installer stays standard
+#: library only, and its suite passes with site-packages switched off. This
+#: probes the *installed runtime* and reports what it finds. It never
+#: installs anything and never claims a capability it has not observed.
+VERIFICATION_READERS: tuple[tuple[str, str], ...] = (
+    ("openpyxl", "spreadsheet deliverables (.xlsx)"),
+    ("docx", "document deliverables (.docx)"),
+)
+
+
+def _verification_row() -> Row:
+    """Can this machine produce an independent second opinion?
+
+    A WARN, never a FAIL. DeskPilot installs and runs perfectly well without
+    these: jobs below the C_HIGH threshold need no second opinion, and above
+    it the business cycle declines the work while it is still a quote rather
+    than discovering the problem after the compute is spent. What must not
+    happen is the owner finding out the first time a four-figure job stops.
+    """
+    missing = []
+    for name, what in VERIFICATION_READERS:
+        try:
+            importlib.import_module(name)
+        except Exception:  # noqa: BLE001 - absence is the signal
+            missing.append(f"{name} ({what})")
+
+    if not missing:
+        return Row("Independent verification", Outcome.PASS,
+                   f"all {len(VERIFICATION_READERS)} independent readers are "
+                   "available; high-value jobs can be verified automatically",
+                   facts={"readers": [n for n, _ in VERIFICATION_READERS]})
+
+    return Row(
+        "Independent verification", Outcome.WARN,
+        f"{len(missing)} of {len(VERIFICATION_READERS)} independent readers "
+        "are missing, so a job above the high-value threshold will be "
+        "declined unless the owner reviews it by hand - install with "
+        "'pip install deskpilot[verification]' to enable automatic review",
+        facts={"missing": missing})
+
+
 def preinstall(host: Host, settings, transfer=None) -> Report:
     """Every check that must pass before the machine is modified.
 
@@ -277,6 +326,7 @@ def preinstall(host: Host, settings, transfer=None) -> Report:
         _paths_row(host, layout),
         _existing_data_row(host, layout),
         _metatrader_row(host, settings.needed_ports),
+        _verification_row(),
         _answers_row(transfer),
     ]
 

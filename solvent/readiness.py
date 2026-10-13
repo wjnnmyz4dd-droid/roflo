@@ -196,6 +196,21 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               "smallest job worth the overhead of taking",
               category=OWNER_CONFIG))
 
+    # Whether a second opinion can be produced at all on this host. Checked
+    # here as well as per job, because the per-job check arrives when a
+    # client is already waiting: the owner should know before they go
+    # looking for four-figure work that this installation cannot verify it.
+    from . import independent
+
+    review = independent.available(extension="xlsx")
+    add(Check("independent review is producible", review.any_usable,
+              review.summary(),
+              "" if review.any_usable else
+              "OD-18: install the independent readers "
+              "(`pip install .[verification]`) or configure the owner signing "
+              "key, or every job above the high-value threshold is declined",
+              category=OWNER_CONFIG))
+
     proven = [c.name for c in capability.capabilities() if c.proven]
     add(Check("a proven capability to sell", bool(proven),
               f"proven capabilities: {', '.join(proven) or 'none registered'}",
@@ -330,6 +345,11 @@ _NOT_USED_BY_A_SUPERVISED_TRIAL = (
     # supposed to arrive.
     "operating costs recorded",
     "a minimum project fee",
+    # A supervised trial produces one verified file for the owner to read,
+    # at whatever value they choose to trial at. It does not need the
+    # machinery for four-figure work to exist yet -- but a real job above
+    # the threshold does, and this stops that one.
+    "independent review is producible",
     # The host firewall guards what can reach this machine. A supervised trial
     # run from the terminal sends nothing, collects nothing and listens on
     # nothing, so it does not depend on it.

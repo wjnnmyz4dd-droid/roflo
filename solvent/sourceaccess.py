@@ -103,6 +103,38 @@ def validate_permissions(permissions) -> tuple[str, ...]:
 
 # -------------------------------------------------------------------- health
 
+# ------------------------------------------------------------- work types
+
+#: What a source actually carries. This is not a health state and not a
+#: permission: a source can be perfectly reachable, fully compliant and still
+#: be no use, because what it lists is not work this installation can do and
+#: be paid for.
+#:
+#: Keeping it separate matters. A federal grants feed that answers every
+#: request in 200ms is HEALTHY and always will be, and showing it to the
+#: owner as a live revenue route because of that is how a dashboard ends up
+#: lying while every individual field on it is true.
+
+#: Clients paying for a deliverable. What the five commercial skills do.
+CLIENT_SERVICES = "CLIENT_SERVICES"
+#: Government or enterprise contracting. Real paid work, different pipeline:
+#: registration, solicitation numbers, bid documents.
+CONTRACT_WORK = "CONTRACT_WORK"
+#: Grant programmes. Money applied for, not a client buying a deliverable.
+GRANT_FUNDING = "GRANT_FUNDING"
+#: Whatever the owner enters. They say per posting what the work is.
+OWNER_DECLARED = "OWNER_DECLARED"
+#: Not stated. Fails closed -- an undeclared source is never active.
+UNDECLARED = "UNDECLARED"
+
+WORK_TYPES = (CLIENT_SERVICES, CONTRACT_WORK, GRANT_FUNDING, OWNER_DECLARED,
+              UNDECLARED)
+
+#: Work types the five certified commercial skills can actually be paid for.
+#: Everything else needs the owner to say they want it in scope.
+SERVES_COMMERCIAL_SKILLS = (CLIENT_SERVICES, OWNER_DECLARED)
+
+
 HEALTHY = "HEALTHY"
 DEGRADED = "DEGRADED"
 AUTH_REQUIRED = "AUTH_REQUIRED"
