@@ -128,6 +128,18 @@ DEFAULT_POLICY: dict[str, Any] = {
         "cloud_cents_per_1k_input": 0,
         "cloud_cents_per_1k_output": 0,
     },
+    # Running unattended. Off, and bounded at its most restrictive, until
+    # the owner says otherwise. A caller may ask for less than these; it
+    # can never ask for more, because a caller is code and the owner is
+    # the person who carries the consequences.
+    "operations": {
+        "continuous_enabled": False,
+        "halted": False,
+        "max_jobs_per_run": 1,
+        "max_committed_cents": 0,
+        "max_run_seconds": 300,
+        "max_consecutive_failures": 1,
+    },
     "pricing": {
         "materiality_fraction": 0.05,
         "max_age_days": {"DEFAULT": 365, "ON_SITE_LABOR": 180, "REMOTE_LABOR": 180,
