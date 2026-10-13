@@ -43,8 +43,15 @@ from .errors import FailClosed
 
 # --------------------------------------------------------------- permissions
 
-#: Looking at what a source lists.
+#: Looking at what a source lists **publicly**, with no account and no
+#: sign-in. Deliberately not the same as the next one: a great many
+#: platforms publish listings to anyone while their terms forbid automated
+#: querying of the signed-in search, and treating those as one permission is
+#: how a compliant read turns into a terms breach.
 DISCOVER = "DISCOVER"
+#: Querying a source's search **while signed in**. A separate decision from
+#: public discovery, and usually a separate clause in the terms.
+DISCOVER_AUTHENTICATED = "DISCOVER_AUTHENTICATED"
 #: Retrieving the detail of one listing.
 READ = "READ"
 #: Taking a copy into DeskPilot's own records.
@@ -58,6 +65,21 @@ SUBMIT_BID = "SUBMIT_BID"
 PREPARE_MESSAGE = "PREPARE_MESSAGE"
 #: Talking to a person. Customer Service and the Action Gate still apply.
 SEND_MESSAGE = "SEND_MESSAGE"
+#: Accepting a contract. A binding commitment, and the single most
+#: consequential thing on this list: submitting a proposal offers to work,
+#: accepting one promises to. An API that lets DeskPilot bid does not let it
+#: agree.
+ACCEPT_CONTRACT = "ACCEPT_CONTRACT"
+#: Delivering the finished work *through the platform* -- uploading the file,
+#: marking the milestone complete. Distinct from doing the work, which needs
+#: no permission from anybody, and distinct from accepting the contract that
+#: created the obligation.
+DELIVER_THROUGH_PLATFORM = "DELIVER_THROUGH_PLATFORM"
+#: Reading or changing DeskPilot's own account on the platform. Named
+#: separately because it is the clearest example of why these are not one
+#: permission: an API may permit account management and still forbid
+#: unrestricted job searching.
+ACCOUNT_MANAGEMENT = "ACCOUNT_MANAGEMENT"
 #: Application credits, membership fees, lead fees, boosts.
 SPEND_MONEY = "SPEND_MONEY"
 #: Billing an agreed minimum engagement on an hourly contract from this
@@ -68,16 +90,40 @@ SPEND_MONEY = "SPEND_MONEY"
 #: terms.
 HOURLY_MINIMUM = "HOURLY_MINIMUM"
 
-PERMISSIONS = (DISCOVER, READ, IMPORT, PREPARE_APPLICATION, SUBMIT_APPLICATION,
-               PREPARE_BID, SUBMIT_BID, PREPARE_MESSAGE, SEND_MESSAGE,
-               SPEND_MONEY, HOURLY_MINIMUM)
+PERMISSIONS = (DISCOVER, DISCOVER_AUTHENTICATED, READ, IMPORT,
+               PREPARE_APPLICATION, SUBMIT_APPLICATION, PREPARE_BID,
+               SUBMIT_BID, PREPARE_MESSAGE, SEND_MESSAGE, ACCEPT_CONTRACT,
+               DELIVER_THROUGH_PLATFORM, ACCOUNT_MANAGEMENT, SPEND_MONEY,
+               HOURLY_MINIMUM)
+
+#: The seven activities a marketplace's terms treat as genuinely different
+#: things, and the permission that carries each. Written out because the
+#: distinction is the point: permission for one is never permission for
+#: another, and a reviewer reading a source's grants should be able to see
+#: which of the seven it actually holds.
+ACTIVITY_KINDS = {
+    "public job discovery": DISCOVER,
+    "authenticated job discovery": DISCOVER_AUTHENTICATED,
+    "automated applications": SUBMIT_APPLICATION,
+    "automated proposals": SUBMIT_BID,
+    "automated contract acceptance": ACCEPT_CONTRACT,
+    "automated service delivery": DELIVER_THROUGH_PLATFORM,
+    "automated customer communication": SEND_MESSAGE,
+}
 
 #: What registering a source grants. The read side, and nothing else.
 DEFAULT_PERMISSIONS = (DISCOVER, READ, IMPORT)
 
 #: Everything that reaches outside DeskPilot and changes something there.
 #: Never granted by registration; each needs its own owner decision.
-CONSEQUENTIAL = (SUBMIT_APPLICATION, SUBMIT_BID, SEND_MESSAGE, SPEND_MONEY)
+CONSEQUENTIAL = (SUBMIT_APPLICATION, SUBMIT_BID, SEND_MESSAGE, SPEND_MONEY,
+                 ACCEPT_CONTRACT, DELIVER_THROUGH_PLATFORM)
+
+#: Needs a credential, so it cannot be exercised on a source the owner has
+#: not configured one for -- and must never be implied by public discovery.
+NEEDS_CREDENTIAL = (DISCOVER_AUTHENTICATED, SUBMIT_APPLICATION, SUBMIT_BID,
+                    SEND_MESSAGE, ACCEPT_CONTRACT, DELIVER_THROUGH_PLATFORM,
+                    ACCOUNT_MANAGEMENT, SPEND_MONEY)
 
 #: Drafting powers. Safe because preparing is not sending -- which is only true
 #: while the SUBMIT/SEND counterpart is a separate permission, as above.

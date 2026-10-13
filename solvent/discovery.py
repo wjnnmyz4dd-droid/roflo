@@ -512,6 +512,14 @@ class Discovery:
             return "UNREACHABLE", (
                 f"health is {health}: {state.get('failure_reason') or 'no detail'}")
 
+        # What the platform itself says about being read by a machine. A
+        # robots.txt disallowing the job pages is the platform declining,
+        # in the one format published for exactly this question, and no
+        # amount of owner enthusiasm changes it.
+        crawlable, crawl_why = self._public_discovery_allowed(name)
+        if not crawlable:
+            return "TERMS_FORBID", crawl_why
+
         work_type = self._work_type(name)
         if work_type not in access.SERVES_COMMERCIAL_SKILLS:
             return "OUT_OF_SCOPE", (
@@ -520,6 +528,46 @@ class Discovery:
                 "into scope")
 
         return "ACTIVE", f"permitted, reachable and carrying {work_type}"
+
+    def _public_discovery_allowed(self, name: str) -> tuple[bool, str]:
+        """May this source's listings be read automatically at all?
+
+        Only catalogued sources are held to this: a fixture and an
+        owner-entered posting have no external terms. A catalogued source
+        whose public discovery is FORBIDDEN cannot be an active automated
+        route, whatever else is true of it -- and one where nobody has read
+        the answer is not active either, because an unread clause is not
+        permission.
+        """
+        from . import sourcecatalog
+
+        entry = sourcecatalog.entry(name)
+        if entry is None:
+            return True, ""
+        if entry.access_method == access.MANUAL_IMPORT:
+            # The owner reading a page and typing what they found involves
+            # no automated access and so no robots directive.
+            return True, ""
+
+        finding = entry.terms_for(access.DISCOVER)
+        if finding.allows:
+            return True, ""
+        if finding.finding != sourcecatalog.TERMS_FORBIDDEN and (
+                entry.automated_discovery_supported and entry.verified_on):
+            # The catalogue already carries a dated, evidenced determination
+            # that this source supports automated discovery. Demanding a
+            # second finding saying the same thing would be one fact in two
+            # places, which is how the two come to disagree.
+            return True, ""
+        if finding.finding == sourcecatalog.TERMS_FORBIDDEN:
+            return False, (
+                f"{name} disallows automated reading of its listings "
+                f"({finding.citation}). Manual import by the owner remains "
+                "available and needs nobody's permission")
+        return False, (
+            f"nobody has established whether {name} permits automated "
+            "reading of its listings; until someone does, it is not an "
+            "automated route")
 
     def _work_type(self, name: str) -> str:
         source = self._sources.get(name)
@@ -611,6 +659,9 @@ class Discovery:
                 f"{name!r} does not have {permission}; it has "
                 + (", ".join(granted) if granted else "no permissions")
                 + ". Discovering work on a source is not permission to act on it")
+        allowed, finding = self._terms_allow(name, permission)
+        if not allowed:
+            return False, finding
         if permission in access.CONSEQUENTIAL:
             # A granted consequential permission is still not a licence to act
             # now: the Action Gate decides that, every time, and simulation
@@ -619,6 +670,41 @@ class Discovery:
             return True, (f"{name!r} has {permission}; the Action Gate still "
                           "decides each individual effect")
         return True, f"{name!r} has {permission}"
+
+    def _terms_allow(self, name: str, permission: str) -> tuple[bool, str]:
+        """Does the platform's own terms record allow this activity?
+
+        Separate from the owner's grant, and checked as well as it rather
+        than instead of it. These are different facts: the owner can decide
+        DeskPilot should apply for work, and the platform can still forbid
+        doing it automatically. The owner's intention does not change what
+        the terms say.
+
+        A source with no catalogue entry is not held to a standard nobody
+        wrote down -- fixtures and owner-entered work have no external terms
+        -- but a catalogued source with nothing read about this activity
+        fails closed. "We have not checked" is not a reason to go ahead.
+        """
+        from . import sourcecatalog
+
+        entry = sourcecatalog.entry(name)
+        if entry is None:
+            return True, ""
+        if permission not in sourcecatalog.GOVERNED_BY_TERMS:
+            return True, ""
+
+        finding = entry.terms_for(permission)
+        if finding.allows:
+            return True, ""
+        if finding.finding == sourcecatalog.TERMS_FORBIDDEN:
+            return False, (
+                f"{name!r} forbids {permission} in its terms "
+                f"({finding.citation}, read {finding.read_on}); the owner's "
+                "grant does not change what the platform allows")
+        return False, (
+            f"nobody has read whether {name!r} permits {permission}. An "
+            "unread clause is not permission, and the owner must record a "
+            "finding with a citation before this can be used")
 
     def grant(self, name: str, permission: str, *, owner_identity: str,
               why: str) -> None:

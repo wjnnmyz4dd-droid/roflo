@@ -47,6 +47,63 @@ RFP_BID_BOARD = "RFP_BID_BOARD"
 DIRECT = "DIRECT"
 
 
+#: What a platform's own terms say about one activity. Recorded separately
+#: from what the owner granted, because they are different facts: the owner
+#: can decide DeskPilot should apply for work, and the platform can still
+#: forbid doing it automatically. A grant is an intention; a finding is an
+#: observation, and the observation wins.
+TERMS_PERMITTED = "PERMITTED"
+TERMS_FORBIDDEN = "FORBIDDEN"
+#: Nobody has read the clause. Treated exactly like FORBIDDEN at the point of
+#: use -- "we have not checked" is not a reason to go ahead -- but kept
+#: distinct so a report can tell "known not allowed" from "unknown".
+TERMS_UNDETERMINED = "UNDETERMINED"
+
+TERMS_FINDINGS = (TERMS_PERMITTED, TERMS_FORBIDDEN, TERMS_UNDETERMINED)
+
+#: Activities a platform's terms get a say in. Reading and importing what a
+#: source already published to the public is not on this list: those are
+#: governed by the source's compliance determination and by robots/rate
+#: limits, not by a per-activity clause. Everything that reaches into the
+#: platform -- signing in to search it, applying, bidding, messaging,
+#: accepting, delivering, managing the account, spending -- is.
+GOVERNED_BY_TERMS = (
+    access.DISCOVER_AUTHENTICATED, access.SUBMIT_APPLICATION,
+    access.SUBMIT_BID, access.SEND_MESSAGE, access.ACCEPT_CONTRACT,
+    access.DELIVER_THROUGH_PLATFORM, access.ACCOUNT_MANAGEMENT,
+    access.SPEND_MONEY, access.HOURLY_MINIMUM,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class TermsFinding:
+    """One reading of one clause, about one activity, on one date."""
+
+    activity: str
+    finding: str = TERMS_UNDETERMINED
+    #: Where it was read. A finding with no citation is somebody's memory.
+    citation: str = ""
+    read_on: str = ""
+
+    def __post_init__(self) -> None:
+        if self.activity not in access.PERMISSIONS:
+            raise ValueError(
+                f"{self.activity!r} is not a source permission, so a terms "
+                "finding about it could never be enforced")
+        if self.finding not in TERMS_FINDINGS:
+            raise ValueError(f"{self.finding!r} is not a terms finding")
+        if self.finding != TERMS_UNDETERMINED and not (self.citation
+                                                       and self.read_on):
+            raise ValueError(
+                f"a {self.finding} finding for {self.activity} needs a "
+                "citation and a date; an uncited reading of a platform's "
+                "terms is an opinion about them")
+
+    @property
+    def allows(self) -> bool:
+        return self.finding == TERMS_PERMITTED
+
+
 @dataclass(frozen=True, slots=True)
 class CatalogueEntry:
     """What is known about one place work might come from.
@@ -76,6 +133,23 @@ class CatalogueEntry:
     evidence: str = ""
     #: Whether a real adapter exists, as opposed to an entry in a list.
     adapter_implemented: bool = False
+    #: What this platform's terms say, activity by activity. Empty means
+    #: nothing has been read, which reads as UNDETERMINED everywhere.
+    terms: tuple = ()
+
+    def terms_for(self, activity: str) -> "TermsFinding":
+        """The finding for one activity, or an explicit UNDETERMINED.
+
+        Never returns None. A caller that has to remember to handle a
+        missing finding is a caller that will one day forget.
+        """
+        for finding in self.terms:
+            if finding.activity == activity:
+                return finding
+        return TermsFinding(activity=activity, finding=TERMS_UNDETERMINED)
+
+    def permitted_activities(self) -> tuple:
+        return tuple(f.activity for f in self.terms if f.allows)
 
     @property
     def automated_discovery_supported(self) -> bool:
@@ -93,6 +167,10 @@ class CatalogueEntry:
             "notes": self.notes, "verified_on": self.verified_on,
             "evidence": self.evidence,
             "adapter_implemented": self.adapter_implemented,
+            "terms": {f.activity: {"finding": f.finding,
+                                   "citation": f.citation,
+                                   "read_on": f.read_on}
+                      for f in self.terms},
         }
 
     def stale(self, *, today: str = "", max_age_days: int = 180) -> bool:
@@ -119,6 +197,20 @@ class CatalogueEntry:
         return (now - checked).days > max_age_days
 
 
+#: robots.txt is a platform's own machine-readable statement about automated
+#: access, published for exactly this purpose. Reading one is not scraping,
+#: and honouring it is not optional. These were fetched and read on the date
+#: recorded against each finding; a `stale()` check will ask for them again.
+_READ_ON = "2026-10-13"
+
+
+def _robots(source_id: str, finding: str, detail: str) -> "TermsFinding":
+    return TermsFinding(
+        activity=access.DISCOVER, finding=finding,
+        citation=f"https://www.{source_id}/robots.txt — {detail}",
+        read_on=_READ_ON)
+
+
 _TERMS = ("the owner must read this platform's current terms of service for "
           "their own account and record, in writing, whether automated access "
           "is permitted and by what method")
@@ -141,21 +233,57 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
                  "established here.",
         notes="An API demonstrably exists, which is not the same as permission "
               "to use it this way. Left manual-only until the owner registers "
-              "an application and records what their terms allow."),
+              "an application and records what their terms allow.",
+        terms=(
+            _robots("upwork.com", TERMS_FORBIDDEN,
+                    "Disallow: /jobs/ , /*/jobs/search* , /o/jobs/job/* and "
+                    "/api* ; no Crawl-delay"),
+            # The official GraphQL API is the sanctioned route, and its own
+            # terms have not been read: the developer documentation itself
+            # returned HTTP 403 to an automated fetch on the date above,
+            # which is the platform declining to be read by a machine.
+            TermsFinding(access.DISCOVER_AUTHENTICATED),
+            TermsFinding(access.SUBMIT_BID),
+            TermsFinding(access.SEND_MESSAGE),
+            TermsFinding(access.ACCEPT_CONTRACT),
+            TermsFinding(access.DELIVER_THROUGH_PLATFORM),
+        )),
     CatalogueEntry(
         "fiverr", "Fiverr", FREELANCE_MARKETPLACE, _TERMS,
         notes="Seller-led rather than brief-led, so the acquisition shape "
-              "differs from a bid board. Not established; manual only."),
+              "differs from a bid board. Not established; manual only. No "
+              "public seller API was found on the date recorded below.",
+        terms=(
+            _robots("fiverr.com", TERMS_FORBIDDEN,
+                    "Disallow: /search/ , /search_results/ , /gigs/search ; "
+                    "no Crawl-delay"),
+            TermsFinding(access.DISCOVER_AUTHENTICATED),
+            TermsFinding(access.SEND_MESSAGE),
+            TermsFinding(access.DELIVER_THROUGH_PLATFORM),
+        )),
     CatalogueEntry(
         "freelancer", "Freelancer.com", FREELANCE_MARKETPLACE, _TERMS,
         notes="Bid-based, and bidding may consume paid credits -- which is "
-              "why SUBMIT_BID and SPEND_MONEY are separate permissions."),
+              "why SUBMIT_BID and SPEND_MONEY are separate permissions.",
+        terms=(
+            _robots("freelancer.com", TERMS_FORBIDDEN,
+                    "Disallow: /projects/browse.php* , /jobs/?* , /work/* , "
+                    "/find/* ; no Crawl-delay"),
+            TermsFinding(access.DISCOVER_AUTHENTICATED),
+            TermsFinding(access.SUBMIT_BID),
+            TermsFinding(access.SPEND_MONEY),
+        )),
     CatalogueEntry(
         "peopleperhour", "PeoplePerHour", FREELANCE_MARKETPLACE, _TERMS,
-        notes="Not established; manual only."),
+        notes="Not established; manual only. robots.txt was requested on "
+              "2026-10-13 and came back empty, so nothing was established "
+              "either way -- which is not the same as permission."),
     CatalogueEntry(
         "guru", "Guru", FREELANCE_MARKETPLACE, _TERMS,
-        notes="Not established; manual only."),
+        notes="Not established; manual only. robots.txt returned HTTP 403 to "
+              "an automated request on 2026-10-13 -- the site declining to "
+              "be read by a machine, which is itself an answer and must not "
+              "be worked around."),
     CatalogueEntry(
         "contra", "Contra", FREELANCE_MARKETPLACE, _TERMS,
         notes="Not established; manual only."),
