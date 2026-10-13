@@ -218,25 +218,27 @@ its own.
 
 ### Mutation
 
-**Incomplete at this commit, and reported as incomplete rather than
-estimated.** Sixty mutants exist, seven of them new for this pass: three
-on the terms and rate-limit gates, three on the commercial terms, one on
-the invoice. The run was stopped part way after I noticed two harnesses
-running against the same working tree at once — I had backgrounded one
-with `&` inside a shell that exited, assumed it had died, and started a
-second. Two harnesses editing the same files interleave their applies
-and reverts, so neither run's results can be trusted, and the partial
-output from both is discarded rather than quoted.
+Sixty mutants, each breaking one load-bearing control. Seven are new
+this pass: three on the terms and rate-limit gates, three on the
+commercial terms, one on the invoice.
 
-Before committing, every one of the sixty original anchor texts was
-confirmed present in the source, so no mutant was left applied, and the
-suites covering the new gates were re-run green.
+```
+60/60 killed  (0 survived, 0 not applied or harness)
+```
 
-The full run is the outstanding verification step for this pass. The
-previous pass's 53 mutants were all killed at that commit, and the
-twelve load-bearing controls added since are each covered by a test that
-fails when the control is removed — but that is an argument, not a
-measurement, and it is not the same claim.
+**No survivors, and nothing unapplied.** Each mutant is applied once,
+the designated test must *newly* fail, and the failure must disappear on
+revert. `NOT_APPLIED` is reported as its own outcome and is never
+counted as a kill.
+
+This figure is from a clean second attempt. The first was abandoned
+unmeasured: I had backgrounded one harness with `&` inside a shell that
+then exited, assumed it had died, and started another, and two harnesses
+editing the same working tree interleave their applies and reverts, so
+neither run's output means anything. Both were discarded rather than
+quoted, every one of the sixty original anchor texts was confirmed
+present before committing, and the run was done again from the top with
+a single harness and nothing else touching the tree.
 
 ### Unseen exam
 
