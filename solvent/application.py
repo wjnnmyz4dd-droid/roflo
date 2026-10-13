@@ -28,7 +28,9 @@ from . import sourceaccess as access
 from . import submission as tx
 from .audit import new_id, now
 from .errors import FailClosed
-from .types import ActionClass, Cents, PrivacyClass
+from .types import (
+    ActionClass, Cents, PrivacyClass, VerificationTier, fmt,
+)
 
 #: A draft exists and has been checked. It has not been sent.
 PREPARED = "PREPARED"
@@ -580,6 +582,191 @@ class Applications:
             external_effect=f"submit application to {source}",
             result=outcome.remote_ref or outcome.failure)
         return outcome.sent, outcome.detail
+
+    def claim(self, application: Application, *, offered_cents: Cents,
+              initiator: str = "application", opportunity: dict | None = None,
+              transport=None, approval=None, grant_id: str | None = None
+              ) -> tuple[bool, str]:
+        """Accept a contract the client has offered. A binding commitment.
+
+        Deliberately a second method on this same authority rather than a
+        new component. Claiming is submitting with higher stakes and three
+        extra questions; a separate "claiming agent" would need its own copy
+        of all seven gates, and the day the two copies disagreed one of them
+        would be accepting work the other would have refused.
+
+        Submitting a proposal offers to work. Accepting promises to. So
+        everything ``submit`` asks is asked again -- because time has passed
+        and the answers can have changed -- plus three that only matter once
+        the commitment is real:
+
+        * **Can the work still be done?** The capability must be deployable
+          *now*, not merely when the bid was written. A capability withdrawn
+          in between turns an accepted contract into a promise nobody can
+          keep.
+        * **Can it still be verified?** The tier the contract's value demands
+          must be producible, for the same reason the business cycle asks
+          before committing a budget: discovering it at delivery means the
+          work is done and cannot be handed over.
+        * **Are the terms the ones that were approved?** A client may accept
+          a bid at their own number. Accepting binds DeskPilot to *their*
+          terms, so an offer that differs from what the owner approved needs
+          the owner again rather than a shrug.
+
+        ``offered_cents`` is what the client is offering to pay -- the terms
+        being accepted, not what sending costs.
+
+        Returns ``(claimed, reason)``. True only when the source confirmed.
+        """
+        source = application.source
+        stored = self.stored(application.id)
+        if not stored:
+            raise FailClosed(
+                f"application {application.id} was never recorded; a binding "
+                "commitment cannot rest on an unrecorded application")
+        opportunity = opportunity or {}
+        client = tx.client_for(source)
+
+        # 1. Does this source permit a machine to accept on DeskPilot's
+        #    behalf? Its own permission, never implied by SUBMIT_*.
+        permitted, why = self._s.discovery.may(source, access.ACCEPT_CONTRACT)
+        if not permitted:
+            return self._refuse(application, tx.NOT_SENT,
+                                tx.PERMISSION_DENIED, why, initiator,
+                                event="claim-permission")
+
+        # 2. Can the work still be done? Asked now, not at bid time.
+        capability = self._first_need(opportunity)
+        if not capability:
+            return self._refuse(
+                application, tx.NOT_SENT, tx.VALIDATION_FAILED,
+                "the opportunity does not say which capability it needs, so "
+                "whether this can be delivered cannot be established",
+                initiator, event="claim-capability")
+        deployable, why = self._s.capability.may_deploy(capability)
+        if not deployable:
+            return self._refuse(
+                application, tx.NOT_SENT, tx.VALIDATION_FAILED,
+                f"{capability} cannot be deployed now, so accepting would "
+                f"promise work nobody can do: {why}", initiator,
+                event="claim-capability")
+
+        # 3. Can it still be verified at the tier its value demands?
+        from . import independent
+        from .orchestrator import REQUIRED_TIER
+
+        consequence = self._s.policy.consequence_for(offered_cents)
+        tier = REQUIRED_TIER[consequence]
+        if tier.rank > VerificationTier.T1_DETERMINISTIC.rank:
+            report = independent.available(
+                extension=self._extension_for(opportunity),
+                owner_channel=self._s.owner)
+            if not report.any_usable:
+                return self._refuse(
+                    application, tx.NOT_SENT, tx.VALIDATION_FAILED,
+                    f"at {fmt(offered_cents)} this work needs {tier.value}, "
+                    f"which cannot be produced here: {report.summary()}",
+                    initiator, event="claim-tier")
+
+        # 4. Are these the terms the owner approved? A client accepting a bid
+        #    at their own number is a new decision, not the old one.
+        approved_cents = int(stored.get("price_cents") or 0)
+        if approved_cents and offered_cents != approved_cents:
+            return self._refuse(
+                application, tx.NOT_SENT, tx.PERMISSION_DENIED,
+                f"the owner approved {fmt(approved_cents)} and the client is "
+                f"offering {fmt(offered_cents)}; accepting different terms is "
+                "the owner's decision, not a rounding difference", initiator,
+                event="claim-terms")
+
+        # 5. At most once. A contract accepted twice is two obligations.
+        for attempt in self.attempts(application.id):
+            if attempt["phase"] == "CLAIM" and attempt["outcome"] in tx.NO_RETRY:
+                return self._refuse(
+                    application, attempt["outcome"], attempt["failure"],
+                    f"this contract is already recorded as "
+                    f"{attempt['outcome']}; accepting again would be a second "
+                    "obligation for one piece of work", initiator,
+                    event="claim-duplicate")
+
+        # 6. The Action Gate, last, on the owner's signed approval. Accepting
+        #    a contract is a financial commitment in the plainest sense: it
+        #    creates an obligation to deliver and an expectation of payment.
+        state = self._s.discovery.source_state(source) or {}
+        result = self._s.gate.request(
+            action_class=ActionClass.C3_FINANCIAL_COMMITMENT,
+            destination=client.host or state.get("base_url", "") or source,
+            privacy=PrivacyClass.INTERNAL,
+            purpose=f"accept a {fmt(offered_cents)} contract on {source}",
+            initiator=initiator, approval=approval,
+            amount_cents=offered_cents, grant_id=grant_id)
+        if not result.allowed:
+            return self._refuse(application, tx.NOT_SENT,
+                                tx.PERMISSION_DENIED, result.reason,
+                                initiator, event="claim-gate")
+
+        # 7. Write-ahead, then act.
+        digest = stored["digest"]
+        self._attempt(application, digest, phase="CLAIM", outcome="",
+                      detail=f"about to accept {fmt(offered_cents)} on {source}")
+        if transport is None:
+            self._attempt(application, digest, phase="CLAIM",
+                          outcome=tx.NOT_SENT, failure=tx.NETWORK_FAILURE,
+                          detail="no transport was supplied, so nothing was "
+                                 "accepted")
+            return False, ("no transport was supplied, so nothing was "
+                           "accepted")
+        try:
+            response = transport({"action": "accept", "source": source,
+                                  "application": application.id,
+                                  "amount_cents": offered_cents})
+        except Exception as exc:
+            self._attempt(
+                application, digest, phase="CLAIM",
+                outcome=tx.UNKNOWN_REMOTE_STATE,
+                failure=tx.UNKNOWN_REMOTE_STATE,
+                detail=f"{type(exc).__name__} while accepting: {exc}; whether "
+                       "the contract was accepted cannot be established")
+            return False, ("the outcome of accepting is unknown; a person "
+                           "must check before anything else is attempted")
+
+        outcome = client.confirm(response)
+        self._attempt(application, digest, phase="CLAIM",
+                      outcome=outcome.outcome, failure=outcome.failure,
+                      detail=outcome.detail, remote_ref=outcome.remote_ref)
+        return outcome.outcome == tx.ACCEPTED, outcome.detail
+
+    @staticmethod
+    def _first_need(opportunity: dict) -> str:
+        """The capability this work needs, however the row stores it.
+
+        A stored opportunity keeps `needs` as JSON text; one passed
+        straight from discovery keeps it as a tuple. Indexing without
+        checking gave "[" -- the first character of the JSON -- and
+        produced a refusal that named a capability nobody had ever
+        registered. A test caught it.
+        """
+        needs = opportunity.get("needs") or ()
+        if isinstance(needs, str):
+            try:
+                needs = json.loads(needs)
+            except json.JSONDecodeError:
+                return ""
+        return str(needs[0]) if needs else ""
+
+    @staticmethod
+    def _extension_for(opportunity: dict) -> str:
+        """The deliverable's format, for asking whether T2 is producible."""
+        names = opportunity.get("deliverables") or ()
+        if isinstance(names, str):
+            try:
+                names = json.loads(names)
+            except json.JSONDecodeError:
+                names = ()
+        for name in names:
+            if "." in str(name):
+                return str(name).rsplit(".", 1)[-1].lower()
+        return ""
 
     def package_for_manual_submission(self, application: Application,
                                       opportunity: dict) -> tx.Result:
