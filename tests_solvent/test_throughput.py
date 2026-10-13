@@ -26,6 +26,13 @@ from solvent.types import Criticality, Requirement, RequirementSource
 JOBS = 12
 ROWS = 500
 
+#: The one module allowed to sleep, and why. A rate limiter that paces
+#: requests to a third party's server is honouring their limits, which is
+#: the opposite of an artificial delay -- and this module is a read-only
+#: research prototype that no live code imports, so no job can ever wait
+#: on it. The companion test below keeps both halves of that true.
+SLEEPS_FOR_SOMEBODY_ELSE = {"prospecting.py"}
+
 
 def req(rid, check, params=None):
     return Requirement(
@@ -133,6 +140,8 @@ class ManyJobsInARow(unittest.TestCase):
 
         offenders = []
         for path in sorted(pathlib.Path("solvent").glob("*.py")):
+            if path.name in SLEEPS_FOR_SOMEBODY_ELSE:
+                continue
             for number, line in enumerate(path.read_text().splitlines(), 1):
                 if re.search(r"\b(time\.sleep|asyncio\.sleep)\s*\(", line):
                     offenders.append(f"{path.name}:{number}: {line.strip()}")
@@ -140,6 +149,28 @@ class ManyJobsInARow(unittest.TestCase):
             offenders, [],
             "something in the business path waits on purpose:\n"
             + "\n".join(offenders))
+
+    def test_the_only_excused_sleep_is_outside_the_business_path(self):
+        """Guards the exemption above, which is otherwise a way to smuggle
+        a delay in. prospecting.py may sleep because a rate limiter pacing
+        requests to somebody else's server is courtesy, not a delay to
+        delivery -- and because nothing in the live pipeline imports it,
+        so a job cannot wait on it however long it waits."""
+        import re
+
+        self.assertEqual(SLEEPS_FOR_SOMEBODY_ELSE, {"prospecting.py"})
+
+        importers = []
+        for path in sorted(pathlib.Path("solvent").glob("*.py")):
+            if path.name in ("prospecting.py", "cli.py"):
+                continue
+            if re.search(r"^from \.prospecting import|^from \. import prospecting",
+                         path.read_text(), re.MULTILINE):
+                importers.append(path.name)
+        self.assertEqual(
+            importers, [],
+            "the excused module is now reachable from the live pipeline, so "
+            "its sleep is in the business path after all")
 
     def test_each_job_is_measured_and_the_measurements_accumulate(self):
         for _ in range(3):

@@ -495,6 +495,19 @@ class Finder:
             return Verdict.HOLD, (
                 f"what it would earn is not known: {econ.basis}")
 
+        # Risk before price, and the order is the point. A posting below
+        # the owner's floor is declined either way, so the outcome looks
+        # the same -- but declining it as "too cheap" throws away the fact
+        # that somebody tried to harvest credentials, and a pattern of
+        # cheap fraudulent postings would be invisible. Worse, the day the
+        # owner lowers the floor, those postings become eligible with
+        # their risk never examined. Found by the unseen exam.
+        if risks:
+            return Verdict.HOLD, (
+                "worth a person's eye before anything else: the posting "
+                f"carries {len(risks)} risk indicator(s): "
+                + ", ".join(risks[:3]))
+
         minimum = self.minimum_fee_cents
         if minimum > 0 and econ.revenue_cents < minimum:
             return Verdict.DECLINE, (
@@ -507,14 +520,6 @@ class Finder:
         if reachable is None:
             return Verdict.HOLD, (
                 f"worth doing, but {tier_detail.lower()}")
-        # `risks` rather than `opportunity.risk_indicators`: the platform's
-        # own indicators plus anything noticed while reading the posting.
-        # Reading the opportunity directly here meant a risk the Finder
-        # found itself was recorded and then ignored.
-        if risks:
-            return Verdict.HOLD, (
-                "worth doing, but the posting carries "
-                f"{len(risks)} risk indicator(s): " + ", ".join(risks[:3]))
         return Verdict.PURSUE, (
             f"{(econ.profit_cents or 0) / 100:,.2f} expected on "
             f"{econ.revenue_cents / 100:,.2f}; {econ.basis}")
