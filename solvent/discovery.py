@@ -43,6 +43,7 @@ from .errors import FailClosed
 from . import intake
 from . import opportunityrisk as risk
 from . import sourceaccess as access
+from .resilience import redact
 from .store import Store
 from .types import ActionClass, Cents, Jurisdiction, LocationSignals, PrivacyClass
 
@@ -840,13 +841,23 @@ class Discovery:
         except Exception as exc:
             # §42. A source whose shape changed is not reinterpreted, guessed
             # at, or partially accepted. It fails closed and says why.
-            self.record_health(source_name, access.FAILED,
-                               reason=f"{type(exc).__name__} while parsing: {exc}")
+            #
+            # The "why" is redacted here, at the call site, rather than inside
+            # `record` -- redacting every result globally once ate the
+            # artifact digests, which are hex and look exactly like a leaked
+            # key. An exception raised while reading an HTTP response carries
+            # a slice of that response, and an API that echoes the request
+            # back in its error body puts a credential in it. Both
+            # destinations matter: `failure_reason` is rendered by the
+            # Control Centre, and the audit log is append-only and so cannot
+            # be redacted afterwards.
+            detail = redact(f"{type(exc).__name__} while parsing: {exc}")
+            self.record_health(source_name, access.FAILED, reason=detail)
             self._audit.record(
                 event="discovery.parse_failed", authority="discovery",
                 initiator=initiator,
                 why=f"{source_name} returned something this adapter cannot read",
-                decision="REFUSED", result=f"{type(exc).__name__}: {exc}")
+                decision="REFUSED", result=detail)
             return []
 
         found, duplicates = self._deduplicate(source_name, parsed)

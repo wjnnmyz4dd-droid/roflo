@@ -387,6 +387,19 @@ MUTANTS: tuple[Mutant, ...] = (
         "any caller could invent a purpose, so generated text could reach a "
         "deliverable and deterministic verification would stop meaning "
         "anything"),
+
+    # ---- source failure reporting ------------------------------------
+
+    Mutant(
+        "discovery-failure-reason-unredacted",
+        "solvent/discovery.py",
+        '            detail = redact(f"{type(exc).__name__} while parsing: {exc}")',
+        '            detail = f"{type(exc).__name__} while parsing: {exc}"',
+        "tests_solvent.test_discovery_leaks.ACredentialInAnUpstreamError"
+        ".test_no_credential_shape_survives_a_parse_failure",
+        "an API error body echoing the request would write the credential "
+        "verbatim into the sources page and into an append-only audit log "
+        "that cannot be redacted afterwards"),
 )
 
 
