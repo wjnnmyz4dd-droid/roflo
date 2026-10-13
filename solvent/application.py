@@ -28,6 +28,7 @@ from . import sourceaccess as access
 from . import submission as tx
 from .audit import new_id, now
 from .errors import FailClosed
+from .resilience import redact
 from .types import (
     ActionClass, Cents, PrivacyClass, VerificationTier, fmt,
 )
@@ -556,11 +557,19 @@ class Applications:
             except Exception as exc:
                 # The request may or may not have left. That is the honest
                 # answer and it is not a retryable failure.
+                #
+                # Redacted here, at the call site, for the reason discovery
+                # redacts its parse failures there: an HTTP client's
+                # exception quotes the request it was making, and the
+                # request carries the source's credential. The attempt log
+                # is append-only, so a secret written into it cannot be
+                # scrubbed later -- only re-read.
                 outcome = tx.Result(
                     outcome=tx.UNKNOWN_REMOTE_STATE,
                     failure=tx.UNKNOWN_REMOTE_STATE,
-                    detail=f"{type(exc).__name__} while transmitting: {exc}; "
-                           "whether it arrived cannot be established here")
+                    detail=redact(
+                        f"{type(exc).__name__} while transmitting: {exc}")
+                           + "; whether it arrived cannot be established here")
             else:
                 outcome = client.confirm(response)
 
@@ -725,8 +734,10 @@ class Applications:
                 application, digest, phase="CLAIM",
                 outcome=tx.UNKNOWN_REMOTE_STATE,
                 failure=tx.UNKNOWN_REMOTE_STATE,
-                detail=f"{type(exc).__name__} while accepting: {exc}; whether "
-                       "the contract was accepted cannot be established")
+                detail=redact(
+                    f"{type(exc).__name__} while accepting: {exc}")
+                       + "; whether the contract was accepted cannot be "
+                         "established")
             return False, ("the outcome of accepting is unknown; a person "
                            "must check before anything else is attempted")
 

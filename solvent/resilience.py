@@ -111,9 +111,35 @@ _SECRET_PATTERNS = (
     (re.compile(r"(?i)\b(api[_-]?key|secret|token|password|passwd|pwd|"
                 r"owner[_-]?key|private[_-]?key|webhook[_-]?secret|"
                 r"authorization|bearer)\b\s*[:=]\s*\S+"), r"\1=[REDACTED]"),
+    # A label the list above missed, when the value *looks* like a
+    # credential. "key=" and "auth=" are too common to redact on the name
+    # alone -- a CSV diagnostic says "key=customer_id" and that is the
+    # whole diagnostic -- so the value has to earn it: long, and mixed
+    # enough that it is not an English word. Found by injecting a failing
+    # transport whose exception quoted "?key=<token>": the label rule
+    # above matched "token" and missed "key", and the credential went
+    # into the append-only attempt log.
+    (re.compile(r"(?i)\b(key|auth|credential|sig|signature|session)\b"
+                r"\s*[:=]\s*(?=[^\s&]*\d)(?=[^\s&]*[A-Za-z])"
+                r"[A-Za-z0-9._\-+/=]{12,}"), r"\1=[REDACTED]"),
     # Stripe-shaped credentials, live or test.
     (re.compile(r"\b[sr]k_(live|test)_[A-Za-z0-9]{4,}"), "[REDACTED]"),
     (re.compile(r"\bwhsec_[A-Za-z0-9]{4,}"), "[REDACTED]"),
+    # Provider-shaped credentials, by their published prefixes. Stripe was
+    # the only issuer with a shape rule here, which meant a GitHub or
+    # Slack token travelling under an unrecognised label survived every
+    # rule above. These prefixes are reserved by their issuers, so the
+    # false-positive risk is close to nil.
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}"), "[REDACTED]"),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), "[REDACTED]"),
+    (re.compile(r"\bxox[baprse]-[A-Za-z0-9-]{10,}"), "[REDACTED]"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[REDACTED]"),
+    (re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{16,}"), "[REDACTED]"),
+    (re.compile(r"\bAIza[0-9A-Za-z_\-]{30,}"), "[REDACTED]"),
+    # A JSON Web Token carries its own claims and is a bearer credential
+    # whatever it is called.
+    (re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"
+                r"\.[A-Za-z0-9_\-]{8,}"), "[REDACTED]"),
     # Long hex, which is what a raw key or signature looks like.
     (re.compile(r"\b[0-9a-fA-F]{40,}\b"), "[REDACTED]"),
     # A phone number is owner PII, not a diagnostic.

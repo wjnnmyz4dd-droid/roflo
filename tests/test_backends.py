@@ -26,7 +26,12 @@ def sse(*payloads):
 
 
 def test_registry_lists_all_backends():
-    assert set(available()) == {"echo", "llamacpp", "ollama", "transformers", "vllm"}
+    # "cloud" is the OpenAI-compatible remote backend added alongside the
+    # local ones. Listed here because this assertion is the registry's
+    # inventory: a backend that is loadable but absent from this set is a
+    # backend nobody reviewed.
+    assert set(available()) == {"cloud", "echo", "llamacpp", "ollama",
+                                "transformers", "vllm"}
 
 
 def test_unknown_backend_names_the_alternatives():
