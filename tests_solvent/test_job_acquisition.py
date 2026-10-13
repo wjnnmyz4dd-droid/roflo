@@ -415,13 +415,20 @@ class NothingIsInvented(Base):
 class TheCatalogueClaimsNothingItCannotShow(Base):
 
     def test_only_sources_with_a_real_adapter_claim_automation(self):
-        """This used to assert that *nothing* was automated, which was true
-        when nothing was. Two public-sector APIs have since been researched,
-        verified against their own documentation and implemented, so the
-        assertion is now that a claim of automation implies an adapter --
-        which is the property that actually matters."""
+        """A claim of automation implies an adapter, a date and evidence.
+
+        The count has been through all three states. Nothing was
+        automated; then two public-sector APIs were researched, verified
+        and implemented; then the owner replaced the list with the six
+        marketplaces and those two were retired with their adapters. So
+        it is back to nothing -- asserted explicitly below, because an
+        implication over an empty list is a test that cannot fail.
+        """
         automated = catalogue.automated_sources()
-        self.assertTrue(automated, "no source can discover work autonomously")
+        self.assertEqual(
+            [e.source_id for e in automated], [],
+            "a source claims automated discovery; none of the six "
+            "marketplaces has an adapter, and nothing else is catalogued")
         for entry in automated:
             self.assertTrue(entry.adapter_implemented,
                             f"{entry.source_id} claims automation with no adapter")
@@ -447,12 +454,8 @@ class TheCatalogueClaimsNothingItCannotShow(Base):
 
     def test_the_named_platforms_are_present(self):
         for name in ("upwork", "fiverr", "freelancer", "peopleperhour",
-                     "guru", "contra", "sam_gov"):
+                     "guru", "contra"):
             self.assertIsNotNone(catalogue.entry(name))
-
-    def test_public_procurement_is_extensible_not_one_state(self):
-        entry = catalogue.entry("state_local_procurement")
-        self.assertIn("jurisdiction", entry.determination_needed)
 
 
 if __name__ == "__main__":

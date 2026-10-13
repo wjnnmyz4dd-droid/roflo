@@ -18,6 +18,7 @@ import os
 import tempfile
 import unittest
 
+from tests_solvent.fixtures import set_commercial_terms
 from solvent import sourceaccess as access
 from solvent.discovery import (
     Compliance, FixtureSource, Opportunity, Readiness, WorkSource,
@@ -81,6 +82,7 @@ class Exam(unittest.TestCase):
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.s = Solvent(f"{self.box.name}/exam.db")
+        set_commercial_terms(self.s)
         self.addCleanup(self._close)
         for name in owner_promotions():
             promote_capability(self.s, name, owner_identity=OWNER,

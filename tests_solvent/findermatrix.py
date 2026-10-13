@@ -224,7 +224,12 @@ def scenarios() -> list[Scenario]:
     for i, (fee, upfront, expect) in enumerate([
             (0, 0, Verdict.PURSUE),
             (10_000, 0, Verdict.PURSUE),
-            (0, 39_000, Verdict.PURSUE),   # $10 on $400: thin, but profit
+            # $10 on $400 is a 2.5% margin. "Thin, but profit" was a
+            # PURSUE until the owner's minimum margin stopped being a
+            # number nothing read: clearing cost by a hair is not a
+            # business, and a $400 job demanding $390 up front is the
+            # shape of an advance-fee scam besides.
+            (0, 39_000, Verdict.DECLINE),
             (0, 60_000, Verdict.DECLINE),
             (35_000, 0, Verdict.PURSUE),
             (0, 40_000, Verdict.DECLINE)], start=53):
@@ -233,7 +238,9 @@ def scenarios() -> list[Scenario]:
             _posting(f"ec{i}", platform_fee_cents=fee,
                      upfront_cost_cents=upfront),
             expect, ContractType.FIXED_PRICE,
-            expect_because="cost" if expect is Verdict.DECLINE else "expected",
+            expect_because=("margin" if (fee, upfront) == (0, 39_000)
+                            else "cost" if expect is Verdict.DECLINE
+                            else "expected"),
             notes="RULE 7: profitability on real costs, not on revenue"))
 
     # -- 59-64: verification reachability before the money ------------------

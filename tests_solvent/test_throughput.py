@@ -17,6 +17,7 @@ import tempfile
 import time
 import unittest
 
+from tests_solvent.fixtures import give_an_issuer
 from solvent.discovery import Compliance, FixtureSource, Readiness
 from solvent.harness import (
     OWNER, Solvent, owner_promotions, promote_capability, run_business_cycle,
@@ -55,6 +56,7 @@ class ManyJobsInARow(unittest.TestCase):
         self.addCleanup(self.box.cleanup)
         self.dir = pathlib.Path(self.box.name)
         self.s = Solvent(str(self.dir / "throughput.db"))
+        give_an_issuer(self.s)
         self.addCleanup(self.close)
         for name in owner_promotions():
             promote_capability(self.s, name, owner_identity=OWNER,

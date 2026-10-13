@@ -20,7 +20,6 @@ from solvent import opportunityrisk as risk
 from solvent import skillslab as lab
 from solvent import sourceaccess as access
 from solvent import sourcecatalog as catalogue
-from solvent.adapters import GrantsGovSource, SamGovOpportunitiesSource
 from solvent.capability import Capability
 from solvent.discovery import Compliance, FixtureSource, ManualSource, Readiness
 from solvent.errors import FailClosed
@@ -114,45 +113,73 @@ class SeamsBetweenTheTwoIntakeRoles(Base):
             self.assertEqual(len(found), 1, method)
 
 
-class SeamsInTheRealAdapters(Base):
+class SeamsInARegisteredRemoteSource(Base):
+    """Was ``SeamsInTheRealAdapters``.
 
-    def test_an_adapter_registered_then_disabled_stays_disabled(self):
+    The two real adapters were retired with their catalogue entries when
+    the owner replaced the source list with the six marketplaces. The
+    seams they were probing belong to Discovery, not to those two
+    classes, so they are probed through a local source registered under
+    a catalogued id.
+    """
+
+    class Remote(FixtureSource):
+        is_fixture = False
+        kind = "api"
+        host = "contra.com"
+        base_url = "https://contra.com/opportunities"
+        work_type = access.CLIENT_SERVICES
+        min_poll_interval_seconds = 3600.0
+
+    class Keyed(FixtureSource):
+        is_fixture = False
+        kind = "api"
+        host = "guru.com"
+        base_url = "https://www.guru.com/api"
+        auth_required = True
+        work_type = access.CLIENT_SERVICES
+        min_poll_interval_seconds = 3600.0
+
+        def request(self):
+            return {"url": self.base_url,
+                    "requires_credential": "GURU_API_KEY"}
+
+    def test_a_source_registered_then_disabled_stays_disabled(self):
         self.s.discovery.register_source(
-            GrantsGovSource(), owner_identity=OWNER,
+            self.Remote("contra", []), owner_identity=OWNER,
             readiness=Readiness.PERMITTED_AUTOMATION,
-            compliance=Compliance.PERMITTED, determination="public feed")
-        self.s.discovery.set_enabled("grants_gov", False,
+            compliance=Compliance.PERMITTED, determination="public pages")
+        self.s.discovery.set_enabled("contra", False,
                                      owner_identity=OWNER, why="holdout")
         self.reopen()
-        self.assertFalse(self.s.discovery.may("grants_gov",
-                                              access.DISCOVER)[0])
+        self.assertFalse(self.s.discovery.may("contra", access.DISCOVER)[0])
 
-    def test_a_keyed_adapter_shows_as_needing_configuration(self):
+    def test_a_keyed_source_shows_as_needing_configuration(self):
         self.s.discovery.register_source(
-            SamGovOpportunitiesSource(), owner_identity=OWNER,
+            self.Keyed("guru", []), owner_identity=OWNER,
             readiness=Readiness.PERMITTED_AUTOMATION,
             compliance=Compliance.PERMITTED, determination="official API")
-        state = self.s.discovery.source_state("sam_gov")
+        state = self.s.discovery.source_state("guru")
         self.assertEqual(state["auth_required"], 1)
         self.assertEqual(state["credential_configured"], 0)
 
     def test_recording_a_credential_does_not_grant_a_permission(self):
         self.s.discovery.register_source(
-            SamGovOpportunitiesSource(), owner_identity=OWNER,
+            self.Keyed("guru", []), owner_identity=OWNER,
             readiness=Readiness.PERMITTED_AUTOMATION,
             compliance=Compliance.PERMITTED, determination="official API")
-        before = self.s.discovery.permissions("sam_gov")
-        self.s.discovery.set_credential_configured("sam_gov", True,
+        before = self.s.discovery.permissions("guru")
+        self.s.discovery.set_credential_configured("guru", True,
                                                    owner_identity=OWNER)
-        self.assertEqual(self.s.discovery.permissions("sam_gov"), before)
+        self.assertEqual(self.s.discovery.permissions("guru"), before)
 
-    def test_an_adapter_url_is_https_and_public(self):
-        for adapter in (GrantsGovSource(), SamGovOpportunitiesSource()):
-            self.assertEqual(access.url_problem(adapter.base_url), "",
-                             adapter.name)
+    def test_a_registered_url_is_https_and_public(self):
+        for source in (self.Remote("contra", []), self.Keyed("guru", [])):
+            self.assertEqual(access.url_problem(source.base_url), "",
+                             source.name)
 
     def test_a_stale_determination_is_visible(self):
-        entry = catalogue.entry("grants_gov")
+        entry = catalogue.entry("upwork")
         self.assertFalse(entry.stale(today="2026-10-01"))
         self.assertTrue(entry.stale(today="2028-01-01"),
                         "a two-year-old reading of a platform's terms is not "

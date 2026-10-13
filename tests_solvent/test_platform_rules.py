@@ -28,10 +28,9 @@ import pathlib
 import tempfile
 import unittest
 
-from solvent import adapters
 from solvent import sourceaccess as access
 from solvent import sourcecatalog as cat
-from solvent.discovery import Compliance, Readiness
+from solvent.discovery import Compliance, Readiness, WorkSource
 from solvent.harness import OWNER, Solvent
 
 
@@ -44,27 +43,55 @@ def entry(**kwargs) -> cat.CatalogueEntry:
 
 class EveryPlatformTheOwnerNamedIsCatalogued(unittest.TestCase):
 
-    #: The platforms the owner asked for, by the name they used.
+    #: The six candidate marketplaces, by the name the owner used.
     REQUIRED = {
         "upwork": "Upwork", "fiverr": "Fiverr", "freelancer": "Freelancer.com",
         "peopleperhour": "PeoplePerHour", "guru": "Guru", "contra": "Contra",
-        "sam_gov": "SAM.gov", "grants_gov": "Grants.gov",
-        "state_local_procurement": "government procurement portals",
-        "rfp_board": "RFP and bid boards",
         "client_inquiry": "authorized company websites / direct inquiry",
         "owner_entered": "email-imported opportunities",
         "file_import": "CSV-imported opportunities",
     }
+
+    #: Retired with their adapters. Listed so the removal is asserted
+    #: rather than merely done: an entry that drifts back in is a source
+    #: the current research does not cover.
+    RETIRED = ("sam_gov", "grants_gov", "state_local_procurement",
+               "rfp_board")
 
     def test_each_one_has_an_entry(self):
         have = {e.source_id for e in cat.CATALOGUE}
         missing = {k: v for k, v in self.REQUIRED.items() if k not in have}
         self.assertEqual(missing, {}, f"not catalogued: {missing}")
 
-    def test_no_entry_was_removed_to_make_room(self):
-        """Preserving what is registered is a requirement, so a catalogue that
-        shrank would be a regression even if every required name were there."""
-        self.assertGreaterEqual(len(cat.CATALOGUE), len(self.REQUIRED))
+    def test_nothing_was_removed_except_the_four_that_were_retired(self):
+        """A catalogue that quietly shrank would be a regression.
+
+        It shrank on purpose this once: the owner replaced the original
+        list with the six candidates, and the four non-marketplace
+        entries went with their adapters. Naming them is the difference
+        between a retirement and a deletion nobody reviewed -- anything
+        else disappearing still fails here.
+        """
+        have = {e.source_id for e in cat.CATALOGUE}
+        self.assertEqual(have, set(self.REQUIRED),
+                         "the catalogue is no longer exactly the six "
+                         "marketplaces plus the owner's own three channels")
+        self.assertEqual(len(cat.CATALOGUE), len(self.REQUIRED))
+
+    def test_the_retired_entries_are_gone_and_stay_gone(self):
+        have = {e.source_id for e in cat.CATALOGUE}
+        for source_id in self.RETIRED:
+            with self.subTest(source=source_id):
+                self.assertNotIn(source_id, have)
+
+    def test_exactly_six_marketplaces(self):
+        """The objective, stated as a number."""
+        marketplaces = [e.source_id for e in cat.CATALOGUE
+                        if e.source_type == cat.FREELANCE_MARKETPLACE]
+        self.assertEqual(
+            sorted(marketplaces),
+            ["contra", "fiverr", "freelancer", "guru", "peopleperhour",
+             "upwork"])
 
     def test_every_entry_derives_one_of_the_seven_statuses(self):
         for e in cat.CATALOGUE:
@@ -222,6 +249,33 @@ class TheStatusAnswersTheQuestionsInOrder(unittest.TestCase):
         self.assertIn("open.gsa.gov", why)
 
 
+class PollingSource(WorkSource):
+    """A fetching source, catalogued, whose terms permit public reading.
+
+    Was the Grants.gov adapter until that adapter was retired with its
+    catalogue entry. Registered as ``contra`` because Contra is the one
+    marketplace of the six whose robots.txt permits reading its public
+    pages -- so the rate limiter is exercised against a source it would
+    really be allowed to poll, rather than one the terms gate would stop
+    first for a different reason.
+    """
+
+    name = "contra"
+    kind = "api"
+    host = "contra.com"
+    is_fixture = False
+    work_type = access.CLIENT_SERVICES
+    min_poll_interval_seconds = 3600.0
+    retention_note = ("public listings only; kept as the owner's own "
+                      "working record")
+
+    def request(self):
+        return {"url": "https://contra.com/opportunities"}
+
+    def parse(self, payload):
+        return []
+
+
 class ARateLimitIsANumberAndItIsEnforced(unittest.TestCase):
 
     def setUp(self):
@@ -239,7 +293,7 @@ class ARateLimitIsANumberAndItIsEnforced(unittest.TestCase):
         self.db = str(pathlib.Path(tempfile.mkdtemp()) / "solvent.db")
         self.s = Solvent(self.db)
         self.addCleanup(self.s.store.close)
-        self.source = adapters.GrantsGovSource()
+        self.source = PollingSource()
         self.s.discovery.register_source(
             self.source, owner_identity=OWNER,
             readiness=Readiness.PRODUCTION_READY,
@@ -258,14 +312,27 @@ class ARateLimitIsANumberAndItIsEnforced(unittest.TestCase):
             "UPDATE work_sources SET last_polled_at = ? WHERE name = ?",
             (value, self.source.name))
 
-    def test_every_fetching_adapter_declares_an_interval(self):
-        """An adapter that makes an external call and declares no interval is
-        one nothing can hold back."""
-        for cls in (adapters.GrantsGovSource, adapters.SamGovOpportunitiesSource):
-            with self.subTest(adapter=cls.__name__):
-                self.assertGreater(
-                    float(getattr(cls, "min_poll_interval_seconds", 0)), 0,
-                    f"{cls.__name__} declares no minimum poll interval")
+    def test_a_fetching_source_declaring_no_interval_cannot_poll(self):
+        """A source that makes an external call and declares no interval is
+        one nothing can hold back.
+
+        Asserted against behaviour now rather than against a list of
+        shipped adapter classes: there are no fetching adapters shipped
+        since the four were retired, so the old form of this test would
+        have passed over an empty list and proved nothing.
+        """
+        class NoInterval(PollingSource):
+            min_poll_interval_seconds = 0.0
+
+        source = NoInterval()
+        self.s.discovery.register_source(
+            source, owner_identity=OWNER,
+            readiness=Readiness.PRODUCTION_READY,
+            compliance=Compliance.PERMITTED,
+            determination="test: declares no interval")
+        allowed, why = self.s.discovery._may_poll(source)
+        self.assertFalse(allowed, "a source with no declared interval polled")
+        self.assertIn("interval", why)
 
     def test_the_interval_is_recorded_where_an_owner_can_see_it(self):
         self.assertEqual(self.state()["min_poll_interval_seconds"],
@@ -345,14 +412,30 @@ class ARateLimitIsANumberAndItIsEnforced(unittest.TestCase):
         self.assertTrue(gate_refusals,
                         "the first poll reached the network in simulation")
 
-    def test_a_source_with_no_interval_is_not_held_back(self):
-        """Manual and owner-entered sources make no external call, so there is
-        no limit to respect and inventing one would be permanent noise."""
+    def test_a_source_that_contacts_nobody_is_not_held_back(self):
+        """Manual and owner-entered sources make no external call, so there
+        is no limit to respect and inventing one would be permanent noise.
+
+        The fixture has to be one that really makes no call. This passed
+        on a *fetching* source until a missing interval stopped being
+        read as permission to poll freely -- so it was asserting the
+        opposite of what its own docstring says.
+        """
+        from solvent.discovery import ManualSource
+
         allowed, _why = self.s.discovery._rate_limit_respected(
-            self.source, {"min_poll_interval_seconds": 0,
-                          "last_polled_at": datetime.datetime.utcnow()
-                          .isoformat()})
+            ManualSource("by_hand", []),
+            {"min_poll_interval_seconds": 0,
+             "last_polled_at": datetime.datetime.utcnow().isoformat()})
         self.assertTrue(allowed)
+
+    def test_a_source_that_fetches_is_held_back_without_one(self):
+        """The other half, which nothing asserted before."""
+        allowed, why = self.s.discovery._rate_limit_respected(
+            self.source, {"min_poll_interval_seconds": 0,
+                          "last_polled_at": ""})
+        self.assertFalse(allowed)
+        self.assertIn("interval", why)
 
 
 if __name__ == "__main__":

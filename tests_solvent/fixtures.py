@@ -117,3 +117,70 @@ def certified_evidence_fields(check: str = CERTIFIED_CHECK) -> dict:
 #: host's secret store and reaches the process as SOLVENT_OWNER_KEY.
 TEST_ONLY_OWNER_KEY = b"TEST-ONLY-not-a-real-owner-key-0123456789abcdef"
 TEST_ONLY_ATTACKER_KEY = b"TEST-ONLY-an-attackers-key-fedcba9876543210-xyz"
+
+
+# --------------------------------------------------------------- commerce
+#
+# Two things every rig that runs a whole business cycle now needs, and a
+# real installation needs them too. They live here rather than in each
+# suite because they are the same two answers everywhere, and because a
+# suite that forgets one gets a confusing stop rather than a clear one.
+
+def _an_owner(solvent, owner_identity: str = "") -> str:
+    """Whoever this installation has registered as its owner.
+
+    Asked rather than assumed: this module's OWNER and the harness's are
+    different strings, and a helper that hard-codes one works in half
+    the suites and fails confusingly in the other half.
+    """
+    if owner_identity:
+        return owner_identity
+    registered = solvent.policy.get("governance", "owner_identities",
+                                    default=[])
+    if not registered:
+        raise AssertionError(
+            "this installation has no registered owner, so nothing can be "
+            "recorded on the owner's behalf")
+    return registered[0]
+
+
+def give_an_issuer(solvent, *, owner_identity: str = "") -> None:
+    """Record who is asking to be paid.
+
+    An invoice refuses to name nobody. It used to print "(contracting
+    identity not recorded)" into the From line and count the stage as
+    done, which produced a document that looks like a bill, names
+    nobody to pay, and cannot be sent.
+    """
+    solvent.policy.record_contracting_structure(
+        owner_identity=_an_owner(solvent, owner_identity),
+        structure="INDIVIDUAL",
+        reason="test: so an invoice can name an issuer",
+        legal_name="TEST-ONLY Owner",
+        email="test-only@example.invalid",
+        address="1 Test Street, Testville")
+
+
+def set_commercial_terms(solvent, *, owner_identity: str = "",
+                         **overrides) -> None:
+    """The four terms that decide what work is worth taking.
+
+    The Job Finder will not recommend pursuing anything while one of
+    them is missing, so a suite testing triage against an unconfigured
+    installation would be testing that gate over and over. The values
+    are test values; the citation says so, because a rate without one
+    is refused and a fake citation that reads like a real one would be
+    worse than the refusal.
+    """
+    terms = {
+        "minimum_project_fee_cents": 4_000,
+        "market_hourly_cents": {"csv-cleanup": 3_000},
+        "market_rate_citations": {
+            "csv-cleanup": "TEST-ONLY fixture, not a real citation"},
+        "compute_cents_per_cpu_hour": 12,
+        "minimum_margin_fraction": 0.05,
+    }
+    terms.update(overrides)
+    solvent.policy.amend({"commercial": terms},
+                         _an_owner(solvent, owner_identity),
+                         "test: the owner records the commercial terms")

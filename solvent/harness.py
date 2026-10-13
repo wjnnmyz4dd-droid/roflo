@@ -826,16 +826,26 @@ def _write_invoice(s: "Solvent", cycle: "BusinessCycle", *, workdir: str,
     fixed-price job the human comparison is shown as *context for the value*,
     clearly labelled, and the amount due is the agreed price.
     """
-    party = {}
-    try:
-        party = s.policy.contracting_party() or {}
-    except Exception:
-        party = {}
+    # An invoice with no issuer is not an invoice. This used to print
+    # "(contracting identity not recorded)" in the From line and carry
+    # on, producing a document that looks like a bill, names nobody to
+    # pay, and cannot be sent -- and producing it is worse than refusing,
+    # because the pipeline then reports an invoice step it completed.
+    #
+    # Policy already knows which fields an invoice needs and already has
+    # the question `may_contract_for("INVOICE")`. Nothing asked it.
+    allowed, why = s.policy.may_contract_for("INVOICE")
+    if not allowed:
+        raise FailClosed(
+            f"no invoice can be issued: {why}. The work is delivered and "
+            "verified; what is missing is who is asking to be paid")
+
+    party = s.policy.contracting_party() or {}
 
     lines = [
         "INVOICE",
         "",
-        f"From      : {party.get('legal_name') or '(contracting identity not recorded)'}",
+        f"From      : {party['legal_name']}",
         f"To        : {cycle.client_ref or '(client not recorded)'}",
         f"Job       : {cycle.job_id}",
         f"Reference : {cycle.opportunity_ref}",
@@ -1305,8 +1315,16 @@ def run_business_cycle(
     cycle.operating_cost_cents = cost.total_cents
     cycle.operating_cost_basis = cost.basis
 
-    cycle.invoice_path = _write_invoice(s, cycle, workdir=workdir, basis=basis,
-                                        agreed_hourly_cents=agreed_hourly_cents)
+    # A clean stop rather than an exception: a cycle that cannot invoice
+    # has still delivered and verified the work, and that is worth
+    # recording. What it must not do is report an invoice it did not
+    # write, or write one naming nobody.
+    try:
+        cycle.invoice_path = _write_invoice(
+            s, cycle, workdir=workdir, basis=basis,
+            agreed_hourly_cents=agreed_hourly_cents)
+    except FailClosed as refusal:
+        return stop("invoice", str(refusal))
     cycle.stages.append("invoice")
 
     if not simulate_payment:

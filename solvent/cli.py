@@ -302,6 +302,99 @@ def cmd_setup_contracting(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_marketplaces(args: argparse.Namespace) -> int:
+    """Print the six-platform interface: what is permitted where.
+
+    Seven activities per platform, kept apart. Permission to manage an
+    account is not permission to search jobs, and neither is permission
+    to bid -- collapsing them into one word per platform is how a
+    catalogue comes to claim an integration nobody has.
+    """
+    from . import sourcecatalog
+
+    print(sourcecatalog.marketplace_summary(), end="")
+    return 0
+
+
+def cmd_setup_commercial(args: argparse.Namespace) -> int:
+    """Record the four terms that decide what work is worth taking.
+
+    These were the last four owner decisions with no command behind
+    them, which is why they were still unset on an installation whose
+    owner had followed the manual to the letter. Until all four are
+    recorded the Job Finder will not recommend pursuing anything: it can
+    still assess, rank and explain, but it cannot tell work worth taking
+    from work that merely looks like it.
+
+    A market rate must come with its citation. Nothing here invents a
+    number -- every value is the owner's, and a rate the owner cannot
+    cite is one this refuses to store.
+    """
+    solvent = _owner_solvent(args)
+    terms: dict = {}
+    if args.minimum_fee_cents is not None:
+        if args.minimum_fee_cents <= 0:
+            print("refused: a minimum project fee of zero is not a floor")
+            return 1
+        terms["minimum_project_fee_cents"] = int(args.minimum_fee_cents)
+    if args.compute_cents_per_cpu_hour is not None:
+        if args.compute_cents_per_cpu_hour <= 0:
+            print("refused: compute costed at zero flatters every margin; "
+                  "record what running this machine actually costs")
+            return 1
+        terms["compute_cents_per_cpu_hour"] = int(args.compute_cents_per_cpu_hour)
+    if args.minimum_margin_fraction is not None:
+        if not 0 < args.minimum_margin_fraction < 1:
+            print("refused: a minimum margin is a fraction of revenue "
+                  "between 0 and 1")
+            return 1
+        terms["minimum_margin_fraction"] = float(args.minimum_margin_fraction)
+    if args.market_rate:
+        rates = dict(solvent.policy.get("commercial", "market_hourly_cents",
+                                        default={}) or {})
+        citations = dict(solvent.policy.get("commercial",
+                                            "market_rate_citations",
+                                            default={}) or {})
+        for entry in args.market_rate:
+            parts = entry.split("=", 2)
+            if len(parts) != 3 or not parts[2].strip():
+                print(f"refused: {entry!r} is not "
+                      "CAPABILITY=CENTS=CITATION. A rate with no citation "
+                      "cannot be told apart from one somebody invented")
+                return 1
+            capability, cents, citation = parts
+            try:
+                value = int(cents)
+            except ValueError:
+                print(f"refused: {cents!r} is not a whole number of cents")
+                return 1
+            if value <= 0:
+                print(f"refused: a market rate of {value} is not a rate")
+                return 1
+            rates[capability.strip()] = value
+            citations[capability.strip()] = citation.strip()
+        terms["market_hourly_cents"] = rates
+        terms["market_rate_citations"] = citations
+
+    if not terms:
+        print("nothing to record; pass at least one term")
+        return 1
+    solvent.policy.amend({"commercial": terms}, args.owner, args.reason)
+
+    from .finder import Finder
+
+    finder = Finder(solvent.discovery, solvent.policy, solvent.capability,
+                    solvent.orchestrator, solvent.store)
+    configured, gaps = finder.commercially_configured()
+    print("commercial terms recorded")
+    if configured:
+        print("  [OK ] all four are set; the Finder may recommend work")
+        return 0
+    for gap in gaps:
+        print(f"  [NEED] {gap}")
+    return 0
+
+
 def cmd_setup_work_source(args: argparse.Namespace) -> int:
     """Register and approve the owner-entered work source for the first trial."""
     from .discovery import Compliance, ManualSource, Readiness
@@ -1173,6 +1266,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("services", help="print the service-selection scorecard"
                    ).set_defaults(func=cmd_services)
 
+    marketplaces = sub.add_parser(
+        "marketplaces", help="what each marketplace permits, activity by "
+                             "activity")
+    marketplaces.add_argument("--db", default=rt.DEFAULT_DB)
+    marketplaces.set_defaults(func=cmd_marketplaces)
+
     metrics = sub.add_parser("metrics", help="print business metrics")
     metrics.add_argument("--db", default=rt.DEFAULT_DB)
     metrics.set_defaults(func=cmd_metrics)
@@ -1276,6 +1375,27 @@ def build_parser() -> argparse.ArgumentParser:
              "stores presence, never the number")
     contracting.add_argument("--reason", default="OD-1: owner contracting details")
     contracting.set_defaults(func=cmd_setup_contracting)
+
+    commercial = owned(setup_sub.add_parser(
+        "commercial", help="record the terms that decide what work is worth "
+                           "taking"))
+    commercial.add_argument("--minimum-fee-cents", type=int, default=None,
+                            help="the smallest job worth the overhead")
+    commercial.add_argument("--compute-cents-per-cpu-hour", type=int,
+                            default=None,
+                            help="what running this machine actually costs")
+    commercial.add_argument("--minimum-margin-fraction", type=float,
+                            default=None,
+                            help="smallest share of revenue that must "
+                                 "survive as profit, e.g. 0.30")
+    commercial.add_argument(
+        "--market-rate", action="append", default=[], metavar="CAP=CENTS=CITE",
+        help="a cited market rate, e.g. "
+             "csv-cleanup=3000='BLS OEWS 43-9021, May 2025'. Repeatable. "
+             "The citation is required")
+    commercial.add_argument("--reason",
+                            default="owner records the commercial terms")
+    commercial.set_defaults(func=cmd_setup_commercial)
 
     source = owned(setup_sub.add_parser(
         "work-source", help="register the owner-entered work source"))

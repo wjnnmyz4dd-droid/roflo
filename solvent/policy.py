@@ -99,7 +99,21 @@ DEFAULT_POLICY: dict[str, Any] = {
         # Per-capability market rate and work standard, recorded by the owner
         # with a citation. Empty until they are.
         "market_hourly_cents": {},
+        # The citation behind each entry in ``market_hourly_cents``, keyed
+        # the same way. A rate with no entry here is not usable: a number
+        # whose source nobody recorded is indistinguishable from one
+        # somebody made up, and the whole point of a market rate is that
+        # it is evidence rather than preference.
+        "market_rate_citations": {},
         "work_standards": {},
+        # The smallest share of revenue that must survive as profit for
+        # work to be worth taking. Zero means the owner has not set one,
+        # not that one cent of margin is acceptable.
+        #
+        # This key was read by exactly one thing -- the list of gaps that
+        # complains it is missing -- and enforced by nothing. It is
+        # enforced now, in `Finder._verdict`.
+        "minimum_margin_fraction": 0.0,
     },
     # How advisory inference is routed. Not used by the five commercial
     # skills, which are deterministic and call no model -- see

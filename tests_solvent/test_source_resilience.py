@@ -11,6 +11,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 
+from tests_solvent.fixtures import set_commercial_terms
 from solvent import sourceaccess as access
 from solvent.content import quarantine
 from solvent.discovery import (
@@ -48,6 +49,7 @@ class Sources(unittest.TestCase):
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.s = Solvent(f"{self.box.name}/res.db")
+        set_commercial_terms(self.s)
         self.addCleanup(self.close)
         for name in owner_promotions():
             promote_capability(self.s, name, owner_identity=OWNER,
@@ -226,18 +228,29 @@ class WhatASourceMustProveBeyondBeingUp(Sources):
         self.assertNotIn("beta", a.why)
 
     def test_20_a_healthy_source_carrying_no_usable_work_is_not_active(self):
-        """The category this whole file is named for."""
-        from solvent import adapters
+        """The category this whole file is named for.
+
+        Used the real Grants.gov adapter until that was retired with its
+        catalogue entry. A local double now, declaring the same thing
+        the adapter declared: grant funding is not what DeskPilot sells.
+        """
+        from solvent.discovery import FixtureSource
+
+        class GrantsFeed(FixtureSource):
+            is_fixture = False
+            kind = "feed"
+            work_type = access.GRANT_FUNDING
 
         self.s.discovery.register_source(
-            adapters.GrantsGovSource(), owner_identity=OWNER,
+            GrantsFeed("grants_feed", []), owner_identity=OWNER,
             readiness=Readiness.PERMITTED_AUTOMATION,
             compliance=Compliance.PERMITTED, determination="test")
-        state = self.s.discovery.source_state("grants_gov")
+        state = self.s.discovery.source_state("grants_feed")
         self.assertEqual(state["health"], access.HEALTHY)
-        verdict, why = self.s.discovery.source_suitability("grants_gov")
+        verdict, why = self.s.discovery.source_suitability("grants_feed")
         self.assertNotEqual(verdict, "ACTIVE")
-        self.assertNotIn("grants_gov",
+        self.assertIn("GRANT_FUNDING", why)
+        self.assertNotIn("grants_feed",
                          [r["name"] for r in self.s.discovery.active_sources()])
 
 

@@ -24,6 +24,7 @@ import tempfile
 import time
 import unittest
 
+from tests_solvent.fixtures import give_an_issuer
 from solvent.discovery import Compliance, FixtureSource, Readiness
 from solvent.harness import (
     OWNER, Solvent, owner_promotions, promote_capability, run_business_cycle,
@@ -75,6 +76,7 @@ class SameJobThreeWays(unittest.TestCase):
         self.addCleanup(box.cleanup)
         directory = pathlib.Path(box.name)
         s = Solvent(str(directory / "bench.db"))
+        give_an_issuer(s)
         self.addCleanup(lambda: self._close(s))
         for name in owner_promotions():
             promote_capability(s, name, owner_identity=OWNER,
@@ -191,6 +193,7 @@ class WhatRoutingActuallyChanges(unittest.TestCase):
         box = tempfile.TemporaryDirectory()
         self.addCleanup(box.cleanup)
         s = Solvent(f"{box.name}/r.db")
+        give_an_issuer(s)
         self.addCleanup(s.store.close)
         s.policy.amend({"ai": config}, OWNER, "benchmark")
         return InferenceRouter(s.policy, probe=probe)

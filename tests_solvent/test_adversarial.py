@@ -364,16 +364,25 @@ class HostileBoard(unittest.TestCase):
             def parse(self, payload):
                 return []
 
+        # Registered under a catalogued id with a declared interval, so
+        # the Governor is what refuses it. Two gates now stand earlier --
+        # an unresearched host cannot be read, and a fetching source with
+        # no declared interval cannot poll -- and a test that stopped at
+        # either of those would no longer be testing the Governor.
+        Paid.name = "contra"
+        Paid.host = "contra.com"
+        Paid.min_poll_interval_seconds = 3600.0
+
         from solvent.harness import OWNER as HARNESS_OWNER
         s = self._rig([])
         s.discovery.register_source(
             Paid(), owner_identity=HARNESS_OWNER,
             readiness=Readiness.PERMITTED_AUTOMATION,
             compliance=Compliance.PERMITTED, determination="public API")
-        s.policy.amend({"discovery": {"approved_sources": ["paid_board"]},
-                        "egress": {"allowlist": [{"host": "jobs.example.com"}]}},
+        s.policy.amend({"discovery": {"approved_sources": ["contra"]},
+                        "egress": {"allowlist": [{"host": "contra.com"}]}},
                        HARNESS_OWNER, "allow the host")
-        self.assertEqual(s.discovery.poll("paid_board"), [])
+        self.assertEqual(s.discovery.poll("contra"), [])
         requests = s.store.raw_readonly("SELECT * FROM action_requests")
         self.assertTrue(requests)
         self.assertTrue(all(r["simulated"] or not r["allowed"] for r in requests),

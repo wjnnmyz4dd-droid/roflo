@@ -39,8 +39,20 @@ class FinderFixture(unittest.TestCase):
         self.s.discovery.grant(
             MINIMUM_OK, sourceaccess.HOURLY_MINIMUM, owner_identity=OWNER,
             why="test: this platform's terms allow an agreed minimum")
+        # A fully configured business. All four commercial terms, because
+        # the Finder will not recommend pursuing anything while one is
+        # missing -- and a triage matrix run against an unconfigured
+        # installation would be testing that gate over and over instead
+        # of testing triage.
         self.s.policy.amend(
-            {"commercial": {"minimum_project_fee_cents": 4_000}},
+            {"commercial": {
+                "minimum_project_fee_cents": 4_000,
+                "market_hourly_cents": {"csv-cleanup": 3_000},
+                "market_rate_citations": {
+                    "csv-cleanup": "test fixture, not a real citation"},
+                "compute_cents_per_cpu_hour": 12,
+                "minimum_margin_fraction": 0.05,
+            }},
             OWNER, "test: the owner will not take work under $40, which is "
                    "exactly one minimum engagement at their hourly rate")
         self.finder = Finder(self.s.discovery, self.s.policy,
@@ -50,6 +62,27 @@ class FinderFixture(unittest.TestCase):
     def _close(self):
         try:
             self.s.store.close()
+        except Exception:
+            pass
+
+    def bare_finder(self) -> Finder:
+        """A Finder over an installation the owner has not configured.
+
+        A fresh database rather than an amendment: ``amend`` merges, so
+        writing an empty dict over a recorded one leaves the recorded
+        one in place and the test would pass for the wrong reason.
+        """
+        box = tempfile.TemporaryDirectory()
+        self.addCleanup(box.cleanup)
+        bare = Solvent(f"{box.name}/bare.db")
+        self.addCleanup(lambda: self._quietly_close(bare))
+        return Finder(bare.discovery, bare.policy, bare.capability,
+                      bare.orchestrator, bare.store)
+
+    @staticmethod
+    def _quietly_close(solvent):
+        try:
+            solvent.store.close()
         except Exception:
             pass
 
@@ -329,7 +362,14 @@ class TermsOnlyTheOwnerCanSet(FinderFixture):
         self.assertEqual([g for g in gaps if "can ever be accepted" in g], [])
 
     def test_the_uncosted_and_unset_terms_are_named(self):
-        gaps = " | ".join(self.finder.configuration_gaps())
+        """On an installation where they really are unset.
+
+        The shared fixture configures all four now, because the Finder
+        will not recommend anything while one is missing. This one
+        clears them again: the gap list has to name what is missing, and
+        a fixture with nothing missing cannot show that.
+        """
+        gaps = " | ".join(self.bare_finder().configuration_gaps())
         self.assertIn("compute is costed at zero", gaps)
         self.assertIn("no cited market rates", gaps)
         self.assertIn("no minimum margin", gaps)

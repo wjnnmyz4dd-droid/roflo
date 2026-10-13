@@ -42,8 +42,6 @@ from . import sourceaccess as access
 
 # Categories, used only for grouping on the owner's page.
 FREELANCE_MARKETPLACE = "FREELANCE_MARKETPLACE"
-PUBLIC_PROCUREMENT = "PUBLIC_PROCUREMENT"
-RFP_BID_BOARD = "RFP_BID_BOARD"
 DIRECT = "DIRECT"
 
 
@@ -323,58 +321,6 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
         )),
 
     # ------------------------------------------------- public / government
-    CatalogueEntry(
-        "sam_gov", "SAM.gov (US federal contract opportunities)",
-        PUBLIC_PROCUREMENT,
-        "the owner must obtain a free public API key from their SAM.gov "
-        "account, and must separately establish whether they are registered "
-        "and eligible to bid on federal contracts at all",
-        access_method=access.OFFICIAL_API, auth_required=True,
-        verified_on="2026-09-29",
-        evidence="open.gsa.gov/api/get-opportunities-public-api/ — api_key "
-                 "required, GET https://api.sam.gov/opportunities/v2/search, "
-                 "pagination required, limit max 1000, postedFrom/postedTo "
-                 "required and at most one year apart",
-        adapter_implemented=True,
-        notes="Contract work, which is DeskPilot's actual mission. Visible is "
-              "not eligible: eligibility, registration and reporting "
-              "obligations attach to the contractor, not to the contract, and "
-              "nothing here infers that the owner may bid."),
-    CatalogueEntry(
-        "grants_gov", "Grants.gov (US federal funding opportunities)",
-        PUBLIC_PROCUREMENT,
-        "none for access; the owner decides whether grant-funded work is in "
-        "scope, since a grant is applied for rather than sold",
-        access_method=access.PUBLIC_FEED, auth_required=False,
-        verified_on="2026-09-29",
-        evidence="grants.gov/api/api-guide — \"Authentication and "
-                 "authorization are not required for the following APIs: "
-                 "Endpoint: search2\"; POST https://api.grants.gov/v1/api/"
-                 "search2; confirmed against a live response on the same date",
-        adapter_implemented=True,
-        notes="The only source needing no credential of any kind, so the only "
-              "one that can demonstrate autonomous discovery on a machine the "
-              "owner has not configured. Returns funding opportunities rather "
-              "than client work, which is why it is labelled and left for the "
-              "owner to enable."),
-    CatalogueEntry(
-        "state_local_procurement", "State / local procurement portal",
-        PUBLIC_PROCUREMENT,
-        "each jurisdiction runs its own portal on its own terms; one entry is "
-        "registered per portal the owner actually uses",
-        auth_required=False,
-        notes="Deliberately generic. Hard-coding one state would make the "
-              "registry wrong everywhere else; the owner registers the portal "
-              "they need as its own source."),
-
-    # ------------------------------------------------------ rfp / bid boards
-    CatalogueEntry(
-        "rfp_board", "RFP / bid board", RFP_BID_BOARD,
-        "the owner records which board, and what its terms allow",
-        auth_required=False,
-        notes="A shape, so a legitimate board can be added later without "
-              "changing the Job Orchestrator or anything downstream of it."),
-
     # --------------------------------------------------------------- direct
     CatalogueEntry(
         "owner_entered", "Owner-entered opportunity", DIRECT,
@@ -543,3 +489,67 @@ def operational_status(entry: "CatalogueEntry", *,
     return (ESTABLISHED_AUTOMATED,
             f"{entry.access_method} established on {entry.verified_on} "
             f"({entry.evidence or 'no source recorded'})")
+
+
+def marketplace_interface(*, today: str = "") -> list[dict]:
+    """One row per marketplace: what is permitted there, activity by activity.
+
+    The six are the whole list now, and this is the view that answers
+    "what can DeskPilot actually do on each of them?" without blurring
+    the seven activities into one word. Permission for one is not
+    permission for another: a platform may publish an API for managing
+    an account and forbid crawling its job pages in the same breath, and
+    reading that as "Upwork is integrated" is the mistake the split
+    exists to prevent.
+
+    Derived from the recorded findings every time it is called. Nothing
+    here is stored, so a row cannot drift away from the research behind
+    it, and an activity nobody has read about reads UNDETERMINED rather
+    than disappearing.
+    """
+    rows = []
+    for entry in by_type(FREELANCE_MARKETPLACE):
+        activities = {}
+        for label in sorted(access.ACTIVITY_KINDS):
+            activity = access.ACTIVITY_KINDS[label]
+            finding = entry.terms_for(activity)
+            activities[label] = {
+                "activity": activity,
+                "finding": finding.finding,
+                "citation": finding.citation,
+                "read_on": finding.read_on,
+            }
+        status, why = operational_status(entry, today=today)
+        rows.append({
+            "source_id": entry.source_id,
+            "display_name": entry.display_name,
+            "status": status,
+            "why": why,
+            "permitted": list(entry.permitted_activities()),
+            "activities": activities,
+            # True of all six and the reason any of them is usable at
+            # all: the owner reading a listing and typing it in needs
+            # nobody's permission, makes no automated request, and goes
+            # through exactly the same qualification as anything else.
+            "manual_import_available": True,
+        })
+    return rows
+
+
+def marketplace_summary(*, today: str = "") -> str:
+    """The six-platform interface as text, for the CLI and the report."""
+    rows = marketplace_interface(today=today)
+    out = [f"{len(rows)} marketplaces; manual import is available on all of "
+           "them and needs nobody's permission", ""]
+    for row in rows:
+        permitted = ", ".join(row["permitted"]) or "nothing"
+        out.append(f"{row['display_name']}  [{row['status']}]")
+        out.append(f"    automated: {permitted}")
+        for label, finding in row["activities"].items():
+            mark = {TERMS_PERMITTED: "yes", TERMS_FORBIDDEN: "no "}.get(
+                finding["finding"], "?  ")
+            cite = finding["citation"]
+            out.append(f"      [{mark}] {label}"
+                       + (f" — {cite[:70]}" if cite else " — nobody has read this"))
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"

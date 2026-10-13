@@ -217,6 +217,48 @@ class Finder:
     def minimum_fee_cents(self) -> Cents:
         return int(self._commercial("minimum_project_fee_cents", 0) or 0)
 
+    @property
+    def minimum_margin_fraction(self) -> float:
+        return float(self._commercial("minimum_margin_fraction", 0) or 0)
+
+    def market_rate_cents(self, capability: str) -> tuple[Cents, str]:
+        """The cited market rate for one capability, or zero and why not.
+
+        Returns ``(cents, citation)``. A rate with no citation returns
+        zero, which ``quote_fixed_price`` already refuses to price
+        against -- so an uncited number cannot reach a quote even if
+        somebody puts one in the table.
+        """
+        rates = dict(self._commercial("market_hourly_cents", {}) or {})
+        citations = dict(self._commercial("market_rate_citations", {}) or {})
+        cents = int(rates.get(capability, 0) or 0)
+        citation = str(citations.get(capability, "")).strip()
+        if cents <= 0:
+            return 0, f"no market rate is recorded for {capability!r}"
+        if not citation:
+            return 0, (f"the market rate for {capability!r} has no recorded "
+                       "citation, and an uncited rate is not evidence")
+        return cents, citation
+
+    def commercially_configured(self) -> tuple[bool, list[str]]:
+        """May the Finder recommend pursuing paid work at all?
+
+        ``configuration_gaps`` has listed these since it was written, and
+        listing them was all that happened: every gap left a default that
+        reads as permission. No floor meant no floor applied. Compute at
+        zero meant every margin shown was better than the real one. A
+        minimum margin was read by the gap list and by nothing else --
+        the system complained the number was missing and then never used
+        it anywhere.
+
+        So the gaps are a gate now. While any of them is open the Finder
+        cannot say PURSUE, because it cannot tell work worth taking from
+        work that merely looks like it. It still assesses, ranks and
+        explains; it just will not recommend.
+        """
+        gaps = self.configuration_gaps()
+        return (not gaps), gaps
+
     def minimum_hours_applicable(self, opportunity: Opportunity) -> tuple[bool, str]:
         """May a one-hour minimum be charged on this posting?
 
@@ -266,11 +308,29 @@ class Finder:
             gaps.append(
                 "no minimum project fee is set, so work worth less than the "
                 "overhead of taking it will still be recommended")
-        if not self._commercial("market_hourly_cents", {}):
+        rates = dict(self._commercial("market_hourly_cents", {}) or {})
+        if not rates:
             gaps.append(
                 "no cited market rates are recorded, so a fixed price can "
                 "only be taken from what the client already offered, never "
                 "proposed from evidence")
+        else:
+            # The word in that sentence doing the work is "cited". This
+            # used to check only that *some* rate existed, so a number
+            # typed in with no source closed the gap and the sentence
+            # became untrue -- which is worse than the gap, because an
+            # uncited rate reads exactly like a researched one once it
+            # is in the table.
+            uncited = sorted(
+                name for name in rates
+                if not str((self._commercial("market_rate_citations", {})
+                            or {}).get(name, "")).strip())
+            if uncited:
+                gaps.append(
+                    f"{len(uncited)} market rate(s) have no recorded "
+                    f"citation ({', '.join(uncited[:3])}), and a rate whose "
+                    "source nobody wrote down cannot be told apart from one "
+                    "somebody invented")
         if not float(self._commercial("compute_cents_per_cpu_hour", 0) or 0):
             gaps.append(
                 "compute is costed at zero, so every margin shown is better "
@@ -531,6 +591,32 @@ class Finder:
             return Verdict.DECLINE, (
                 f"it would cost {(econ.cost_cents or 0) / 100:,.2f} to earn "
                 f"{econ.revenue_cents / 100:,.2f}")
+
+        # The owner's margin, applied. Clearing cost by a cent is not a
+        # business; the floor says what "worth doing" means in money and
+        # this says what it means as a share.
+        margin = self.minimum_margin_fraction
+        if (margin > 0 and econ.profit_cents is not None
+                and econ.revenue_cents > 0):
+            required = econ.revenue_cents * margin
+            if econ.profit_cents < required:
+                return Verdict.DECLINE, (
+                    f"{econ.profit_cents / 100:,.2f} on "
+                    f"{econ.revenue_cents / 100:,.2f} is a "
+                    f"{econ.profit_cents / econ.revenue_cents:.1%} margin, "
+                    f"below the {margin:.0%} the owner requires")
+
+        # Last, because it is a fact about the installation rather than
+        # about this posting: every per-job question above has been
+        # answered and recorded, and only then does an unconfigured
+        # business stop the recommendation.
+        configured, gaps = self.commercially_configured()
+        if not configured:
+            return Verdict.HOLD, (
+                "this looks worth taking, but the commercial terms that "
+                "decide what 'worth taking' means are not set, so the "
+                f"answer cannot be trusted: {gaps[0]}"
+                + (f" (and {len(gaps) - 1} more)" if len(gaps) > 1 else ""))
         if reachable is None:
             return Verdict.HOLD, (
                 f"worth doing, but {tier_detail.lower()}")

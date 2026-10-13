@@ -10,6 +10,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 
+from tests_solvent.fixtures import set_commercial_terms
 from solvent.errors import FailClosed
 from solvent.harness import OWNER, Solvent
 from solvent.operation import Bounds, Operator, StopReason
@@ -33,6 +34,7 @@ class Attack(unittest.TestCase):
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.s = Solvent(f"{self.box.name}/adv.db")
+        set_commercial_terms(self.s)
         self.addCleanup(self.close)
         self.calls = 0
 
@@ -374,6 +376,7 @@ class APostingThatNamesNoPrice(unittest.TestCase):
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.s = Solvent(f"{self.box.name}/price.db")
+        set_commercial_terms(self.s)
         self.addCleanup(self.close)
         for name in owner_promotions():
             promote_capability(self.s, name, owner_identity=OWNER, why="test")
@@ -446,6 +449,7 @@ class PollingObeysThePlatformsOwnAnswer(unittest.TestCase):
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.s = Solvent(f"{self.box.name}/poll.db")
+        set_commercial_terms(self.s)
         self.addCleanup(self.close)
 
         class Catalogued(WorkSource):

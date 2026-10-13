@@ -11,6 +11,7 @@ import collections
 import tempfile
 import unittest
 
+from tests_solvent.fixtures import give_an_issuer, set_commercial_terms
 from solvent import sourceaccess as access
 from solvent import storefront as sf
 from solvent.content import quarantine
@@ -37,6 +38,8 @@ class Matrix(unittest.TestCase):
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.s = Solvent(f"{self.box.name}/matrix.db")
+        give_an_issuer(self.s)
+        set_commercial_terms(self.s)
         self.addCleanup(self.close)
         for name in owner_promotions():
             promote_capability(self.s, name, owner_identity=OWNER,

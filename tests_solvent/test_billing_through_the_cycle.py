@@ -21,6 +21,7 @@ import pathlib
 import tempfile
 import unittest
 
+from tests_solvent.fixtures import give_an_issuer
 from solvent.discovery import Compliance, FixtureSource, Readiness
 from solvent.errors import FailClosed
 from solvent.harness import (
@@ -58,6 +59,7 @@ class Billing(unittest.TestCase):
         self.addCleanup(self.box.cleanup)
         self.dir = pathlib.Path(self.box.name)
         self.s = Solvent(str(self.dir / "billing.db"))
+        give_an_issuer(self.s)
         self.addCleanup(self.close)
         for name in owner_promotions():
             promote_capability(self.s, name, owner_identity=OWNER,

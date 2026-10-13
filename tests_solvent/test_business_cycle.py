@@ -28,6 +28,7 @@ import unittest
 
 from solvent.discovery import Compliance, FixtureSource, Readiness
 from solvent.errors import FailClosed
+from tests_solvent.fixtures import give_an_issuer
 from solvent.harness import (
     CYCLE_STAGES, FIXTURE_RATES, OWNER, Solvent, owner_promotions,
     stages_without_conditionals,
@@ -66,6 +67,8 @@ AGREED = [req("R1", "drop_exact_duplicates"),
           req("R3", "parses_as_csv")]
 
 
+
+
 class Cycle(unittest.TestCase):
     """One configured Solvent with one posting on one approved board."""
 
@@ -77,6 +80,7 @@ class Cycle(unittest.TestCase):
         self.addCleanup(self.box.cleanup)
         self.dir = pathlib.Path(self.box.name)
         self.s = Solvent(str(self.dir / "cycle.db"))
+        give_an_issuer(self.s)
         self.addCleanup(self.close)
         self.clear_for_client_work()
         self.load_pricing()
@@ -439,6 +443,7 @@ class WhatTheCycleRefusesToTake(Cycle):
     def test_an_opportunity_needing_something_nobody_has_is_rejected(self):
         self.s.store.close()
         self.s = Solvent(str(self.dir / "gap.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board([{**CSV_POSTING, "ref": "cycle-gap",
@@ -453,6 +458,7 @@ class WhatTheCycleRefusesToTake(Cycle):
         gate even though every check passes."""
         self.s.store.close()
         self.s = Solvent(str(self.dir / "limited.db"))
+        give_an_issuer(self.s)
         from solvent.harness import (certifiable_scope, ensure_verifier_certified,
                                      provision_development_only)
         ensure_verifier_certified(self.s, "csv-cleanup")
@@ -536,6 +542,7 @@ class EveryClearedSkillEarnsThroughTheSameCycle(Cycle):
     def cycle_for(self, capability, source_path, requirements, quoted=40_000):
         self.s.store.close()
         self.s = Solvent(str(self.dir / f"{capability}.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board([self.board(f"cycle-{capability}", capability,
@@ -718,6 +725,7 @@ class TheOwnersCommandIsTheEntryPoint(Cycle):
 
     def reopen(self):
         self.s = Solvent(self.db)
+        give_an_issuer(self.s)
         return self.s
 
     def test_the_unflagged_command_stops_at_the_owners_decision(self):
@@ -794,6 +802,7 @@ class KLeanTheJournalDoesNotKeepTheClientsSecrets(Cycle):
         secret = self.planted()
         self.s.store.close()
         self.s = Solvent(str(self.dir / "planted.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board([{**CSV_POSTING, "ref": "cycle-planted",
@@ -820,6 +829,7 @@ class KLeanTheJournalDoesNotKeepTheClientsSecrets(Cycle):
         secret = self.planted()
         self.s.store.close()
         self.s = Solvent(str(self.dir / "planted-ref.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board([{**CSV_POSTING, "ref": f"job-{secret}"}])
@@ -907,6 +917,7 @@ class IFixAiTheRefusalMovesEachTimeADefectIsFixed(Cycle):
         # 1. Nobody can do the work at all.
         self.s.store.close()
         self.s = Solvent(str(self.dir / "chain.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board([{**CSV_POSTING, "ref": "chain",
@@ -921,6 +932,7 @@ class IFixAiTheRefusalMovesEachTimeADefectIsFixed(Cycle):
         # 2. A capability that can. Now the owner has not answered.
         self.s.store.close()
         self.s = Solvent(str(self.dir / "chain2.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board()
@@ -933,6 +945,7 @@ class IFixAiTheRefusalMovesEachTimeADefectIsFixed(Cycle):
         # 3. The owner answers. Now there are no agreed terms.
         self.s.store.close()
         self.s = Solvent(str(self.dir / "chain3.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board()
@@ -945,6 +958,7 @@ class IFixAiTheRefusalMovesEachTimeADefectIsFixed(Cycle):
         #    refusal with two labels.
         self.s.store.close()
         self.s = Solvent(str(self.dir / "chain4.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board()
@@ -960,6 +974,7 @@ class IFixAiTheRefusalMovesEachTimeADefectIsFixed(Cycle):
         # 5. Real terms, but the client's destination is not approved.
         self.s.store.close()
         self.s = Solvent(str(self.dir / "chain5.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board()
@@ -976,6 +991,7 @@ class IFixAiTheRefusalMovesEachTimeADefectIsFixed(Cycle):
         # 6. Destination approved. Now nothing has been paid.
         self.s.store.close()
         self.s = Solvent(str(self.dir / "chain6.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board()
@@ -987,6 +1003,7 @@ class IFixAiTheRefusalMovesEachTimeADefectIsFixed(Cycle):
         # 7. Paid. Nothing is left to refuse.
         self.s.store.close()
         self.s = Solvent(str(self.dir / "chain7.db"))
+        give_an_issuer(self.s)
         self.clear_for_client_work()
         self.load_pricing()
         self.register_board()

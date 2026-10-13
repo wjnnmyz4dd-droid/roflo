@@ -254,6 +254,12 @@ class NoCommandSellsWork(unittest.TestCase):
         self.assertEqual(
             set(actions),
             {"doctor", "laws", "acquire", "services", "metrics", "status",
+             # `marketplaces` prints the six-platform interface derived
+             # from the recorded terms findings. It reads the catalogue,
+             # which is a constant in this repository, and contacts
+             # nothing -- the whole point of it is to say what DeskPilot
+             # is *not* permitted to do on each platform.
+             "marketplaces",
              "readiness", "demo", "state", "run", "health", "recover", "halt",
              "resume", "setup", "payments", "relay", "web", "web-exposure",
              # `intents` reads the control centre's spool and answers it. It

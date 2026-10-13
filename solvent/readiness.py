@@ -196,6 +196,36 @@ def first_revenue_readiness(*, policy, ledger, capability, discovery,
               "smallest job worth the overhead of taking",
               category=OWNER_CONFIG))
 
+    margin = float(policy.get("commercial", "minimum_margin_fraction",
+                              default=0) or 0)
+    add(Check("a minimum margin", margin > 0,
+              f"minimum margin {margin:.0%}" if margin > 0 else
+              "no minimum margin is set, so a job clearing its cost by one "
+              "cent counts as worth taking",
+              "" if margin > 0 else
+              "set `commercial.minimum_margin_fraction` to the smallest "
+              "share of revenue that must survive as profit",
+              category=OWNER_CONFIG))
+
+    rates = dict(policy.get("commercial", "market_hourly_cents",
+                            default={}) or {})
+    citations = dict(policy.get("commercial", "market_rate_citations",
+                                default={}) or {})
+    uncited = sorted(name for name in rates
+                     if not str(citations.get(name, "")).strip())
+    cited = bool(rates) and not uncited
+    add(Check("cited market rates", cited,
+              f"{len(rates)} rate(s), each with a citation" if cited else
+              (f"{len(uncited)} rate(s) recorded with no citation: "
+               + ", ".join(uncited[:3])) if uncited else
+              "no market rates are recorded, so a fixed price can only be "
+              "taken from what the client already offered",
+              "" if cited else
+              "OD-7: load public wage data per capability through the "
+              "pricing reference with its citation, and approve the source "
+              "in Policy first",
+              category=OWNER_CONFIG))
+
     # Whether a second opinion can be produced at all on this host. Checked
     # here as well as per job, because the per-job check arrives when a
     # client is already waiting: the owner should know before they go

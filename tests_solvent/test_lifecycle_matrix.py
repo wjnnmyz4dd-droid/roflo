@@ -12,6 +12,7 @@ import pathlib
 import tempfile
 import unittest
 
+from tests_solvent.fixtures import set_commercial_terms
 from solvent import sourceaccess as access
 from solvent import storefront as sf
 from solvent.content import quarantine
@@ -35,6 +36,7 @@ class Lifecycle(unittest.TestCase):
         cls.box = tempfile.TemporaryDirectory()
         cls.dir = pathlib.Path(cls.box.name)
         cls.s = Solvent(str(cls.dir / "life.db"))
+        set_commercial_terms(cls.s)
         for name in owner_promotions():
             promote_capability(cls.s, name, owner_identity=OWNER,
                                why="test: cleared for the lifecycle matrix")

@@ -20,6 +20,7 @@ import pathlib
 import tempfile
 import unittest
 
+from tests_solvent.fixtures import give_an_issuer
 from solvent import independent, xlsx
 from solvent.discovery import Compliance, FixtureSource, Readiness
 from solvent.errors import FailClosed
@@ -59,6 +60,7 @@ class Base(unittest.TestCase):
         self.addCleanup(self.box.cleanup)
         self.dir = pathlib.Path(self.box.name)
         self.s = Solvent(str(self.dir / "t2.db"))
+        give_an_issuer(self.s)
         self.addCleanup(self.close)
         for name in owner_promotions():
             promote_capability(self.s, name, owner_identity=OWNER,
@@ -365,6 +367,7 @@ class AnApprovalIsSingleUseUnderConcurrency(unittest.TestCase):
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.s = Solvent(f"{self.box.name}/race.db")
+        give_an_issuer(self.s)
         self.addCleanup(self.s.store.close)
         os.environ["SOLVENT_OWNER_KEY"] = secrets.token_hex(32)
         self.addCleanup(os.environ.pop, "SOLVENT_OWNER_KEY", None)

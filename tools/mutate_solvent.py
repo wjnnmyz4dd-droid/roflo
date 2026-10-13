@@ -625,6 +625,85 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_each_shape_is_redacted_under_an_unhelpful_label",
         "a provider-shaped token under a label the list does not know "
         "would be stored in full"),
+
+    # ---- the six-platform interface ---------------------------------
+
+    Mutant(
+        "an-unresearched-host-is-governed-less-than-a-researched-one",
+        "solvent/discovery.py",
+        '            return self._uncatalogued(name, "reading its listings")',
+        '            return True, ""',
+        "tests_solvent.test_retired_sources.WhatRetiringThemWouldHaveOpened"
+        ".test_an_uncatalogued_host_may_not_have_its_listings_read",
+        "deleting a catalogue entry would make its source more permitted "
+        "than it was before, which is the opposite of what retiring a "
+        "source should mean"),
+
+    Mutant(
+        "an-uncatalogued-host-may-be-acted-on",
+        "solvent/discovery.py",
+        "            return self._uncatalogued(name, permission)",
+        '            return True, ""',
+        "tests_solvent.test_retired_sources.WhatRetiringThemWouldHaveOpened"
+        ".test_an_uncatalogued_host_may_not_be_acted_on",
+        "a site nobody researched could be bid on, messaged and delivered "
+        "through"),
+
+    Mutant(
+        "a-fetching-source-needs-no-rate-limit",
+        "solvent/discovery.py",
+        "            if self._fetches(source):",
+        "            if False:",
+        "tests_solvent.test_retired_sources.AFetchingSourceDeclaresItsLimit"
+        ".test_a_fetching_source_without_an_interval_cannot_poll",
+        "a source that makes external calls and declares no interval would "
+        "be polled with nothing holding it back"),
+
+    # ---- the four commercial terms ----------------------------------
+
+    Mutant(
+        "unconfigured-terms-still-recommend-work",
+        "solvent/finder.py",
+        "        configured, gaps = self.commercially_configured()",
+        "        configured, gaps = (True, [])",
+        "tests_solvent.test_commercial_configuration"
+        ".NothingIsRecommendedUntilAllFourAreSet"
+        ".test_an_unconfigured_installation_recommends_nothing",
+        "work would be recommended by an installation that cannot tell "
+        "work worth taking from work that merely looks like it"),
+
+    Mutant(
+        "the-owners-margin-is-ignored",
+        "solvent/finder.py",
+        "        margin = self.minimum_margin_fraction",
+        "        margin = 0.0",
+        "tests_solvent.test_commercial_configuration.TheOwnersMarginIsApplied"
+        ".test_clearing_cost_by_a_hair_is_not_worth_taking",
+        "a job clearing its cost by a cent would count as worth taking, "
+        "which is what the owner set a margin to prevent"),
+
+    Mutant(
+        "an-uncited-rate-counts-as-evidence",
+        "solvent/finder.py",
+        "        if not citation:",
+        "        if False:",
+        "tests_solvent.test_commercial_configuration.AnUncitedRateIsNotEvidence"
+        ".test_an_uncited_rate_cannot_be_read_for_a_quote",
+        "a number typed into the rate table with no source would price "
+        "real work as though it were researched"),
+
+    # ---- who is asking to be paid -----------------------------------
+
+    Mutant(
+        "an-invoice-may-name-nobody",
+        "solvent/harness.py",
+        '    allowed, why = s.policy.may_contract_for("INVOICE")',
+        "    allowed, why = (True, '')",
+        "tests_solvent.test_commercial_configuration"
+        ".AnInvoiceNamesWhoIsAskingToBePaid.test_no_identity_means_no_invoice",
+        "a document that looks like a bill, names nobody to pay and cannot "
+        "be sent would be produced, and the pipeline would report the "
+        "invoice stage as done"),
 )
 
 

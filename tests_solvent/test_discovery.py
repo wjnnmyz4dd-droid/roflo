@@ -1,6 +1,7 @@
 """Discovery finds work. It can never take it."""
 
 import unittest
+from solvent import sourceaccess as access
 
 from solvent.discovery import (
     Compliance, Discovery, FixtureSource, OpportunityStatus, Readiness, WorkSource,
@@ -107,10 +108,22 @@ class ExternalFetchGoesThroughTheGate(Base):
     """Discovery gets no bypass, no private path, no special credential."""
 
     class RemoteSource(WorkSource):
-        name = "remote_board"
+        """Registered as ``contra`` so the Gate is what refuses it.
+
+        Two gates now stand before the Action Gate for a fetching
+        source: its terms must permit reading (so it has to be a source
+        somebody researched) and it must declare a poll interval. This
+        double satisfies both, because these tests are about the Gate
+        and a test that passed for one of the other two reasons would
+        stop testing the thing it is named after.
+        """
+
+        name = "contra"
         kind = "http"
-        host = "jobs.example.com"
+        host = "contra.com"
         structured_offer_terms = True
+        work_type = access.CLIENT_SERVICES
+        min_poll_interval_seconds = 3600.0
 
         def request(self):
             return {"path": "/api/jobs"}
@@ -123,9 +136,9 @@ class ExternalFetchGoesThroughTheGate(Base):
         self.discovery.register_source(
             remote, owner_identity=OWNER, readiness=Readiness.PERMITTED_AUTOMATION,
             compliance=Compliance.PERMITTED, determination="public API, terms allow")
-        self.approve("remote_board")
+        self.approve("contra")
         # No egress allowlist entry, so the Gate denies and Discovery has no fallback.
-        self.assertEqual(self.discovery.poll("remote_board"), [])
+        self.assertEqual(self.discovery.poll("contra"), [])
         denials = [a for a in self.rig.store.raw_readonly(
             "SELECT * FROM action_requests") if not a["allowed"]]
         self.assertTrue(denials)
@@ -136,9 +149,9 @@ class ExternalFetchGoesThroughTheGate(Base):
         gateless.register_source(
             remote, owner_identity=OWNER, readiness=Readiness.PERMITTED_AUTOMATION,
             compliance=Compliance.PERMITTED, determination="public API")
-        self.approve("remote_board")
+        self.approve("contra")
         with self.assertRaises(FailClosed) as ctx:
-            gateless.poll("remote_board")
+            gateless.poll("contra")
         self.assertIn("no path around it", str(ctx.exception))
 
     def test_a_fixture_source_makes_no_external_call_at_all(self):

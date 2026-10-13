@@ -392,6 +392,22 @@ class Discovery:
             readiness=readiness.value, compliance=compliance.value,
             is_fixture=source.is_fixture)
 
+    @staticmethod
+    def _fetches(source) -> bool:
+        """Does polling this source contact anybody?
+
+        Asked of the source rather than of its registration, because this
+        is the one question the object itself is the authority on: a
+        source that returns no request makes no call, whatever the
+        record says about it.
+        """
+        try:
+            return source.request() is not None
+        except Exception:
+            # A source whose request cannot even be built is not one to
+            # poll unthrottled.
+            return True
+
     def _rate_limit_respected(self, source, state: dict) -> tuple[bool, str]:
         """Has long enough passed since this source was last fetched?
 
@@ -412,10 +428,22 @@ class Discovery:
         interval = float(state.get("min_poll_interval_seconds") or 0.0)
         if interval <= 0:
             # Nothing established. Manual and owner-entered sources make no
-            # external call at all, so there is no limit to respect; for an
-            # automated one this is a gap in the registration rather than
-            # permission to poll freely, and the registration path records a
-            # conservative default for every adapter that fetches.
+            # external call at all, so there is no limit to respect -- but a
+            # source that *does* fetch and has no interval recorded is a gap
+            # in the registration, not permission to poll freely.
+            #
+            # This used to say exactly that and then return True anyway,
+            # trusting "the registration path records a conservative default
+            # for every adapter that fetches". The test guarding it checked
+            # that the two shipped adapters happened to declare an interval,
+            # which is a property of those two classes rather than a rule
+            # anything enforced; retiring them left the test passing over an
+            # empty list and the rule never once applied.
+            if self._fetches(source):
+                return False, (
+                    f"source {source.name!r} makes an external request and "
+                    "no minimum poll interval is recorded for it, so there "
+                    "is nothing to hold it back; register one before polling")
             return True, ""
         last = str(state.get("last_polled_at") or "")
         if not last:
@@ -543,7 +571,7 @@ class Discovery:
 
         entry = sourcecatalog.entry(name)
         if entry is None:
-            return True, ""
+            return self._uncatalogued(name, "reading its listings")
         if entry.access_method == access.MANUAL_IMPORT:
             # The owner reading a page and typing what they found involves
             # no automated access and so no robots directive.
@@ -576,6 +604,35 @@ class Discovery:
             f"nobody has established whether {name} permits automated "
             "reading of its listings; until someone does, it is not an "
             "automated route")
+
+    def _uncatalogued(self, name: str, activity: str) -> tuple[bool, str]:
+        """A source nobody researched, deciding whether it may act anyway.
+
+        Both terms gates used to answer "no catalogue entry" with yes, on
+        the reasoning that a source nobody wrote terms for should not be
+        held to a standard nobody wrote down. That is right for an
+        in-process fixture and for work the owner typed in themselves --
+        neither contacts anybody, so no external terms exist to honour.
+
+        It is wrong the moment a source has a real host. Then "nobody
+        researched this" is exactly the situation the terms gates exist
+        for, and answering yes means an unresearched site is governed
+        less than a researched one. Retiring four catalogue entries made
+        that reachable: delete an entry and its source would have become
+        *more* permitted than before.
+
+        So: no host, no external party, carry on. A host, and nobody has
+        read its terms, stop.
+        """
+        source = self._sources.get(name)
+        host = str(getattr(source, "host", "") or "")
+        is_fixture = bool(getattr(source, "is_fixture", False))
+        if not host or is_fixture:
+            return True, ""
+        return False, (
+            f"{name!r} contacts {host} and is not in the source catalogue, "
+            f"so nobody has established whether {activity} is permitted "
+            "there. An unresearched site is not a permitted one")
 
     def _work_type(self, name: str) -> str:
         source = self._sources.get(name)
@@ -697,7 +754,9 @@ class Discovery:
 
         entry = sourcecatalog.entry(name)
         if entry is None:
-            return True, ""
+            if permission not in sourcecatalog.GOVERNED_BY_TERMS:
+                return True, ""
+            return self._uncatalogued(name, permission)
         if permission not in sourcecatalog.GOVERNED_BY_TERMS:
             return True, ""
         # An in-process fixture named after a real marketplace is not that

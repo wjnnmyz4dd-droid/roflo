@@ -59,6 +59,16 @@ def configure(db: str) -> None:
         ("setup", "stripe", "ENGINEERING_READY"),
         ("setup", "contracting", "--legal-name", "TEST-ONLY Owner",
          "--email", "test-only@example.invalid"),
+        # The four commercial terms. There was no command for these, so
+        # an owner who followed the manual exactly still had an
+        # installation that could not tell work worth taking from work
+        # that merely looked like it.
+        ("setup", "commercial",
+         "--minimum-fee-cents", "4000",
+         "--compute-cents-per-cpu-hour", "12",
+         "--minimum-margin-fraction", "0.30",
+         "--market-rate", "csv-cleanup=3000=TEST-ONLY fixture, not a real "
+                          "citation"),
     ):
         code, out = run_cli(*argv, "--db", db)
         assert code == 0, f"{argv}: {out}"

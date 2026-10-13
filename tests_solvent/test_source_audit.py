@@ -16,7 +16,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from solvent import adapters
+from tests_solvent.fixtures import set_commercial_terms
+from solvent import discovery
 from solvent import sourceaccess as access
 from solvent.discovery import (
     Compliance, FixtureSource, ManualSource, Readiness, WorkSource,
@@ -38,12 +39,39 @@ class Undeclared(FixtureSource):
     # work_type deliberately not set
 
 
+class GrantsFeed(FixtureSource):
+    """Grant-funded work: reachable, compliant, and not what DeskPilot sells.
+
+    Was the real Grants.gov adapter until the catalogue was cut to the six
+    marketplaces. The adapter went with its entry; the behaviour it was
+    demonstrating here -- healthy and still out of scope -- is the point of
+    this module, so it keeps a double rather than losing the case.
+    """
+
+    is_fixture = False
+    kind = "feed"
+    work_type = access.GRANT_FUNDING
+
+
+class NeedsAKey(FixtureSource):
+    """Reachable only with a credential the owner has not configured."""
+
+    is_fixture = False
+    kind = "api"
+    work_type = access.CONTRACT_WORK
+
+    def request(self):
+        return {"url": "https://example.test/search",
+                "requires_credential": "EXAMPLE_API_KEY"}
+
+
 class SourceAudit(unittest.TestCase):
 
     def setUp(self):
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.s = Solvent(f"{self.box.name}/sources.db")
+        set_commercial_terms(self.s)
         self.addCleanup(self.close)
 
     def close(self):
@@ -75,17 +103,17 @@ class WhatEachKindOfSourceIs(SourceAudit):
 
     def test_a_grants_feed_is_out_of_scope_however_healthy(self):
         """The case the whole module exists for."""
-        self.register(adapters.GrantsGovSource())
-        verdict, why = self.s.discovery.source_suitability("grants_gov")
+        self.register(GrantsFeed("grants_feed", []))
+        verdict, why = self.s.discovery.source_suitability("grants_feed")
         self.assertEqual(verdict, "OUT_OF_SCOPE")
         self.assertIn("GRANT_FUNDING", why)
-        state = self.s.discovery.source_state("grants_gov")
+        state = self.s.discovery.source_state("grants_feed")
         self.assertEqual(state["health"], access.HEALTHY,
                          "it really is healthy; that is the point")
 
     def test_a_source_needing_an_unconfigured_credential_is_not_active(self):
-        self.register(adapters.SamGovOpportunitiesSource())
-        self.assertEqual(self.verdict("sam_gov"), "NEEDS_CREDENTIAL")
+        self.register(NeedsAKey("keyed_board", []))
+        self.assertEqual(self.verdict("keyed_board"), "NEEDS_CREDENTIAL")
 
     def test_a_marketplace_selling_the_right_work_is_active(self):
         self.register(ClientBoard("good_board", []))
@@ -108,8 +136,8 @@ class TheActiveInterfaceShowsOnlyUsableSources(SourceAudit):
         super().setUp()
         self.register(FixtureSource("demo", []))
         self.register(ManualSource("by_hand", []))
-        self.register(adapters.GrantsGovSource())
-        self.register(adapters.SamGovOpportunitiesSource())
+        self.register(GrantsFeed("grants_feed", []))
+        self.register(NeedsAKey("keyed_board", []))
         self.register(ClientBoard("good_board", []))
 
     def test_only_the_usable_ones_are_offered(self):
@@ -126,8 +154,9 @@ class TheActiveInterfaceShowsOnlyUsableSources(SourceAudit):
         """
         named = {r["name"] for r in self.s.discovery.sources()}
         self.assertEqual(
-            named, {"demo", "by_hand", "grants_gov", "sam_gov", "good_board"})
-        for name in ("grants_gov", "sam_gov", "demo"):
+            named,
+            {"demo", "by_hand", "grants_feed", "keyed_board", "good_board"})
+        for name in ("grants_feed", "keyed_board", "demo"):
             with self.subTest(source=name):
                 state = self.s.discovery.source_state(name)
                 self.assertIsNotNone(state)
@@ -155,13 +184,19 @@ class TheActiveInterfaceShowsOnlyUsableSources(SourceAudit):
 
 
 class EveryDeclaredSourceSaysWhatItCarries(unittest.TestCase):
-    """RULE 9 applied to sources: no silent defaults anywhere."""
+    """RULE 9 applied to sources: no silent defaults anywhere.
+
+    Scanned ``adapters`` until the four non-marketplace sources were
+    retired with their catalogue entries. It scans ``discovery`` now,
+    which ships the remaining source classes -- a wider net than the one
+    it replaced, not a narrower one.
+    """
 
     def test_no_shipped_source_is_undeclared_by_omission(self):
         import inspect
 
         offenders = []
-        for module in (adapters,):
+        for module in (discovery,):
             for name, obj in vars(module).items():
                 if (inspect.isclass(obj) and issubclass(obj, WorkSource)
                         and obj is not WorkSource):
@@ -175,7 +210,7 @@ class EveryDeclaredSourceSaysWhatItCarries(unittest.TestCase):
     def test_every_declared_work_type_is_a_known_one(self):
         import inspect
 
-        for module in (adapters,):
+        for module in (discovery,):
             for name, obj in vars(module).items():
                 if (inspect.isclass(obj) and issubclass(obj, WorkSource)
                         and obj is not WorkSource):
@@ -218,6 +253,7 @@ class EveryCapabilityRoutesToItsOwnSpecialist(unittest.TestCase):
         box = tf.TemporaryDirectory()
         self.addCleanup(box.cleanup)
         s = Solvent(f"{box.name}/routing.db")
+        set_commercial_terms(s)
         self.addCleanup(s.store.close)
         for name in owner_promotions():
             promote_capability(s, name, owner_identity=OWNER,
@@ -251,6 +287,7 @@ class EveryCapabilityRoutesToItsOwnSpecialist(unittest.TestCase):
         box = tf.TemporaryDirectory()
         self.addCleanup(box.cleanup)
         s = Solvent(f"{box.name}/sub.db")
+        set_commercial_terms(s)
         self.addCleanup(s.store.close)
         for name in owner_promotions():
             promote_capability(s, name, owner_identity=OWNER, why="test")
