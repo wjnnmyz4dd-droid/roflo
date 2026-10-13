@@ -101,6 +101,33 @@ DEFAULT_POLICY: dict[str, Any] = {
         "market_hourly_cents": {},
         "work_standards": {},
     },
+    # How advisory inference is routed. Not used by the five commercial
+    # skills, which are deterministic and call no model -- see
+    # solvent/inference.py. Everything here defaults to off or empty: an
+    # unconfigured route is UNCONFIGURED, never "probably fine".
+    "ai": {
+        # LOCAL, CLOUD or HYBRID.
+        "route": "LOCAL",
+        "local_backend": "",
+        "local_model": "",
+        "cloud_base_url": "",
+        "cloud_model": "",
+        # Whether a key has been provisioned -- never the key itself. A
+        # credential in the policy table is a credential in every backup
+        # of it, and this table is read by the Control Centre.
+        "cloud_key_present": False,
+        # Three separate permissions. Running a model locally, sending
+        # prompts to a third party, and sending the *client's own content*
+        # to a third party are different decisions with different
+        # consequences, and the owner makes each one.
+        "permit_local": False,
+        "permit_cloud": False,
+        "permit_cloud_client_content": False,
+        # What a cloud call costs. Zero means unrecorded, so a call's cost
+        # reads as unknown rather than free.
+        "cloud_cents_per_1k_input": 0,
+        "cloud_cents_per_1k_output": 0,
+    },
     "pricing": {
         "materiality_fraction": 0.05,
         "max_age_days": {"DEFAULT": 365, "ON_SITE_LABOR": 180, "REMOTE_LABOR": 180,

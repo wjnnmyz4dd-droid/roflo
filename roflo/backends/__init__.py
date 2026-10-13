@@ -39,6 +39,12 @@ def _transformers() -> type[Backend]:
     return TransformersBackend
 
 
+def _cloud() -> type[Backend]:
+    from .cloud import CloudBackend
+
+    return CloudBackend
+
+
 def _echo() -> type[Backend]:
     from .echo import EchoBackend
 
@@ -50,6 +56,7 @@ BACKENDS: dict[str, Callable[[], type[Backend]]] = {
     "llamacpp": _llamacpp,
     "vllm": _vllm,
     "transformers": _transformers,
+    "cloud": _cloud,
     "echo": _echo,
 }
 

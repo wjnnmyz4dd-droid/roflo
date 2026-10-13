@@ -312,6 +312,81 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_two_threads_holding_one_approval_yield_exactly_one_winner",
         "two callers holding one single-use approval both proceed, because "
         "the loser of the claim is never told it lost"),
+
+    # ---- inference routing -------------------------------------------
+    # A router that decides whether prompts leave the machine, and whether
+    # a paid endpoint gets called, is a security boundary.
+
+    Mutant(
+        "ai-cloud-used-without-permission",
+        "solvent/inference.py",
+        '        if not self._permitted("cloud"):',
+        "        if False:",
+        "tests_solvent.test_inference_adversarial.SpendingMoneyNobodyAuthorised"
+        ".test_cloud_is_not_used_without_its_own_permission",
+        "a configured cloud endpoint would be called, and billed, without "
+        "the owner ever permitting it"),
+
+    Mutant(
+        "ai-client-content-leaves-quietly",
+        "solvent/inference.py",
+        '        if not bool(self._ai("permit_cloud_client_content", False)):',
+        "        if False:",
+        "tests_solvent.test_inference_adversarial.GettingClientContentOffTheMachine"
+        ".test_permitting_cloud_does_not_also_permit_client_content",
+        "permitting cloud inference would silently also permit the client's "
+        "own documents to reach a third party"),
+
+    Mutant(
+        "ai-absent-privacy-class-reads-as-safe",
+        "solvent/inference.py",
+        "        if privacy is None:",
+        "        if False:",
+        "tests_solvent.test_inference_adversarial.GettingClientContentOffTheMachine"
+        ".test_omitting_the_privacy_class_does_not_bypass_the_check",
+        "omitting the privacy class would be a way past the check, so the "
+        "safest-looking call site would be the unsafe one"),
+
+    Mutant(
+        "ai-unknown-cost-reads-as-measured-zero",
+        "solvent/inference.py",
+        "        if not usage:",
+        "        if False:",
+        "tests_solvent.test_inference_routing.WhatACallCost"
+        ".test_a_cloud_call_with_no_reported_usage_is_unknown",
+        "a call whose cost is unknown would be recorded as a measured zero, "
+        "overstating every margin it touched"),
+
+    Mutant(
+        "ai-unpriced-tokens-read-as-free",
+        "solvent/inference.py",
+        "        if in_rate <= 0 and out_rate <= 0:",
+        "        if False:",
+        "tests_solvent.test_inference_routing.WhatACallCost"
+        ".test_tokens_without_a_recorded_price_are_unknown",
+        "tokens at an unrecorded price would cost exactly zero, which is the "
+        "most expensive kind of zero"),
+
+    Mutant(
+        "ai-unprobed-route-reads-as-ready",
+        "solvent/inference.py",
+        "        if self._probe is None:",
+        "        if False:",
+        "tests_solvent.test_inference_routing.NothingIsReadyUntilItIsConfigured"
+        ".test_permitted_but_unprobed_is_unknown_not_ready",
+        "a route nobody has probed would report READY, which is the "
+        "reassuring-default failure this project keeps finding"),
+
+    Mutant(
+        "ai-delivery-may-call-a-model",
+        "solvent/inference.py",
+        "        if not isinstance(purpose, Purpose):",
+        "        if False:",
+        "tests_solvent.test_inference_adversarial.GeneratedTextReachingADeliverable"
+        ".test_a_made_up_purpose_is_refused_rather_than_coerced",
+        "any caller could invent a purpose, so generated text could reach a "
+        "deliverable and deterministic verification would stop meaning "
+        "anything"),
 )
 
 

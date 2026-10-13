@@ -69,6 +69,11 @@ class Chunk:
 
     text: str = ""
     finish_reason: str | None = None
+    #: Token counts, when the backend reports them. Present on the final
+    #: chunk of a cloud call and absent everywhere else, because a local
+    #: backend bills nobody. Carried here rather than estimated by the
+    #: caller: a cost worked out from len(text) is a guess wearing a number.
+    usage: dict | None = None
 
 
 @dataclass(slots=True)
