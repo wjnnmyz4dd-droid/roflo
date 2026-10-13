@@ -268,3 +268,46 @@ class EveryCapabilityRoutesToItsOwnSpecialist(unittest.TestCase):
         assessment = finder.assess(opportunity, extension="xlsx")
         self.assertIs(assessment.verdict, Verdict.DECLINE)
         self.assertIn("quantum-origami", assessment.feasibility_detail)
+
+
+class ARobotsRefusalIsEnforcedNotJustRecorded(SourceAudit):
+    """A catalogued marketplace that forbids automated reading of its
+    listings must not appear as an automated route -- even when it is
+    permitted, enabled, healthy, and carrying exactly the right kind of
+    work. Every other signal says yes; the platform says no, and the
+    platform decides.
+    """
+
+    class Marketplace(FixtureSource):
+        is_fixture = False
+        kind = "marketplace"
+        work_type = access.CLIENT_SERVICES
+
+    def setUp(self):
+        super().setUp()
+        # 'upwork' is catalogued with a FORBIDDEN robots finding, read and
+        # cited on 2026-10-13.
+        self.register(self.Marketplace("upwork", []))
+
+    def test_it_is_not_active(self):
+        verdict, why = self.s.discovery.source_suitability("upwork")
+        self.assertEqual(verdict, "TERMS_FORBID")
+        self.assertIn("disallows automated reading", why)
+        self.assertIn("robots.txt", why)
+
+    def test_everything_else_about_it_says_yes(self):
+        """Proving the refusal is the robots finding and nothing else."""
+        state = self.s.discovery.source_state("upwork")
+        self.assertEqual(state["health"], access.HEALTHY)
+        self.assertEqual(state["compliance"], Compliance.PERMITTED.value)
+        self.assertTrue(int(state.get("enabled", 1)))
+        self.assertEqual(self.s.discovery._work_type("upwork"),
+                         access.CLIENT_SERVICES)
+
+    def test_it_is_absent_from_the_active_interface(self):
+        self.assertNotIn("upwork",
+                         [r["name"] for r in self.s.discovery.active_sources()])
+
+    def test_manual_import_is_still_offered_as_the_way_in(self):
+        _, why = self.s.discovery.source_suitability("upwork")
+        self.assertIn("Manual import", why)

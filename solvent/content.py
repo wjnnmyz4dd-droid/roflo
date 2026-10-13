@@ -62,6 +62,47 @@ class UntrustedContent:
                 f"privacy={self.privacy.value}")
 
 
+#: Phrases that turn a piece of content into an attempt to issue orders.
+#:
+#: This answers one narrow question -- *is this text trying to command the
+#: system reading it?* -- about content from outside: a job posting, a web
+#: page, an attachment. It is deliberately not the customer-service
+#: classifier in `feedback`, which does a different job: that one sorts a
+#: client's message into a routing category and decides who answers it.
+#: One detects an attempt; the other decides what to do about a person.
+_INSTRUCTION_ATTEMPTS = (
+    r"ignore (all |any )?(previous|prior|above|earlier) instructions?",
+    r"disregard (all |any )?(previous|prior|above|earlier)",
+    r"\bnew instructions?\b",
+    r"^\s*system\s*:",
+    r"\byou are now\b",
+    r"mark (every|all) requirements? as (passed|complete|done)",
+    r"\b(skip|bypass|disable|turn off|override)\b.{0,60}"
+    r"\b(verif\w+|check\w*|approval|gate|requirement)\w*\b",
+    r"send (me |us )?(your|the) (api[_ ]?key|credential|password|token|secret)",
+)
+
+
+def looks_like_instructions(text: str) -> bool:
+    """Whether this content is trying to tell the reader what to do.
+
+    Content from outside is a stranger talking. A stranger is entitled to
+    describe work they want done; a stranger issuing commands to the
+    system reading them is doing something else, and the one fact worth
+    keeping about such a message is that somebody tried.
+
+    Never used to decide what to *do* -- only to notice, so a person sees
+    it. Treating this as a filter would make it an access control, and an
+    access control made of regular expressions is one somebody rephrases
+    past.
+    """
+    import re as _re
+
+    lowered = (text or "").lower()
+    return any(_re.search(pattern, lowered, _re.MULTILINE)
+               for pattern in _INSTRUCTION_ATTEMPTS)
+
+
 def quarantine(text: str, *, source: str, media_type: str = "text/plain",
                privacy: PrivacyClass = PrivacyClass.CLIENT_CONFIDENTIAL) -> UntrustedContent:
     """Wrap external bytes. Everything from outside enters through here."""

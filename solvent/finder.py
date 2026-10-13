@@ -45,6 +45,7 @@ import statistics
 from dataclasses import dataclass, field
 from enum import Enum
 
+from . import content
 from . import quoting
 from . import sourceaccess
 from .discovery import Opportunity
@@ -407,6 +408,15 @@ class Finder:
         unknowns: list[str] = []
         risks = list(opportunity.risk_indicators)
 
+        # A posting that tries to issue instructions is not thereby
+        # dangerous -- nothing downstream obeys a posting, and the Gate,
+        # the Governor and the owner all still stand between it and any
+        # effect. But it is a fact about whoever wrote it, and a system
+        # that pursues it like any other listing has thrown that fact
+        # away. It reaches a person instead.
+        if content.looks_like_instructions(opportunity.description):
+            risks.append("posting_issues_instructions")
+
         consequence = self._policy.consequence_for(opportunity.net_budget_cents)
         from .orchestrator import REQUIRED_TIER
 
@@ -427,7 +437,7 @@ class Finder:
 
         verdict, why = self._verdict(
             opportunity, econ, feasible, feasibility_detail, reachable,
-            tier_detail, unknowns)
+            tier_detail, unknowns, tuple(risks))
         score = self._score(econ, verdict, opportunity)
 
         return Assessment(
@@ -474,7 +484,7 @@ class Finder:
         return ""
 
     def _verdict(self, opportunity, econ, feasible, feasibility_detail,
-                 reachable, tier_detail, unknowns):
+                 reachable, tier_detail, unknowns, risks=()):
         if not feasible:
             return Verdict.DECLINE, f"nothing here can do it ({feasibility_detail})"
         if reachable is False:
@@ -497,11 +507,14 @@ class Finder:
         if reachable is None:
             return Verdict.HOLD, (
                 f"worth doing, but {tier_detail.lower()}")
-        if opportunity.risk_indicators:
+        # `risks` rather than `opportunity.risk_indicators`: the platform's
+        # own indicators plus anything noticed while reading the posting.
+        # Reading the opportunity directly here meant a risk the Finder
+        # found itself was recorded and then ignored.
+        if risks:
             return Verdict.HOLD, (
                 "worth doing, but the posting carries "
-                f"{len(opportunity.risk_indicators)} risk indicator(s): "
-                + ", ".join(opportunity.risk_indicators[:3]))
+                f"{len(risks)} risk indicator(s): " + ", ".join(risks[:3]))
         return Verdict.PURSUE, (
             f"{(econ.profit_cents or 0) / 100:,.2f} expected on "
             f"{econ.revenue_cents / 100:,.2f}; {econ.basis}")

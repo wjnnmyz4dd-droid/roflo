@@ -413,6 +413,89 @@ MUTANTS: tuple[Mutant, ...] = (
         "stat() needs no read permission, so a heartbeat the control centre "
         "cannot read would report VERIFIED HEALTHY -- the reassuring default "
         "this project exists to refuse"),
+
+    # ---- acquisition: sources, storefront, prospecting ---------------
+
+    Mutant(
+        "terms-grant-outranks-the-platform",
+        "solvent/discovery.py",
+        "        allowed, finding = self._terms_allow(name, permission)",
+        "        allowed, finding = (True, '')",
+        "tests_solvent.test_marketplace_permissions.TheTermsOutrankTheGrant"
+        ".test_an_owner_grant_alone_does_not_authorise_a_governed_activity",
+        "the owner's intention would stand in for the platform's terms, so "
+        "DeskPilot would bid on a board whose terms forbid it"),
+
+    Mutant(
+        "robots-disallow-ignored",
+        "solvent/discovery.py",
+        "        crawlable, crawl_why = self._public_discovery_allowed(name)",
+        "        crawlable, crawl_why = (True, '')",
+        # Pointed at a source excluded *by robots and nothing else*. The
+        # first version named the grants-feed test, which is excluded by
+        # work type -- so the mutant changed nothing there and survived
+        # while proving nothing about the control it was named for.
+        "tests_solvent.test_source_audit.ARobotsRefusalIsEnforcedNotJustRecorded"
+        ".test_it_is_not_active",
+        "a platform's own machine-readable refusal would be ignored and the "
+        "source shown as an automated route"),
+
+    Mutant(
+        "storefront-advertises-uncertified-work",
+        "solvent/storefront.py",
+        "        allowed, why = self._capability.may_deploy(service.capability)",
+        "        allowed, why = (True, '')",
+        "tests_solvent.test_storefront.EveryOfferMatchesACertifiedSkill"
+        ".test_withdrawing_a_skill_closes_its_offer",
+        "an advert is a promise, and this one would promise work no "
+        "certified skill can deliver"),
+
+    Mutant(
+        "storefront-order-enters-the-pipeline-twice",
+        "solvent/storefront.py",
+        "        if order.opportunity_id:",
+        "        if False:",
+        "tests_solvent.test_storefront.OneOrderBecomesOneOpportunity"
+        ".test_an_order_cannot_enter_the_pipeline_twice",
+        "one order would become two jobs for one payment"),
+
+    Mutant(
+        "prospector-ignores-its-allowlist",
+        "solvent/prospecting.py",
+        "        if not self.on_allowlist(url):",
+        "        if False:",
+        "tests_solvent.test_prospecting.ItRefusesToBeUncontrolled"
+        ".test_a_domain_off_the_allowlist_is_never_fetched",
+        "a research prototype would fetch whatever URL it was handed, which "
+        "is an uncontrolled crawl of the internet"),
+
+    Mutant(
+        "prospector-ignores-robots",
+        "solvent/prospecting.py",
+        "        if not self._robots(domain, path):",
+        "        if False:",
+        "tests_solvent.test_prospecting.ItRefusesToBeUncontrolled"
+        ".test_robots_disallowed_paths_are_not_fetched",
+        "a path a site disallows would be fetched anyway"),
+
+    Mutant(
+        "prospector-has-no-budget",
+        "solvent/prospecting.py",
+        "            spent, why = self.budget.exhausted()",
+        "            spent, why = (False, '')",
+        "tests_solvent.test_prospecting.ItRefusesToBeUncontrolled"
+        ".test_the_request_budget_stops_the_run_and_says_so",
+        "a run would continue past any ceiling the owner set"),
+
+    Mutant(
+        "a-posting-may-issue-instructions-unnoticed",
+        "solvent/finder.py",
+        "        if content.looks_like_instructions(opportunity.description):",
+        "        if False:",
+        "tests_solvent.test_source_resilience.ListingsThatAreWrong"
+        ".test_09_a_posting_issuing_instructions_changes_nothing",
+        "a posting trying to command the system would be pursued like any "
+        "other listing, throwing away the one fact worth keeping about it"),
 )
 
 

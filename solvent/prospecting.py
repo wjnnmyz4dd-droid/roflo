@@ -48,6 +48,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from enum import Enum
 
+from . import content
 from .content import quarantine
 from .errors import FailClosed
 from .types import Cents, PrivacyClass
@@ -168,20 +169,6 @@ class RunReport:
                                if self.count(d)},
         }
 
-
-#: Phrases that make a page a set of instructions rather than a listing.
-#: Reused deliberately from the same thinking as the customer-service
-#: governance patterns: a web page is a stranger talking, and a stranger
-#: telling an automated system what to do is the thing to notice.
-_INJECTION = (
-    r"ignore (all )?(previous|prior|above) instructions",
-    r"disregard (all )?(previous|prior)",
-    r"you are now",
-    r"system\s*:",
-    r"\bnew instructions\b",
-    r"send (your|the) (api[_ ]?key|credential|password|token)",
-    r"\bvisit\b.{0,30}\band (submit|apply|register)\b",
-)
 
 #: Money, as a page might state it. Conservative: a number with a currency
 #: marker near a budget word. "Great exposure" is not compensation.
@@ -335,8 +322,13 @@ class Prospector:
 
     @staticmethod
     def _looks_like_instructions(text: str) -> bool:
-        lowered = text.lower()
-        return any(re.search(pattern, lowered) for pattern in _INJECTION)
+        """The same detector the Finder uses, not a second copy of it.
+
+        A web page and a job posting are the same kind of thing here --
+        a stranger's words -- and two lists of phrases for one question is
+        how the two come to disagree about what counts.
+        """
+        return content.looks_like_instructions(text)
 
     @staticmethod
     def _title(text: str) -> str:
