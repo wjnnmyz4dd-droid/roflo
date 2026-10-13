@@ -286,7 +286,41 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
               "be worked around."),
     CatalogueEntry(
         "contra", "Contra", FREELANCE_MARKETPLACE, _TERMS,
-        notes="Not established; manual only."),
+        notes="The only one of the six whose robots.txt does not disallow "
+              "its listing pages -- it blocks /@internal and two redirect "
+              "parameters and nothing else. That makes it the single "
+              "candidate among them for a permitted automated read, and it "
+              "is still not an established route: robots.txt governs "
+              "crawlers, the terms of service are a separate document, and "
+              "nobody has read Contra's. A read-only public API exists at "
+              "contra.com/public-api/ behind an X-API-Key; it returned 401 "
+              "to an unauthenticated request, and third-party listings "
+              "describe it as covering expert profiles and programs -- "
+              "which helps clients find freelancers, the opposite of what "
+              "DeskPilot needs.\n\n"
+              "And the permission turns out to apply to the wrong pages. "
+              "Contra's Opportunities board -- the part that lists jobs -- "
+              "is behind Contra Pro, a paid subscription, so reading it is "
+              "DISCOVER_AUTHENTICATED and SPEND_MONEY rather than the "
+              "public DISCOVER its robots.txt allows. The crawl permission "
+              "is real and covers pages that do not contain the work. That "
+              "is precisely the conflation the seven separate permissions "
+              "exist to prevent.",
+        terms=(
+            TermsFinding(
+                activity=access.DISCOVER, finding=TERMS_PERMITTED,
+                citation="https://contra.com/robots.txt — User-agent: * "
+                         "disallows only /@internal and redirectTo/replyId "
+                         "parameters; no job, project or search path is "
+                         "disallowed, and there is no Crawl-delay",
+                read_on=_READ_ON),
+            # The API exists and needs a key; what it actually exposes was
+            # not verifiable without one.
+            TermsFinding(access.DISCOVER_AUTHENTICATED),
+            TermsFinding(access.SUBMIT_BID),
+            TermsFinding(access.SEND_MESSAGE),
+            TermsFinding(access.ACCEPT_CONTRACT),
+        )),
 
     # ------------------------------------------------- public / government
     CatalogueEntry(
