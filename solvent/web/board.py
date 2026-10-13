@@ -100,7 +100,16 @@ def runtime_liveness(heartbeat_path: str, *, now: float | None = None
             action="Run a repair: the installer records this path.")
     now = time.time() if now is None else now
     try:
-        age = now - Path(heartbeat_path).stat().st_mtime
+        # Opened, not merely stat()ed. stat() needs no read permission on
+        # the file itself -- only search permission on its directory -- so
+        # a heartbeat this process cannot read still returned a timestamp,
+        # and a fresh timestamp read as VERIFIED HEALTHY. The control
+        # centre runs as a restricted identity precisely so that it *can*
+        # be refused, and the refusal has to be visible.
+        path = Path(heartbeat_path)
+        with path.open("rb") as handle:
+            handle.read(64)
+        age = now - path.stat().st_mtime
     except FileNotFoundError:
         return st.unknown(
             "the runtime has not written its heartbeat, so either it has not "

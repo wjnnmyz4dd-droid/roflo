@@ -198,15 +198,38 @@ class LivenessComesFromTheHeartbeat(unittest.TestCase):
     def test_a_heartbeat_this_process_may_not_read_is_unknown(self):
         """The control centre runs as a restricted identity now. A refused
         read is a fact about this page, not about the runtime, and it must not
-        be reported as the runtime being down."""
-        if os.geteuid() == 0:
-            self.skipTest("running as root, which is refused nothing")
+        be reported as the runtime being down.
+
+        The refusal is injected rather than created with chmod, so this runs
+        as root too. It previously skipped there, and a test that only runs
+        on one kind of machine is a test nobody notices breaking: as root it
+        never executed, and the behaviour it describes was in fact wrong --
+        `stat()` needs no read permission, so an unreadable heartbeat
+        reported VERIFIED HEALTHY.
+        """
         self.beat.write_text("x")
-        self.beat.chmod(0o000)
-        self.addCleanup(self.beat.chmod, 0o600)
-        answer = board.runtime_liveness(str(self.beat))
+        target = str(self.beat)
+        real_open = pathlib.Path.open
+
+        def refusing_open(self_path, *args, **kwargs):
+            if str(self_path) == target:
+                raise PermissionError(13, "Permission denied")
+            return real_open(self_path, *args, **kwargs)
+
+        pathlib.Path.open = refusing_open
+        self.addCleanup(setattr, pathlib.Path, "open", real_open)
+        try:
+            answer = board.runtime_liveness(target)
+        finally:
+            pathlib.Path.open = real_open
         self.assertEqual(answer.state, st.UNKNOWN)
         self.assertIn("permissions", answer.action.lower())
+
+    def test_a_readable_heartbeat_is_still_read_as_fresh(self):
+        """Guards the above: a fix that refused everything would pass it."""
+        self.beat.write_text("x")
+        answer = board.runtime_liveness(str(self.beat))
+        self.assertEqual(answer.state, st.VERIFIED_HEALTHY)
 
     def test_liveness_consults_nothing_but_the_file(self):
         """What this replaces: the page reported the runtime as running

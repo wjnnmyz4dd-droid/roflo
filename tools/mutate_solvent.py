@@ -400,6 +400,19 @@ MUTANTS: tuple[Mutant, ...] = (
         "an API error body echoing the request would write the credential "
         "verbatim into the sources page and into an append-only audit log "
         "that cannot be redacted afterwards"),
+
+    # ---- the control centre's view of the runtime --------------------
+
+    Mutant(
+        "liveness-stats-without-reading",
+        "solvent/web/board.py",
+        '        with path.open("rb") as handle:\n            handle.read(64)',
+        "        pass",
+        "tests_solvent.test_web_status.LivenessComesFromTheHeartbeat"
+        ".test_a_heartbeat_this_process_may_not_read_is_unknown",
+        "stat() needs no read permission, so a heartbeat the control centre "
+        "cannot read would report VERIFIED HEALTHY -- the reassuring default "
+        "this project exists to refuse"),
 )
 
 
