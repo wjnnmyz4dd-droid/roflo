@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from .application import Applications
+from .capacity import Capacity
 from .audit import AuditLog, now
 from . import ambiguity as ambiguity_module
 from .capability import Capability, CapabilityRegistry, promotion_verdict
@@ -189,6 +190,12 @@ class Solvent:
         # table and holds no permission, and every refusal it gives comes from
         # asking the authority that already had the answer.
         self.applications = Applications(self)
+        # How much may be owed at once. Built after applications because
+        # it asks them whether anything is unreconciled, and after
+        # diagnostics because it asks the host for free disk.
+        self.capacity = Capacity(self.store, self.policy, self.audit,
+                                 applications=self.applications,
+                                 diagnostics=self.diagnostics)
         self.feedback = ClientFeedback(self.store, self.audit, self.orchestrator)
         # Customer service reads the record and answers the client. It calls
         # the feedback authority for intake, classification and investigation

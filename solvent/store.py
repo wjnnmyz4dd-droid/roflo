@@ -163,6 +163,13 @@ TABLE_OWNER = {
     # Notifications consume the owner's attention and nothing else. The
     # subsystem cannot approve, permit, spend or change a rule: receiving a
     # text is not an authorisation, which is why there is no reply path.
+    # Capacity holds the one fact that stops DeskPilot promising more
+    # than it can deliver. It decides nothing else: it cannot approve a
+    # bid, permit an effect, price work or certify a skill. Refusing to
+    # take on more work is not the same as authorising the work it does
+    # take, and keeping those apart is why this is a reservation ledger
+    # rather than a second gate on everything.
+    "capacity_reservations": "capacity",
     "notifications": "notify",
     "incidents": "resilience",
     "incident_events": "resilience",
@@ -462,6 +469,24 @@ CREATE TABLE IF NOT EXISTS diagnostic_reports (
   id TEXT PRIMARY KEY, ts TEXT NOT NULL, ran_at REAL NOT NULL,
   worst TEXT NOT NULL, findings TEXT NOT NULL DEFAULT '[]'
 );
+CREATE TABLE IF NOT EXISTS capacity_reservations (
+  id TEXT PRIMARY KEY,
+  ts TEXT NOT NULL,
+  job_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL,
+  units REAL NOT NULL,
+  state TEXT NOT NULL,
+  why TEXT NOT NULL DEFAULT '',
+  released_at TEXT NOT NULL DEFAULT '',
+  -- One commitment per external event, enforced by the database rather
+  -- than by remembering to check. A marketplace that delivers the same
+  -- acceptance twice -- which they do, on retry -- must not produce two
+  -- obligations, and the only reliable place to say so is a UNIQUE
+  -- index that a second INSERT cannot get past.
+  idempotency_key TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS capacity_reservations_idem
+  ON capacity_reservations(idempotency_key);
 CREATE TABLE IF NOT EXISTS work_sources (
   name TEXT PRIMARY KEY, kind TEXT NOT NULL, readiness TEXT NOT NULL,
   compliance TEXT NOT NULL, determination TEXT NOT NULL DEFAULT '',

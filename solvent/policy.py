@@ -115,6 +115,34 @@ DEFAULT_POLICY: dict[str, Any] = {
         # enforced now, in `Finder._verdict`.
         "minimum_margin_fraction": 0.0,
     },
+    # How much work DeskPilot may owe at one time. Every value is zero
+    # until the owner sets it, and zero means "take nothing on" rather
+    # than "no limit": a capacity gate with no number is not a gate.
+    #
+    # The machine these run on also runs MetaTrader 5. `cpu_share` is a
+    # share of it, deliberately -- there is no setting here that means
+    # "all of it", because the whole of the VPS is not DeskPilot's.
+    "capacity": {
+        # Seconds of expected work that may be owed at once, across
+        # execution, verification and revisions together.
+        "max_owed_seconds": 0.0,
+        "max_concurrent_jobs": 0,
+        # A sent bid is a contingent obligation: if it wins, the work
+        # exists whether there was room or not.
+        "max_open_bids": 0,
+        "cpu_share": 0.0,
+        "min_free_disk_bytes": 0,
+        # Room held alongside each accepted job for the verification and
+        # revisions that follow it. Zero is honest but optimistic: it
+        # says a revision will compete with new work for room.
+        "revision_headroom_fraction": 0.0,
+        # Stop taking on anything new, without stopping work in flight.
+        "halted": False,
+        # Multiplier on a measured estimate before a deadline is
+        # promised. A median is the time half of all runs exceed, so
+        # promising one is promising to be late half the time.
+        "deadline_safety_factor": 2.0,
+    },
     # How advisory inference is routed. Not used by the five commercial
     # skills, which are deterministic and call no model -- see
     # solvent/inference.py. Everything here defaults to off or empty: an

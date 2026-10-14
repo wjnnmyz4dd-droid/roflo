@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from . import capacity
 from . import sourceaccess as access
 from . import submission as tx
 from .audit import new_id, now
@@ -688,7 +689,25 @@ class Applications:
                 "the owner's decision, not a rounding difference", initiator,
                 event="claim-terms")
 
-        # 5. At most once. A contract accepted twice is two obligations.
+        # 5. Is there room to do it? Asked here rather than at bid time
+        #    as well, because time passes and the answer changes: three
+        #    bids placed when the queue was empty can all be accepted on
+        #    the same morning. A capacity refusal is not a judgement
+        #    about the work -- it is good work DeskPilot cannot promise
+        #    today, and saying so is better than saying yes and being
+        #    late. Capacity decides only this; every other gate above
+        #    and below still decides its own question.
+        estimated = float(opportunity.get("estimated_seconds", 0) or 0)
+        if estimated > 0 and getattr(self._s, "capacity", None) is not None:
+            room = self._s.capacity.room_for(
+                estimated, kind=capacity.EXECUTE, job_id=application.id)
+            if not room.allowed:
+                return self._refuse(
+                    application, tx.NOT_SENT, tx.VALIDATION_FAILED,
+                    f"there is no capacity to deliver this: {room.why}",
+                    initiator, event="claim-capacity")
+
+        # 6. At most once. A contract accepted twice is two obligations.
         for attempt in self.attempts(application.id):
             if attempt["phase"] == "CLAIM" and attempt["outcome"] in tx.NO_RETRY:
                 return self._refuse(
@@ -698,7 +717,7 @@ class Applications:
                     "obligation for one piece of work", initiator,
                     event="claim-duplicate")
 
-        # 6. The Action Gate, last, on the owner's signed approval. Accepting
+        # 7. The Action Gate, last, on the owner's signed approval. Accepting
         #    a contract is a financial commitment in the plainest sense: it
         #    creates an obligation to deliver and an expectation of payment.
         state = self._s.discovery.source_state(source) or {}
@@ -714,7 +733,7 @@ class Applications:
                                 tx.PERMISSION_DENIED, result.reason,
                                 initiator, event="claim-gate")
 
-        # 7. Write-ahead, then act.
+        # 8. Write-ahead, then act.
         digest = stored["digest"]
         self._attempt(application, digest, phase="CLAIM", outcome="",
                       detail=f"about to accept {fmt(offered_cents)} on {source}")

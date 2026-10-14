@@ -341,6 +341,36 @@ class Finder:
             f"median of {samples} measured run(s) of {capability!r}: "
             f"{seconds:.1f}s")
 
+    def promised_seconds(self, estimate: "CompletionEstimate", *,
+                         queued_seconds: float = 0.0) -> tuple[float, str]:
+        """What may honestly be promised, from what was measured.
+
+        A median is the time half of all runs *exceed*. Promising it is
+        promising to be late half the time, which is the single most
+        common way a service business loses a client it had already
+        won. So the promise is the estimate multiplied by the owner's
+        safety factor, plus whatever is already queued ahead of it --
+        because work does not start when it is accepted, it starts when
+        the machine gets to it.
+
+        Returns ``(seconds, basis)``. Seconds is what to promise, not
+        what it will take.
+        """
+        if not estimate.known:
+            return 0.0, estimate.basis
+        factor = float(self._policy.get("capacity", "deadline_safety_factor",
+                                        default=2.0) or 2.0)
+        factor = max(1.0, factor)
+        work = (estimate.seconds or 0.0) * factor
+        total = work + max(0.0, queued_seconds)
+        return total, (
+            f"{estimate.seconds:.0f}s measured x{factor:g} safety = "
+            f"{work:.0f}s"
+            + (f", behind {queued_seconds:.0f}s already queued"
+               if queued_seconds else "")
+            + f"; promise {total:.0f}s, not the {estimate.seconds:.0f}s "
+              "median")
+
     def bid_floor_cents(self, cost_cents: Cents) -> tuple[Cents, str]:
         """The least DeskPilot may charge, and why.
 

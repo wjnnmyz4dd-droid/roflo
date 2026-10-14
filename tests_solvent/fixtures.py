@@ -184,3 +184,52 @@ def set_commercial_terms(solvent, *, owner_identity: str = "",
     solvent.policy.amend({"commercial": terms},
                          _an_owner(solvent, owner_identity),
                          "test: the owner records the commercial terms")
+
+
+def source_names(path: str) -> set:
+    """Identifiers and real string literals in a module, ignoring prose.
+
+    Four separate tests this session have failed because they grepped a
+    module's text for a forbidden word and found it in a docstring
+    explaining that the module does not do that thing. A test that
+    cannot tell a promise from its breach is worse than no test, so
+    structural checks go through here instead: the AST carries no
+    comments at all, and docstrings are dropped on the way past.
+    """
+    import ast
+    import pathlib
+
+    tree = ast.parse(pathlib.Path(path).read_text(encoding="utf-8"))
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            body = getattr(node, "body", None) or []
+            first = body[0] if body else None
+            if (isinstance(first, ast.Expr)
+                    and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                docstrings.add(id(first.value))
+
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            found.add(node.attr)
+        elif isinstance(node, ast.keyword) and node.arg:
+            found.add(node.arg)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                found.add(alias.name.split(".")[0])
+                found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            found.add((node.module or "").split(".")[0])
+            found.update(a.name for a in node.names)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                               ast.ClassDef)):
+            found.add(node.name)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) not in docstrings:
+                found.add(node.value)
+    return found
