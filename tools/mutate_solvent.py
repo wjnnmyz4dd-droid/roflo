@@ -290,6 +290,36 @@ MUTANTS: tuple[Mutant, ...] = (
         "a filter set to fifty reports a limit the owner does not have",
     ),
 
+    # ---- the one marketplace adapter --------------------------------
+
+    Mutant(
+        "the-advertised-ceiling-becomes-the-price",
+        "solvent/marketplaces.py",
+        "        minimum = budget.get(\"minimum\")",
+        "        minimum = budget.get(\"maximum\")",
+        "tests_solvent.test_marketplace_adapters.ARangeIsNotAPrice"
+        ".test_the_floor_of_the_range_is_taken_not_the_ceiling",
+        "the most a client said they might spend becomes revenue",
+    ),
+    Mutant(
+        "a-foreign-budget-is-priced-as-dollars",
+        "solvent/marketplaces.py",
+        "        if code != OWNER_CURRENCY:",
+        "        if False:",
+        "tests_solvent.test_marketplace_adapters"
+        ".AnotherCurrencyIsNotConverted.test_a_foreign_budget_has_no_price",
+        "a quote built on an exchange rate nobody has",
+    ),
+    Mutant(
+        "a-platform-label-becomes-a-capability",
+        "solvent/marketplaces.py",
+        """            capability = self.capability_for.get(label.strip().lower())""",
+        """            capability = label.strip().lower().replace(" ", "-")""",
+        "tests_solvent.test_marketplace_adapters.CategoriesAreNotCapabilities"
+        ".test_an_unmapped_posting_asks_for_nothing",
+        "a job board's taxonomy decides what DeskPilot claims it can do",
+    ),
+
     # ---- the operator's bidder controls -----------------------------
 
     Mutant(

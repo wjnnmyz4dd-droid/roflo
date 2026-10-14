@@ -272,6 +272,13 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
         )),
     CatalogueEntry(
         "freelancer", "Freelancer.com", FREELANCE_MARKETPLACE, _TERMS,
+        # An adapter exists: solvent.marketplaces.FreelancerActiveProjects
+        # parses the documented response, verified field by field against a
+        # live sample. It changes nothing about permission. This flag is
+        # only reached once the terms say yes, and they say UNDETERMINED,
+        # so the status below is still PENDING -- which is the honest
+        # shape of "we can read it the moment we are allowed to".
+        adapter_implemented=True,
         verified_on="2026-10-14",
         evidence="GET https://www.freelancer.com/api/projects/0.1/projects/"
                  "active/?limit=1 returned HTTP 200 with live project JSON "
