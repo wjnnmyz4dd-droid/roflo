@@ -150,8 +150,34 @@ def report(directory: str) -> dict:
             "max": ordered[-1],
         }
 
+    # How fast new work appears, which is the number that decides
+    # whether a platform is worth watching at all. Counted as ids not
+    # seen in any earlier sample, so it is arrivals rather than churn.
+    seen: set = set()
+    arrivals = []
+    for n, sample in enumerate(samples):
+        ids = {p.get("id") for p in sample["projects"]}
+        fresh = ids - seen
+        candidates_fresh = sum(
+            1 for p in sample["projects"]
+            if p.get("id") in fresh and candidates(p))
+        if n:
+            gap = sample["mtime"] - samples[n - 1]["mtime"]
+            arrivals.append({"new": len(fresh),
+                             "new_candidates": candidates_fresh,
+                             "after_seconds": round(gap, 1)})
+        seen |= ids
+
+    elapsed = max(1.0, last - first)
+    new_after_first = sum(a["new"] for a in arrivals)
+    new_candidates_after_first = sum(a["new_candidates"] for a in arrivals)
+
     any_candidate = sum(1 for p in unique.values() if candidates(p))
     return {
+        "arrivals_per_sample": arrivals,
+        "new_projects_per_hour": round(new_after_first / elapsed * 3600, 1),
+        "new_candidates_per_hour": round(
+            new_candidates_after_first / elapsed * 3600, 1),
         "observed": True,
         "samples": len(samples),
         "observation_seconds": round(last - first, 1),
