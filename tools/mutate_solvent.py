@@ -290,6 +290,20 @@ MUTANTS: tuple[Mutant, ...] = (
         "a filter set to fifty reports a limit the owner does not have",
     ),
 
+    # ---- benchmark runs are not client work -------------------------
+
+    Mutant(
+        "a-benchmark-run-counts-as-client-history",
+        "solvent/finder.py",
+        """            if not include_benchmarks and outcome in cls.NOT_CLIENT_WORK:
+                continue""",
+        """            if False:
+                continue""",
+        "tests_solvent.test_skill_benchmarks.ABenchmarkIsNotAClientJob"
+        ".test_a_skill_with_only_benchmarks_cannot_be_bid_on",
+        "a delivery time quoted from a file DeskPilot wrote for itself",
+    ),
+
     # ---- choosing which jobs to take --------------------------------
 
     Mutant(

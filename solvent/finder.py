@@ -176,17 +176,35 @@ class ExecutionHistory:
 
     samples: dict[str, list[float]] = field(default_factory=dict)
 
+    #: Measurements that are real but are not client work. A benchmark
+    #: run is a genuine execution, and it is still not evidence of what
+    #: a client's job will take: the input was one DeskPilot generated
+    #: for itself, and `tools/benchmark_skills.py` generates small ones.
+    #: Letting those rows set a delivery time would have DeskPilot
+    #: promising to clean a 200,000-row export in a millisecond,
+    #: because that is how long it takes to clean a 605-byte one.
+    NOT_CLIENT_WORK = ("BENCHMARK",)
+
     @classmethod
-    def from_store(cls, store) -> "ExecutionHistory":
+    def from_store(cls, store, *, include_benchmarks: bool = False
+                   ) -> "ExecutionHistory":
+        """Measured runs, by default only the ones a client paid for.
+
+        ``include_benchmarks`` is for showing the owner what the
+        machine can do, never for pricing or promising.
+        """
         samples: dict[str, list[float]] = {}
         try:
             rows = store.raw_readonly(
-                "SELECT capability, wall_seconds FROM execution_measurements "
-                "WHERE wall_seconds > 0")
+                "SELECT capability, wall_seconds, outcome FROM "
+                "execution_measurements WHERE wall_seconds > 0")
         except Exception:
             # No table yet in an older database. Unknown, not an error.
             return cls()
         for row in rows:
+            outcome = (row["outcome"] or "").strip().upper()
+            if not include_benchmarks and outcome in cls.NOT_CLIENT_WORK:
+                continue
             samples.setdefault(row["capability"], []).append(
                 float(row["wall_seconds"]))
         return cls(samples)
