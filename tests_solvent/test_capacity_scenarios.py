@@ -81,6 +81,14 @@ class S1_TenFiftyAndOneHundredAtOnce(Base):
         self.assertEqual(accepted[50], accepted[100])
 
     def test_the_concurrency_limit_is_what_binds(self):
+        """With workers raised, only the job limit can refuse.
+
+        Left at the default the worker limit falls back to this same
+        number, so both controls refuse at three and removing either
+        changes nothing -- which is how the first version of this test
+        let a mutant through that ignored the job limit entirely.
+        """
+        self.configure(max_execution_workers=50)
         taken, refused = self.offer(100)
         self.assertEqual(len(taken), 3)
         self.assertEqual(len(refused), 97)

@@ -133,6 +133,46 @@ class A02_TwoSimultaneousBidsTakeTheSameRoom(Base):
         self.assertEqual(sum(1 for d in out if d.allowed), 1)
         self.assertLessEqual(self.s.capacity.owed_seconds(), 600.0)
 
+    def test_the_write_lock_is_taken_against_other_processes_too(self):
+        """The lock serialises threads; BEGIN IMMEDIATE serialises writers.
+
+        Two halves guarding different things. A second connection to
+        the same file stands in for a second process here -- SQLite
+        does not distinguish them -- and must find the database locked
+        for the whole of a capacity transaction, not only at its
+        final write. A deferred transaction would not take the write
+        lock until the INSERT, leaving the read-decide window open to
+        anything outside this process.
+        """
+        import sqlite3
+
+        db = self.s.store.for_authority("capacity")
+        other = sqlite3.connect(self.db, timeout=0.1)
+        self.addCleanup(other.close)
+        with db.transaction():
+            with self.assertRaises(sqlite3.OperationalError) as caught:
+                other.execute(
+                    "INSERT INTO capacity_reservations(id,ts,job_id,kind,"
+                    "units,state,why,idempotency_key) VALUES('x','t','j',"
+                    "'EXECUTE',1,'HELD','','outsider')")
+                other.commit()
+        self.assertIn("locked", str(caught.exception))
+
+    def test_the_lock_is_released_when_the_transaction_ends(self):
+        """A guard that never lets go is an outage, not a guarantee."""
+        import sqlite3
+
+        db = self.s.store.for_authority("capacity")
+        with db.transaction():
+            pass
+        other = sqlite3.connect(self.db, timeout=1.0)
+        self.addCleanup(other.close)
+        other.execute(
+            "INSERT INTO capacity_reservations(id,ts,job_id,kind,units,"
+            "state,why,idempotency_key) VALUES('x','t','j','EXECUTE',1,"
+            "'HELD','','outsider')")
+        other.commit()
+
     def test_the_race_would_be_visible_if_the_guard_were_gone(self):
         """The threads really do collide; the test is not a no-op."""
         out = self.race(8, 80)

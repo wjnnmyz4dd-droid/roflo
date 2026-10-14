@@ -172,14 +172,32 @@ MUTANTS: tuple[Mutant, ...] = (
         "a job is admitted that cannot be verified, and nothing frees up",
     ),
     Mutant(
+        # Targets the lock, not BEGIN IMMEDIATE. The first version
+        # mutated the latter and survived: the lock alone already
+        # serialises threads, so only a second process could tell the
+        # difference. The two halves guard different things and need
+        # different mutants.
         "capacity-decision-and-write-are-not-atomic",
         "solvent/store.py",
-        "            self._conn.execute(\"BEGIN IMMEDIATE\")",
-        "            pass",
+        """        with self._lock:
+            if self._conn.in_transaction:""",
+        """        if True:
+            if self._conn.in_transaction:""",
         "tests_solvent.test_capacity_adversarial"
         ".A02_TwoSimultaneousBidsTakeTheSameRoom"
         ".test_it_holds_with_eight_of_them",
         "two callers pass the same gate and overcommit the budget",
+    ),
+    Mutant(
+        "capacity-write-lock-is-deferred-not-immediate",
+        "solvent/store.py",
+        "            self._conn.execute(\"BEGIN IMMEDIATE\")",
+        "            self._conn.execute(\"BEGIN\")",
+        "tests_solvent.test_capacity_adversarial"
+        ".A02_TwoSimultaneousBidsTakeTheSameRoom"
+        ".test_the_write_lock_is_taken_against_other_processes_too",
+        "the read-decide window reopens to any writer outside this "
+        "process, which the in-process lock cannot see",
     ),
     Mutant(
         "capacity-duplicate-admission-makes-two-obligations",

@@ -174,11 +174,18 @@ class WorkersAreTheCpuControl(Base):
                          budget.max_concurrent_jobs)
 
     def test_a_worker_limit_of_zero_does_not_open_the_gate(self):
+        """Every reservation here is for one job, so the concurrency
+        limit cannot refuse any of them and only the worker fallback
+        can. Spreading them over six jobs let the job limit do the
+        refusing, and a mutant that made the fallback unlimited
+        survived behind it.
+        """
         self.configure(max_execution_workers=0, max_concurrent_jobs=2,
                        max_owed_seconds=10_000.0)
-        taken = [self.reserve(10, job=f"j{n}", key=f"k{n}").allowed
+        taken = [self.reserve(10, job="one-job", key=f"k{n}").allowed
                  for n in range(6)]
         self.assertEqual(taken.count(True), 2)
+        self.assertEqual(self.s.capacity.jobs_in_flight(), 1)
 
 
 class ReliefShedsTheRightThingFirst(Base):
