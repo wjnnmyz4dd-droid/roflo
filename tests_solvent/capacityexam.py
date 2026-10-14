@@ -36,7 +36,7 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
                                    Stress)
 
 #: When the code under examination was frozen.
-FROZEN_AT = "2026-10-14T17:31:06Z"
+FROZEN_AT = "2026-10-14T20:59:51Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
@@ -44,9 +44,9 @@ DIGESTS = {
     "solvent/capacity.py":
         "2edd19da7ce7731bb804081ac1317565f67aef6a7ffdf6507c65f8d9767af13c",
     "solvent/finder.py":
-        "6718c58b4585e713d85d85df3a94a991008c00fa24804a175affc4b2ebd5f408",
+        "0fac9a608a6742aeaa2ebd7309111f7a128b19977194061598583f970d423fd7",
     "solvent/revenuemodel.py":
-        "3b2ddf50ecb9adc2e0c2ed5d446c8b51eaf8a96be6761b6ce02563d74e4d6937",
+        "2c36183d9ce87c93e029bee036b2490173e47501f607173f56c34faef73a72a3",
     "solvent/store.py":
         "56176dab1619586046df0b2f496b97f6edae71de836a40ff06485feb98c8d911",
 }
@@ -218,11 +218,31 @@ No criterion was tripped at any question.
 """
 
 
+FOURTH_SITTING = """Sat 2026-10-14T20:59:51Z, seed 2636773900.
+
+Six questions, 6 passed, 0 failed. The fourth sitting, after
+probation was added to the Finder. Probation changes what may be
+*quoted* and nothing about what may be *owed*, so the capacity
+behaviour these questions examine is unchanged -- which is the
+result, not an assumption.
+
+    level   7, slow_execution+spike                           5 accepted,   5 delivered, peak 0.232
+    level  13, delayed_verification+revisions                11 accepted,  11 delivered, peak 0.662
+    level  37, failed_submissions+outage                     13 accepted,  13 delivered, peak 0.587
+    level  71, payment_delays+spike                           7 accepted,   7 delivered, peak 0.6
+    level 149, revisions+slow_execution                      27 accepted,  27 delivered, peak 0.836
+    level 307, delayed_verification+failed_submissions       36 accepted,  36 delivered, peak 0.52
+
+No criterion was tripped at any question.
+"""
+
+
 #: Which record belongs to which freeze.
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
     "2026-10-14T14:31:21Z": SECOND_SITTING,
     "2026-10-14T17:31:06Z": THIRD_SITTING,
+    "2026-10-14T20:59:51Z": FOURTH_SITTING,
 }
 
 
