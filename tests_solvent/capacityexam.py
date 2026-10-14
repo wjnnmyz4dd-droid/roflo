@@ -36,15 +36,15 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
                                    Stress)
 
 #: When the code under examination was frozen.
-FROZEN_AT = "2026-10-14T14:31:21Z"
+FROZEN_AT = "2026-10-14T17:31:06Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
 DIGESTS = {
     "solvent/capacity.py":
-        "ad09936514282100f6cc3bc6ae240c9502fa228b05bab9ea25f63e7de53408ff",
+        "2edd19da7ce7731bb804081ac1317565f67aef6a7ffdf6507c65f8d9767af13c",
     "solvent/finder.py":
-        "67b7f7eab31906c69f2ccc4ea265e44b8dfae34983aee63a368937dafa3cfd3b",
+        "6718c58b4585e713d85d85df3a94a991008c00fa24804a175affc4b2ebd5f408",
     "solvent/revenuemodel.py":
         "3b2ddf50ecb9adc2e0c2ed5d446c8b51eaf8a96be6761b6ce02563d74e4d6937",
     "solvent/store.py":
@@ -200,10 +200,29 @@ limit throughout.
 """
 
 
+THIRD_SITTING = """Sat 2026-10-14T17:31:06Z, seed 2638412904.
+
+Six questions, 6 passed, 0 failed. The third sitting, after the
+four-job ceiling: acceptance is far lower than the earlier papers
+because the budgets can no longer ask for more than four jobs at
+once, which is the owner's limit working rather than a regression.
+
+    level   7, slow_execution+spike                           5 accepted,   5 delivered, peak 0.6
+    level  13, delayed_verification+revisions                 4 accepted,   4 delivered, peak 0.384
+    level  37, failed_submissions+outage                      9 accepted,   9 delivered, peak 0.343
+    level  71, payment_delays+spike                           5 accepted,   5 delivered, peak 0.44
+    level 149, revisions+slow_execution                       7 accepted,   7 delivered, peak 0.279
+    level 307, delayed_verification+failed_submissions       44 accepted,  44 delivered, peak 0.375
+
+No criterion was tripped at any question.
+"""
+
+
 #: Which record belongs to which freeze.
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
     "2026-10-14T14:31:21Z": SECOND_SITTING,
+    "2026-10-14T17:31:06Z": THIRD_SITTING,
 }
 
 
