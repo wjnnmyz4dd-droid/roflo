@@ -861,9 +861,18 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheOwnerCanSetWorkPreferencesFromTheBrowser"
            ".test_it_cannot_write_outside_its_own_namespace",
            "a browser request writes qualification filters and nothing else"),
+    # Anchored with the line above it: the capacity applier added later
+    # checks its bounds the same way, and an anchor matching both is
+    # NOT_APPLIED, which is not a kill.
     Mutant("work-preference-bounds-are-not-checked", "solvent/harness.py",
-           "        if not low <= value <= high:",
-           "        if False:",
+           """        if not low <= value <= high:
+            raise FailClosed(
+                f"{name} must be between {low} and {high}; {value} is outside "
+                f"the range this setting is allowed to take")""",
+           """        if False:
+            raise FailClosed(
+                f"{name} must be between {low} and {high}; {value} is outside "
+                f"the range this setting is allowed to take")""",
            "tests_solvent.test_owner_intent_completion"
            ".TheOwnerCanSetWorkPreferencesFromTheBrowser"
            ".test_a_value_outside_its_range_is_refused",

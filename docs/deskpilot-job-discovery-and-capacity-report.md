@@ -447,7 +447,7 @@ tests_solvent/ 153 files        — 11 findings
 ```
 
 All eleven are deliberate fixtures — `correct-horse-battery-staple`,
-`sk_live_ABCDEFGHIJKLMNOP1234`, `watcher-shared-secret-not-a-credential`
+a fake Stripe live-key shape, `watcher-shared-secret-not-a-credential`
 — used to check that redaction catches those shapes. No real credential
 is in the tree.
 
