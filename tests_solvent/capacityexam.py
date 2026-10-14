@@ -36,7 +36,7 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
                                    Stress)
 
 #: When the code under examination was frozen.
-FROZEN_AT = "2026-10-14T14:13:25Z"
+FROZEN_AT = "2026-10-14T14:31:21Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
@@ -44,7 +44,7 @@ DIGESTS = {
     "solvent/capacity.py":
         "ad09936514282100f6cc3bc6ae240c9502fa228b05bab9ea25f63e7de53408ff",
     "solvent/finder.py":
-        "978584d3f5c3aa38b70cf4effc62fca298f405b6594114c9c8cd5627ff8d0a1c",
+        "67b7f7eab31906c69f2ccc4ea265e44b8dfae34983aee63a368937dafa3cfd3b",
     "solvent/revenuemodel.py":
         "3b2ddf50ecb9adc2e0c2ed5d446c8b51eaf8a96be6761b6ce02563d74e4d6937",
     "solvent/store.py":
@@ -152,20 +152,27 @@ def sit() -> dict:
     }
 
 
-#: What happened the first time this exam was sat. Preserved, not
-#: refreshed: a first run that gets rewritten is not a first run.
-FIRST_RUN = """First sitting, 2026-10-14T14:13:25Z, seed 3194657925.
+#: Every sitting, keyed by the freeze it was sat against. Preserved,
+#: never refreshed: a first run that gets rewritten is not a first run.
+#:
+#: There are two because the seal did its job. The exam was sealed and
+#: sat, and then `Finder.choose` was added -- after the exam, not
+#: during it, but the digests cover finder.py and the seal broke on
+#: the next run. The remedy is not to widen the seal: it is to freeze
+#: the finished code and sit the paper again. The seed derives from
+#: the freeze, so the second sitting is a different paper rather than
+#: a re-sit of the same questions, and the first sitting stays below
+#: exactly as it was recorded.
+FIRST_SITTING = """Sat 2026-10-14T14:13:25Z, seed 3194657925.
 
-Six questions, six passed, none failed. Preserved as written: a
-first run that gets refreshed on every later run is not a first run,
-it is a status light.
+Six questions, 6 passed, 0 failed.
 
-    level   7, spike+slow_execution                             6 accepted,   6 delivered, peak 0.807
-    level  13, delayed_verification+revisions                  10 accepted,  10 delivered, peak 0.662
-    level  37, failed_submissions+outage                       14 accepted,  14 delivered, peak 0.3
-    level  71, spike+payment_delays                             9 accepted,   9 delivered, peak 0.77
-    level 149, slow_execution+revisions                        67 accepted,  67 delivered, peak 0.898
-    level 307, delayed_verification+failed_submissions        206 accepted, 206 delivered, peak 0.984
+    level   7, slow_execution+spike                           6 accepted,   6 delivered, peak 0.807
+    level  13, delayed_verification+revisions                10 accepted,  10 delivered, peak 0.662
+    level  37, failed_submissions+outage                     14 accepted,  14 delivered, peak 0.3
+    level  71, payment_delays+spike                           9 accepted,   9 delivered, peak 0.77
+    level 149, revisions+slow_execution                      67 accepted,  67 delivered, peak 0.898
+    level 307, delayed_verification+failed_submissions      206 accepted, 206 delivered, peak 0.984
 
 No criterion was tripped at any question: nothing accepted went
 undelivered, no budget was exceeded, no duplicate commitment was
@@ -173,6 +180,31 @@ created, no deadline was missed, no obligation was lost across a
 restart, no reservation leaked, and concurrency stayed inside the
 limit throughout.
 """
+
+SECOND_SITTING = """Sat 2026-10-14T14:31:21Z, seed 2624357441.
+
+Six questions, 6 passed, 0 failed.
+
+    level   7, slow_execution+spike                           3 accepted,   3 delivered, peak 0.96
+    level  13, delayed_verification+revisions                13 accepted,  13 delivered, peak 0.937
+    level  37, failed_submissions+outage                     35 accepted,  35 delivered, peak 0.835
+    level  71, payment_delays+spike                          19 accepted,  19 delivered, peak 0.985
+    level 149, revisions+slow_execution                      36 accepted,  36 delivered, peak 0.531
+    level 307, delayed_verification+failed_submissions      192 accepted, 192 delivered, peak 0.946
+
+No criterion was tripped at any question: nothing accepted went
+undelivered, no budget was exceeded, no duplicate commitment was
+created, no deadline was missed, no obligation was lost across a
+restart, no reservation leaked, and concurrency stayed inside the
+limit throughout.
+"""
+
+
+#: Which record belongs to which freeze.
+SITTINGS = {
+    "2026-10-14T14:13:25Z": FIRST_SITTING,
+    "2026-10-14T14:31:21Z": SECOND_SITTING,
+}
 
 
 if __name__ == "__main__":

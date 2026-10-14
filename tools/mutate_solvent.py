@@ -259,6 +259,50 @@ MUTANTS: tuple[Mutant, ...] = (
         "a deadline is quoted for execution, not for delivery",
     ),
 
+    # ---- choosing which jobs to take --------------------------------
+
+    Mutant(
+        "selection-ignores-how-long-a-job-takes",
+        "solvent/finder.py",
+        "        return (int(bid.amount_cents) - int(bid.cost_cents)) / seconds",
+        "        return float(int(bid.amount_cents) - int(bid.cost_cents))",
+        "tests_solvent.test_job_selection.ValuePerSecond"
+        ".test_a_bigger_job_can_be_the_worse_job",
+        "a job worth twice as much that takes three times as long wins",
+    ),
+    Mutant(
+        "selection-takes-jobs-in-arrival-order",
+        "solvent/finder.py",
+        """        ranked = sorted(
+            ((self.value_density(b), b) for b in bids),
+            key=lambda pair: (-(pair[0] if pair[0] is not None else -1e18),
+                              pair[1].opportunity_id))""",
+        "        ranked = [(self.value_density(b), b) for b in bids]",
+        "tests_solvent.test_job_selection.ChoosingWithinTheRoom"
+        ".test_the_best_value_per_second_is_taken_first",
+        "whichever job turned up first is the one taken",
+    ),
+    Mutant(
+        "selection-overfills-the-room",
+        "solvent/finder.py",
+        "            elif needed <= room:",
+        "            elif True:",
+        "tests_solvent.test_job_selection.ItIsAnApproximationAndSaysSo"
+        ".test_it_never_takes_more_than_the_room_allows",
+        "more work is chosen than there is room for",
+    ),
+    Mutant(
+        "selection-guesses-at-a-job-it-cannot-price",
+        "solvent/finder.py",
+        """        if bid.cost_cents is None or not bid.estimate.known:
+            return None""",
+        """        if bid.cost_cents is None or not bid.estimate.known:
+            return 0.0""",
+        "tests_solvent.test_job_selection.ValuePerSecond"
+        ".test_an_unmeasured_job_has_no_density_rather_than_a_low_one",
+        "an unmeasured job is ranked rather than set aside",
+    ),
+
     # ---- the revenue model ------------------------------------------
 
     Mutant(

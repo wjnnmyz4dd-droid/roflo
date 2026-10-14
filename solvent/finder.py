@@ -361,6 +361,66 @@ class Finder:
             f"median of {samples} measured run(s) of {capability!r}: "
             f"{seconds:.1f}s (slowest end {tail:.1f}s)", tail)
 
+    def value_density(self, bid: "Bid") -> float | None:
+        """Expected profit per second of capacity the job would consume.
+
+        The number that decides which of two jobs is worth more when
+        there is only room for one. A job worth twice as much that
+        takes three times as long is the worse job, and comparing
+        prices alone would pick it.
+
+        ``None`` where any part is unknown. A bid with no measured
+        duration has no density -- not a low one.
+        """
+        if not bid.submittable or bid.amount_cents is None:
+            return None
+        if bid.cost_cents is None or not bid.estimate.known:
+            return None
+        seconds = bid.estimate.seconds or 0.0
+        if seconds <= 0:
+            return None
+        return (int(bid.amount_cents) - int(bid.cost_cents)) / seconds
+
+    def choose(self, bids, *, seconds_available: float) -> tuple[list, list]:
+        """The best combination that fits, and what was left behind.
+
+        Taking jobs in the order they arrive maximises nothing. This
+        orders by profit per second and fills the room from the top,
+        which is the standard greedy approximation to a knapsack.
+
+        It is an approximation on purpose. The exact answer needs the
+        whole set of offers in advance, and a marketplace never gives
+        you that -- offers arrive one at a time and expire. Choosing
+        well among the ones visible now is the implementable version
+        of choosing well.
+
+        Ties break on opportunity id so that the same offers always
+        produce the same choice.
+
+        Returns ``(chosen, passed_over)``. Nothing here commits
+        anything: capacity decides whether there is room, the Action
+        Gate decides whether a bid may be sent, and the owner decides
+        whether it should be.
+        """
+        ranked = sorted(
+            ((self.value_density(b), b) for b in bids),
+            key=lambda pair: (-(pair[0] if pair[0] is not None else -1e18),
+                              pair[1].opportunity_id))
+        chosen, passed_over, room = [], [], float(seconds_available)
+        for density, bid in ranked:
+            needed = bid.estimate.seconds or 0.0
+            if density is None:
+                passed_over.append(
+                    (bid, "no measured duration or price, so no value "
+                          "per second can be worked out"))
+            elif needed <= room:
+                chosen.append(bid)
+                room -= needed
+            else:
+                passed_over.append(
+                    (bid, f"needs {needed:.0f}s and {room:.0f}s is left"))
+        return chosen, passed_over
+
     def promised_seconds(self, estimate: "CompletionEstimate", *,
                          queued_seconds: float = 0.0,
                          downstream_seconds: float | None = None

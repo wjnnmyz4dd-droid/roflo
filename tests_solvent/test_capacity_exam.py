@@ -93,17 +93,26 @@ class TheMarksStillHold(unittest.TestCase):
         self.assertIn("deadline_misses", exam.CRITERIA)
         self.assertIn("duplicate_commitments", exam.CRITERIA)
 
-    def test_the_first_run_record_is_preserved_not_refreshed(self):
-        self.assertIn("Six questions, six passed", exam.FIRST_RUN)
-        self.assertIn(exam.FROZEN_AT, exam.FIRST_RUN)
+    def test_the_current_seal_has_a_recorded_sitting(self):
+        self.assertIn(exam.FROZEN_AT, exam.SITTINGS)
 
-    def test_the_marks_match_the_first_sitting(self):
+    def test_earlier_sittings_are_kept_not_overwritten(self):
+        """Two records, because the seal broke once and did its job."""
+        self.assertGreaterEqual(len(exam.SITTINGS), 2)
+        self.assertIn("6 passed", exam.FIRST_SITTING)
+
+    def test_the_marks_match_the_record_for_this_seal(self):
+        record = exam.SITTINGS[exam.FROZEN_AT]
         for question in self.result["results"]:
             with self.subTest(level=question["level"]):
-                self.assertIn(f"level {question['level']:>3}",
-                              exam.FIRST_RUN)
+                self.assertIn(f"level {question['level']:>3}", record)
                 self.assertIn(f"{question['delivered']:>3} delivered",
-                              exam.FIRST_RUN)
+                              record)
+
+    def test_a_changed_mark_would_be_noticed(self):
+        """The comparison is only worth something if it can fail."""
+        record = exam.SITTINGS[exam.FROZEN_AT]
+        self.assertNotIn("99999 delivered", record)
 
 
 if __name__ == "__main__":
