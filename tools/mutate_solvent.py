@@ -290,6 +290,99 @@ MUTANTS: tuple[Mutant, ...] = (
         "a filter set to fifty reports a limit the owner does not have",
     ),
 
+    # ---- probation: the only way out of the zero-history deadlock ---
+    # Every one of these removes a bound on the single control that
+    # lets DeskPilot quote work it has never done.
+
+    Mutant(
+        "zero-history-work-is-quoted-without-a-grant",
+        "solvent/finder.py",
+        "            if grant.granted and provisional.known and not blockers:",
+        "            if provisional.known:",
+        "tests_solvent.test_probation_adversarial.P03_UnsupportedSkills"
+        ".test_an_ungranted_capability_is_not_quoted_even_with_benchmarks",
+        "any capability with a benchmark is quoted, granted or not",
+    ),
+    Mutant(
+        "a-probationary-bid-becomes-submittable",
+        "solvent/finder.py",
+        "                cost.total_cents, gain.margin, False,",
+        "                cost.total_cents, gain.margin, True,",
+        "tests_solvent.test_probation_adversarial.P08_UnauthorizedBidding"
+        ".test_a_probationary_bid_is_never_submittable",
+        "DeskPilot sends a bid for work it has never done",
+    ),
+    Mutant(
+        "probation-ignores-its-value-ceiling",
+        "solvent/finder.py",
+        "            if amount > grant.max_value_cents:",
+        "            if False:",
+        "tests_solvent.test_probation_adversarial.P08_UnauthorizedBidding"
+        ".test_a_job_above_the_ceiling_is_not_recommended_at_all",
+        "a first job on an unmeasured skill is taken at any size",
+    ),
+    Mutant(
+        "probation-ignores-its-delivery-window",
+        "solvent/finder.py",
+        "            if occupied > wanted:",
+        "            if False:",
+        "tests_solvent.test_probation_adversarial"
+        ".P04_UnrealisticCompletionEstimates"
+        ".test_a_job_that_would_take_longer_than_the_window_is_refused",
+        "a deadline is promised on a skill whose timing nobody knows",
+    ),
+    Mutant(
+        "probation-never-runs-out",
+        "solvent/finder.py",
+        "        if jobs_done >= allowed:",
+        "        if False:",
+        "tests_solvent.test_probation_adversarial.P09_ExpiredOpportunities"
+        ".test_a_grant_is_consumed_by_jobs_taken_not_by_time",
+        "probation becomes permanent rather than a way out of a deadlock",
+    ),
+    Mutant(
+        "probation-never-graduates",
+        "solvent/finder.py",
+        "        if graduates_at and done_for_client >= graduates_at:",
+        "        if False:",
+        "tests_solvent.test_probation_adversarial.P01_FakeCustomerHistory"
+        ".test_real_history_ends_probation_rather_than_adding_to_it",
+        "a capability with real history keeps being quoted from benchmarks",
+    ),
+    Mutant(
+        "a-benchmark-estimate-is-reported-as-measured",
+        "solvent/finder.py",
+        "                    Confidence.PROVISIONAL,",
+        "                    Confidence.MEASURED,",
+        "tests_solvent.test_probation_adversarial"
+        ".P02_SyntheticBenchmarksAsLivePerformance"
+        ".test_a_probation_estimate_is_never_called_measured",
+        "a timing from a file DeskPilot wrote reads as client evidence",
+    ),
+    Mutant(
+        "probation-can-be-revoked-into-nothing",
+        "solvent/policy.py",
+        """        if capability not in current:
+            raise FailClosed(""",
+        """        if False:
+            raise FailClosed(""",
+        "tests_solvent.test_probation_console"
+        ".RevokingSaysSoInTheRecord.test_revoking_what_was_never_granted_is_refused",
+        "a revocation record for a grant that never existed",
+    ),
+
+    # ---- the platform's own fee floor -------------------------------
+
+    Mutant(
+        "the-platform-fee-has-no-floor",
+        "solvent/quoting.py",
+        "    if price_cents and rates.platform_fee_minimum_cents > platform:",
+        "    if False:",
+        "tests_solvent.test_commercial_configuration.ThePlatformFeeHasAFloor"
+        ".test_a_small_job_pays_the_floor_not_the_percentage",
+        "a $40 job is costed at a $4 fee when the platform takes $5",
+    ),
+
     # ---- the one marketplace adapter --------------------------------
 
     Mutant(
@@ -1129,13 +1222,13 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "an-unmeasured-capability-bids-anyway",
         "solvent/finder.py",
-        # Anchored on the bid() occurrence specifically. The bare line
-        # also appears in promised_seconds() now, and an anchor that
-        # matches twice is NOT_APPLIED -- which is not a kill.
-        """        if not estimate.known:
-            blockers.append(estimate.basis)""",
-        """        if False:
-            blockers.append(estimate.basis)""",
+        # Re-anchored when probation moved this branch: an unknown
+        # estimate now either becomes a probationary recommendation or
+        # blocks, and the blocking half is the control this pins.
+        """            else:
+                blockers.append(estimate.basis)""",
+        """            else:
+                pass""",
         "tests_solvent.test_bidding.NoBidWithoutTheEvidenceToMakeOne"
         ".test_no_measured_history_means_no_bid",
         "a delivery time would be promised to a client for a capability "

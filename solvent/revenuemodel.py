@@ -168,6 +168,10 @@ def build(*, policy, capacity, ledger=None, history=None, capability="",
     # ---- what each delivered job costs -------------------------------
     record("platform_fee_fraction", float(get("platform_fee_fraction", 0) or 0),
            OBSERVED, "the marketplace's cut, as configured")
+    record("platform_fee_minimum_cents",
+           float(get("platform_fee_minimum_cents", 0) or 0), OBSERVED,
+           "the least the marketplace takes per job, whatever the "
+           "percentage comes to")
     record("payment_fee_fraction", float(get("payment_fee_fraction", 0) or 0),
            OBSERVED, "the payment provider's percentage, as configured")
     record("payment_fee_flat_cents",
@@ -263,6 +267,11 @@ def _scenario(name: str, multiple: float, inputs: dict,
 
     seconds = inputs["seconds_per_job"].value or 0.0
     platform = round(collected_cents * inputs["platform_fee_fraction"].value)
+    # The per-job floor, applied per job rather than to the month's
+    # total: the platform takes it from each one.
+    floor_per_job = inputs["platform_fee_minimum_cents"].value or 0
+    if floor_per_job and completed:
+        platform = max(platform, round(floor_per_job * completed))
     payment = round(collected_cents * inputs["payment_fee_fraction"].value
                     + completed * inputs["payment_fee_flat_cents"].value)
     compute = round(completed * (seconds / 3600.0)

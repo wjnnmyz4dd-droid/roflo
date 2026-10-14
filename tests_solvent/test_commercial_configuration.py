@@ -300,3 +300,71 @@ class TheCycleStopsAtInvoiceRatherThanExploding(BusinessCycleBase):
     def test_the_audit_chain_still_verifies(self):
         cycle = self.runCycle()
         self.assertTrue(cycle.audit_chain_ok)
+
+
+class ThePlatformFeeHasAFloor(unittest.TestCase):
+    """Freelancer publishes "10% or $5.00 USD, whichever is greater".
+
+    A fee model that knows only the percentage charges a $40 job $4
+    and is wrong by a dollar in the direction that makes the job look
+    worth taking. Verified against the platform's own fees page on
+    2026-10-14.
+    """
+
+    def setUp(self):
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.s = Solvent(f"{self.box.name}/fees.db")
+        self.addCleanup(self.close)
+        self.s.policy.amend(
+            {"commercial": {"platform_fee_fraction": 0.10,
+                            "platform_fee_minimum_cents": 500}},
+            OWNER, "test: the platform's published terms")
+
+    def close(self):
+        try:
+            self.s.store.close()
+        except Exception:
+            pass
+
+    def cost(self, price):
+        from solvent import quoting
+
+        return quoting.operating_cost(
+            quoting.ExecutionMeasurement(wall_seconds=60, cpu_seconds=60),
+            price_cents=price,
+            rates=quoting.rates_from_policy(self.s.policy))
+
+    def test_a_small_job_pays_the_floor_not_the_percentage(self):
+        self.assertEqual(self.cost(4_000).platform_fee_cents, 500)
+
+    def test_a_large_job_pays_the_percentage(self):
+        self.assertEqual(self.cost(25_000).platform_fee_cents, 2_500)
+
+    def test_the_crossover_is_where_the_two_meet(self):
+        self.assertEqual(self.cost(5_000).platform_fee_cents, 500)
+        self.assertEqual(self.cost(6_000).platform_fee_cents, 600)
+
+    def test_the_basis_says_which_rule_applied(self):
+        lines = " ".join(self.cost(4_000).basis)
+        self.assertIn("the floor the platform takes", lines)
+        self.assertIn("the floor the platform takes",
+                      " ".join(self.cost(4_000).basis))
+
+    def test_no_floor_configured_means_the_percentage_alone(self):
+        self.s.policy.amend({"commercial":
+                             {"platform_fee_minimum_cents": 0}},
+                            OWNER, "test: no floor recorded")
+        self.assertEqual(self.cost(4_000).platform_fee_cents, 400)
+
+    def test_a_free_job_pays_no_fee_at_all(self):
+        """The floor is per job charged, not a charge for existing."""
+        self.assertEqual(self.cost(0).platform_fee_cents, 0)
+
+    def test_understating_the_fee_would_overstate_the_margin(self):
+        """Why this matters: it is the direction that accepts bad work."""
+        with_floor = self.cost(4_000).total_cents
+        self.s.policy.amend({"commercial":
+                             {"platform_fee_minimum_cents": 0}},
+                            OWNER, "test: without the floor")
+        self.assertLess(self.cost(4_000).total_cents, with_floor)

@@ -213,6 +213,14 @@ class CostRates:
     #: Payment processor: a proportion plus a flat charge per transaction.
     payment_fee_fraction: float = 0.0
     payment_fee_flat_cents: Cents = 0
+    #: The least the platform will take, whatever the percentage works
+    #: out to. Freelancer's published fee is "10% or $5.00 USD,
+    #: whichever is greater", and a model that knows only the 10% puts
+    #: the fee on a $40 job at $4 when the platform will take $5.
+    #: Understating cost overstates margin, which is the direction that
+    #: makes DeskPilot accept work it should have refused. Zero means
+    #: no minimum, not no fee.
+    platform_fee_minimum_cents: Cents = 0
 
     def __post_init__(self) -> None:
         for name in ("platform_fee_fraction", "payment_fee_fraction"):
@@ -228,6 +236,14 @@ def operating_cost(measurement: ExecutionMeasurement, *, price_cents: Cents,
     compute = round(rates.compute_cents_per_cpu_hour
                     * measurement.cpu_seconds / SECONDS_PER_HOUR)
     platform = round(price_cents * rates.platform_fee_fraction)
+    platform_basis = (f"platform fee {rates.platform_fee_fraction:.1%} of "
+                      f"{fmt(price_cents)} = {fmt(platform)}")
+    if price_cents and rates.platform_fee_minimum_cents > platform:
+        platform = rates.platform_fee_minimum_cents
+        platform_basis = (
+            f"platform fee {fmt(platform)}: the floor the platform takes, "
+            f"which is more than {rates.platform_fee_fraction:.1%} of "
+            f"{fmt(price_cents)}")
     payment = (round(price_cents * rates.payment_fee_fraction)
                + rates.payment_fee_flat_cents) if price_cents else 0
     basis = [
@@ -235,8 +251,7 @@ def operating_cost(measurement: ExecutionMeasurement, *, price_cents: Cents,
         f"{fmt(rates.compute_cents_per_cpu_hour)}/CPU-hour = {fmt(compute)}",
         f"model API {measurement.api_tokens} token(s) = "
         f"{fmt(measurement.api_cost_cents)}",
-        f"platform fee {rates.platform_fee_fraction:.1%} of {fmt(price_cents)} "
-        f"= {fmt(platform)}",
+        platform_basis,
         f"payment fee {rates.payment_fee_fraction:.1%} + "
         f"{fmt(rates.payment_fee_flat_cents)} = {fmt(payment)}",
     ]
@@ -526,4 +541,6 @@ def rates_from_policy(policy) -> CostRates:
         compute_cents_per_cpu_hour=int(value("compute_cents_per_cpu_hour", 0)),
         platform_fee_fraction=float(value("platform_fee_fraction", 0.0)),
         payment_fee_fraction=float(value("payment_fee_fraction", 0.0)),
-        payment_fee_flat_cents=int(value("payment_fee_flat_cents", 0)))
+        payment_fee_flat_cents=int(value("payment_fee_flat_cents", 0)),
+        platform_fee_minimum_cents=int(
+            value("platform_fee_minimum_cents", 0)))

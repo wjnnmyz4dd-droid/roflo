@@ -262,6 +262,23 @@ class CompletionEstimate:
 
 
 @dataclass(frozen=True, slots=True)
+class Probation:
+    """Whether a capability with no client history may be quoted at all.
+
+    A record of the owner's decision and its bounds, never an
+    inference. ``granted`` false always carries a reason, because
+    "no" with no explanation is the kind of refusal nobody can act on.
+    """
+
+    capability: str
+    granted: bool
+    why: str
+    max_value_cents: Cents = 0
+    min_deadline_hours: float = 0.0
+    jobs_remaining: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class Bid:
     """A proposed bid. Composed here, never sent from here.
 
@@ -287,6 +304,18 @@ class Bid:
     #: work it finishes in minutes. Carried on the bid so the delivery
     #: time is part of the offer rather than an internal number.
     promised_seconds: float = 0.0
+    #: Composed under probation, from benchmark timings rather than
+    #: client history. A probationary bid is **never submittable**: it
+    #: is a priced recommendation for the owner to look at and send
+    #: themselves. Probation exists to escape the zero-history
+    #: deadlock, and it would not be worth escaping if the way out
+    #: were to let DeskPilot bid unsupervised on work it has never
+    #: done.
+    probationary: bool = False
+    #: Worth the owner's attention even though DeskPilot may not act
+    #: on it. The distinction this whole field exists for: a
+    #: recommendation is not an authorisation.
+    recommended: bool = False
 
     @property
     def promised_hours(self) -> float:
@@ -387,6 +416,95 @@ class Finder:
             capability, seconds, samples, confidence,
             f"median of {samples} measured run(s) of {capability!r}: "
             f"{seconds:.1f}s (slowest end {tail:.1f}s)", tail)
+
+    def probation(self, capability: str, *,
+                  history: "ExecutionHistory | None" = None,
+                  jobs_done: int = 0) -> "Probation":
+        """May this capability be bid on with no client history yet?
+
+        The deadlock this answers: `bid` refuses a capability with no
+        measured client runs, and client runs only come from doing
+        client work. Left alone, DeskPilot can never take a first job
+        on any platform, and the five skills stay blocked for ever.
+
+        Probation is the way out, and it is deliberately a narrow one.
+        Every condition below has to hold, and none of them defaults
+        to yes:
+
+        * the owner has named this capability, with its own bounds
+        * it has not already graduated -- real client runs end it
+        * it has not used up the jobs the owner allowed
+        * a value ceiling is set, so a wrong estimate costs little
+        * a minimum delivery window is set, because the thing nobody
+          knows yet is how long the work takes
+
+        What probation does **not** do is relax anything. The capacity
+        gate, the three-job limit, the verification tier, the pricing
+        floors and the owner's approval all apply exactly as before,
+        and a probationary bid is never submittable on its own.
+        """
+        name = (capability or "").strip()
+        if not name:
+            return Probation("", False, "no capability was named")
+
+        grants = self._policy.get("probation", "capabilities",
+                                  default={}) or {}
+        terms = grants.get(name)
+        if not isinstance(terms, dict):
+            return Probation(
+                name, False,
+                f"the owner has not put {name!r} on probation; probation is "
+                "granted per capability and is off until they do")
+
+        graduates_at = int(self._policy.get(
+            "probation", "graduates_at_client_runs", default=0) or 0)
+        done_for_client = (history.count(name) if history is not None else 0)
+        if graduates_at and done_for_client >= graduates_at:
+            return Probation(
+                name, False,
+                f"{name!r} has {done_for_client} client run(s) and no longer "
+                "needs probation; it is bid on from its own measured history")
+
+        if terms.get("revoked"):
+            return Probation(
+                name, False,
+                f"the owner ended probation for {name!r}; it is recorded as "
+                "revoked rather than removed, so the decision is visible")
+        allowed = int(terms.get("max_jobs", 0) or 0)
+        if allowed <= 0:
+            return Probation(
+                name, False,
+                f"probation for {name!r} allows no jobs; a grant with no "
+                "number is not a grant")
+        if jobs_done >= allowed:
+            return Probation(
+                name, False,
+                f"probation for {name!r} is used up: {jobs_done} of "
+                f"{allowed} job(s) taken")
+
+        ceiling = int(terms.get("max_value_cents", 0) or 0)
+        if ceiling <= 0:
+            return Probation(
+                name, False,
+                f"probation for {name!r} has no value ceiling; the whole "
+                "point is that a wrong estimate costs little, which needs "
+                "a number")
+
+        window = float(terms.get("min_deadline_hours", 0) or 0)
+        if window <= 0:
+            return Probation(
+                name, False,
+                f"probation for {name!r} states no minimum delivery window; "
+                "how long the work takes is precisely what nobody knows "
+                "yet, so the owner says how much room to ask for")
+
+        return Probation(
+            name, True,
+            f"on probation: up to {fmt(ceiling)}, "
+            f"{allowed - jobs_done} job(s) left, at least {window:g}h to "
+            "deliver",
+            max_value_cents=ceiling, min_deadline_hours=window,
+            jobs_remaining=allowed - jobs_done)
 
     def value_density(self, bid: "Bid") -> float | None:
         """Expected profit per second of capacity the job would consume.
@@ -568,17 +686,28 @@ class Finder:
     def bid(self, opportunity: Opportunity, *,
             history: ExecutionHistory | None = None,
             units: int = 0,
-            standard: "quoting.WorkStandard | None" = None) -> Bid:
+            standard: "quoting.WorkStandard | None" = None,
+            benchmarks: ExecutionHistory | None = None,
+            probation_jobs_done: int = 0) -> Bid:
         """Compose a bid for one opportunity. Never sends it.
 
         Refuses, rather than guessing, whenever the thing it would need
         is unknown: an unconfigured business, an unmeasured capability,
         a posting naming no budget, or a floor above what the client
         has offered.
+
+        ``benchmarks`` is the measured-but-not-client history that
+        ``ExecutionHistory.from_store`` keeps out of pricing. It is
+        read here for one purpose only: a capability the owner has put
+        on probation may be *recommended* from it, bounded, while it
+        has no client runs of its own. The result is never
+        submittable. See :meth:`probation`.
         """
         capability = opportunity.needs[0] if opportunity.needs else ""
         estimate = self.completion_estimate(capability, history=history)
         blockers: list[str] = []
+        grant = Probation(capability, False, "probation was not consulted")
+        probationary = False
 
         configured, gaps = self.commercially_configured()
         if not configured:
@@ -591,7 +720,29 @@ class Finder:
             if not deployable:
                 blockers.append(f"{capability} cannot be deployed: {why}")
         if not estimate.known:
-            blockers.append(estimate.basis)
+            # The one place probation applies. Everything else that
+            # could block this bid is checked first and independently,
+            # so a grant can only ever rescue the missing history --
+            # never an undeployable capability or an unconfigured
+            # business.
+            grant = self.probation(capability, history=history,
+                                   jobs_done=probation_jobs_done)
+            provisional = self.completion_estimate(capability,
+                                                   history=benchmarks)
+            if grant.granted and provisional.known and not blockers:
+                estimate = CompletionEstimate(
+                    capability, provisional.seconds, provisional.samples,
+                    Confidence.PROVISIONAL,
+                    "no client run of this capability has been measured; "
+                    f"timed at {provisional.seconds:.1f}s on inputs "
+                    "DeskPilot generated for itself, which is what it can "
+                    "do rather than what a client's file will take",
+                    provisional.tail_seconds)
+                probationary = True
+            else:
+                blockers.append(estimate.basis)
+                if not grant.granted and grant.capability:
+                    blockers.append(grant.why)
 
         if blockers:
             return Bid(opportunity.id, capability, None, estimate, 0, None,
@@ -642,6 +793,47 @@ class Finder:
         # speed is already the advantage and giving away margin on top
         # buys nothing the owner asked for.
         amount = budget
+        if probationary:
+            # Three refusals rather than three adjustments. Probation
+            # buys a first client record, and it is only worth having
+            # if a wrong guess about an unmeasured capability stays
+            # small.
+            if amount > grant.max_value_cents:
+                return Bid(
+                    opportunity.id, capability, None, estimate, floor,
+                    cost.total_cents, None, False,
+                    f"{fmt(amount)} is above the {fmt(grant.max_value_cents)} "
+                    f"ceiling the owner set for probation work on "
+                    f"{capability}; a first job is for learning what the "
+                    "work takes, not for the money",
+                    basis=cost.basis, probationary=True)
+            wanted = grant.min_deadline_hours * 3600.0
+            if occupied > wanted:
+                return Bid(
+                    opportunity.id, capability, None, estimate, floor,
+                    cost.total_cents, None, False,
+                    f"delivering this needs about {occupied / 3600:.1f}h and "
+                    f"the owner asked for at least "
+                    f"{grant.min_deadline_hours:g}h of room on probation "
+                    "work; the time this takes is the thing nobody knows",
+                    basis=cost.basis, probationary=True)
+            gain = quoting.profitability(price_cents=amount, cost=cost)
+            return Bid(
+                opportunity.id, capability, amount, estimate, floor,
+                cost.total_cents, gain.margin, False,
+                f"recommended for your review: {fmt(amount)} against a "
+                f"{fmt(floor)} floor. {capability} has no client history, "
+                f"so this is on probation ({grant.jobs_remaining} job(s) "
+                "left) and DeskPilot may not send it. Submit it yourself "
+                "if you want it.",
+                basis=tuple(cost.basis) + (
+                    f"floor: {floor_reason}",
+                    f"completion: {estimate.basis}",
+                    f"probation: {grant.why}",
+                    gain.summary()),
+                promised_seconds=occupied, probationary=True,
+                recommended=True)
+
         gain = quoting.profitability(price_cents=amount, cost=cost)
         return Bid(
             opportunity.id, capability, amount, estimate, floor,

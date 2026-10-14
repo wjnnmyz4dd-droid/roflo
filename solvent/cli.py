@@ -438,6 +438,60 @@ def cmd_setup_commercial(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup_probation(args: argparse.Namespace) -> int:
+    """Grant or end probation for one capability.
+
+    Probation is the only way out of the zero-history deadlock: the
+    Finder will not bid on work it has never done, and it can only
+    have done work it was allowed to bid on. A grant lets one
+    capability be *recommended* to the owner, bounded, from benchmark
+    timings -- and a probationary bid is never submittable by
+    DeskPilot.
+    """
+    solvent = _owner_solvent(args)
+    if args.revoke:
+        try:
+            solvent.policy.revoke_probation(
+                owner_identity=args.owner, capability=args.revoke,
+                reason=args.reason)
+        except FailClosed as refusal:
+            print(f"refused: {refusal}")
+            return 1
+        print(f"probation ended for {args.revoke}")
+        return 0
+
+    if not args.capability:
+        grants = solvent.policy.get("probation", "capabilities",
+                                    default={}) or {}
+        if not grants:
+            print("no capability is on probation")
+            return 0
+        for name, terms in sorted(grants.items()):
+            if terms.get("revoked"):
+                print(f"  {name}: revoked")
+                continue
+            print(f"  {name}: up to {terms.get('max_jobs', 0)} job(s), "
+                  f"{fmt(int(terms.get('max_value_cents', 0)))} each, "
+                  f"at least {terms.get('min_deadline_hours', 0)}h to "
+                  "deliver")
+        return 0
+
+    try:
+        solvent.policy.grant_probation(
+            owner_identity=args.owner, capability=args.capability,
+            max_jobs=args.max_jobs, max_value_cents=args.max_value_cents,
+            min_deadline_hours=args.min_deadline_hours, reason=args.reason)
+    except FailClosed as refusal:
+        print(f"refused: {refusal}")
+        return 1
+    print(f"probation granted for {args.capability}")
+    print(f"  up to {args.max_jobs} job(s) at "
+          f"{fmt(args.max_value_cents)} each, at least "
+          f"{args.min_deadline_hours:g}h to deliver")
+    print("  DeskPilot will recommend these to you and may not send them")
+    return 0
+
+
 def cmd_setup_capacity(args: argparse.Namespace) -> int:
     """Record how much work DeskPilot may owe at one time.
 
@@ -1540,6 +1594,25 @@ def build_parser() -> argparse.ArgumentParser:
     crypto.add_argument("--reason",
                         default="owner records a crypto receipt address")
     crypto.set_defaults(func=cmd_setup_crypto)
+
+    probation = owned(setup_sub.add_parser(
+        "probation", help="let a capability be quoted before it has "
+                          "client history"))
+    probation.add_argument("--capability", default="",
+                           help="the skill to put on probation; omit to "
+                                "list what is on probation now")
+    probation.add_argument("--max-jobs", type=int, default=0)
+    probation.add_argument("--max-value-cents", type=int, default=0,
+                           help="ceiling per job: a first job is for "
+                                "learning what the work takes")
+    probation.add_argument("--min-deadline-hours", type=float, default=0.0,
+                           help="least delivery room to ask for, since how "
+                                "long the work takes is what nobody knows")
+    probation.add_argument("--revoke", default="",
+                           help="end probation for this capability")
+    probation.add_argument("--reason",
+                           default="owner changes probation")
+    probation.set_defaults(func=cmd_setup_probation)
 
     capacity = owned(setup_sub.add_parser(
         "capacity", help="record how much work may be owed at one time"))

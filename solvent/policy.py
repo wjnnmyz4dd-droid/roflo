@@ -84,6 +84,12 @@ DEFAULT_POLICY: dict[str, Any] = {
         # What running DeskPilot actually costs. Not a labour rate.
         "compute_cents_per_cpu_hour": 0,
         "platform_fee_fraction": 0.0,
+        # The least the marketplace takes whatever the percentage comes
+        # to. Freelancer publishes "10% or $5.00 USD, whichever is
+        # greater"; a fee model that knows only the percentage charges
+        # a $40 job $4 and is wrong by a dollar in the direction that
+        # makes the job look worth taking.
+        "platform_fee_minimum_cents": 0,
         "payment_fee_fraction": 0.0,
         "payment_fee_flat_cents": 0,
         # The rate an hourly contract is billed at. The owner's preferred
@@ -124,6 +130,32 @@ DEFAULT_POLICY: dict[str, Any] = {
         # Direct costs per delivered job beyond platform and payment
         # fees -- anything billed per job rather than per month.
         "other_direct_cost_per_job_cents": 0,
+    },
+    # How a capability with no client history may earn one.
+    #
+    # The deadlock: the Finder refuses to bid on work it has never
+    # done, and it can only have done work it was allowed to bid on.
+    # Without a way out, every skill stays blocked for ever and the
+    # first customer never happens.
+    #
+    # Probation is that way out and it is deliberately narrow. Nothing
+    # here is on by default: `capabilities` is empty, and an empty
+    # grant means no capability may be quoted without client history.
+    # Each entry the owner adds carries its own bounds, because the
+    # risk being accepted is specific to the skill:
+    #
+    #     "csv-cleanup": {"max_jobs": 2, "max_value_cents": 7500,
+    #                     "min_deadline_hours": 48}
+    #
+    # A probationary bid is a recommendation to the owner and is never
+    # submittable by DeskPilot. Probation relaxes no other control:
+    # the capacity gate, the three-job limit, the verification tier,
+    # the pricing floors and owner approval all apply unchanged.
+    "probation": {
+        "capabilities": {},
+        # Client runs after which a capability no longer needs
+        # probation, because it now has history of its own.
+        "graduates_at_client_runs": 5,
     },
     # How much work DeskPilot may owe at one time. Every value is zero
     # until the owner sets it, and zero means "take nothing on" rather
@@ -602,6 +634,70 @@ class PolicyStore:
             initiator=owner_identity, why=reason, decision=rail.strip(),
             result=f"signal={verification_signal.strip()}; {self.RAIL_SELECTED}")
         return version
+
+    def grant_probation(self, *, owner_identity: str, capability: str,
+                        max_jobs: int, max_value_cents: int,
+                        min_deadline_hours: float,
+                        reason: str = "owner grants probation") -> int:
+        """Let one capability be quoted before it has client history.
+
+        Owner only, per capability, with its own bounds. There is no
+        blanket form of this on purpose: the risk being accepted is
+        "we do not know how long this particular skill takes on a real
+        client's file", and that is a different risk for a CSV tidy
+        than for a twenty-page report.
+        """
+        capability = (capability or "").strip()
+        if not capability:
+            raise FailClosed("probation is granted to a named capability")
+        if max_jobs <= 0:
+            raise FailClosed(
+                "a probation grant of zero jobs is not a grant; to end "
+                "probation use revoke_probation, which says so in the record")
+        if max_value_cents <= 0:
+            raise FailClosed(
+                "probation needs a value ceiling: the whole point is that "
+                "a wrong estimate costs little, and that needs a number")
+        if min_deadline_hours <= 0:
+            raise FailClosed(
+                "probation needs a minimum delivery window: how long the "
+                "work takes is precisely what nobody knows yet")
+        return self.amend({"probation": {"capabilities": {capability: {
+            "max_jobs": int(max_jobs),
+            "max_value_cents": int(max_value_cents),
+            "min_deadline_hours": float(min_deadline_hours),
+        }}}}, owner_identity, reason)
+
+    def revoke_probation(self, *, owner_identity: str, capability: str,
+                         reason: str = "owner ends probation") -> int:
+        """End probation for one capability, visibly.
+
+        This exists because the obvious way to do it does not work and
+        fails silently. Policy patches deep-merge, so amending
+        ``{"probation": {"capabilities": {}}}`` -- which is exactly
+        what an owner would write to clear a grant -- merges an empty
+        map into the existing one and changes nothing. The owner would
+        read "policy amended", and the capability would still be on
+        probation.
+
+        So a revoked grant is written rather than removed: zeroed, and
+        the audit record says who ended it and why. A grant that
+        vanishes leaves no trace that it ever existed, which is the
+        wrong property for the one control that lets DeskPilot quote
+        work it has never done.
+        """
+        capability = (capability or "").strip()
+        if not capability:
+            raise FailClosed("revoking probation needs a named capability")
+        current = dict(self.get("probation", "capabilities", default={}) or {})
+        if capability not in current:
+            raise FailClosed(
+                f"{capability!r} is not on probation, so there is nothing "
+                "to revoke")
+        return self.amend({"probation": {"capabilities": {capability: {
+            "max_jobs": 0, "max_value_cents": 0, "min_deadline_hours": 0,
+            "revoked": True,
+        }}}}, owner_identity, reason)
 
     def record_crypto_receipt(self, *, owner_identity: str, network: str,
                               asset: str, address: str,
