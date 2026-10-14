@@ -467,17 +467,50 @@ class A11_ResourceExhaustion(Base):
         self.host(memory={"used_percent": 97.0})
         self.assertFalse(self.s.capacity.room_for(1.0).allowed)
 
-    def test_a_host_that_lies_by_silence_does_not_open_the_gate(self):
-        """An unreadable host is not a healthy host."""
-        self.configure(min_free_disk_bytes=10_000_000_000)
-
+    def broken_host(self):
         def explode(_self):
-            raise OSError("no")
+            raise OSError("the host will not say")
 
         self.s.capacity._diagnostics = type("Broken", (),
                                             {"host": explode})()
-        pressure = self.s.capacity.pressure()
-        self.assertIn("disk_free_bytes", pressure["unmeasured"])
+
+    def test_a_host_that_lies_by_silence_does_not_open_the_gate(self):
+        """An unreadable host is not a healthy host.
+
+        Found by reading capacity against iFixAi's silent-failure
+        inspection. The unreadable-books path refused; these two
+        returned "no problem" and admitted work, so the quieter of
+        two ways of failing to check was the dangerous one.
+        """
+        self.configure(min_free_disk_bytes=10_000_000_000)
+        self.broken_host()
+        decision = self.s.capacity.room_for(1.0)
+        self.assertFalse(decision.allowed)
+        self.assertIn("nobody can check", decision.why)
+
+    def test_an_unreadable_memory_reading_also_refuses(self):
+        self.configure(max_memory_used_percent=80.0)
+        self.broken_host()
+        self.assertFalse(self.s.capacity.room_for(1.0).allowed)
+
+    def test_an_unreadable_host_still_reports_the_signal_as_unmeasured(self):
+        self.configure(min_free_disk_bytes=10_000_000_000)
+        self.broken_host()
+        self.assertIn("disk_free_bytes",
+                      self.s.capacity.pressure()["unmeasured"])
+
+    def test_a_host_that_simply_has_no_memory_figure_is_not_a_failure(self):
+        """Windows reports no memory. That is ordinary, not broken."""
+        self.configure(max_memory_used_percent=80.0, min_free_disk_bytes=0)
+        self.s.capacity._diagnostics = type(
+            "Quiet", (), {"host": lambda _self: {"memory": {}}})()
+        self.assertTrue(self.s.capacity.room_for(1.0).allowed)
+
+    def test_an_unset_limit_is_not_checked_at_all(self):
+        """No floor configured means nothing to fail to check."""
+        self.configure(min_free_disk_bytes=0, max_memory_used_percent=0.0)
+        self.broken_host()
+        self.assertTrue(self.s.capacity.room_for(1.0).allowed)
 
     def test_the_whole_machine_is_never_claimed(self):
         self.configure(cpu_share=1.5)

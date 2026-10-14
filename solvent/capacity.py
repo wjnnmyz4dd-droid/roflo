@@ -546,13 +546,21 @@ class Capacity:
             return 1
 
     def _memory_problem(self, budget: Budget) -> str:
-        """Only where the host says. Silence is not a reading."""
-        if budget.max_memory_used_percent <= 0 or self._diagnostics is None:
+        """Only where the host says. Silence is not a reading.
+
+        A host that reports no memory at all is the ordinary case on
+        Windows and is not a failure. A host that raises when asked is
+        a different thing, and it refuses: a ceiling the owner set and
+        nobody can check is not a ceiling that has been respected.
+        """
+        if budget.max_memory_used_percent <= 0:
             return ""
+        if self._diagnostics is None:
+            return self._unreadable("memory", "no diagnostics are wired")
         try:
             memory = self._diagnostics.host().get("memory") or {}
-        except Exception:
-            return ""
+        except Exception as exc:
+            return self._unreadable("memory", str(exc)[:120])
         used = memory.get("used_percent")
         if used is None:
             return ""
@@ -570,13 +578,28 @@ class Capacity:
         except Exception:
             return {}
 
+    @staticmethod
+    def _unreadable(what: str, why: str) -> str:
+        """A limit that cannot be checked has not been satisfied.
+
+        The books-unreadable path already refuses; these two did not,
+        so a host that threw on being asked read as "no problem" and
+        opened the gate. Two ways of failing to check, two different
+        answers, and the quieter one was the dangerous one.
+        """
+        return (f"the owner set a {what} limit and this host will not "
+                f"say what the {what} is ({why}); a limit nobody can "
+                "check is not a limit that has been respected")
+
     def _disk_problem(self, budget: Budget) -> str:
-        if budget.min_free_disk_bytes <= 0 or self._diagnostics is None:
+        if budget.min_free_disk_bytes <= 0:
             return ""
+        if self._diagnostics is None:
+            return self._unreadable("free disk", "no diagnostics are wired")
         try:
             free = int(self._diagnostics.host().get("disk_free_bytes", 0))
-        except Exception:
-            return ""
+        except Exception as exc:
+            return self._unreadable("free disk", str(exc)[:120])
         if free and free < budget.min_free_disk_bytes:
             return (f"{free / 1e9:.1f}GB of disk is free, below the "
                     f"{budget.min_free_disk_bytes / 1e9:.1f}GB the owner "

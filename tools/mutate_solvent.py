@@ -189,6 +189,28 @@ MUTANTS: tuple[Mutant, ...] = (
         "two callers pass the same gate and overcommit the budget",
     ),
     Mutant(
+        "capacity-an-unreadable-disk-reads-as-healthy",
+        "solvent/capacity.py",
+        """        except Exception as exc:
+            return self._unreadable("free disk", str(exc)[:120])""",
+        """        except Exception:
+            return \"\"""",
+        "tests_solvent.test_capacity_adversarial.A11_ResourceExhaustion"
+        ".test_a_host_that_lies_by_silence_does_not_open_the_gate",
+        "a host that throws when asked about disk opens the gate",
+    ),
+    Mutant(
+        "capacity-an-unreadable-memory-reads-as-healthy",
+        "solvent/capacity.py",
+        """        except Exception as exc:
+            return self._unreadable("memory", str(exc)[:120])""",
+        """        except Exception:
+            return \"\"""",
+        "tests_solvent.test_capacity_adversarial.A11_ResourceExhaustion"
+        ".test_an_unreadable_memory_reading_also_refuses",
+        "a host that throws when asked about memory opens the gate",
+    ),
+    Mutant(
         "capacity-write-lock-is-deferred-not-immediate",
         "solvent/store.py",
         "            self._conn.execute(\"BEGIN IMMEDIATE\")",
@@ -926,8 +948,13 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "an-unmeasured-capability-bids-anyway",
         "solvent/finder.py",
-        "        if not estimate.known:",
-        "        if False:",
+        # Anchored on the bid() occurrence specifically. The bare line
+        # also appears in promised_seconds() now, and an anchor that
+        # matches twice is NOT_APPLIED -- which is not a kill.
+        """        if not estimate.known:
+            blockers.append(estimate.basis)""",
+        """        if False:
+            blockers.append(estimate.basis)""",
         "tests_solvent.test_bidding.NoBidWithoutTheEvidenceToMakeOne"
         ".test_no_measured_history_means_no_bid",
         "a delivery time would be promised to a client for a capability "

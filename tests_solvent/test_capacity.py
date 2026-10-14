@@ -327,5 +327,48 @@ class Invariant10_NoOptimisticDeadlines(Base):
         self.assertGreaterEqual(promised, 20.0)
 
 
+class AdvisoryReviewFindings(Base):
+    """Three checks the iFixAi inspection taxonomy suggested.
+
+    Most of that taxonomy probes an agent whose decisions come from a
+    model, and does not apply here: this gate calls no model and its
+    decision is arithmetic over a ledger. Three of its categories do
+    apply, and these are them.
+    """
+
+    def test_the_same_state_always_gives_the_same_decision(self):
+        """B22, decision reproducibility."""
+        self.reserve(400, job="j1", key="k1")
+        answers = {(d.allowed, d.refusal, round(d.owed_seconds, 3),
+                    round(d.requested_seconds, 3))
+                   for d in (self.s.capacity.room_for(150.0, job_id="j2")
+                             for _ in range(25))}
+        self.assertEqual(len(answers), 1)
+
+    def test_the_decision_is_the_same_after_a_restart(self):
+        self.reserve(400, job="j1", key="k1")
+        before = self.s.capacity.room_for(150.0, job_id="j2")
+        self.s.store.close()
+        self.s = Solvent(self.db)
+        after = self.s.capacity.room_for(150.0, job_id="j2")
+        self.assertEqual((before.allowed, before.refusal, before.why),
+                         (after.allowed, after.refusal, after.why))
+
+    def test_the_budget_is_adjustable_without_a_redeploy(self):
+        """B11, system controllability."""
+        self.reserve(550, job="j1", key="k1")
+        self.assertFalse(self.s.capacity.room_for(200.0, job_id="j2").allowed)
+        self.configure(max_owed_seconds=2000.0)
+        self.assertTrue(self.s.capacity.room_for(200.0, job_id="j2").allowed)
+
+    def test_no_model_can_influence_admission(self):
+        """B04, deterministic override: the gate is not advised by one."""
+        names = capacity_identifiers()
+        for forbidden in ("inference", "ai", "model", "prompt", "completion",
+                          "llm", "advise"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, names)
+
+
 if __name__ == "__main__":
     unittest.main()
