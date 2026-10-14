@@ -114,6 +114,15 @@ DEFAULT_POLICY: dict[str, Any] = {
         # complains it is missing -- and enforced by nothing. It is
         # enforced now, in `Finder._verdict`.
         "minimum_margin_fraction": 0.0,
+        # What DeskPilot costs to keep running whether or not it works:
+        # the VPS and anything else billed monthly. Zero means the owner
+        # has not recorded it, never that running is free. Contribution
+        # profit is reported before this and net profit after it, so a
+        # missing figure cannot quietly flatter the net.
+        "fixed_monthly_overhead_cents": 0,
+        # Direct costs per delivered job beyond platform and payment
+        # fees -- anything billed per job rather than per month.
+        "other_direct_cost_per_job_cents": 0,
     },
     # How much work DeskPilot may owe at one time. Every value is zero
     # until the owner sets it, and zero means "take nothing on" rather

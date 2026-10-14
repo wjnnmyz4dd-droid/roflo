@@ -364,21 +364,39 @@ class Capacity:
                 "a reservation needs an idempotency key; without one a "
                 "repeated marketplace event becomes a second obligation")
 
-        existing = self._db.query_one(
-            "SELECT * FROM capacity_reservations WHERE idempotency_key = ?",
-            (idempotency_key,))
-        if existing is not None:
-            return Decision(
-                False, Refusal.DUPLICATE,
-                f"this commitment is already reserved as {existing['id']}; a "
-                "repeated event is not a second piece of work",
-                reservation_id=existing["id"])
+        # Checking the budget and taking the room must be one step. Two
+        # bids arriving together both read the same headroom, both found
+        # it sufficient and both took it; the gate said no to neither
+        # and the ledger finished 60s past the budget.
+        with self._db.transaction():
+            existing = self._db.query_one(
+                "SELECT * FROM capacity_reservations WHERE "
+                "idempotency_key = ?", (idempotency_key,))
+            if existing is not None:
+                return Decision(
+                    False, Refusal.DUPLICATE,
+                    f"this commitment is already reserved as "
+                    f"{existing['id']}; a repeated event is not a second "
+                    "piece of work",
+                    reservation_id=existing["id"])
 
-        decision = self.room_for(seconds, kind=kind, job_id=job_id)
-        # The ledger records what room_for judged, not what the caller
-        # asked for. Judging the inflated figure and then holding the
-        # bare one would give the headroom away the moment it was taken.
-        seconds = self.committed_seconds(seconds, kind)
+            decision = self.room_for(seconds, kind=kind, job_id=job_id)
+            # The ledger records what room_for judged, not what the
+            # caller asked for. Judging the inflated figure and then
+            # holding the bare one would give the headroom away the
+            # moment it was taken.
+            seconds = self.committed_seconds(seconds, kind)
+            reservation_id = new_id("cap")
+            if decision.allowed:
+                self._db.execute(
+                    "INSERT INTO capacity_reservations(id,ts,job_id,kind,"
+                    "units,state,why,idempotency_key) VALUES(?,?,?,?,?,?,?,?)",
+                    (reservation_id, now(), job_id, kind, float(seconds),
+                     HELD, why[:300], idempotency_key))
+
+        # Audit after the transaction: the audit log is a different
+        # authority on the same connection, and committing its write
+        # would end this one early.
         if not decision.allowed:
             self._audit.record(
                 event="capacity.refused", authority="capacity",
@@ -386,13 +404,6 @@ class Capacity:
                 decision=decision.refusal.value, job_id=job_id or None)
             return decision
 
-        reservation_id = new_id("cap")
-        self._db.execute(
-            "INSERT INTO capacity_reservations(id,ts,job_id,kind,units,state,"
-            "why,idempotency_key) VALUES(?,?,?,?,?,?,?,?)",
-            (reservation_id, now(), job_id, kind, float(seconds), HELD,
-             why[:300], idempotency_key))
-        self._db.commit()
         self._audit.record(
             event="capacity.reserved", authority="capacity",
             initiator="capacity", why=why or f"{kind} {seconds:.0f}s",
@@ -401,6 +412,98 @@ class Capacity:
         return Decision(True, Refusal.NONE, decision.why, decision.owed_seconds,
                         seconds, decision.budget_seconds,
                         decision.in_flight, reservation_id)
+
+    def admit(self, job_id: str, *, execute_seconds: float,
+              verify_seconds: float = 0.0, revise_seconds: float = 0.0,
+              idempotency_key: str = "", why: str = "") -> Decision:
+        """Take on a whole job, or none of it.
+
+        Reserving only the execution is what caused the worst failure
+        found in load simulation. A job was admitted with room for its
+        execution, ran, and then could not get room to be verified --
+        and because its execution reservation is held until delivery,
+        nothing freed up and the whole shop stopped. Four workers sat
+        holding room for work they were not allowed to finish.
+
+        So admission buys the entire obligation in one transaction:
+        execution, the verification that is not optional, and the
+        revision the client is entitled to ask for. If the three
+        together do not fit, the job is not taken. Afterwards every
+        later step already owns its room and cannot be refused, which
+        is the only way "accepted" can mean "will be delivered".
+        """
+        if not idempotency_key:
+            raise FailClosed(
+                "admitting a job needs an idempotency key; without one a "
+                "repeated marketplace event becomes a second obligation")
+        execute_seconds = float(execute_seconds)
+        verify_seconds = max(0.0, float(verify_seconds))
+        revise_seconds = max(0.0, float(revise_seconds))
+
+        parts = [(EXECUTE, execute_seconds)]
+        if verify_seconds:
+            parts.append((VERIFY, verify_seconds))
+        if revise_seconds:
+            parts.append((REVISE, revise_seconds))
+
+        with self._db.transaction():
+            existing = self._db.query_one(
+                "SELECT * FROM capacity_reservations WHERE "
+                "idempotency_key = ?", (f"{idempotency_key}:EXECUTE",))
+            if existing is not None:
+                return Decision(
+                    False, Refusal.DUPLICATE,
+                    f"this job is already admitted as {existing['id']}; a "
+                    "repeated event is not a second piece of work",
+                    reservation_id=existing["id"])
+
+            # Judged as one obligation. Asking three times in a row
+            # would let the first two through and refuse the third,
+            # which is the deadlock this method exists to prevent.
+            total = sum(self.committed_seconds(s, kind)
+                        for kind, s in parts)
+            decision = self.room_for(total, kind=EXECUTE, job_id=job_id)
+            if not decision.allowed:
+                refusal = decision
+            else:
+                refusal = None
+                ids = {}
+                for kind, seconds in parts:
+                    held = self.committed_seconds(seconds, kind)
+                    reservation_id = new_id("cap")
+                    ids[kind] = reservation_id
+                    self._db.execute(
+                        "INSERT INTO capacity_reservations(id,ts,job_id,"
+                        "kind,units,state,why,idempotency_key) "
+                        "VALUES(?,?,?,?,?,?,?,?)",
+                        (reservation_id, now(), job_id, kind, float(held),
+                         HELD, why[:300], f"{idempotency_key}:{kind}"))
+
+        if refusal is not None:
+            self._audit.record(
+                event="capacity.refused", authority="capacity",
+                initiator="capacity", why=refusal.why,
+                decision=refusal.refusal.value, job_id=job_id or None)
+            return refusal
+
+        self._audit.record(
+            event="capacity.admitted", authority="capacity",
+            initiator="capacity", why=why or f"job {job_id}",
+            decision=EXECUTE, job_id=job_id or None,
+            input_ref=ids[EXECUTE], result=f"{total:.0f}s")
+        return Decision(True, Refusal.NONE,
+                        f"admitted {total:.0f}s of obligation for {job_id}: "
+                        + ", ".join(f"{k.lower()} {s:.0f}s" for k, s in parts),
+                        decision.owed_seconds, total, decision.budget_seconds,
+                        decision.in_flight, ids[EXECUTE])
+
+    def reservation_for(self, job_id: str, kind: str) -> str:
+        """The room already held for this step, if the job was admitted."""
+        row = self._db.query_one(
+            "SELECT id FROM capacity_reservations WHERE job_id = ? AND "
+            "kind = ? AND state = ? ORDER BY ts LIMIT 1",
+            (job_id, kind, HELD))
+        return row["id"] if row else ""
 
     def _finish(self, reservation_id: str, state: str, why: str) -> None:
         row = self._db.query_one(

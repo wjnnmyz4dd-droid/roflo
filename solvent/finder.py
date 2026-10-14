@@ -195,6 +195,21 @@ class ExecutionHistory:
         seen = self.samples.get(capability) or []
         return statistics.median(seen) if seen else None
 
+    def tail_seconds(self, capability: str) -> float | None:
+        """The slow end of what was measured, not the middle of it.
+
+        A deadline promised from a median is a deadline missed half the
+        time. Ten samples or more give a 90th percentile; fewer give the
+        slowest run there has been, which with three samples is the only
+        honest answer to "how slow can this get".
+        """
+        seen = sorted(self.samples.get(capability) or [])
+        if not seen:
+            return None
+        if len(seen) < 10:
+            return seen[-1]
+        return seen[min(len(seen) - 1, int(0.9 * len(seen)))]
+
     def count(self, capability: str) -> int:
         return len(self.samples.get(capability) or [])
 
@@ -214,6 +229,10 @@ class CompletionEstimate:
     samples: int
     confidence: Confidence
     basis: str
+    #: The slow end of the measured runs -- a 90th percentile where
+    #: there are enough of them, the slowest observed run where there
+    #: are not. Deadlines are promised from this, not from `seconds`.
+    tail_seconds: float | None = None
 
     @property
     def hours(self) -> float | None:
@@ -336,13 +355,16 @@ class Finder:
                 "not a fast one")
         confidence = (Confidence.MEASURED if samples >= 5
                       else Confidence.PROVISIONAL)
+        tail = history.tail_seconds(capability)
         return CompletionEstimate(
             capability, seconds, samples, confidence,
             f"median of {samples} measured run(s) of {capability!r}: "
-            f"{seconds:.1f}s")
+            f"{seconds:.1f}s (slowest end {tail:.1f}s)", tail)
 
     def promised_seconds(self, estimate: "CompletionEstimate", *,
-                         queued_seconds: float = 0.0) -> tuple[float, str]:
+                         queued_seconds: float = 0.0,
+                         downstream_seconds: float | None = None
+                         ) -> tuple[float, str]:
         """What may honestly be promised, from what was measured.
 
         A median is the time half of all runs *exceed*. Promising it is
@@ -353,6 +375,21 @@ class Finder:
         because work does not start when it is accepted, it starts when
         the machine gets to it.
 
+        ``downstream_seconds`` is the verification and revision that
+        follow execution. A client's deadline is for delivery, and
+        delivery is after checking, so a promise covering execution
+        alone is a promise to hand over unverified work. Omitting it
+        does not mean zero -- it falls back to the owner's revision
+        headroom, because the common mistake here is forgetting the
+        downstream work, not deliberately having none.
+
+        It is also never shorter than the slowest run actually measured.
+        A fixed safety factor is a guess about the shape of the tail,
+        and load simulation showed it to be the wrong guess: with runs
+        spreading to four times the median, a factor of two missed
+        deadlines from ten concurrent jobs upwards. The measured tail is
+        not a guess, so where the two disagree the measurement wins.
+
         Returns ``(seconds, basis)``. Seconds is what to promise, not
         what it will take.
         """
@@ -361,11 +398,19 @@ class Finder:
         factor = float(self._policy.get("capacity", "deadline_safety_factor",
                                         default=2.0) or 2.0)
         factor = max(1.0, factor)
-        work = (estimate.seconds or 0.0) * factor
-        total = work + max(0.0, queued_seconds)
+        work = max((estimate.seconds or 0.0) * factor,
+                   estimate.tail_seconds or 0.0)
+        if downstream_seconds is None:
+            headroom = float(self._policy.get(
+                "capacity", "revision_headroom_fraction", default=0.0) or 0.0)
+            downstream = work * max(0.0, headroom)
+        else:
+            downstream = max(0.0, float(downstream_seconds))
+        total = work + downstream + max(0.0, queued_seconds)
         return total, (
-            f"{estimate.seconds:.0f}s measured x{factor:g} safety = "
-            f"{work:.0f}s"
+            f"{estimate.seconds:.0f}s measured x{factor:g} safety, floored "
+            f"at the {estimate.tail_seconds or 0:.0f}s slowest run = "
+            f"{work:.0f}s, plus {downstream:.0f}s to verify and revise"
             + (f", behind {queued_seconds:.0f}s already queued"
                if queued_seconds else "")
             + f"; promise {total:.0f}s, not the {estimate.seconds:.0f}s "

@@ -15,6 +15,7 @@ aspirational.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import sqlite3
 import threading
@@ -606,6 +607,32 @@ class AuthorityConnection:
 
     def commit(self) -> None:
         with self._lock:
+            self._conn.commit()
+
+    @contextlib.contextmanager
+    def transaction(self):
+        """Hold the write lock across a read-decide-write sequence.
+
+        Every individual statement is already serialised, which is not
+        the same thing as a decision being serialised. A gate that reads
+        a total, decides against it, and then writes has a window
+        between the read and the write, and two callers can both pass
+        through it: the capacity gate let two concurrent reservations of
+        80s each through a budget with 100s left, and the ledger ended
+        up 60s overcommitted.
+
+        BEGIN IMMEDIATE takes the database's write lock as well, so the
+        guarantee holds between processes and not only between threads.
+        """
+        with self._lock:
+            if self._conn.in_transaction:
+                self._conn.commit()
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield self
+            except BaseException:
+                self._conn.rollback()
+                raise
             self._conn.commit()
 
 

@@ -239,7 +239,8 @@ class Invariant8_NoGateIsBypassed(Base):
             surface,
             {"budget", "committed_seconds", "outstanding", "owed_seconds",
              "jobs_in_flight", "open_bids", "has_obligations", "room_for",
-             "reserve", "consume", "release", "pressure", "report"})
+             "reserve", "admit", "reservation_for", "consume", "release",
+             "pressure", "report"})
 
     def test_capacity_cannot_approve_permit_or_price(self):
         """Over identifiers, not over the file's text.
