@@ -266,6 +266,12 @@ class Simulation:
         held = {r.id for r in self.s.capacity.outstanding()}
         self.s.store.close()
         self.s = Solvent(self.db)
+        # Everything holding the old store has to be rebuilt with it.
+        # Forgetting the Finder here is what made the restart runs die
+        # on a closed database rather than measuring anything.
+        self.finder = Finder(self.s.discovery, self.s.policy,
+                             self.s.capability, self.s.orchestrator,
+                             self.s.store)
         after = self.s.capacity.owed_seconds()
         now_held = {r.id for r in self.s.capacity.outstanding()}
         self.restarts += 1

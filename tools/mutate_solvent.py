@@ -49,6 +49,198 @@ class Mutant:
 
 MUTANTS: tuple[Mutant, ...] = (
 
+    # ---- the capacity gate ------------------------------------------
+    # Ten controls stop DeskPilot promising more than it can deliver.
+    # Each mutant below removes exactly one of them. Two of these
+    # controls exist because load simulation and threaded adversarial
+    # testing found the system without them.
+
+    Mutant(
+        "capacity-admission-ignores-the-budget",
+        "solvent/capacity.py",
+        "        if owed + seconds > budget.max_owed_seconds:",
+        "        if False:",
+        "tests_solvent.test_capacity.Invariant1_NoJobWithoutCapacity"
+        ".test_work_past_the_budget_is_refused",
+        "the one number the gate exists to enforce",
+    ),
+    Mutant(
+        "capacity-a-bid-reserves-nothing",
+        "solvent/capacity.py",
+        "        return sum(r.units for r in self.outstanding())",
+        "        return sum(r.units for r in self.outstanding()"
+        " if r.kind != BID)",
+        "tests_solvent.test_capacity.Invariant2_NoBidBeyondBudget"
+        ".test_a_bid_consumes_capacity",
+        "a bid becomes free, so every open bid is an uncosted promise",
+    ),
+    Mutant(
+        "capacity-concurrency-limit-ignored",
+        "solvent/capacity.py",
+        "            if fresh and in_flight >= budget.max_concurrent_jobs:",
+        "            if False:",
+        "tests_solvent.test_capacity_scenarios"
+        ".S1_TenFiftyAndOneHundredAtOnce.test_the_concurrency_limit_is_what_binds",
+        "a hundred offers become a hundred jobs",
+    ),
+    Mutant(
+        "capacity-open-bid-limit-ignored",
+        "solvent/capacity.py",
+        "            if self.open_bids() >= budget.max_open_bids:",
+        "            if False:",
+        "tests_solvent.test_capacity_scenarios"
+        ".S2_MultipleBidsAcceptedTogether"
+        ".test_bids_beyond_the_open_limit_are_refused",
+        "unlimited bids out, every one of which could be accepted",
+    ),
+    Mutant(
+        "capacity-worker-limit-ignored",
+        "solvent/capacity.py",
+        "            if busy >= allowed_workers:",
+        "            if False:",
+        "tests_solvent.test_capacity_backpressure.WorkersAreTheCpuControl"
+        ".test_execution_workers_are_limited",
+        "the only control honouring the owner's CPU share on a machine "
+        "shared with MetaTrader 5",
+    ),
+    Mutant(
+        "capacity-zero-worker-limit-means-unlimited",
+        "solvent/capacity.py",
+        "        return chosen if chosen > 0 else self.max_concurrent_jobs",
+        "        return chosen if chosen > 0 else 10_000",
+        "tests_solvent.test_capacity_backpressure.WorkersAreTheCpuControl"
+        ".test_a_worker_limit_of_zero_does_not_open_the_gate",
+        "the zero-means-unlimited bug, which this system has had before",
+    ),
+    Mutant(
+        "capacity-accepted-work-does-not-outrank-discovery",
+        "solvent/capacity.py",
+        "        return any(r.kind != BID for r in self.outstanding())",
+        "        return False",
+        "tests_solvent.test_capacity"
+        ".Invariant3_AcceptedWorkBeatsDiscovery"
+        ".test_obligations_are_visible_to_the_scheduler",
+        "speculative discovery competes with work already promised",
+    ),
+    Mutant(
+        "capacity-revision-headroom-is-free",
+        "solvent/capacity.py",
+        "        return float(seconds) * (1.0 + budget.revision_headroom_fraction)",
+        "        return float(seconds)",
+        "tests_solvent.test_capacity_scenarios"
+        ".S3_SeveralCustomersRequestRevisions"
+        ".test_headroom_makes_the_shop_take_fewer_jobs",
+        "a job costs only its execution, so the first revision has no room",
+    ),
+    Mutant(
+        "capacity-unreconciled-outcomes-ignored",
+        "solvent/capacity.py",
+        "        if unresolved:",
+        "        if False:",
+        "tests_solvent.test_capacity"
+        ".Invariant7_UnknownOutcomesBlockCommitments"
+        ".test_an_unreconciled_attempt_stops_new_commitments",
+        "one unknown outcome becomes several",
+    ),
+    Mutant(
+        "capacity-disk-floor-ignored",
+        "solvent/capacity.py",
+        "        if free and free < budget.min_free_disk_bytes:",
+        "        if False:",
+        "tests_solvent.test_capacity_scenarios.S8_VpsResourceConstrained"
+        ".test_low_disk_refuses_new_work",
+        "the only resource floor measurable on the target Windows host",
+    ),
+    Mutant(
+        "capacity-a-floor-signal-is-read-as-a-ceiling",
+        "solvent/capacity.py",
+        "        if mode == FLOOR:",
+        "        if False:",
+        "tests_solvent.test_capacity_backpressure"
+        ".SignalsAreReadInTheRightDirection"
+        ".test_a_floor_signal_is_full_when_the_value_is_low",
+        "free disk reads healthy as it runs out -- the original bug",
+    ),
+    Mutant(
+        "capacity-admission-buys-only-the-execution",
+        "solvent/capacity.py",
+        "        parts = [(EXECUTE, execute_seconds)]",
+        "        parts = [(EXECUTE, execute_seconds)]\n        "
+        "verify_seconds = revise_seconds = 0.0",
+        "tests_solvent.test_capacity_adversarial.A09_FailedVerification"
+        ".test_admission_buys_the_verification_too",
+        "a job is admitted that cannot be verified, and nothing frees up",
+    ),
+    Mutant(
+        "capacity-decision-and-write-are-not-atomic",
+        "solvent/store.py",
+        "            self._conn.execute(\"BEGIN IMMEDIATE\")",
+        "            pass",
+        "tests_solvent.test_capacity_adversarial"
+        ".A02_TwoSimultaneousBidsTakeTheSameRoom"
+        ".test_it_holds_with_eight_of_them",
+        "two callers pass the same gate and overcommit the budget",
+    ),
+    Mutant(
+        "capacity-duplicate-admission-makes-two-obligations",
+        "solvent/capacity.py",
+        """            existing = self._db.query_one(
+                "SELECT * FROM capacity_reservations WHERE "
+                "idempotency_key = ?", (f"{idempotency_key}:EXECUTE",))
+            if existing is not None:""",
+        """            existing = self._db.query_one(
+                "SELECT * FROM capacity_reservations WHERE "
+                "idempotency_key = ?", (f"{idempotency_key}:EXECUTE",))
+            if False:""",
+        "tests_solvent.test_capacity_adversarial.A05_DuplicateNotifications"
+        ".test_an_admission_replayed_is_one_admission",
+        "a marketplace event delivered twice becomes two jobs",
+    ),
+
+    # ---- the deadline promise ---------------------------------------
+
+    Mutant(
+        "the-promise-ignores-the-measured-tail",
+        "solvent/finder.py",
+        """        work = max((estimate.seconds or 0.0) * factor,
+                   estimate.tail_seconds or 0.0)""",
+        "        work = (estimate.seconds or 0.0) * factor",
+        "tests_solvent.test_capacity_adversarial.A03_FalseCompletionTimeEstimates"
+        ".test_a_fast_median_cannot_hide_a_slow_tail",
+        "a fixed safety factor guesses the tail; simulation showed it wrong",
+    ),
+    Mutant(
+        "the-promise-ignores-verification",
+        "solvent/finder.py",
+        "        total = work + downstream + max(0.0, queued_seconds)",
+        "        total = work + max(0.0, queued_seconds)",
+        "tests_solvent.test_capacity_adversarial.A04_ManipulatedDeadlines"
+        ".test_the_promise_covers_verification_not_only_execution",
+        "a deadline is quoted for execution, not for delivery",
+    ),
+
+    # ---- the revenue model ------------------------------------------
+
+    Mutant(
+        "the-model-invents-a-win-rate",
+        "solvent/revenuemodel.py",
+        "            record(name, None, UNKNOWN, note)",
+        "            record(name, 0.15, OBSERVED, note)",
+        "tests_solvent.test_revenue_model.WhatItRefusesToSay"
+        ".test_a_win_rate_is_never_defaulted",
+        "revenue projected from a number nobody measured",
+    ),
+    Mutant(
+        "the-model-lets-overload-run-past-capacity",
+        "solvent/revenuemodel.py",
+        "    accepted = min(winnable, capacity_jobs)",
+        "    accepted = winnable",
+        "tests_solvent.test_revenue_model"
+        ".DemandBeyondCapacityEarnsNothingExtra"
+        ".test_overload_is_clamped_at_capacity",
+        "modelled profit rises with demand for ever",
+    ),
+
     # ---- T2 independent review -------------------------------------
     # The contract asks C_HIGH for "T1 + T2 with verifier != executor".
     # Each mutant below removes one of the things that makes the second
