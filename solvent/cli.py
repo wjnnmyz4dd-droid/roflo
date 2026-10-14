@@ -438,6 +438,111 @@ def cmd_setup_commercial(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup_capacity(args: argparse.Namespace) -> int:
+    """Record how much work DeskPilot may owe at one time.
+
+    The one setting with no command behind it, which mattered more
+    than the others: `max_owed_seconds` starts at zero, zero means
+    "take nothing on", and the capacity gate therefore refuses every
+    job on a fresh install. An owner who followed the manual to the
+    letter ended up with a business that would not take work and no
+    documented way to change that.
+
+    Every value is the owner's and none is inferred from the machine.
+    Deciding a budget by looking at the hardware is how a shared VPS
+    becomes an unshared one, and this one is shared with MetaTrader 5.
+    """
+    from .types import JOBS_PER_AGENT_CEILING
+
+    solvent = _owner_solvent(args)
+    budget: dict = {}
+
+    if args.max_owed_seconds is not None:
+        if args.max_owed_seconds <= 0:
+            print("refused: zero seconds owed means DeskPilot takes nothing "
+                  "on. That is a legitimate setting, but set it with --halt "
+                  "so the reason is recorded rather than looking like an "
+                  "unconfigured install")
+            return 1
+        budget["max_owed_seconds"] = float(args.max_owed_seconds)
+
+    for name, value in (("max_concurrent_jobs", args.max_concurrent_jobs),
+                        ("max_execution_workers", args.max_execution_workers),
+                        ("max_verification_workers",
+                         args.max_verification_workers)):
+        if value is None:
+            continue
+        if value < 1:
+            print(f"refused: {name} of {value} is not a limit")
+            return 1
+        if value > JOBS_PER_AGENT_CEILING:
+            print(f"refused: {name} of {value} is above the "
+                  f"{JOBS_PER_AGENT_CEILING} this work agent may hold. Three "
+                  "is the default and four is the most that can be "
+                  "configured; past that is a decision about the "
+                  "architecture, not about a number")
+            return 1
+        budget[name] = int(value)
+
+    if args.cpu_share is not None:
+        if not 0 < args.cpu_share <= 1:
+            print("refused: the CPU share is a fraction above zero and at "
+                  "most one. This machine also runs MetaTrader 5 and the "
+                  "whole of it is not DeskPilot's to take")
+            return 1
+        budget["cpu_share"] = float(args.cpu_share)
+
+    if args.max_open_bids is not None:
+        if args.max_open_bids < 0:
+            print("refused: a negative bid limit is not a limit")
+            return 1
+        budget["max_open_bids"] = int(args.max_open_bids)
+
+    if args.revision_headroom_fraction is not None:
+        if args.revision_headroom_fraction < 0:
+            print("refused: revision headroom cannot be negative")
+            return 1
+        budget["revision_headroom_fraction"] = float(
+            args.revision_headroom_fraction)
+
+    if args.min_free_disk_bytes is not None:
+        if args.min_free_disk_bytes < 0:
+            print("refused: a negative disk floor is not a floor")
+            return 1
+        budget["min_free_disk_bytes"] = int(args.min_free_disk_bytes)
+
+    if args.deadline_safety_factor is not None:
+        if args.deadline_safety_factor < 1:
+            print("refused: a safety factor below one promises delivery "
+                  "faster than the work has ever been measured taking")
+            return 1
+        budget["deadline_safety_factor"] = float(args.deadline_safety_factor)
+
+    if args.halt:
+        budget["halted"] = True
+    elif args.resume:
+        budget["halted"] = False
+
+    if not budget:
+        print("nothing to record; pass at least one limit")
+        return 1
+    solvent.policy.amend({"capacity": budget}, args.owner, args.reason)
+
+    current = solvent.capacity.budget()
+    print("capacity budget recorded")
+    problem = current.problem()
+    if problem:
+        print(f"  [NEED] {problem}")
+        return 0
+    print(f"  [OK ] {current.max_owed_seconds:.0f}s owed at once, "
+          f"{current.max_concurrent_jobs} job(s) in flight, "
+          f"{current.workers('EXECUTE')} execution worker(s), "
+          f"{current.cpu_share:.0%} of a machine shared with MetaTrader 5")
+    if solvent.policy.get("capacity", "halted", default=False):
+        print("  [NOTE] new work is halted; pass --resume to allow it")
+    return 0
+
+
 def cmd_setup_work_source(args: argparse.Namespace) -> int:
     """Register and approve the owner-entered work source for the first trial."""
     from .discovery import Compliance, ManualSource, Readiness
@@ -1435,6 +1540,42 @@ def build_parser() -> argparse.ArgumentParser:
     crypto.add_argument("--reason",
                         default="owner records a crypto receipt address")
     crypto.set_defaults(func=cmd_setup_crypto)
+
+    capacity = owned(setup_sub.add_parser(
+        "capacity", help="record how much work may be owed at one time"))
+    capacity.add_argument("--max-owed-seconds", type=float, default=None,
+                          help="seconds of expected work that may be owed "
+                               "at once, across execution, verification and "
+                               "revisions together")
+    capacity.add_argument("--max-concurrent-jobs", type=int, default=None,
+                          help="jobs in flight at once; 3 by default, 4 at "
+                               "the very most")
+    capacity.add_argument("--max-execution-workers", type=int, default=None)
+    capacity.add_argument("--max-verification-workers", type=int,
+                          default=None)
+    capacity.add_argument("--cpu-share", type=float, default=None,
+                          help="fraction of this machine DeskPilot may use. "
+                               "It also runs MetaTrader 5; set this low")
+    capacity.add_argument("--max-open-bids", type=int, default=None,
+                          help="bids outstanding at once; each one could be "
+                               "accepted tomorrow")
+    capacity.add_argument("--revision-headroom-fraction", type=float,
+                          default=None,
+                          help="room held per job for the verification and "
+                               "revisions that follow it, e.g. 0.4")
+    capacity.add_argument("--min-free-disk-bytes", type=int, default=None)
+    capacity.add_argument("--deadline-safety-factor", type=float,
+                          default=None,
+                          help="multiplier on a measured estimate before a "
+                               "deadline is promised; never below 1")
+    capacity.add_argument("--halt", action="store_true",
+                          help="stop taking new work, without dropping work "
+                               "in flight")
+    capacity.add_argument("--resume", action="store_true",
+                          help="allow new work again")
+    capacity.add_argument("--reason",
+                          default="owner records the capacity budget")
+    capacity.set_defaults(func=cmd_setup_capacity)
 
     commercial = owned(setup_sub.add_parser(
         "commercial", help="record the terms that decide what work is worth "
