@@ -395,9 +395,21 @@ class Qualification:
         return owners[0]
 
     def _at_capacity(self) -> bool:
+        """Never more permissive than the capacity gate's ceiling.
+
+        Two settings in two sections carry this name, and they are not
+        the same thing: this one filters which opportunities are worth
+        looking at, and the capacity gate decides whether there is room.
+        The gate is the one that binds, so a larger number here cannot
+        let more work through -- but it can tell the owner they have
+        raised a limit they have not, which is its own kind of defect.
+        Clamped so the two cannot disagree.
+        """
+        from .capacity import JOBS_PER_AGENT_CEILING, JOBS_PER_AGENT_DEFAULT
+
         limit = int(self._policy.get("qualification", "max_concurrent_jobs",
-                                     default=3))
-        return self._committed_count() >= limit
+                                     default=JOBS_PER_AGENT_DEFAULT))
+        return self._committed_count() >= min(limit, JOBS_PER_AGENT_CEILING)
 
     # -------------------------------------------------------------- ranking
 

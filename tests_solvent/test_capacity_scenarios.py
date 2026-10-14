@@ -88,7 +88,9 @@ class S1_TenFiftyAndOneHundredAtOnce(Base):
         changes nothing -- which is how the first version of this test
         let a mutant through that ignored the job limit entirely.
         """
-        self.configure(max_execution_workers=50)
+        # Workers at the ceiling, jobs at the default: the job limit
+        # is the lower of the two, so it is the one that refuses.
+        self.configure(max_execution_workers=4, max_concurrent_jobs=3)
         taken, refused = self.offer(100)
         self.assertEqual(len(taken), 3)
         self.assertEqual(len(refused), 97)
@@ -108,12 +110,19 @@ class S1_TenFiftyAndOneHundredAtOnce(Base):
             self.assertIs(decision.refusal, cap.Refusal.NO_ROOM)
             self.assertTrue(decision.why.strip())
 
-    def test_a_hundred_small_jobs_hit_the_seconds_limit_not_the_count(self):
-        """With concurrency raised, the other limit still holds."""
-        self.configure(max_concurrent_jobs=1000)
-        taken, refused = self.offer(100, seconds=70.0)
-        self.assertEqual(len(taken), 8)          # 8 x 70 = 560 <= 600
-        self.assertTrue(refused)
+    def test_the_seconds_limit_binds_even_when_the_job_count_does_not(self):
+        """One job can fill the budget on its own.
+
+        Concurrency cannot be raised out of the way any more -- four
+        jobs is the ceiling -- so this piles obligations onto a single
+        job, which the job limit does not count twice. What stops it
+        is the only thing left: the seconds.
+        """
+        taken = [self.reserve(70, kind=cap.REVISE, job="one", key=f"r{n}")
+                 for n in range(100)]
+        allowed = [d for d in taken if d.allowed]
+        self.assertEqual(len(allowed), 8)        # 8 x 70 = 560 <= 600
+        self.assertEqual(self.s.capacity.jobs_in_flight(), 1)
         self.assertLessEqual(self.s.capacity.owed_seconds(), 600.0)
 
 

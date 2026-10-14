@@ -26,7 +26,8 @@ from typing import Any
 from .audit import AuditLog, now
 from .errors import FailClosed
 from .store import Store
-from .types import ActionClass, ConsequenceTier, OperatingMode, PermissionLevel
+from .types import (ActionClass, ConsequenceTier, JOBS_PER_AGENT_DEFAULT,
+                    OperatingMode, PermissionLevel)
 
 #: Shipped defaults. Deliberately strict: a new business has no track record,
 #: so it must find clearly profitable work rather than marginal work.
@@ -135,7 +136,11 @@ DEFAULT_POLICY: dict[str, Any] = {
         # Seconds of expected work that may be owed at once, across
         # execution, verification and revisions together.
         "max_owed_seconds": 0.0,
-        "max_concurrent_jobs": 0,
+        # Three jobs at once by default, four at the very most. Unlike
+        # every other number here, this one does not start at zero: the
+        # owner asked for a strict default, and capacity.py holds the
+        # ceiling so that four cannot become five from a settings page.
+        "max_concurrent_jobs": JOBS_PER_AGENT_DEFAULT,
         # A sent bid is a contingent obligation: if it wins, the work
         # exists whether there was room or not.
         "max_open_bids": 0,

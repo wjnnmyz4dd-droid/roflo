@@ -259,6 +259,37 @@ MUTANTS: tuple[Mutant, ...] = (
         "a deadline is quoted for execution, not for delivery",
     ),
 
+    # ---- the three-job default and four-job ceiling -----------------
+
+    Mutant(
+        "the-job-ceiling-can-be-raised-past-four",
+        "solvent/capacity.py",
+        "        if self.max_concurrent_jobs > JOBS_PER_AGENT_CEILING:",
+        "        if False:",
+        "tests_solvent.test_capacity.ThreeJobsByDefaultAndFourAtMost"
+        ".test_five_is_refused_as_a_configuration_error",
+        "the limit becomes a number in a settings field",
+    ),
+    Mutant(
+        "the-default-job-limit-is-not-three",
+        "solvent/types.py",
+        "JOBS_PER_AGENT_DEFAULT = 3",
+        "JOBS_PER_AGENT_DEFAULT = 9",
+        "tests_solvent.test_capacity.ThreeJobsByDefaultAndFourAtMost"
+        ".test_three_jobs_are_admitted_and_the_fourth_is_not",
+        "an owner who sets nothing gets nine jobs at once",
+    ),
+    Mutant(
+        "the-triage-filter-outranks-the-gate",
+        "solvent/qualification.py",
+        "        return self._committed_count() >= min(limit, "
+        "JOBS_PER_AGENT_CEILING)",
+        "        return self._committed_count() >= limit",
+        "tests_solvent.test_capacity.ThreeJobsByDefaultAndFourAtMost"
+        ".test_the_triage_filter_cannot_exceed_the_gate",
+        "a filter set to fifty reports a limit the owner does not have",
+    ),
+
     # ---- choosing which jobs to take --------------------------------
 
     Mutant(

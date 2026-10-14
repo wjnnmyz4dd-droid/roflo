@@ -26,6 +26,8 @@ import json
 import secrets
 from pathlib import Path
 
+from ..types import JOBS_PER_AGENT_CEILING
+
 #: Where intents are written. Writable by the web user, read by the runtime.
 INTENT_SPOOL = "/var/lib/solvent/owner-intents"
 
@@ -85,7 +87,12 @@ WORK_PREFERENCES: dict[str, tuple[str, str, int, int]] = {
     # name: (policy section, key, minimum, maximum)
     "minimum_value_cents": ("qualification", "minimum_value_cents", 0,
                             100_000_00),
-    "max_concurrent_jobs": ("qualification", "max_concurrent_jobs", 1, 50),
+    # Bounded by capacity.JOBS_PER_AGENT_CEILING, not by what a filter
+    # could tolerate. The gate refuses past four whatever this says, and
+    # a form that accepts fifty tells the owner they have raised a limit
+    # they have not.
+    "max_concurrent_jobs": ("qualification", "max_concurrent_jobs", 1,
+                            JOBS_PER_AGENT_CEILING),
     "default_hours": ("qualification", "default_hours", 1, 500),
 }
 

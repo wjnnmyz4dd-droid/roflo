@@ -570,3 +570,21 @@ def check_of(requirement) -> str:
         if value:
             return str(value)
     return ""
+
+
+#: How many jobs one work agent may have in flight at once: three by
+#: default, four at the very most.
+#:
+#: Here rather than in either `policy` or `capacity` because both need
+#: it and neither should learn it from the other. Stating it twice is
+#: how a default and its ceiling drift apart -- mutation testing caught
+#: exactly that: the capacity module held a default of three that
+#: nothing read, because the policy table set its own three beside it.
+#:
+#: The ceiling is hard on purpose. A limit that can be raised in a
+#: settings field is one that gets raised the first week demand
+#: appears, and the point of the capacity gate is that a fourth, fifth
+#: and sixth job is how all of them end up late. Going past four is a
+#: decision about the architecture, not about a number.
+JOBS_PER_AGENT_DEFAULT = 3
+JOBS_PER_AGENT_CEILING = 4

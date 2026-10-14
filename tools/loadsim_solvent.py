@@ -47,7 +47,7 @@ OFFER_TTL = 900.0
 
 BUDGET = {
     "max_owed_seconds": 3600.0,
-    "max_concurrent_jobs": 8,
+    "max_concurrent_jobs": 4,
     "max_open_bids": 4,
     "cpu_share": 0.5,
     "min_free_disk_bytes": 0,

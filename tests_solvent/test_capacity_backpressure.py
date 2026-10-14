@@ -148,7 +148,7 @@ class WorkersAreTheCpuControl(Base):
 
     def test_execution_workers_are_limited(self):
         self.configure(max_execution_workers=2, max_owed_seconds=10_000.0,
-                       max_concurrent_jobs=50)
+                       max_concurrent_jobs=4)
         self.assertTrue(self.reserve(10, job="a", key="a").allowed)
         self.assertTrue(self.reserve(10, job="b", key="b").allowed)
         third = self.reserve(10, job="c", key="c")
@@ -156,8 +156,8 @@ class WorkersAreTheCpuControl(Base):
         self.assertIn("worker", third.why)
 
     def test_verification_workers_are_limited_separately(self):
-        self.configure(max_execution_workers=5, max_verification_workers=1,
-                       max_owed_seconds=10_000.0, max_concurrent_jobs=50)
+        self.configure(max_execution_workers=4, max_verification_workers=1,
+                       max_owed_seconds=10_000.0, max_concurrent_jobs=4)
         self.assertTrue(self.reserve(10, job="a", key="a").allowed)
         self.assertTrue(self.reserve(10, kind=cap.VERIFY, job="a",
                                      key="v1").allowed)

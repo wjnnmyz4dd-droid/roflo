@@ -104,11 +104,11 @@ def paper() -> list:
         # budget is 600s / 3 jobs / 2 bids; none of these can be that.
         budget = {
             "max_owed_seconds": float(rng.randrange(1200, 9000, 300)),
-            "max_concurrent_jobs": rng.randint(4, 12),
+            "max_concurrent_jobs": rng.randint(2, 4),
             "max_open_bids": rng.randint(1, 6),
             "cpu_share": rng.choice([0.25, 0.4, 0.6, 0.75]),
             "min_free_disk_bytes": 0,
-            "max_execution_workers": rng.randint(1, 6),
+            "max_execution_workers": rng.randint(1, 4),
             "max_verification_workers": rng.randint(1, 4),
             "max_memory_used_percent": 0.0,
             "revision_headroom_fraction": rng.choice([0.0, 0.15, 0.35, 0.6]),

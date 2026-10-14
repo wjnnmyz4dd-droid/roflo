@@ -16,9 +16,9 @@ from solvent import revenuemodel as rm
 from solvent.finder import ExecutionHistory
 from solvent.harness import OWNER, Solvent
 
-CAPACITY = {"max_owed_seconds": 3600.0, "max_concurrent_jobs": 8,
+CAPACITY = {"max_owed_seconds": 3600.0, "max_concurrent_jobs": 4,
             "max_open_bids": 4, "cpu_share": 0.5,
-            "max_execution_workers": 4, "revision_headroom_fraction": 0.4}
+            "max_execution_workers": 2, "revision_headroom_fraction": 0.4}
 
 #: The owner's own figures, as supplied: $40/hour, a $40 minimum
 #: project fee and roughly $98 a month of VPS.
@@ -230,7 +230,7 @@ class DemandBeyondCapacityEarnsNothingExtra(Base):
     def test_capacity_follows_the_owners_worker_limit(self):
         before = self.build(**WHAT_IFS).scenarios["HIGH_DEMAND"][
             "capacity_jobs_per_month"]
-        self.s.policy.amend({"capacity": {"max_execution_workers": 8}},
+        self.s.policy.amend({"capacity": {"max_execution_workers": 4}},
                             OWNER, "test: twice the workers")
         after = self.build(**WHAT_IFS).scenarios["HIGH_DEMAND"][
             "capacity_jobs_per_month"]

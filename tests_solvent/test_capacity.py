@@ -327,6 +327,106 @@ class Invariant10_NoOptimisticDeadlines(Base):
         self.assertGreaterEqual(promised, 20.0)
 
 
+class ThreeJobsByDefaultAndFourAtMost(Base):
+    """The owner's limit, demonstrated rather than described."""
+
+    def budget_without_a_job_limit(self):
+        """A fresh install, configured in every way but this one.
+
+        It has to be fresh. The shared fixture amends the budget with
+        a job limit of three, which looks like the default working and
+        is actually the fixture -- a mutant that changed the default to
+        nine survived behind it.
+        """
+        self.s.store.close()
+        self.s = Solvent(f"{self.box.name}/untouched.db")
+        self.s.policy.amend({"capacity": {
+            "max_owed_seconds": 100_000.0, "max_open_bids": 2,
+            "cpu_share": 0.5, "min_free_disk_bytes": 0,
+            "max_execution_workers": 0, "revision_headroom_fraction": 0.0,
+            "halted": False}}, OWNER, "test: no job limit stated")
+
+    def admit(self, n):
+        """Offer n distinct jobs, return how many were taken."""
+        return sum(1 for i in range(n)
+                   if self.s.capacity.admit(
+                       f"job{i}", execute_seconds=10,
+                       idempotency_key=f"a{i}").allowed)
+
+    def test_the_default_is_three(self):
+        self.assertEqual(cap.JOBS_PER_AGENT_DEFAULT, 3)
+        self.budget_without_a_job_limit()
+        self.assertEqual(self.s.capacity.budget().max_concurrent_jobs, 3)
+
+    def test_the_default_is_stated_in_exactly_one_place(self):
+        """Mutation found the constant was dead: policy set its own 3.
+
+        Two threes beside each other look like agreement until one of
+        them is changed, so the policy table now derives from the
+        constant and this checks they cannot drift apart again.
+        """
+        from solvent.policy import DEFAULT_POLICY
+
+        self.assertIs(DEFAULT_POLICY["capacity"]["max_concurrent_jobs"],
+                      cap.JOBS_PER_AGENT_DEFAULT)
+
+    def test_three_jobs_are_admitted_and_the_fourth_is_not(self):
+        self.budget_without_a_job_limit()
+        self.assertEqual(self.admit(10), 3)
+        self.assertEqual(self.s.capacity.jobs_in_flight(), 3)
+
+    def test_four_is_configurable(self):
+        self.configure(max_concurrent_jobs=4, max_owed_seconds=100_000.0)
+        self.assertEqual(self.admit(10), 4)
+
+    def test_five_is_refused_as_a_configuration_error(self):
+        self.configure(max_concurrent_jobs=5, max_owed_seconds=100_000.0)
+        decision = self.s.capacity.room_for(1.0)
+        self.assertFalse(decision.allowed)
+        self.assertIs(decision.refusal, cap.Refusal.NOT_CONFIGURED)
+        self.assertIn("four is the most", decision.why)
+
+    def test_more_execution_workers_than_the_ceiling_is_also_refused(self):
+        self.configure(max_concurrent_jobs=4, max_execution_workers=6,
+                       max_owed_seconds=100_000.0)
+        self.assertFalse(self.s.capacity.room_for(1.0).allowed)
+
+    def test_the_ceiling_is_not_a_settings_field(self):
+        """Four cannot become five from a form, only from the source."""
+        from solvent.web.intents import WORK_PREFERENCES
+
+        _, _, low, high = WORK_PREFERENCES["max_concurrent_jobs"]
+        self.assertEqual(high, cap.JOBS_PER_AGENT_CEILING)
+        self.assertGreaterEqual(low, 1)
+
+    def test_the_triage_filter_cannot_exceed_the_gate(self):
+        """Two settings share this name; they may not disagree.
+
+        qualification.max_concurrent_jobs filters what is worth looking
+        at and capacity.max_concurrent_jobs decides whether there is
+        room. The gate binds either way, but a filter set to fifty
+        would tell the owner they had raised a limit they had not.
+        """
+        self.s.policy.amend({"qualification": {"max_concurrent_jobs": 50}},
+                            OWNER, "test: an optimistic filter")
+        qualification = self.s.qualification
+        qualification._committed_count = lambda: cap.JOBS_PER_AGENT_CEILING
+        self.assertTrue(
+            qualification._at_capacity(),
+            "the triage filter still had room at the gate's ceiling, so "
+            "the owner's fifty was treated as a real limit")
+
+    def test_the_triage_filter_still_binds_below_the_ceiling(self):
+        """Clamping must not turn the filter off."""
+        self.s.policy.amend({"qualification": {"max_concurrent_jobs": 2}},
+                            OWNER, "test: a tighter filter")
+        qualification = self.s.qualification
+        qualification._committed_count = lambda: 1
+        self.assertFalse(qualification._at_capacity())
+        qualification._committed_count = lambda: 2
+        self.assertTrue(qualification._at_capacity())
+
+
 class AdvisoryReviewFindings(Base):
     """Three checks the iFixAi inspection taxonomy suggested.
 

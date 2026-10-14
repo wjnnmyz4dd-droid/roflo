@@ -100,8 +100,11 @@ class A02_TwoSimultaneousBidsTakeTheSameRoom(Base):
     """
 
     def race(self, threads, seconds):
-        self.configure(max_concurrent_jobs=50, max_open_bids=50,
-                       max_execution_workers=50)
+        # A bid is not a job in flight, so the job ceiling does not
+        # apply to it; only the open-bid limit needs to be out of the
+        # way for the race to be about the budget.
+        self.configure(max_concurrent_jobs=4, max_open_bids=50,
+                       max_execution_workers=4)
         self.reserve(500, job="base", key="base")
         barrier = threading.Barrier(threads)
         out = []

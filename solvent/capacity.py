@@ -41,6 +41,7 @@ from enum import Enum
 
 from .audit import new_id, now
 from .errors import FailClosed
+from .types import JOBS_PER_AGENT_CEILING, JOBS_PER_AGENT_DEFAULT
 
 #: What a reservation is for. Each is work owed to somebody.
 EXECUTE = "EXECUTE"
@@ -58,6 +59,7 @@ RELEASED = "RELEASED"
 
 #: Still counting against the budget.
 OUTSTANDING = (HELD,)
+
 
 #: How a pressure signal reads. UNMEASURED is deliberately not OK: the
 #: Windows VPS reports neither CPU nor memory through anything already
@@ -152,6 +154,15 @@ class Budget:
                     "owner says how much it may owe")
         if self.max_concurrent_jobs <= 0:
             return "no concurrent job limit is set"
+        if self.max_concurrent_jobs > JOBS_PER_AGENT_CEILING:
+            return (f"a limit of {self.max_concurrent_jobs} jobs at once is "
+                    f"above the {JOBS_PER_AGENT_CEILING} this work agent "
+                    f"may hold; the default is {JOBS_PER_AGENT_DEFAULT} and "
+                    "four is the most that can be configured")
+        if self.max_execution_workers > JOBS_PER_AGENT_CEILING:
+            return (f"{self.max_execution_workers} execution workers is "
+                    f"above the {JOBS_PER_AGENT_CEILING} this work agent "
+                    "may run")
         if not 0 < self.cpu_share <= 1:
             return ("the CPU share must be a fraction above zero and at "
                     "most one; this machine also runs MetaTrader 5 and the "
@@ -208,7 +219,9 @@ class Capacity:
         get = lambda k, d: self._policy.get("capacity", k, default=d)  # noqa: E731
         return Budget(
             max_owed_seconds=float(get("max_owed_seconds", 0) or 0),
-            max_concurrent_jobs=int(get("max_concurrent_jobs", 0) or 0),
+            max_concurrent_jobs=int(
+                get("max_concurrent_jobs", JOBS_PER_AGENT_DEFAULT)
+                or JOBS_PER_AGENT_DEFAULT),
             max_open_bids=int(get("max_open_bids", 0) or 0),
             cpu_share=float(get("cpu_share", 0) or 0),
             min_free_disk_bytes=int(get("min_free_disk_bytes", 0) or 0),
