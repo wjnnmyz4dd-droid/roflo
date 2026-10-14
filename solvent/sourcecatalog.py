@@ -223,11 +223,19 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
         "Upwork developer site under their own account, complete identity "
         "verification, and accept the API terms — and to establish that their "
         "intended use is permitted by those terms",
-        verified_on="2026-09-29",
+        verified_on="2026-10-14",
         evidence="upwork.com/developer — GraphQL API at api.upwork.com/graphql, "
                  "OAuth 2.0 authorization code flow, documented job-search "
-                 "queries. Whether a given automated use is permitted is in "
-                 "the API terms for the owner's own account and was not "
+                 "queries. Re-verified 2026-10-14: POST to that endpoint "
+                 "without a credential returns HTTP 401 "
+                 "{\"message\":\"Authentication failed\"}, so the endpoint "
+                 "is real and closed; the developer documentation page "
+                 "returns 403 to an automated fetch. Published access "
+                 "conditions: a client ID and shared secret, an account "
+                 "under a company with a verified ID, a stated description "
+                 "of the intended use, and a documented daily cap of 40,000 "
+                 "requests. Whether a given automated use is permitted is "
+                 "in the API terms for the owner's own account and was not "
                  "established here.",
         notes="An API demonstrably exists, which is not the same as permission "
               "to use it this way. Left manual-only until the owner registers "
@@ -235,7 +243,10 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
         terms=(
             _robots("upwork.com", TERMS_FORBIDDEN,
                     "Disallow: /jobs/ , /*/jobs/search* , /o/jobs/job/* and "
-                    "/api* ; no Crawl-delay"),
+                    "/api* ; no Crawl-delay. Note the contrast with "
+                    "Freelancer, whose robots.txt does not mention /api: "
+                    "Upwork disallows its API path to crawlers and offers "
+                    "the GraphQL endpoint instead, under credentials"),
             # The official GraphQL API is the sanctioned route, and its own
             # terms have not been read: the developer documentation itself
             # returned HTTP 403 to an automated fetch on the date above,
@@ -261,27 +272,78 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
         )),
     CatalogueEntry(
         "freelancer", "Freelancer.com", FREELANCE_MARKETPLACE, _TERMS,
+        verified_on="2026-10-14",
+        evidence="GET https://www.freelancer.com/api/projects/0.1/projects/"
+                 "active/?limit=1 returned HTTP 200 with live project JSON "
+                 "and no credential, on 2026-10-14. The response carries "
+                 "the platform's own limits in a header: "
+                 "`ratelimit-limit: 200, 200;window=60, 1000;window=3600`.",
         notes="Bid-based, and bidding may consume paid credits -- which is "
-              "why SUBMIT_BID and SPEND_MONEY are separate permissions.",
+              "why SUBMIT_BID and SPEND_MONEY are separate permissions.\n\n"
+              "**A correction to the 2026-10-13 finding.** That reading "
+              "recorded public discovery as FORBIDDEN, citing robots.txt. "
+              "The citation was accurate -- /projects/browse.php*, /jobs/?*, "
+              "/work/* and /find/* really are disallowed, and still are -- "
+              "but the conclusion drawn from it was too broad. Those are "
+              "*web page* paths. robots.txt says nothing about /api/, and "
+              "the documented JSON API answers an unauthenticated request "
+              "for active projects and tells the caller its own rate limits "
+              "in the response headers, which is a platform describing "
+              "machine access rather than refusing it.\n\n"
+              "So the finding is UNDETERMINED rather than FORBIDDEN: the "
+              "page-crawling route is shut, the API route is open and "
+              "nobody has read the API terms of service, which is a "
+              "separate document from robots.txt. Operationally nothing "
+              "changes -- unread is not permitted, and both answers refuse "
+              "-- but the record now says the true thing, and it tells the "
+              "owner exactly which document to read.",
         terms=(
-            _robots("freelancer.com", TERMS_FORBIDDEN,
-                    "Disallow: /projects/browse.php* , /jobs/?* , /work/* , "
-                    "/find/* ; no Crawl-delay"),
+            TermsFinding(
+                access.DISCOVER, TERMS_UNDETERMINED,
+                citation="https://www.freelancer.com/robots.txt disallows "
+                         "/projects/browse.php*, /jobs/?*, /work/* and "
+                         "/find/* -- page paths, not /api/, which it does "
+                         "not mention. GET /api/projects/0.1/projects/"
+                         "active/ returned 200 with live JSON and "
+                         "`ratelimit-limit: 200;window=60, 1000;window=3600`. "
+                         "The API terms of service are unread",
+                read_on="2026-10-14"),
             TermsFinding(access.DISCOVER_AUTHENTICATED),
             TermsFinding(access.SUBMIT_BID),
             TermsFinding(access.SPEND_MONEY),
         )),
     CatalogueEntry(
         "peopleperhour", "PeoplePerHour", FREELANCE_MARKETPLACE, _TERMS,
-        notes="Not established; manual only. robots.txt was requested on "
-              "2026-10-13 and came back empty, so nothing was established "
-              "either way -- which is not the same as permission."),
+        notes="Not established; manual only. The 2026-10-13 request for "
+              "robots.txt came back empty; the same request on 2026-10-14 "
+              "returned it, so the earlier blank was a transport failure "
+              "rather than an absent file -- worth recording, because "
+              "\"we got nothing\" and \"there is nothing\" are different "
+              "facts and only one of them is about the platform.\n\n"
+              "What it says is narrow and specific: `Disallow: /*?` shuts "
+              "every URL carrying a query string, which is how the site's "
+              "search works, so search is out. Listing pages without a "
+              "query string are not disallowed. No public API was found.",
+        terms=(
+            TermsFinding(
+                access.DISCOVER, TERMS_UNDETERMINED,
+                citation="https://www.peopleperhour.com/robots.txt read "
+                         "2026-10-14: `Disallow: /*?` rules out "
+                         "query-string search; /job/bidders* and /job/new* "
+                         "are disallowed; plain listing paths are not "
+                         "mentioned either way, and no terms-of-service "
+                         "reading has been done",
+                read_on="2026-10-14"),
+        )),
     CatalogueEntry(
         "guru", "Guru", FREELANCE_MARKETPLACE, _TERMS,
         notes="Not established; manual only. robots.txt returned HTTP 403 to "
-              "an automated request on 2026-10-13 -- the site declining to "
-              "be read by a machine, which is itself an answer and must not "
-              "be worked around."),
+              "an automated request on 2026-10-13 and again on 2026-10-14, "
+              "from a different user agent -- the site declining to be read "
+              "by a machine, consistently, which is itself an answer and "
+              "must not be worked around. https://www.guru.com/api returned "
+              "403 as well. Two refusals a day apart are not a transient "
+              "failure, and the correct response to a 403 is to stop."),
     CatalogueEntry(
         "contra", "Contra", FREELANCE_MARKETPLACE, _TERMS,
         notes="The only one of the six whose robots.txt does not disallow "

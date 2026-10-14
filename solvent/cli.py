@@ -316,6 +316,49 @@ def cmd_marketplaces(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup_crypto(args: argparse.Namespace) -> int:
+    """Record where crypto payment should arrive. The field starts blank.
+
+    This stores an address and nothing else. There is no key here, no
+    seed phrase, no credential: DeskPilot cannot spend from the address
+    it records and has no code path that could learn how. The address
+    is validated before it is stored and refused if it cannot be fully
+    checked -- a wrong address on a chain is money gone, and the cost
+    of refusing a good one is a retype.
+    """
+    from .payments import CRYPTO_NETWORKS
+
+    solvent = _owner_solvent(args)
+    if args.show or not args.address:
+        receipt = solvent.policy.crypto_receipt()
+        problem = receipt.problem()
+        print(f"network : {receipt.network or '(not set)'}")
+        print(f"asset   : {receipt.asset or '(not set)'}")
+        print(f"address : {receipt.address or '(not set)'}")
+        print(f"confirm : {receipt.minimum_confirmations or '(not set)'}")
+        print(f"status  : {'configured' if not problem else problem}")
+        print("networks: " + ", ".join(
+            f"{n} ({'/'.join(a)})" for n, a in sorted(CRYPTO_NETWORKS.items())))
+        conversion = solvent.policy.conversion_policy()
+        print(f"convert : {conversion.state}"
+              + (f" via {conversion.provider}" if conversion.provider else ""))
+        return 0
+    try:
+        solvent.policy.record_crypto_receipt(
+            owner_identity=args.owner, network=args.network,
+            asset=args.asset, address=args.address,
+            minimum_confirmations=args.minimum_confirmations,
+            reason=args.reason)
+    except FailClosed as exc:
+        print(f"refused: {exc}")
+        return 1
+    receipt = solvent.policy.crypto_receipt()
+    print(f"recorded {receipt.asset} on {receipt.network}, settled after "
+          f"{receipt.minimum_confirmations} confirmation(s)")
+    print("DeskPilot cannot spend from this address and holds no key for it.")
+    return 0
+
+
 def cmd_setup_commercial(args: argparse.Namespace) -> int:
     """Record the four terms that decide what work is worth taking.
 
@@ -1375,6 +1418,23 @@ def build_parser() -> argparse.ArgumentParser:
              "stores presence, never the number")
     contracting.add_argument("--reason", default="OD-1: owner contracting details")
     contracting.set_defaults(func=cmd_setup_contracting)
+
+    crypto = owned(setup_sub.add_parser(
+        "crypto", help="record a cryptocurrency receipt address (blank "
+                       "until you set it)"))
+    crypto.add_argument("--network", default="",
+                        help="ethereum, base, polygon or bitcoin")
+    crypto.add_argument("--asset", default="", help="e.g. USDC, ETH, BTC")
+    crypto.add_argument("--address", default="",
+                        help="the owner's own receiving address. DeskPilot "
+                             "stores it and can never spend from it")
+    crypto.add_argument("--minimum-confirmations", type=int, default=0,
+                        help="defaults to this network's recorded minimum")
+    crypto.add_argument("--show", action="store_true",
+                        help="print what is recorded and change nothing")
+    crypto.add_argument("--reason",
+                        default="owner records a crypto receipt address")
+    crypto.set_defaults(func=cmd_setup_crypto)
 
     commercial = owned(setup_sub.add_parser(
         "commercial", help="record the terms that decide what work is worth "

@@ -286,3 +286,292 @@ class StripeRail:
             livemode=bool(event.get("livemode", False)),
             external_ref=str(obj.get("id", "")),
             detail={"status": obj.get("status", "")})
+
+
+# ------------------------------------------------------------------- crypto
+#
+# Receiving payment in cryptocurrency, with one property above all others:
+# **Solvent never holds a key and never sends anything.** It records an
+# address the owner supplies, it recognises a confirmation somebody else
+# observed on a chain, and that is the whole of its involvement with the
+# money. There is no wallet here, no signing, no broadcast, and no code
+# path that could acquire any of them -- an address is a string to this
+# module, and a string cannot spend.
+#
+# The confirmation route is the same shape as Stripe's, for the same
+# reason: this process cannot listen on a port, because the egress
+# contract denies ``socket.bind`` for the whole interpreter. Something
+# outside that is allowed to watch a chain writes what it saw into the
+# spool, and Solvent reads it. What Solvent will not do is believe it
+# without the owner having configured what counts as proof.
+
+#: Networks the owner may nominate, and what each one settles in. This is
+#: a list of names, not a claim that any of them is connected: nothing
+#: here reaches a chain, and ``CryptoRail`` refuses every event until the
+#: owner has configured a verification signal.
+#:
+#: Deliberately short. Each entry is a network whose address format this
+#: module can actually check, because an address it cannot check is an
+#: address it must not accept -- a mistyped destination loses the money
+#: with no recourse, and there is no "contact support" on a chain.
+CRYPTO_NETWORKS: dict[str, tuple[str, ...]] = {
+    # Native coin plus the two dollar-denominated tokens most commonly
+    # used for invoicing. Which of them the owner can actually receive
+    # depends on their own wallet, which is theirs to know.
+    "ethereum": ("ETH", "USDC", "USDT"),
+    "base": ("ETH", "USDC"),
+    "polygon": ("POL", "USDC", "USDT"),
+    "bitcoin": ("BTC",),
+}
+
+#: Confirmations before a chain payment is treated as settled, by network.
+#: Zero is never permitted: an unconfirmed transaction can be replaced,
+#: and treating one as revenue is how a reorg becomes a bad debt.
+DEFAULT_CONFIRMATIONS: dict[str, int] = {
+    "ethereum": 12, "base": 30, "polygon": 60, "bitcoin": 3,
+}
+
+_BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+
+def _bech32_polymod(values) -> int:
+    generator = (0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3)
+    checksum = 1
+    for value in values:
+        top = checksum >> 25
+        checksum = ((checksum & 0x1ffffff) << 5) ^ value
+        for i in range(5):
+            checksum ^= generator[i] if ((top >> i) & 1) else 0
+    return checksum
+
+
+def _bech32_ok(address: str) -> bool:
+    """BIP-173/350 checksum. Implemented rather than approximated.
+
+    A length-and-prefix check would accept a single mistyped character,
+    which is exactly the failure this exists to catch: the money goes to
+    an address nobody holds and is gone.
+    """
+    if address != address.lower() and address != address.upper():
+        return False
+    address = address.lower()
+    if address.count("1") == 0:
+        return False
+    position = address.rfind("1")
+    head, tail = address[:position], address[position + 1:]
+    if not head or len(tail) < 6:
+        return False
+    if any(c not in _BECH32_CHARSET for c in tail):
+        return False
+    expanded = ([ord(c) >> 5 for c in head] + [0]
+                + [ord(c) & 31 for c in head]
+                + [_BECH32_CHARSET.index(c) for c in tail])
+    # 1 is bech32 (v0), 0x2bc830a3 is bech32m (v1+). Either is a valid
+    # checksum; which one is correct depends on the witness version.
+    return _bech32_polymod(expanded) in (1, 0x2bc830a3)
+
+
+def address_problem(network: str, address: str) -> str:
+    """``""`` if this address is usable on this network, else why not.
+
+    Fails closed on anything it cannot fully verify. A mixed-case EVM
+    address carries an EIP-55 checksum that needs Keccak-256, which is
+    not Python's sha3_256 and is not in the standard library; rather
+    than accept such an address unchecked, this refuses it and asks for
+    the unambiguous lower-case form. Refusing a valid address costs the
+    owner one retype. Accepting an invalid one costs them the payment.
+    """
+    network = (network or "").strip().lower()
+    address = (address or "").strip()
+    if not address:
+        return "no address is recorded"
+    if network not in CRYPTO_NETWORKS:
+        return (f"{network!r} is not a network this records; known: "
+                + ", ".join(sorted(CRYPTO_NETWORKS)))
+    if network == "bitcoin":
+        if address.lower().startswith(("bc1", "tb1")):
+            return "" if _bech32_ok(address) else (
+                "the bech32 checksum does not match, so this address has a "
+                "typo in it somewhere")
+        if address[0] in "13" and 26 <= len(address) <= 35:
+            return ("this is a legacy base58 address and its checksum is not "
+                    "verified here; supply a bech32 address beginning bc1")
+        return "this does not look like a Bitcoin address"
+    # EVM networks.
+    if not address.startswith("0x") or len(address) != 42:
+        return "an EVM address is 0x followed by 40 hex characters"
+    body = address[2:]
+    if any(c not in "0123456789abcdefABCDEF" for c in body):
+        return "an EVM address is 0x followed by 40 hex characters"
+    if body != body.lower() and body != body.upper():
+        return ("this is a mixed-case EIP-55 address and verifying its "
+                "checksum needs Keccak-256, which is not available here; "
+                "supply the all-lower-case form so nothing is accepted "
+                "unchecked")
+    return ""
+
+
+@dataclass(frozen=True, slots=True)
+class CryptoReceipt:
+    """Where the owner would be paid, and under what conditions.
+
+    ``address`` is empty until the owner fills it in. Empty is the
+    shipped state and a working one: everything here refuses while it is
+    empty, which is correct, because the alternative to refusing is
+    inventing a destination for somebody's money.
+    """
+
+    network: str = ""
+    asset: str = ""
+    address: str = ""
+    minimum_confirmations: int = 0
+
+    @property
+    def configured(self) -> bool:
+        return not self.problem()
+
+    def problem(self) -> str:
+        if not self.network and not self.address:
+            return "no crypto receipt address is configured"
+        bad = address_problem(self.network, self.address)
+        if bad:
+            return bad
+        assets = CRYPTO_NETWORKS.get(self.network.strip().lower(), ())
+        if self.asset.strip().upper() not in assets:
+            return (f"{self.asset!r} is not recorded as settling on "
+                    f"{self.network}; known: " + ", ".join(assets))
+        if self.minimum_confirmations < 1:
+            return ("a payment with no confirmation requirement is not a "
+                    "settled payment; an unconfirmed transaction can be "
+                    "replaced")
+        return ""
+
+
+class CryptoRail:
+    """Recognises a chain confirmation somebody else observed.
+
+    It does not watch a chain. It cannot: this process may not open a
+    socket. An external watcher the owner runs sees the transaction,
+    signs what it saw with a secret only the two of them share, and
+    writes it into the spool; this checks that signature and turns the
+    result into the same ``VerifiedPaymentEvent`` the Stripe rail
+    produces, so everything downstream -- the ledger, reconciliation,
+    the simulated-money exclusion -- treats both identically.
+
+    Every refusal below is deliberate and none of them is recoverable
+    by trying harder:
+
+    * No configured secret: nothing can be verified, so nothing is.
+    * A good signature over the wrong receipt address: money that went
+      somewhere else is not revenue, however real the transaction.
+    * Too few confirmations: a replaceable transaction is not a payment.
+    """
+
+    name = "crypto"
+
+    def __init__(self, receipt: CryptoReceipt,
+                 tolerance_seconds: int = DEFAULT_TOLERANCE_SECONDS) -> None:
+        self.receipt = receipt
+        self.tolerance_seconds = tolerance_seconds
+
+    def verify_event(self, raw_body: bytes, headers: dict,
+                     secret: str) -> VerifiedPaymentEvent:
+        import hmac as _hmac
+        import json as _json
+        from hashlib import sha256
+
+        problem = self.receipt.problem()
+        if problem:
+            raise FailClosed(
+                f"no crypto payment can be verified: {problem}")
+        if not secret:
+            raise FailClosed(
+                "no watcher secret is configured, so a confirmation cannot "
+                "be told apart from anything else that wrote to the spool")
+        supplied = str(headers.get("X-DeskPilot-Signature", "")).strip()
+        if not supplied:
+            raise FailClosed("the delivery carries no signature")
+        expected = _hmac.new(secret.encode(), raw_body, sha256).hexdigest()
+        if not _hmac.compare_digest(expected, supplied):
+            raise FailClosed("the delivery's signature does not match")
+
+        try:
+            body = _json.loads(raw_body.decode("utf-8"))
+        except Exception as exc:
+            raise FailClosed(f"the delivery is not readable JSON: {exc}")
+
+        to = str(body.get("to_address", "")).strip()
+        if to.lower() != self.receipt.address.strip().lower():
+            raise FailClosed(
+                "this confirmation is for an address that is not the "
+                "recorded receipt address, so it is somebody else's money")
+        confirmations = int(body.get("confirmations", 0) or 0)
+        if confirmations < self.receipt.minimum_confirmations:
+            raise FailClosed(
+                f"{confirmations} confirmation(s) is below the "
+                f"{self.receipt.minimum_confirmations} this network "
+                "requires; an unconfirmed transaction can still be replaced")
+        amount_cents = int(body.get("amount_cents", 0) or 0)
+        if amount_cents <= 0:
+            raise FailClosed(
+                "a confirmation carrying no amount in cents establishes no "
+                "revenue; the watcher converts at the rate it observed and "
+                "says what that was, because this cannot price an asset")
+        return VerifiedPaymentEvent(
+            event_id=str(body.get("tx_hash", "")),
+            rail=self.name,
+            kind=EventKind.CUSTOMER_PAID,
+            raw_type=str(body.get("type", "chain.confirmation")),
+            job_id=str(body.get(JOB_METADATA_KEY, "")),
+            amount_cents=amount_cents,
+            currency=str(body.get("currency", "usd")).lower(),
+            # A real chain, not a testnet. The watcher states which, and
+            # testnet coins are not revenue however valid the signature.
+            livemode=bool(body.get("livemode", False)),
+            external_ref=str(body.get("tx_hash", "")),
+            detail={"network": self.receipt.network,
+                    "asset": self.receipt.asset,
+                    "confirmations": confirmations,
+                    "observed_rate": body.get("observed_rate", "")})
+
+
+#: Auto-conversion states. Off is the shipped state and the safe one.
+CONVERSION_OFF = "OFF"
+CONVERSION_ADVISORY = "ADVISORY"       # record what a conversion would be
+CONVERSION_AUTHORISED = "AUTHORISED"   # the owner has authorised a provider
+
+
+@dataclass(frozen=True, slots=True)
+class ConversionPolicy:
+    """Whether crypto received should be turned into dollars, and by whom.
+
+    Solvent cannot convert anything. Conversion means sending an asset
+    to an exchange or a payment processor and receiving fiat, which is
+    custody and a transfer -- two things this system holds no key for
+    and has no path to perform. What this models is the *decision*, so
+    that an owner who has arranged conversion elsewhere can record it
+    and have the books reflect it.
+
+    ``AUTHORISED`` therefore does not mean Solvent will convert. It
+    means the owner has a provider, and that DeskPilot may record a
+    conversion the provider performed. The money still moves outside.
+    """
+
+    state: str = CONVERSION_OFF
+    provider: str = ""
+    #: Convert only above this, so dust is not swept on every receipt.
+    threshold_cents: Cents = 0
+
+    def problem(self) -> str:
+        if self.state == CONVERSION_OFF:
+            return ""
+        if self.state not in (CONVERSION_ADVISORY, CONVERSION_AUTHORISED):
+            return f"{self.state!r} is not a conversion state"
+        if self.state == CONVERSION_AUTHORISED and not self.provider.strip():
+            return ("conversion cannot be authorised without naming the "
+                    "provider that performs it, because Solvent does not")
+        return ""
+
+    @property
+    def may_record_conversion(self) -> bool:
+        return self.state == CONVERSION_AUTHORISED and not self.problem()

@@ -561,6 +561,80 @@ class PolicyStore:
             result=f"signal={verification_signal.strip()}; {self.RAIL_SELECTED}")
         return version
 
+    def record_crypto_receipt(self, *, owner_identity: str, network: str,
+                              asset: str, address: str,
+                              minimum_confirmations: int = 0,
+                              reason: str = "owner records a crypto receipt "
+                                            "address") -> int:
+        """Record where crypto payment should arrive. Owner only.
+
+        Validated before it is stored, and refused if it cannot be fully
+        checked. A wrong address on a chain is money gone with no
+        recourse, so this is one of the few places where refusing a
+        probably-fine value is clearly right: the cost of refusing is a
+        retype, and the cost of accepting is the payment.
+
+        Stores an address and nothing else. No key, no seed, no
+        credential of any kind -- Solvent cannot spend from this
+        address and has no code path that could learn how.
+        """
+        from .payments import DEFAULT_CONFIRMATIONS, CryptoReceipt
+
+        if not self.is_owner(owner_identity):
+            raise FailClosed(
+                f"a crypto receipt address is owner-held (got "
+                f"{owner_identity!r})")
+        network = (network or "").strip().lower()
+        confirmations = int(minimum_confirmations
+                            or DEFAULT_CONFIRMATIONS.get(network, 0))
+        receipt = CryptoReceipt(network=network,
+                                asset=(asset or "").strip().upper(),
+                                address=(address or "").strip(),
+                                minimum_confirmations=confirmations)
+        problem = receipt.problem()
+        if problem:
+            raise FailClosed(f"this address was not recorded: {problem}")
+        version = self.amend({"payment": {"crypto": {
+            "network": receipt.network, "asset": receipt.asset,
+            "address": receipt.address,
+            "minimum_confirmations": receipt.minimum_confirmations,
+        }}}, owner_identity, reason)
+        self._audit.record(
+            event="policy.crypto_receipt_recorded", authority="policy",
+            initiator=owner_identity, why=reason,
+            decision=f"{receipt.network}:{receipt.asset}",
+            # The address is recorded in policy, not here: an audit log
+            # is append-only and a receipt address may legitimately be
+            # replaced if the owner's wallet changes.
+            result=f"{receipt.minimum_confirmations} confirmation(s)")
+        return version
+
+    def crypto_receipt(self):
+        """The recorded receipt, or a blank one. Never a guess."""
+        from .payments import CryptoReceipt
+
+        record = self.get("payment", "crypto", default=None)
+        if not isinstance(record, dict):
+            return CryptoReceipt()
+        return CryptoReceipt(
+            network=str(record.get("network", "")),
+            asset=str(record.get("asset", "")),
+            address=str(record.get("address", "")),
+            minimum_confirmations=int(record.get("minimum_confirmations", 0)
+                                      or 0))
+
+    def conversion_policy(self):
+        """Whether the owner has arranged crypto-to-dollar conversion."""
+        from .payments import CONVERSION_OFF, ConversionPolicy
+
+        record = self.get("payment", "conversion", default=None)
+        if not isinstance(record, dict):
+            return ConversionPolicy()
+        return ConversionPolicy(
+            state=str(record.get("state", CONVERSION_OFF)),
+            provider=str(record.get("provider", "")),
+            threshold_cents=int(record.get("threshold_cents", 0) or 0))
+
     def advance_payment_rail(self, *, owner_identity: str, state: str,
                              reason: str, evidence: str = "") -> int:
         """Move the rail one step along the ladder. Owner only, forward only.

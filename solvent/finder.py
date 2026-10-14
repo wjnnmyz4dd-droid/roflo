@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import dataclasses
 import statistics
+from fractions import Fraction
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -50,7 +51,7 @@ from . import quoting
 from . import sourceaccess
 from .discovery import Opportunity
 from .quoting import BillingBasis
-from .types import Cents, ConsequenceTier, VerificationTier
+from .types import Cents, ConsequenceTier, VerificationTier, fmt
 
 #: Postings whose wording puts them in one camp or the other. Deliberately
 #: short: a posting that does not say is UNKNOWN, not assumed.
@@ -82,6 +83,12 @@ class Confidence(Enum):
 
     MEASURED = "MEASURED"      # observed execution history for this capability
     PREDICTED = "PREDICTED"    # modelled from configured rates
+    #: A median over too few runs to call measured. Separate from both
+    #: because a client told "about four minutes" deserves to know
+    #: whether that rests on one run or fifty, and rounding one sample
+    #: up to MEASURED is the kind of small lie that becomes a missed
+    #: deadline.
+    PROVISIONAL = "PROVISIONAL"
     UNKNOWN = "UNKNOWN"        # not determinable; says so instead of guessing
 
 
@@ -192,6 +199,62 @@ class ExecutionHistory:
         return len(self.samples.get(capability) or [])
 
 
+@dataclass(frozen=True, slots=True)
+class CompletionEstimate:
+    """How long this would take, and how much that estimate is worth.
+
+    Built only from execution DeskPilot has actually performed. There is
+    deliberately no fallback: a capability with no measured runs returns
+    ``None`` seconds and says so, because a bid whose delivery time was
+    guessed is a promise to a client backed by nothing.
+    """
+
+    capability: str
+    seconds: float | None
+    samples: int
+    confidence: Confidence
+    basis: str
+
+    @property
+    def hours(self) -> float | None:
+        return None if self.seconds is None else self.seconds / 3600.0
+
+    @property
+    def known(self) -> bool:
+        return self.seconds is not None
+
+
+@dataclass(frozen=True, slots=True)
+class Bid:
+    """A proposed bid. Composed here, never sent from here.
+
+    Sending belongs to ``Applications.submit``, which asks the seven
+    gates -- platform permission, owner approval, the Action Gate and
+    the rest. A Bid is an opinion about a number until that happens, and
+    ``submittable`` says whether it is even worth taking there.
+    """
+
+    opportunity_id: str
+    capability: str
+    amount_cents: Cents | None
+    estimate: CompletionEstimate
+    floor_cents: Cents
+    cost_cents: Cents | None
+    margin: float | None
+    submittable: bool
+    why: str
+    basis: tuple[str, ...] = ()
+    blockers: tuple[str, ...] = ()
+
+    def summary(self) -> str:
+        if not self.submittable:
+            return f"no bid: {self.why}"
+        hours = self.estimate.hours or 0.0
+        return (f"bid {fmt(self.amount_cents or 0)} on "
+                f"{self.opportunity_id}, delivery in about "
+                f"{hours:.2f}h, margin {(self.margin or 0):.0%}")
+
+
 class Finder:
     """Ranks what discovery already found. Reads only."""
 
@@ -239,6 +302,162 @@ class Finder:
             return 0, (f"the market rate for {capability!r} has no recorded "
                        "citation, and an uncited rate is not evidence")
         return cents, citation
+
+    # ---- bidding ---------------------------------------------------
+    #
+    # A method on the Finder, not a Bidder class and not a second
+    # component. Bidding is the Finder answering one more question
+    # about an opportunity it has already assessed -- "what would we
+    # charge, and how fast could we deliver?" -- and the answer is built
+    # entirely from authorities that already exist: measured execution
+    # history for the time, `quoting` for the cost and the margin, the
+    # owner's recorded terms for the floor. A separate bidding agent
+    # would need its own copy of all three and would disagree with them
+    # the first time one changed.
+
+    def completion_estimate(self, capability: str, *,
+                            history: ExecutionHistory | None = None
+                            ) -> CompletionEstimate:
+        """How long this capability actually takes, from measured runs.
+
+        The median of observed wall times, never a guess. Confidence
+        comes from how many runs there have been, because one sample is
+        an anecdote and the difference matters to a client being told a
+        delivery time.
+        """
+        history = history if history is not None else ExecutionHistory()
+        seconds = history.expected_seconds(capability)
+        samples = history.count(capability)
+        if seconds is None:
+            return CompletionEstimate(
+                capability, None, 0, Confidence.UNKNOWN,
+                f"no execution of {capability!r} has been measured, so how "
+                "long it takes is not known; an unmeasured capability is "
+                "not a fast one")
+        confidence = (Confidence.MEASURED if samples >= 5
+                      else Confidence.PROVISIONAL)
+        return CompletionEstimate(
+            capability, seconds, samples, confidence,
+            f"median of {samples} measured run(s) of {capability!r}: "
+            f"{seconds:.1f}s")
+
+    def bid_floor_cents(self, cost_cents: Cents) -> tuple[Cents, str]:
+        """The least DeskPilot may charge, and why.
+
+        Two separate owner decisions, and the binding one is whichever
+        is higher: the minimum project fee is a floor in cash, the
+        minimum margin is a floor as a share of whatever is charged.
+        Underneath both sits the cost, because no margin rule should be
+        able to produce a price below what the work spends.
+        """
+        floor = self.minimum_fee_cents
+        reason = f"the owner's {fmt(floor)} minimum project fee"
+        margin = self.minimum_margin_fraction
+        if margin > 0 and margin < 1:
+            # price * (1 - margin) >= cost  =>  price >= cost / (1 - margin)
+            #
+            # In exact arithmetic, because the float version was out by a
+            # cent: 70000 / (1 - 0.3) is 100000.00000000001 in binary
+            # floating point, and rounding that up gives a floor of
+            # $1000.01 for a cost of $700 at a 30% margin. One cent is
+            # not money, but a floor that cannot be stated exactly is a
+            # floor nobody can check, and "why is it a cent more than I
+            # calculated" is a question with no good answer.
+            share = Fraction(1) - Fraction(margin).limit_denominator(10_000)
+            needed = (-(-cost_cents * share.denominator // share.numerator)
+                      if cost_cents and share.numerator else 0)
+            if needed > floor:
+                floor, reason = needed, (
+                    f"{fmt(cost_cents)} of cost at the owner's "
+                    f"{margin:.0%} minimum margin")
+        if cost_cents > floor:
+            floor, reason = cost_cents, (
+                f"{fmt(cost_cents)} of cost, which no price may sit below")
+        return floor, reason
+
+    def bid(self, opportunity: Opportunity, *,
+            history: ExecutionHistory | None = None,
+            units: int = 0,
+            standard: "quoting.WorkStandard | None" = None) -> Bid:
+        """Compose a bid for one opportunity. Never sends it.
+
+        Refuses, rather than guessing, whenever the thing it would need
+        is unknown: an unconfigured business, an unmeasured capability,
+        a posting naming no budget, or a floor above what the client
+        has offered.
+        """
+        capability = opportunity.needs[0] if opportunity.needs else ""
+        estimate = self.completion_estimate(capability, history=history)
+        blockers: list[str] = []
+
+        configured, gaps = self.commercially_configured()
+        if not configured:
+            blockers.extend(gaps)
+        if not capability:
+            blockers.append("the posting does not say which capability it "
+                            "needs, so nothing can be estimated")
+        else:
+            deployable, why = self._capability.may_deploy(capability)
+            if not deployable:
+                blockers.append(f"{capability} cannot be deployed: {why}")
+        if not estimate.known:
+            blockers.append(estimate.basis)
+
+        if blockers:
+            return Bid(opportunity.id, capability, None, estimate, 0, None,
+                       None, False, blockers[0], blockers=tuple(blockers))
+
+        # Cost first, from the estimate, at the owner's recorded rates.
+        # cpu_seconds is taken as equal to wall_seconds, which overstates
+        # cost on a job that waits on anything -- the safe direction,
+        # because a bid built on an understated cost is the one that
+        # loses money.
+        rates = quoting.rates_from_policy(self._policy)
+        measurement = quoting.ExecutionMeasurement(
+            wall_seconds=estimate.seconds or 0.0,
+            cpu_seconds=estimate.seconds or 0.0)
+        budget = opportunity.net_budget_cents
+        # Costed at the client's budget, which is slightly circular: the
+        # platform and payment fees are a share of the price, so the
+        # cost used to derive the floor is the cost of the *highest*
+        # price under consideration. That overstates the floor a little
+        # and never understates it, which is the direction to be wrong
+        # in -- a floor computed at the floor would be lower, and
+        # bidding at it would leave less margin than the owner asked
+        # for once the real fees landed.
+        cost = quoting.operating_cost(
+            measurement, price_cents=max(0, budget), rates=rates)
+        floor, floor_reason = self.bid_floor_cents(cost.total_cents)
+
+        if opportunity.quoted_cents <= 0:
+            return Bid(opportunity.id, capability, None, estimate, floor,
+                       cost.total_cents, None, False,
+                       "the posting states no price, so there is nothing to "
+                       "bid against and a number here would be invented",
+                       basis=cost.basis)
+        if budget < floor:
+            return Bid(opportunity.id, capability, None, estimate, floor,
+                       cost.total_cents, None, False,
+                       f"the client's {fmt(budget)} is below {fmt(floor)}, "
+                       f"which is {floor_reason}", basis=cost.basis)
+
+        # Competitive, within the owner's rules: the client's own budget
+        # is the ceiling -- bidding above what they offered wins nothing
+        # -- and the floor is the floor. Between them, DeskPilot bids
+        # the client's number rather than undercutting it, because
+        # speed is already the advantage and giving away margin on top
+        # buys nothing the owner asked for.
+        amount = budget
+        gain = quoting.profitability(price_cents=amount, cost=cost)
+        return Bid(
+            opportunity.id, capability, amount, estimate, floor,
+            cost.total_cents, gain.margin, True,
+            f"{fmt(amount)} against a {fmt(floor)} floor; delivery in about "
+            f"{(estimate.hours or 0):.2f}h on {estimate.basis}",
+            basis=tuple(cost.basis) + (
+                f"floor: {floor_reason}",
+                f"completion: {estimate.basis} ({estimate.confidence.value})",
+                gain.summary()))
 
     def commercially_configured(self) -> tuple[bool, list[str]]:
         """May the Finder recommend pursuing paid work at all?

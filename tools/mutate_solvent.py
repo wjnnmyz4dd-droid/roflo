@@ -704,6 +704,99 @@ MUTANTS: tuple[Mutant, ...] = (
         "a document that looks like a bill, names nobody to pay and cannot "
         "be sent would be produced, and the pipeline would report the "
         "invoice stage as done"),
+
+    # ---- bidding ----------------------------------------------------
+
+    Mutant(
+        "an-unmeasured-capability-bids-anyway",
+        "solvent/finder.py",
+        "        if not estimate.known:",
+        "        if False:",
+        "tests_solvent.test_bidding.NoBidWithoutTheEvidenceToMakeOne"
+        ".test_no_measured_history_means_no_bid",
+        "a delivery time would be promised to a client for a capability "
+        "nobody has ever run"),
+
+    Mutant(
+        "a-bid-may-sit-below-the-floor",
+        "solvent/finder.py",
+        "        if budget < floor:",
+        "        if False:",
+        "tests_solvent.test_bidding.ThePriceNeverGoesBelowWhatTheWorkCosts"
+        ".test_a_budget_under_the_floor_is_refused",
+        "work would be bid at a price below what it costs to do"),
+
+    Mutant(
+        "the-floor-ignores-the-cost",
+        "solvent/finder.py",
+        "        if cost_cents > floor:",
+        "        if False:",
+        "tests_solvent.test_bidding.ThePriceNeverGoesBelowWhatTheWorkCosts"
+        ".test_the_floor_is_never_below_cost",
+        "a small margin setting could produce a floor underneath the cost, "
+        "so every bid at the floor would lose money"),
+
+    Mutant(
+        "one-run-counts-as-measured",
+        "solvent/finder.py",
+        "        confidence = (Confidence.MEASURED if samples >= 5",
+        "        confidence = (Confidence.MEASURED if samples >= 0",
+        "tests_solvent.test_bidding.CompletionTimeComesFromMeasurement"
+        ".test_one_run_is_provisional_not_measured",
+        "a delivery estimate resting on a single run would be presented as "
+        "measured"),
+
+    # ---- crypto -----------------------------------------------------
+
+    Mutant(
+        "a-mistyped-address-is-accepted",
+        "solvent/payments.py",
+        '            return "" if _bech32_ok(address) else (',
+        '            return "" if True else (',
+        "tests_solvent.test_crypto_payments.AnAddressItCannotCheckIsRefused"
+        ".test_one_wrong_character_is_caught",
+        "a single mistyped character would be stored as a receipt address "
+        "and the payment would go somewhere nobody holds"),
+
+    Mutant(
+        "an-unchecked-checksum-is-accepted",
+        "solvent/payments.py",
+        "    if body != body.lower() and body != body.upper():",
+        "    if False:",
+        "tests_solvent.test_crypto_payments.AnAddressItCannotCheckIsRefused"
+        ".test_a_mixed_case_evm_address_is_refused",
+        "an EIP-55 address would be accepted without its checksum being "
+        "verified, which is the one thing that checksum is for"),
+
+    Mutant(
+        "somebody-elses-payment-counts-as-ours",
+        "solvent/payments.py",
+        "        if to.lower() != self.receipt.address.strip().lower():",
+        "        if False:",
+        "tests_solvent.test_crypto_payments.TheRailVerifiesOrRefuses"
+        ".test_a_payment_to_another_address_is_not_revenue",
+        "a real, correctly signed transaction to somebody else's address "
+        "would be recorded as DeskPilot's revenue"),
+
+    Mutant(
+        "an-unconfirmed-transaction-is-revenue",
+        "solvent/payments.py",
+        "        if confirmations < self.receipt.minimum_confirmations:",
+        "        if False:",
+        "tests_solvent.test_crypto_payments.TheRailVerifiesOrRefuses"
+        ".test_too_few_confirmations_is_refused",
+        "a transaction that can still be replaced would be booked as money "
+        "received"),
+
+    Mutant(
+        "conversion-is-authorised-without-a-provider",
+        "solvent/payments.py",
+        "        if self.state == CONVERSION_AUTHORISED and not self.provider.strip():",
+        "        if False:",
+        "tests_solvent.test_crypto_payments.ConversionIsADecisionNotAnAction"
+        ".test_authorising_without_a_provider_is_refused",
+        "conversion would read as authorised with nobody named to perform "
+        "it, implying Solvent does it"),
 )
 
 
