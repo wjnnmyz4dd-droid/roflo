@@ -313,11 +313,68 @@ before anything is loaded from it**, so this was never mine to close.
 
 ### Totals
 
-TOTALS_HERE
+| | solvent | roflo | combined |
+|---|---|---|---|
+| **Total** | 3,923 | 94 | **4,017** |
+| **Passed** | 3,922 | 94 | **4,016** |
+| **Failed** | 0 | 0 | **0** |
+| **Skipped** | 1 | 0 | **1** |
+
+```
+Ran 3921 tests in 526.169s
+OK (skipped=1)
+```
+
+(The count above the block is two higher: a test added while fixing the
+mutation survivor described below, after that run.)
+
+The skip is `test_installer_packaged_entrypoint`, which cannot start a
+subprocess once the irreversible egress guard loads.
 
 ### Mutation results
 
-MUTATION_HERE
+Sixty-nine mutants. Nine are new this sweep: four on the bidder, five
+on crypto.
+
+The first full run was **66/69 — one survivor and two not applied**,
+and both outcomes were faults in my own work rather than in the code:
+
+```
+SURVIVED     the-floor-ignores-the-cost
+NOT_APPLIED  unconfigured-terms-still-recommend-work  (old text found 2 times)
+NOT_APPLIED  the-owners-margin-is-ignored             (old text found 2 times)
+```
+
+**The survivor is the interesting one.** Deleting `if cost_cents >
+floor:` — the clamp that stops any price sitting below what the work
+costs — broke no test. My test set the margin to 1% and asserted the
+floor was at least the cost. But for *any* margin strictly between 0
+and 1, `cost / (1 - margin)` is already at or above cost, so the margin
+branch satisfied that assertion on its own and the clamp underneath it
+never executed. The test was passing for a reason that had nothing to
+do with the control it was named after.
+
+The clamp only bites when the margin is **zero**. Rewritten to set it
+to zero with a one-cent floor, so removing the clamp drops the floor to
+one cent and the test fails. A companion test pins the reasoning across
+five margins, so if the margin rule ever starts producing a floor below
+cost, that shows up as a failure rather than as a silently redundant
+clamp.
+
+The two `NOT_APPLIED` were non-unique anchors: `configured, gaps =
+self.commercially_configured()` and `margin = self.minimum_margin_
+fraction` each appear twice in `finder.py`. Widened to multi-line
+anchors that match one site.
+
+All three re-run individually and killed:
+
+```
+1/1 killed  (0 survived, 0 not applied or harness)   x3
+```
+
+**69/69, no survivors, nothing unapplied** — reported as a first run of
+66 plus three resolutions, not folded into a single flattering number.
+A `NOT_APPLIED` is never counted as a kill.
 
 ### Unseen exam results
 
@@ -348,7 +405,35 @@ Four, from this sweep:
 
 ### Unresolved defects
 
-UNRESOLVED_HERE
+**None in the code.** Every defect found this sweep is repaired and
+each is pinned by a mutant that dies when the control is removed.
+
+Three process faults are worth recording because they cost real time
+and two of them repeated a mistake I had already diagnosed:
+
+1. **A mutant was left applied when I killed the harness mid-run.**
+   `finder-scores-work-it-declined` was live in `finder.py`, and an
+   automated check was asking me to commit at that moment. Committing
+   would have written a deliberately broken line into the branch, where
+   it would have passed every test except the one it breaks. Caught by
+   verifying all 69 anchors before committing, restored, and confirmed
+   by re-running the suite.
+2. **A guard that skipped and exited zero.** A restart used
+   `grep -q ... && echo "ALREADY RUNNING" || (run)`. It found a stale
+   process, skipped the run, and reported success — work not done,
+   reported as done.
+3. **A guard that matched itself.** Its replacement refused to start
+   because the pattern `[p]ython3 tools/mutate_solvent.py` appears
+   inside the guard's own shell command line. The `[p]` trick defeats
+   the `grep` process, not the enclosing wrapper. I had diagnosed
+   exactly this in a wait loop earlier in the session and then wrote
+   the same shape again.
+
+All three are the same mistake wearing different clothes: a check whose
+success does not depend on the thing it is supposedly checking. That is
+also precisely what the mutation survivor was. The standing rule that
+comes out of it: **while the mutation harness runs it owns the working
+tree**, and anything that looks uncommitted may be a sabotaged line.
 
 ---
 

@@ -664,8 +664,12 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "unconfigured-terms-still-recommend-work",
         "solvent/finder.py",
-        "        configured, gaps = self.commercially_configured()",
-        "        configured, gaps = (True, [])",
+        "        configured, gaps = self.commercially_configured()\n"
+        "        if not configured:\n"
+        "            return Verdict.HOLD, (",
+        "        configured, gaps = (True, [])\n"
+        "        if not configured:\n"
+        "            return Verdict.HOLD, (",
         "tests_solvent.test_commercial_configuration"
         ".NothingIsRecommendedUntilAllFourAreSet"
         ".test_an_unconfigured_installation_recommends_nothing",
@@ -675,8 +679,10 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "the-owners-margin-is-ignored",
         "solvent/finder.py",
-        "        margin = self.minimum_margin_fraction",
-        "        margin = 0.0",
+        "        margin = self.minimum_margin_fraction\n"
+        "        if (margin > 0 and econ.profit_cents is not None",
+        "        margin = 0.0\n"
+        "        if (margin > 0 and econ.profit_cents is not None",
         "tests_solvent.test_commercial_configuration.TheOwnersMarginIsApplied"
         ".test_clearing_cost_by_a_hair_is_not_worth_taking",
         "a job clearing its cost by a cent would count as worth taking, "

@@ -160,12 +160,37 @@ class ThePriceNeverGoesBelowWhatTheWorkCosts(Base):
         self.assertIn("30%", why)
 
     def test_the_floor_is_never_below_cost(self):
-        """Whatever the margin rule produces, cost is the hard bottom."""
-        self.s.policy.amend({"commercial": {"minimum_margin_fraction": 0.01,
+        """Whatever else the rules produce, cost is the hard bottom.
+
+        The margin has to be *zero* for this to mean anything, which is
+        the whole point and what the first version of this test missed.
+        For any margin between 0 and 1, ``cost / (1 - margin)`` is
+        already at or above cost, so the margin branch satisfies the
+        assertion on its own and the clamp underneath it never runs. A
+        mutant deleting the clamp survived, which is how I found out.
+        """
+        self.s.policy.amend({"commercial": {"minimum_margin_fraction": 0.0,
                                             "minimum_project_fee_cents": 1}},
-                            OWNER, "test: almost no floor at all")
+                            OWNER, "test: no margin rule, a 1-cent floor")
         floor, why = self.finder.bid_floor_cents(50_000)
-        self.assertGreaterEqual(floor, 50_000)
+        self.assertEqual(floor, 50_000)
+        self.assertIn("no price may sit below", why)
+
+    def test_the_margin_branch_cannot_hide_the_clamp(self):
+        """Why the test above sets the margin to zero, pinned.
+
+        If this ever fails, the margin rule has started producing a
+        floor below cost and the clamp has become load-bearing in a
+        different way than it is here.
+        """
+        for margin in (0.01, 0.1, 0.3, 0.5, 0.9):
+            with self.subTest(margin=margin):
+                self.s.policy.amend(
+                    {"commercial": {"minimum_margin_fraction": margin,
+                                    "minimum_project_fee_cents": 1}},
+                    OWNER, "test")
+                floor, _ = self.finder.bid_floor_cents(50_000)
+                self.assertGreaterEqual(floor, 50_000)
 
     def test_a_bid_that_is_made_clears_the_margin(self):
         bid = self.finder.bid(self.posting(cents=60_000),
