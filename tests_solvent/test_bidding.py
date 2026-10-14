@@ -277,5 +277,124 @@ class BiddingSendsNothing(unittest.TestCase):
                 self.assertNotIn(forbidden, source)
 
 
+class TheFortyAnHourMinimumIsAFloorNotAPriceListEntry(unittest.TestCase):
+    """A rate is only a minimum if something enforces it.
+
+    Before this, a job that would hold DeskPilot for three hours could
+    be sold at the $40 minimum project fee -- thirteen dollars an hour
+    -- because the floor knew about cash and margin and not about
+    time.
+    """
+
+    def setUp(self):
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.s = Solvent(f"{self.box.name}/rates.db")
+        self.addCleanup(self.close)
+        self.s.policy.amend(
+            {"commercial": {"hourly_rate_cents": 4_000,
+                            "minimum_project_fee_cents": 4_000}},
+            OWNER, "test: the owner's stated rates")
+        self.finder = Finder(self.s.discovery, self.s.policy,
+                             self.s.capability, self.s.orchestrator,
+                             self.s.store)
+
+    def close(self):
+        try:
+            self.s.store.close()
+        except Exception:
+            pass
+
+    def floor(self, hours, cost=0):
+        return self.finder.bid_floor_cents(cost,
+                                           occupied_seconds=hours * 3600)
+
+    def test_a_long_job_may_not_be_sold_at_the_minimum_fee(self):
+        amount, why = self.floor(3.0)
+        self.assertEqual(amount, 12_000)
+        self.assertIn("hour", why)
+
+    def test_the_floor_scales_with_the_hours_occupied(self):
+        self.assertEqual(self.floor(10.0)[0], 40_000)
+        self.assertEqual(self.floor(2.5)[0], 10_000)
+
+    def test_a_fast_job_keeps_the_minimum_project_fee(self):
+        """Speed is the advantage; the hourly floor must not tax it."""
+        amount, why = self.floor(0.03)
+        self.assertEqual(amount, 4_000)
+        self.assertIn("minimum project fee", why)
+
+    def test_an_unmeasured_job_occupies_no_hours_and_floors_at_the_fee(self):
+        self.assertEqual(self.floor(0.0)[0], 4_000)
+
+    def test_no_hourly_rate_means_no_hourly_floor(self):
+        self.s.policy.amend({"commercial": {"hourly_rate_cents": 0}},
+                            OWNER, "test: no rate recorded")
+        self.assertEqual(self.floor(10.0)[0], 4_000)
+
+    def test_the_binding_floor_is_the_highest_of_them(self):
+        """Cost still sits under everything."""
+        self.assertEqual(self.floor(1.0, cost=90_000)[0], 90_000)
+        self.assertEqual(self.floor(50.0, cost=1_000)[0], 200_000)
+
+    def test_the_floor_is_whole_cents(self):
+        for hours in (0.7, 1.3, 2.9, 7.77):
+            with self.subTest(hours=hours):
+                self.assertIsInstance(self.floor(hours)[0], int)
+
+
+class ABidPricesAgainstTheOwnersFloor(Base):
+    """End to end through bid(), not just the floor on its own."""
+
+    def test_the_floor_counts_the_hours_the_job_will_occupy(self):
+        """A sixteen-hour job cannot be sold for six hundred dollars.
+
+        Each measured run is eight hours and the safety factor doubles
+        it, so accepting occupies sixteen -- $640 at the owner's rate.
+        The client offers $600, which clears the minimum fee and the
+        margin easily and is still too little for the time.
+        """
+        long_job = self.history(*[28_800.0] * 12)
+        bid = self.finder.bid(self.posting(cents=60_000), history=long_job)
+        self.assertGreater(bid.floor_cents, 60_000)
+        self.assertFalse(bid.submittable)
+        self.assertIn("hour", bid.why)
+
+    def test_a_fast_job_at_the_same_price_is_biddable(self):
+        """The same money, a job that takes a minute: a good deal."""
+        quick = self.history(*[60.0] * 12)
+        bid = self.finder.bid(self.posting(cents=60_000), history=quick)
+        self.assertTrue(bid.submittable, bid.why)
+        self.assertEqual(bid.amount_cents, 60_000)
+
+    def test_the_bid_states_how_long_the_client_will_wait(self):
+        quick = self.history(*[60.0] * 12)
+        bid = self.finder.bid(self.posting(cents=60_000), history=quick)
+        self.assertGreater(bid.promised_seconds, 0)
+        self.assertIn("delivered within", bid.why)
+
+
+class ABidStatesItsDeliveryTime(unittest.TestCase):
+    """Speed is the competitive case, so it belongs on the offer."""
+
+    def test_the_bid_carries_the_promise_in_hours(self):
+        from solvent.finder import Bid, CompletionEstimate, Confidence
+
+        bid = Bid("o1", "csv-cleanup", 4_000,
+                  CompletionEstimate("csv-cleanup", 60.0, 12,
+                                     Confidence.MEASURED, "t", 90.0),
+                  4_000, 100, 0.5, True, "why", promised_seconds=7_200)
+        self.assertEqual(bid.promised_hours, 2.0)
+
+    def test_a_bid_with_no_promise_reports_no_hours(self):
+        from solvent.finder import Bid, CompletionEstimate, Confidence
+
+        bid = Bid("o1", "csv-cleanup", None,
+                  CompletionEstimate("csv-cleanup", None, 0,
+                                     Confidence.UNKNOWN, "t"),
+                  0, None, None, False, "why")
+        self.assertEqual(bid.promised_hours, 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

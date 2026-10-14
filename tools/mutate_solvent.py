@@ -290,6 +290,68 @@ MUTANTS: tuple[Mutant, ...] = (
         "a filter set to fifty reports a limit the owner does not have",
     ),
 
+    # ---- the operator's bidder controls -----------------------------
+
+    Mutant(
+        "the-browser-may-raise-a-capacity-limit",
+        "solvent/harness.py",
+        """            if value > was:
+                raise FailClosed(""",
+        """            if False:
+                raise FailClosed(""",
+        "tests_solvent.test_bidder_console.RaisingALimitIsNot"
+        ".test_an_increase_is_refused_on_the_safe_verb",
+        "a stolen session raises the limit on what DeskPilot may promise",
+    ),
+    Mutant(
+        "the-browser-may-restart-bidding-on-its-own",
+        "solvent/harness.py",
+        """            if tighten_only and not wanted:""",
+        """            if False:""",
+        "tests_solvent.test_bidder_console.RaisingALimitIsNot"
+        ".test_restarting_bidding_is_not_a_tightening",
+        "a halt the owner set is cleared without the owner",
+    ),
+    Mutant(
+        "an-unknown-capacity-key-is-ignored-rather-than-refused",
+        "solvent/harness.py",
+        """        if name not in CAPACITY_LIMITS:
+            raise FailClosed(""",
+        """        if name not in CAPACITY_LIMITS:
+            continue
+        if False:
+            raise FailClosed(""",
+        "tests_solvent.test_bidder_console.TheCeilingIsNotAFormField"
+        ".test_an_unknown_limit_is_refused_by_name",
+        "a form posts a key nobody reads and is told it worked",
+    ),
+
+    # ---- the owner's hourly minimum ---------------------------------
+
+    Mutant(
+        "a-long-job-may-be-sold-at-the-minimum-fee",
+        "solvent/finder.py",
+        "        if hourly > 0 and occupied_seconds > 0:",
+        "        if False:",
+        "tests_solvent.test_bidding"
+        ".TheFortyAnHourMinimumIsAFloorNotAPriceListEntry"
+        ".test_a_long_job_may_not_be_sold_at_the_minimum_fee",
+        "three hours of work sold for $40, which is $13 an hour",
+    ),
+    Mutant(
+        "the-hourly-floor-is-taken-from-the-median-not-the-promise",
+        "solvent/finder.py",
+        """        occupied, promise_basis = self.promised_seconds(estimate)
+        floor, floor_reason = self.bid_floor_cents(
+            cost.total_cents, occupied_seconds=occupied)""",
+        """        occupied, promise_basis = self.promised_seconds(estimate)
+        floor, floor_reason = self.bid_floor_cents(
+            cost.total_cents, occupied_seconds=0.0)""",
+        "tests_solvent.test_bidding.ABidPricesAgainstTheOwnersFloor"
+        ".test_the_floor_counts_the_hours_the_job_will_occupy",
+        "the hours sold are not the hours the machine is busy",
+    ),
+
     # ---- benchmark runs are not client work -------------------------
 
     Mutant(

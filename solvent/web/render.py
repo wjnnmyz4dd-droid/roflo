@@ -73,6 +73,7 @@ NAV = (
     ("/clients", "Clients"),
     ("/files", "Files"),
     ("/sources", "Work sources"),
+    ("/bidder", "Bidder"),
     ("/skills", "Skills Lab"),
     ("/capabilities", "Capabilities"),
     ("/learning", "What it learned"),

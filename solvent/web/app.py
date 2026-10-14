@@ -22,6 +22,7 @@ from . import auth as auth_module
 from . import board as board_module
 from . import intents as intents_module
 from . import status
+from ..types import JOBS_PER_AGENT_CEILING
 from .render import (
     NAV, detail, esc, link, money, page, pill, table,
 )
@@ -207,6 +208,7 @@ class ControlCentre:
             "/recommendations": self.recommendations,
             "/wizard": self.wizard,     # kept: redirects to /setup
             "/sources": self.sources,
+            "/bidder": self.bidder,
             "/skills": self.skills,
             "/skill": self.skill_detail,
             "/capabilities": self.capabilities,
@@ -1670,6 +1672,151 @@ class ControlCentre:
             'placeholder="for the record" value="changed from the control '
             'centre">'
             '<p><button class="primary">Save work preferences</button></p>'
+            "</form>")
+
+    # ---------------------------------------------------------------- bidder
+    def bidder(self, request: Request):
+        """What DeskPilot will bid, how much it may take on, and why not.
+
+        One page for the three questions an operator actually has
+        about bidding: can it bid at all, how much work is it holding,
+        and what would it charge. Every number is read through the
+        same policy document the authorities read, so the page cannot
+        show a limit the gate is not using.
+
+        The form tightens only. Lowering a limit can only make
+        DeskPilot take on less, which is safe enough to apply without
+        a signature; raising one is a promise to do more and goes
+        through an owner approval like every other consequential
+        change. The page says which is which rather than offering a
+        field that silently fails.
+        """
+        budget = self.read.capacity_budget()
+        flight = self.read.capacity_in_flight()
+        eligible = self.read.bid_eligibility()
+        terms = self.read.commercial_terms()
+        ceiling = JOBS_PER_AGENT_CEILING
+
+        halted = bool(budget["halted"]["value"])
+        owed = flight["owed_seconds"]
+        allowed = float(budget["max_owed_seconds"]["value"] or 0)
+        unconfigured = [name for name in ("max_owed_seconds",
+                                          "max_concurrent_jobs")
+                        if not budget[name]["value"]]
+
+        state = ("not taking work" if halted or unconfigured
+                 else "taking work")
+        banner = (
+            '<p class="sub">'
+            + ("Bidding is halted by the owner. " if halted else "")
+            + ("No capacity budget is set, so DeskPilot will take nothing "
+               "on: a gate with no number is not a gate. "
+               if unconfigured else "")
+            + f"{owed:.0f}s of work is owed against "
+            + (f"{allowed:.0f}s allowed" if allowed else "no limit set")
+            + f", across {flight['jobs']} job(s)."
+            + "</p>")
+
+        limits = []
+        for name, spec in budget.items():
+            if name == "halted":
+                continue
+            value = spec["value"]
+            shown = "not set" if value in (None, "") else str(value)
+            note = ""
+            if name in ("max_concurrent_jobs", "max_execution_workers",
+                        "max_verification_workers"):
+                note = (f"never above {ceiling}: this work agent holds "
+                        f"three jobs by default and four at the most")
+            limits.append([esc(name.replace("_", " ")),
+                           pill(shown, "info" if value else "warn"),
+                           esc(f"{spec['minimum']}–{spec['maximum']}"),
+                           esc(note)])
+
+        held = [[esc(kind), pill(str(v["held"]), "info"),
+                 esc(f"{v['seconds']:.0f}s")]
+                for kind, v in sorted(flight["kinds"].items())] or [
+            ["—", pill("0", "ok"), "nothing owed"]]
+
+        skills = []
+        for skill, row in sorted(eligible.items()):
+            if row["confident"]:
+                mark, tone = "can bid", "ok"
+            elif row["eligible"]:
+                mark, tone = "provisional", "warn"
+            else:
+                mark, tone = "blocked", "bad"
+            skills.append([
+                esc(skill), pill(mark, tone), str(row["client_runs"]),
+                str(row["benchmark_runs"]),
+                esc("" if row["eligible"] else
+                    "no client job has been done, so there is no measured "
+                    "time to promise")])
+
+        money_rows = [
+            [esc(key.replace("_", " ")),
+             esc("not set" if value in (None, "", 0) else str(value))]
+            for key, value in sorted(terms.items())]
+
+        return ("<h1>Bidder</h1>"
+                + banner
+                + "<h2>What it may take on</h2>"
+                + table(["limit", "value", "allowed range", "note"], limits)
+                + "<h2>What it is holding now</h2>"
+                + table(["obligation", "held", "seconds"], held)
+                + "<h2>What it may bid on</h2>"
+                + '<p class="sub">A skill becomes biddable by having been '
+                  "done for a client, not by being benchmarked. Benchmark "
+                  "runs are real executions on files DeskPilot generated "
+                  "for itself, and a delivery time quoted from one of "
+                  "those would be a promise about a file nobody has "
+                  "seen.</p>"
+                + table(["skill", "bidding", "client runs", "benchmark runs",
+                         "why not"], skills)
+                + "<h2>What it charges</h2>"
+                + table(["term", "value"], money_rows)
+                + self._tighten_capacity_form(request, budget),
+                "Bidder")
+
+    def _tighten_capacity_form(self, request: Request, budget: dict) -> str:
+        session = self.sessions.get(
+            request.cookies.get("solvent_session", ""))
+        if not session:
+            return ""
+        fields = []
+        for name, spec in sorted(budget.items()):
+            if name == "halted":
+                continue
+            value = "" if spec["value"] is None else str(spec["value"])
+            fields.append(
+                f'<label for="{esc(name)}">{esc(name.replace("_", " "))} '
+                f'<span class="muted">({spec["minimum"]}&ndash;'
+                f'{spec["maximum"]})</span></label>'
+                f'<input type="text" inputmode="decimal" id="{esc(name)}" '
+                f'name="{esc(name)}" value="{esc(value)}" '
+                f'placeholder="not set">')
+        return (
+            "<h2>Tighten the budget</h2>"
+            '<p class="sub">These apply on their own, within a minute, '
+            "<strong>only if they lower a limit</strong>. Raising one means "
+            "DeskPilot promising more work than it promised a minute ago, "
+            "so it needs an owner approval and is refused here by name "
+            "rather than quietly clamped.</p>"
+            '<form method="post" action="/intent">'
+            f'<input type="hidden" name="csrf" value="{esc(session["csrf"])}">'
+            '<input type="hidden" name="verb" value="tighten_capacity">'
+            + "".join(fields)
+            + '<label for="why">why</label>'
+            '<input type="text" id="why" name="why" '
+            'value="tightened from the control centre">'
+            '<p><button class="primary">Lower these limits</button></p>'
+            "</form>"
+            '<form method="post" action="/intent">'
+            f'<input type="hidden" name="csrf" value="{esc(session["csrf"])}">'
+            '<input type="hidden" name="verb" value="tighten_capacity">'
+            '<input type="hidden" name="halted" value="true">'
+            '<input type="hidden" name="why" value="owner stopped bidding">'
+            '<p><button>Stop taking new work</button></p>'
             "</form>")
 
     # ------------------------------------------------------------ owner setup

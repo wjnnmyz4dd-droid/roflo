@@ -729,6 +729,110 @@ class ReadModel:
             }
         return out
 
+    def capacity_budget(self) -> dict:
+        """The capacity limits as the gate will read them.
+
+        Through the policy document, like everything else here, so the
+        page shows what the authority will use rather than what a form
+        last posted.
+        """
+        from solvent.types import JOBS_PER_AGENT_DEFAULT
+
+        from .intents import CAPACITY_LIMITS
+
+        out = {}
+        for name, (kind, low, high) in CAPACITY_LIMITS.items():
+            default = (JOBS_PER_AGENT_DEFAULT
+                       if name == "max_concurrent_jobs" else None)
+            out[name] = {
+                "value": self.policy_value("capacity", name, default=default),
+                "minimum": low, "maximum": high, "kind": kind,
+            }
+        out["halted"] = {"value": bool(self.policy_value(
+            "capacity", "halted", default=False)),
+            "minimum": None, "maximum": None, "kind": "flag"}
+        return out
+
+    def capacity_in_flight(self) -> dict:
+        """What is owed right now, by kind of obligation."""
+        try:
+            rows = self.rows(
+                "SELECT kind, COUNT(*) AS n, SUM(units) AS seconds "
+                "FROM capacity_reservations WHERE state = 'HELD' "
+                "GROUP BY kind")
+        except Exception:
+            return {"kinds": {}, "owed_seconds": 0.0, "jobs": 0}
+        kinds = {r["kind"]: {"held": r["n"],
+                             "seconds": round(float(r["seconds"] or 0), 1)}
+                 for r in rows}
+        try:
+            jobs = self.one(
+                "SELECT COUNT(DISTINCT job_id) AS n FROM "
+                "capacity_reservations WHERE state = 'HELD' AND kind != 'BID'"
+                " AND job_id != ''")
+        except Exception:
+            jobs = None
+        return {
+            "kinds": kinds,
+            "owed_seconds": round(
+                sum(v["seconds"] for v in kinds.values()), 1),
+            "jobs": int(jobs["n"]) if jobs else 0,
+        }
+
+    def bid_eligibility(self) -> dict:
+        """Which skills could be bid on, counted the way the Finder counts.
+
+        Benchmark rows are left out here exactly as they are left out of
+        ``ExecutionHistory.from_store``: a timing taken on a file
+        DeskPilot generated for itself is not evidence of what a
+        client's job will take, and a page that counted them would tell
+        the owner they could bid when the Finder will refuse.
+        """
+        from solvent.finder import ExecutionHistory
+
+        excluded = ",".join(f"'{o}'" for o in ExecutionHistory.NOT_CLIENT_WORK)
+        # The registry, not the composition root: this package may not
+        # import the thing that wires the authorities together, and the
+        # registered capabilities are a row each in the database the
+        # capability authority owns.
+        registered = {r["name"] for r in self.rows(
+            "SELECT DISTINCT name FROM registered_capabilities")}
+        measured = {r["capability"] for r in self.rows(
+            "SELECT DISTINCT capability FROM execution_measurements "
+            "WHERE capability != ''")}
+        out = {}
+        for skill in sorted(registered | measured):
+            try:
+                row = self.one(
+                    "SELECT COUNT(*) AS n FROM execution_measurements WHERE "
+                    "capability = ? AND wall_seconds > 0 AND "
+                    f"UPPER(COALESCE(outcome,'')) NOT IN ({excluded})",
+                    (skill,))
+                bench = self.one(
+                    "SELECT COUNT(*) AS n FROM execution_measurements WHERE "
+                    "capability = ? AND wall_seconds > 0 AND "
+                    f"UPPER(COALESCE(outcome,'')) IN ({excluded})",
+                    (skill,))
+            except Exception:
+                row = bench = None
+            client = int(row["n"]) if row else 0
+            out[skill] = {
+                "client_runs": client,
+                "benchmark_runs": int(bench["n"]) if bench else 0,
+                "eligible": client > 0,
+                "confident": client >= 5,
+            }
+        return out
+
+    def commercial_terms(self) -> dict:
+        """What DeskPilot charges, as the Bidder reads it."""
+        keys = ("hourly_rate_cents", "minimum_project_fee_cents",
+                "minimum_margin_fraction", "platform_fee_fraction",
+                "payment_fee_fraction", "payment_fee_flat_cents",
+                "fixed_monthly_overhead_cents", "compute_cents_per_cpu_hour")
+        return {k: self.policy_value("commercial", k, default=None)
+                for k in keys}
+
     def owner_key_evidence(self) -> str:
         """``PROVEN`` or ``UNKNOWN``. Never ``MISSING``, because it cannot know.
 

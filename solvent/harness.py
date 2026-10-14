@@ -1843,6 +1843,71 @@ def _apply_work_preferences(s: "Solvent", params: dict, why: str) -> str:
     return "set " + ", ".join(applied)
 
 
+def _apply_capacity_change(s: "Solvent", params: dict, why: str, *,
+                           tighten_only: bool, acting_as: str) -> str:
+    """Write capacity limits, refusing an increase on the safe path.
+
+    The direction is the whole security argument. Lowering a limit, or
+    halting, can only make DeskPilot take on less, which is the same
+    class as ``halt``: a nuisance if someone steals a session, never a
+    loss. Raising one means promising more work than a moment ago, and
+    that needs the owner's signature like anything else consequential.
+
+    An increase arriving on the safe verb is refused by name rather
+    than clamped. Clamping would write a number the owner did not ask
+    for and report success, and nobody reading the audit afterwards
+    could tell that from having got what they wanted.
+    """
+    from .web.intents import CAPACITY_LIMITS
+
+    if not isinstance(params, dict) or not params:
+        raise FailClosed("a capacity change has to name a limit")
+
+    current = s.capacity.budget()
+    patch: dict[str, object] = {}
+    applied: list[str] = []
+    for name, raw in sorted(params.items()):
+        if name == "halted":
+            wanted = str(raw).strip().lower() in ("1", "true", "yes", "on")
+            if tighten_only and not wanted:
+                raise FailClosed(
+                    "restarting bidding is not a tightening; it needs an "
+                    "owner approval through set_capacity_budget")
+            patch["halted"] = wanted
+            applied.append(f"halted={wanted}")
+            continue
+        if name not in CAPACITY_LIMITS:
+            raise FailClosed(
+                f"{name!r} is not a capacity limit the control centre may "
+                f"set; it may set {', '.join(sorted(CAPACITY_LIMITS))} "
+                "and halted")
+        kind, low, high = CAPACITY_LIMITS[name]
+        try:
+            value = int(str(raw).strip()) if kind == "whole" else float(
+                str(raw).strip())
+        except (TypeError, ValueError):
+            raise FailClosed(f"{name} must be a number, not {raw!r}")
+        if not low <= value <= high:
+            raise FailClosed(
+                f"{name} must be between {low} and {high}; {value} is "
+                "outside what this setting is allowed to take")
+        if tighten_only:
+            was = getattr(current, name, None)
+            if was is None:
+                was = float(s.policy.get("capacity", name, default=0) or 0)
+            if value > was:
+                raise FailClosed(
+                    f"raising {name} from {was} to {value} is not a "
+                    "tightening; it needs an owner approval through "
+                    "set_capacity_budget")
+        patch[name] = value
+        applied.append(f"{name}={value}")
+
+    s.policy.amend({"capacity": patch}, acting_as,
+                   why or "owner changed the capacity budget")
+    return "set " + ", ".join(applied)
+
+
 def _approval_for(approval, intent_id: str):
     """The approval, if it names *this* intent. Otherwise nothing."""
     if approval is None:
@@ -1893,6 +1958,9 @@ def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
         return "project abandoned"
     if verb == "set_work_preferences":
         return _apply_work_preferences(s, params, why)
+    if verb == "tighten_capacity":
+        return _apply_capacity_change(s, params, why, tighten_only=True,
+                                      acting_as=OWNER)
     if verb == "deprecate_skill_version":
         params = intent.get("params") or {}
         s.skillslab.deprecate_version(
@@ -1904,6 +1972,9 @@ def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
     if verb == "resume":
         s.policy.set_operating_mode(OperatingMode.NORMAL, acting_as, why)
         return "operating mode NORMAL"
+    if verb == "set_capacity_budget":
+        return _apply_capacity_change(s, params, why, tighten_only=False,
+                                      acting_as=acting_as)
     if verb == "decide_proposal":
         s.capability.decide(
             name=str(params.get("name", "")),

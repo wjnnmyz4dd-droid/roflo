@@ -47,6 +47,7 @@ INTENTS = {
     "abandon_skill_project": (SAFE, "stop work on a proposed skill"),
     "set_work_preferences": (SAFE, "change which work is worth looking at"),
     "deprecate_skill_version": (SAFE, "warn that a version is going away"),
+    "tighten_capacity": (SAFE, "lower a capacity limit, or stop bidding"),
     # --- consequential: refused without an owner approval ----------------
     "resume": (CONSEQUENTIAL, "clear HALT and allow work again"),
     "promote_capability": (CONSEQUENTIAL, "register a capability as proven"),
@@ -58,6 +59,8 @@ INTENTS = {
     "record_contracting": (CONSEQUENTIAL, "change who Solvent contracts as"),
     "enable_real_execution": (CONSEQUENTIAL,
                               "turn off simulation and allow real effects"),
+    "set_capacity_budget": (CONSEQUENTIAL,
+                            "raise a capacity limit or restart bidding"),
 }
 
 
@@ -245,3 +248,28 @@ class IntentWriter(WriteOnlySpool):
                             "intent_class": CONSEQUENTIAL,
                             "why": "could not be parsed"})
         return out
+
+
+#: The capacity numbers the control centre may touch, and the hard
+#: bound on each.
+#:
+#: Split across two verbs on the usual line. Lowering any of these is
+#: SAFE -- the worst outcome is DeskPilot taking on less -- so
+#: ``tighten_capacity`` writes it without an approval. Raising one
+#: means DeskPilot promising more than it promised a minute ago, which
+#: is the only direction that can hurt, so ``set_capacity_budget``
+#: needs an owner approval like every other consequential verb.
+#:
+#: The upper bound on the job and worker counts is not a policy choice.
+#: It is ``types.JOBS_PER_AGENT_CEILING``, and a form cannot move it.
+CAPACITY_LIMITS: dict[str, tuple[str, float, float]] = {
+    # name: (kind, minimum, maximum)
+    "max_owed_seconds": ("number", 0, 86_400 * 7),
+    "max_concurrent_jobs": ("whole", 0, JOBS_PER_AGENT_CEILING),
+    "max_execution_workers": ("whole", 0, JOBS_PER_AGENT_CEILING),
+    "max_verification_workers": ("whole", 0, JOBS_PER_AGENT_CEILING),
+    "max_open_bids": ("whole", 0, 50),
+    "revision_headroom_fraction": ("number", 0.0, 4.0),
+    "min_free_disk_bytes": ("whole", 0, 10 ** 13),
+    "deadline_safety_factor": ("number", 1.0, 20.0),
+}

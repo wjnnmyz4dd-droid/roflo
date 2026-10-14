@@ -282,6 +282,15 @@ class Bid:
     why: str
     basis: tuple[str, ...] = ()
     blockers: tuple[str, ...] = ()
+    #: What may be promised to the client, in seconds. The whole of
+    #: DeskPilot's competitive case is here: a human quotes days for
+    #: work it finishes in minutes. Carried on the bid so the delivery
+    #: time is part of the offer rather than an internal number.
+    promised_seconds: float = 0.0
+
+    @property
+    def promised_hours(self) -> float:
+        return self.promised_seconds / 3600.0
 
     def summary(self) -> str:
         if not self.submittable:
@@ -494,17 +503,45 @@ class Finder:
             + f"; promise {total:.0f}s, not the {estimate.seconds:.0f}s "
               "median")
 
-    def bid_floor_cents(self, cost_cents: Cents) -> tuple[Cents, str]:
+    def bid_floor_cents(self, cost_cents: Cents, *,
+                        occupied_seconds: float = 0.0) -> tuple[Cents, str]:
         """The least DeskPilot may charge, and why.
 
-        Two separate owner decisions, and the binding one is whichever
-        is higher: the minimum project fee is a floor in cash, the
-        minimum margin is a floor as a share of whatever is charged.
-        Underneath both sits the cost, because no margin rule should be
-        able to produce a price below what the work spends.
+        Four owner decisions, and the binding one is whichever is
+        highest: the minimum project fee is a floor in cash, the
+        minimum margin is a floor as a share of whatever is charged,
+        the hourly rate is a floor on the time the job will occupy,
+        and underneath all three sits the cost, because no margin rule
+        should produce a price below what the work spends.
+
+        The hourly floor is what makes the owner's rate a *minimum*
+        rather than a line in a price list. Without it a job that will
+        hold DeskPilot for three hours could be sold at the $40
+        minimum project fee, which is $13 an hour. It is computed on
+        the time the job occupies -- the promise, including the
+        verification and revision that come with it -- not on the
+        median execution, because the hours being sold are the hours
+        the machine is not free to do anything else.
+
+        It also leaves speed as the advantage rather than taxing it. A
+        job DeskPilot finishes in two minutes has an hourly floor of
+        about a dollar, so the minimum project fee binds instead, and
+        the owner keeps the difference between what the work is worth
+        and how long it took.
         """
         floor = self.minimum_fee_cents
         reason = f"the owner's {fmt(floor)} minimum project fee"
+        hourly = self.hourly_rate_cents
+        if hourly > 0 and occupied_seconds > 0:
+            # Integer arithmetic, rounded up: a floor that is a cent
+            # out is a floor nobody can check.
+            needed = -(-int(hourly) * Fraction(occupied_seconds)
+                       // 3600).__ceil__()
+            needed = int(needed)
+            if needed > floor:
+                floor, reason = needed, (
+                    f"{occupied_seconds / 3600:.2f}h of occupancy at the "
+                    f"owner's {fmt(hourly)}/hour minimum")
         margin = self.minimum_margin_fraction
         if margin > 0 and margin < 1:
             # price * (1 - margin) >= cost  =>  price >= cost / (1 - margin)
@@ -580,7 +617,11 @@ class Finder:
         # for once the real fees landed.
         cost = quoting.operating_cost(
             measurement, price_cents=max(0, budget), rates=rates)
-        floor, floor_reason = self.bid_floor_cents(cost.total_cents)
+        # The hours being sold are the hours DeskPilot is not free to
+        # do anything else, which is the promise and not the median.
+        occupied, promise_basis = self.promised_seconds(estimate)
+        floor, floor_reason = self.bid_floor_cents(
+            cost.total_cents, occupied_seconds=occupied)
 
         if opportunity.quoted_cents <= 0:
             return Bid(opportunity.id, capability, None, estimate, floor,
@@ -605,12 +646,14 @@ class Finder:
         return Bid(
             opportunity.id, capability, amount, estimate, floor,
             cost.total_cents, gain.margin, True,
-            f"{fmt(amount)} against a {fmt(floor)} floor; delivery in about "
-            f"{(estimate.hours or 0):.2f}h on {estimate.basis}",
+            f"{fmt(amount)} against a {fmt(floor)} floor; delivered within "
+            f"{occupied / 3600:.2f}h",
             basis=tuple(cost.basis) + (
                 f"floor: {floor_reason}",
                 f"completion: {estimate.basis} ({estimate.confidence.value})",
-                gain.summary()))
+                f"promise: {promise_basis}",
+                gain.summary()),
+            promised_seconds=occupied)
 
     def commercially_configured(self) -> tuple[bool, list[str]]:
         """May the Finder recommend pursuing paid work at all?
