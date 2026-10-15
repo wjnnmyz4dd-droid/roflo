@@ -54,11 +54,17 @@ BID = "BID"
 KINDS = (EXECUTE, VERIFY, REVISE, BID)
 
 HELD = "HELD"
+#: A worker has picked this up and is doing it. Still owed, and now
+#: also occupying one of the five workers. Committed and executing are
+#: different things: a pipeline holds four jobs and a worker runs one
+#: of them, so counting them together would make a full pipeline look
+#: like four busy workers.
+RUNNING = "RUNNING"
 CONSUMED = "CONSUMED"
 RELEASED = "RELEASED"
 
 #: Still counting against the budget.
-OUTSTANDING = (HELD,)
+OUTSTANDING = (HELD, RUNNING)
 
 
 #: How a pressure signal reads. UNMEASURED is deliberately not OK: the
@@ -117,10 +123,18 @@ class Budget:
     cpu_share: float = 0.0
     #: Refuse new work below this much free disk.
     min_free_disk_bytes: int = 0
-    #: Workers of each kind. Zero means "the concurrent job limit
-    #: governs", never "unlimited" -- that limit already fails closed.
+    #: How many jobs may be executing at once across the whole shop.
+    #: One worker per skill is the owner's model, so this is a count of
+    #: workers and is NOT bounded by the per-pipeline job ceiling: five
+    #: workers each holding four jobs is twenty committed and five
+    #: running. Zero means "the per-pipeline limit governs", never
+    #: "unlimited".
     max_execution_workers: int = 0
     max_verification_workers: int = 0
+    #: Jobs a skill's pipeline aims to hold, and the depth at which it
+    #: asks for more. Both are the owner's numbers.
+    pipeline_target: int = 0
+    replenish_at: int = 0
     #: Refuse new work above this much memory in use. Only consulted
     #: where the host reports memory at all; a Windows VPS does not,
     #: and an unmeasured signal is reported as unmeasured, not as fine.
@@ -133,11 +147,11 @@ class Budget:
     revision_headroom_fraction: float = 0.0
 
     def workers(self, kind: str) -> int:
-        """Workers allowed for a kind of work.
+        """Workers allowed for a kind of work, across the whole shop.
 
-        Unset falls back to the concurrent job limit rather than to no
-        limit. "Zero means unlimited" is the shape of several bugs this
-        system has already had; it is not repeated here.
+        Unset falls back to the per-pipeline job limit rather than to
+        no limit. "Zero means unlimited" is the shape of several bugs
+        this system has already had; it is not repeated here.
         """
         chosen = (self.max_execution_workers if kind == EXECUTE
                   else self.max_verification_workers if kind == VERIFY
@@ -159,10 +173,14 @@ class Budget:
                     f"above the {JOBS_PER_AGENT_CEILING} this work agent "
                     f"may hold; the default is {JOBS_PER_AGENT_DEFAULT} and "
                     "four is the most that can be configured")
-        if self.max_execution_workers > JOBS_PER_AGENT_CEILING:
-            return (f"{self.max_execution_workers} execution workers is "
-                    f"above the {JOBS_PER_AGENT_CEILING} this work agent "
-                    "may run")
+        if self.pipeline_target > self.max_concurrent_jobs:
+            return (f"a pipeline target of {self.pipeline_target} is above "
+                    f"the {self.max_concurrent_jobs} jobs a skill may hold; "
+                    "a target nothing can reach is not a target")
+        if self.replenish_at >= self.pipeline_target > 0:
+            return (f"replenishing at {self.replenish_at} with a target of "
+                    f"{self.pipeline_target} would top up a pipeline that "
+                    "is already full, which is a loop rather than a rule")
         if not 0 < self.cpu_share <= 1:
             return ("the CPU share must be a fraction above zero and at "
                     "most one; this machine also runs MetaTrader 5 and the "
@@ -178,6 +196,9 @@ class Reservation:
     units: float
     state: str
     why: str
+    #: Which skill's pipeline this belongs to. Empty for work that
+    #: names no skill, which still counts against the seconds owed.
+    capability: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,17 +251,22 @@ class Capacity:
             max_execution_workers=int(get("max_execution_workers", 0) or 0),
             max_verification_workers=int(
                 get("max_verification_workers", 0) or 0),
+            pipeline_target=int(get("pipeline_target", 0) or 0),
+            replenish_at=int(get("replenish_at", 0) or 0),
             max_memory_used_percent=float(
                 get("max_memory_used_percent", 0) or 0))
 
     # ------------------------------------------------------- what is owed
 
     def outstanding(self, kind: str = "") -> list[Reservation]:
-        sql = ("SELECT * FROM capacity_reservations WHERE state = ?"
-               + (" AND kind = ?" if kind else ""))
-        params = (HELD,) + ((kind,) if kind else ())
-        return [Reservation(r["id"], r["job_id"], r["kind"], float(r["units"]),
-                            r["state"], r["why"])
+        placeholders = ",".join("?" for _ in OUTSTANDING)
+        sql = (f"SELECT * FROM capacity_reservations WHERE state IN "
+               f"({placeholders})" + (" AND kind = ?" if kind else ""))
+        params = tuple(OUTSTANDING) + ((kind,) if kind else ())
+        return [Reservation(r["id"], r["job_id"], r["kind"],
+                            float(r["units"]), r["state"], r["why"],
+                            (r["capability"] if "capability" in r.keys()
+                             else "") or "")
                 for r in self._db.query(sql, params)]
 
     def owed_seconds(self) -> float:
@@ -252,9 +278,59 @@ class Capacity:
         """
         return sum(r.units for r in self.outstanding())
 
-    def jobs_in_flight(self) -> int:
+    def jobs_in_flight(self, capability: str = "") -> int:
+        """Distinct jobs owed. Per skill when one is named.
+
+        The owner's model is five skill pipelines, not one queue, so
+        "four jobs" is four jobs in *a* pipeline. Counting them
+        globally would let one busy skill starve the other four, and
+        would make a five-worker shop look full at four jobs.
+        """
         return len({r.job_id for r in self.outstanding()
-                    if r.job_id and r.kind != BID})
+                    if r.job_id and r.kind != BID
+                    and (not capability or r.capability == capability)})
+
+    def executing(self, capability: str = "") -> int:
+        """Jobs a worker has actually started, globally or per skill."""
+        rows = self._db.query(
+            "SELECT job_id, capability FROM capacity_reservations "
+            "WHERE state = ? AND kind = ?", (RUNNING, EXECUTE))
+        return len({r["job_id"] for r in rows
+                    if r["job_id"]
+                    and (not capability
+                         or (r["capability"] or "") == capability)})
+
+    def pipelines(self) -> dict:
+        """Each skill's queue depth against its target. Decides nothing.
+
+        A skill is due replenishment when its pipeline falls to the
+        owner's threshold. This reports it; the Finder acts on it, and
+        the capacity gate still decides whether anything may be taken.
+        """
+        budget = self.budget()
+        out = {}
+        for capability in sorted(self._skills()):
+            depth = self.jobs_in_flight(capability)
+            out[capability] = {
+                "committed": depth,
+                "executing": self.executing(capability),
+                "target": budget.pipeline_target,
+                "replenish_at": budget.replenish_at,
+                "needs_replenishment": depth <= budget.replenish_at,
+                "room": max(0, budget.max_concurrent_jobs - depth),
+            }
+        return out
+
+    def _skills(self) -> tuple:
+        """The skills with pipelines, from policy -- never inferred.
+
+        Read from the owner's own list rather than from whatever
+        happens to be in the reservation table, so a skill with an
+        empty pipeline still appears and can be replenished.
+        """
+        named = self._policy.get("capacity", "skills", default=()) or ()
+        held = {r.capability for r in self.outstanding() if r.capability}
+        return tuple(sorted(set(named) | held))
 
     def open_bids(self) -> int:
         return len(self.outstanding(BID))
@@ -280,8 +356,14 @@ class Capacity:
         return float(seconds) * (1.0 + budget.revision_headroom_fraction)
 
     def room_for(self, seconds: float, *, kind: str = EXECUTE,
-                 job_id: str = "") -> Decision:
-        """Is there room for this much more work? Decides nothing else."""
+                 job_id: str = "", capability: str = "") -> Decision:
+        """Is there room for this much more work? Decides nothing else.
+
+        ``capability`` names the skill pipeline this belongs to. The
+        job limit is per pipeline: five skills each holding four jobs
+        is the owner's model, and counting them in one pile would make
+        a five-worker shop read as full at four.
+        """
         if kind not in KINDS:
             raise FailClosed(f"{kind!r} is not a kind of obligation")
         seconds = float(seconds)
@@ -324,24 +406,29 @@ class Capacity:
                     "accepted tomorrow",
                     owed, seconds, budget.max_owed_seconds)
         else:
-            in_flight = self.jobs_in_flight()
+            in_flight = self.jobs_in_flight(capability)
             fresh = job_id and job_id not in {
                 r.job_id for r in self.outstanding() if r.kind != BID}
             if fresh and in_flight >= budget.max_concurrent_jobs:
+                where = (f"{capability}'s pipeline" if capability
+                         else "the unattributed pipeline")
                 return Decision(
                     False, Refusal.NO_ROOM,
-                    f"{in_flight} job(s) are already in flight, which is the "
-                    "limit the owner set",
+                    f"{in_flight} job(s) are already in {where}, which is "
+                    f"the {budget.max_concurrent_jobs} a skill may hold",
                     owed, seconds, budget.max_owed_seconds, in_flight)
 
-        if kind in (EXECUTE, VERIFY):
-            allowed_workers = budget.workers(kind)
-            busy = len(self.outstanding(kind))
-            if busy >= allowed_workers:
+        # Verification workers are still bounded here, because nothing
+        # "starts" a check the way a worker picks up a job: the
+        # reservation is the occupancy. Execution moved to start().
+        if kind == VERIFY:
+            allowed = budget.workers(VERIFY)
+            busy = len(self.outstanding(VERIFY))
+            if busy >= allowed:
                 return Decision(
                     False, Refusal.NO_ROOM,
-                    f"{busy} {kind.lower()} worker(s) are busy, which is "
-                    f"the {allowed_workers} the owner allows",
+                    f"{busy} verification worker(s) are busy, which is the "
+                    f"{allowed} the owner allows",
                     owed, seconds, budget.max_owed_seconds,
                     self.jobs_in_flight())
 
@@ -363,7 +450,7 @@ class Capacity:
 
     def reserve(self, seconds: float, *, kind: str = EXECUTE,
                 job_id: str = "", idempotency_key: str = "",
-                why: str = "") -> Decision:
+                why: str = "", capability: str = "") -> Decision:
         """Take the room, or explain why there is none.
 
         ``idempotency_key`` is required and is the whole defence against
@@ -393,7 +480,8 @@ class Capacity:
                     "piece of work",
                     reservation_id=existing["id"])
 
-            decision = self.room_for(seconds, kind=kind, job_id=job_id)
+            decision = self.room_for(seconds, kind=kind, job_id=job_id,
+                                     capability=capability)
             # The ledger records what room_for judged, not what the
             # caller asked for. Judging the inflated figure and then
             # holding the bare one would give the headroom away the
@@ -403,9 +491,10 @@ class Capacity:
             if decision.allowed:
                 self._db.execute(
                     "INSERT INTO capacity_reservations(id,ts,job_id,kind,"
-                    "units,state,why,idempotency_key) VALUES(?,?,?,?,?,?,?,?)",
+                    "units,state,why,idempotency_key,capability) "
+                    "VALUES(?,?,?,?,?,?,?,?,?)",
                     (reservation_id, now(), job_id, kind, float(seconds),
-                     HELD, why[:300], idempotency_key))
+                     HELD, why[:300], idempotency_key, capability))
 
         # Audit after the transaction: the audit log is a different
         # authority on the same connection, and committing its write
@@ -428,7 +517,8 @@ class Capacity:
 
     def admit(self, job_id: str, *, execute_seconds: float,
               verify_seconds: float = 0.0, revise_seconds: float = 0.0,
-              idempotency_key: str = "", why: str = "") -> Decision:
+              idempotency_key: str = "", why: str = "",
+              capability: str = "") -> Decision:
         """Take on a whole job, or none of it.
 
         Reserving only the execution is what caused the worst failure
@@ -475,7 +565,8 @@ class Capacity:
             # which is the deadlock this method exists to prevent.
             total = sum(self.committed_seconds(s, kind)
                         for kind, s in parts)
-            decision = self.room_for(total, kind=EXECUTE, job_id=job_id)
+            decision = self.room_for(total, kind=EXECUTE, job_id=job_id,
+                                     capability=capability)
             if not decision.allowed:
                 refusal = decision
             else:
@@ -487,10 +578,11 @@ class Capacity:
                     ids[kind] = reservation_id
                     self._db.execute(
                         "INSERT INTO capacity_reservations(id,ts,job_id,"
-                        "kind,units,state,why,idempotency_key) "
-                        "VALUES(?,?,?,?,?,?,?,?)",
+                        "kind,units,state,why,idempotency_key,capability) "
+                        "VALUES(?,?,?,?,?,?,?,?,?)",
                         (reservation_id, now(), job_id, kind, float(held),
-                         HELD, why[:300], f"{idempotency_key}:{kind}"))
+                         HELD, why[:300], f"{idempotency_key}:{kind}",
+                         capability))
 
         if refusal is not None:
             self._audit.record(
@@ -511,11 +603,19 @@ class Capacity:
                         decision.in_flight, ids[EXECUTE])
 
     def reservation_for(self, job_id: str, kind: str) -> str:
-        """The room already held for this step, if the job was admitted."""
+        """The room already held for this step, if the job was admitted.
+
+        Any outstanding state, not only HELD. Once a worker starts a
+        job its reservation is RUNNING, and a lookup that only knew
+        about HELD could not find the thing it was about to finish --
+        so consuming a job that had actually been started raised
+        "unknown reservation".
+        """
+        placeholders = ",".join("?" for _ in OUTSTANDING)
         row = self._db.query_one(
             "SELECT id FROM capacity_reservations WHERE job_id = ? AND "
-            "kind = ? AND state = ? ORDER BY ts LIMIT 1",
-            (job_id, kind, HELD))
+            f"kind = ? AND state IN ({placeholders}) ORDER BY ts LIMIT 1",
+            (job_id, kind) + tuple(OUTSTANDING))
         return row["id"] if row else ""
 
     def _finish(self, reservation_id: str, state: str, why: str) -> None:
@@ -524,7 +624,7 @@ class Capacity:
             (reservation_id,))
         if row is None:
             raise FailClosed(f"unknown reservation {reservation_id!r}")
-        if row["state"] != HELD:
+        if row["state"] not in OUTSTANDING:
             # Already finished. Releasing twice would hand back room that
             # was handed back once already, which is how a budget leaks.
             return
@@ -537,6 +637,65 @@ class Capacity:
             event=f"capacity.{state.lower()}", authority="capacity",
             initiator="capacity", why=why, decision=state,
             job_id=row["job_id"] or None, input_ref=reservation_id)
+
+    def start(self, reservation_id: str, *, why: str = "worker started"
+              ) -> Decision:
+        """A worker picks up queued work. The other half of the model.
+
+        Admission fills a pipeline; this occupies a worker. They are
+        separate because the owner's shop is five skills each holding
+        four jobs and running one: if admission occupied a worker, a
+        full pipeline would read as four busy workers and the fifth
+        skill would never get one.
+
+        Refuses rather than queues when no worker is free, so the
+        caller learns it is waiting instead of believing it started.
+        """
+        with self._db.transaction():
+            row = self._db.query_one(
+                "SELECT * FROM capacity_reservations WHERE id = ?",
+                (reservation_id,))
+            if row is None:
+                raise FailClosed(f"unknown reservation {reservation_id!r}")
+            if row["kind"] != EXECUTE:
+                raise FailClosed(
+                    f"{row['kind']} work is not what a worker picks up; "
+                    "only execution occupies one")
+            if row["state"] == RUNNING:
+                return Decision(True, Refusal.NONE, "already running",
+                                reservation_id=reservation_id)
+            if row["state"] != HELD:
+                raise FailClosed(
+                    f"reservation {reservation_id!r} is {row['state']} and "
+                    "cannot be started")
+
+            budget = self.budget()
+            capability = (row["capability"] if "capability" in row.keys()
+                          else "") or ""
+            allowed = budget.workers(EXECUTE)
+            busy = self.executing()
+            if busy >= allowed:
+                return Decision(
+                    False, Refusal.NO_ROOM,
+                    f"{busy} worker(s) are already executing, which is the "
+                    f"{allowed} the owner allows",
+                    reservation_id=reservation_id)
+            if capability and self.executing(capability):
+                return Decision(
+                    False, Refusal.NO_ROOM,
+                    f"{capability}'s worker is already on a job, and a "
+                    "worker takes one at a time",
+                    reservation_id=reservation_id)
+            self._db.execute(
+                "UPDATE capacity_reservations SET state = ?, why = ? "
+                "WHERE id = ?", (RUNNING, why[:300], reservation_id))
+
+        self._audit.record(
+            event="capacity.started", authority="capacity",
+            initiator="capacity", why=why, decision=RUNNING,
+            job_id=row["job_id"] or None, input_ref=reservation_id)
+        return Decision(True, Refusal.NONE, why,
+                        reservation_id=reservation_id)
 
     def consume(self, reservation_id: str, why: str = "work done") -> None:
         """The work happened. The room is given back."""

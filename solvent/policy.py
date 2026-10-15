@@ -168,11 +168,21 @@ DEFAULT_POLICY: dict[str, Any] = {
         # Seconds of expected work that may be owed at once, across
         # execution, verification and revisions together.
         "max_owed_seconds": 0.0,
-        # Three jobs at once by default, four at the very most. Unlike
-        # every other number here, this one does not start at zero: the
-        # owner asked for a strict default, and capacity.py holds the
-        # ceiling so that four cannot become five from a settings page.
+        # Jobs one skill's pipeline may hold at once: three by
+        # default, four at the very most. Per pipeline, not in total --
+        # the owner's model is five skill queues, so five skills at
+        # four is twenty committed and five running. types.py holds
+        # the ceiling so that four cannot become five from a settings
+        # page.
         "max_concurrent_jobs": JOBS_PER_AGENT_DEFAULT,
+        # The five skill pipelines. Empty until the owner says which
+        # skills are in production: a pipeline for a skill nobody
+        # approved is a queue for work that cannot be done.
+        "skills": [],
+        # What a pipeline aims to hold, and the depth at which it asks
+        # for more. Zero means the Finder is never told to top up.
+        "pipeline_target": 0,
+        "replenish_at": 0,
         # A sent bid is a contingent obligation: if it wins, the work
         # exists whether there was room or not.
         "max_open_bids": 0,

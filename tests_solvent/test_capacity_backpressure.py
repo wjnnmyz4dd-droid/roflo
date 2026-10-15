@@ -147,13 +147,23 @@ class WorkersAreTheCpuControl(Base):
         self.assertIn("workers", names)
 
     def test_execution_workers_are_limited(self):
+        """At start(), not at admission.
+
+        Admission fills a pipeline; starting occupies a worker. The
+        limit moved with the thing it bounds, so this now admits three
+        jobs and finds that only two of them can run.
+        """
         self.configure(max_execution_workers=2, max_owed_seconds=10_000.0,
                        max_concurrent_jobs=4)
-        self.assertTrue(self.reserve(10, job="a", key="a").allowed)
-        self.assertTrue(self.reserve(10, job="b", key="b").allowed)
-        third = self.reserve(10, job="c", key="c")
-        self.assertFalse(third.allowed)
-        self.assertIn("worker", third.why)
+        held = []
+        for name in ("a", "b", "c"):
+            decision = self.reserve(10, job=name, key=name)
+            self.assertTrue(decision.allowed)
+            held.append(decision.reservation_id)
+        started = [self.s.capacity.start(r) for r in held]
+        self.assertEqual(sum(1 for d in started if d.allowed), 2)
+        self.assertIn("worker", started[-1].why)
+        self.assertEqual(self.s.capacity.executing(), 2)
 
     def test_verification_workers_are_limited_separately(self):
         self.configure(max_execution_workers=4, max_verification_workers=1,
@@ -182,10 +192,14 @@ class WorkersAreTheCpuControl(Base):
         """
         self.configure(max_execution_workers=0, max_concurrent_jobs=2,
                        max_owed_seconds=10_000.0)
-        taken = [self.reserve(10, job="one-job", key=f"k{n}").allowed
-                 for n in range(6)]
-        self.assertEqual(taken.count(True), 2)
-        self.assertEqual(self.s.capacity.jobs_in_flight(), 1)
+        held = [self.reserve(10, job=f"j{n}", key=f"k{n}")
+                for n in range(6)]
+        # Two pipelines' worth admitted, and with no worker count set
+        # the fallback is that same limit rather than no limit.
+        self.assertEqual(sum(1 for d in held if d.allowed), 2)
+        started = [self.s.capacity.start(d.reservation_id)
+                   for d in held if d.allowed]
+        self.assertLessEqual(sum(1 for d in started if d.allowed), 2)
 
 
 class ReliefShedsTheRightThingFirst(Base):

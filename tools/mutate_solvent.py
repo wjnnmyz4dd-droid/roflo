@@ -383,6 +383,93 @@ MUTANTS: tuple[Mutant, ...] = (
         "a $40 job is costed at a $4 fee when the platform takes $5",
     ),
 
+    # ---- five pipelines, five workers -------------------------------
+
+    Mutant(
+        "the-job-limit-is-counted-across-all-skills",
+        "solvent/capacity.py",
+        "            in_flight = self.jobs_in_flight(capability)",
+        "            in_flight = self.jobs_in_flight()",
+        "tests_solvent.test_skill_pipelines.FivePipelinesOfFour"
+        ".test_one_full_pipeline_does_not_block_another",
+        "one busy skill starves the other four",
+    ),
+    Mutant(
+        "a-worker-takes-a-second-job",
+        "solvent/capacity.py",
+        "            if capability and self.executing(capability):",
+        "            if False:",
+        "tests_solvent.test_skill_pipelines.AWorkerTakesOneJobAtATime"
+        ".test_a_second_job_on_the_same_skill_will_not_start",
+        "one worker runs two jobs, which is two workers",
+    ),
+    Mutant(
+        "a-full-pipeline-counts-as-busy-workers",
+        "solvent/capacity.py",
+        """        rows = self._db.query(
+            "SELECT job_id, capability FROM capacity_reservations "
+            "WHERE state = ? AND kind = ?", (RUNNING, EXECUTE))""",
+        """        rows = self._db.query(
+            "SELECT job_id, capability FROM capacity_reservations "
+            "WHERE state IN (?, ?) AND kind = ?",
+            (RUNNING, HELD, EXECUTE))""",
+        "tests_solvent.test_skill_pipelines.AWorkerTakesOneJobAtATime"
+        ".test_a_full_pipeline_is_not_a_busy_worker",
+        "queued work occupies a worker, so four jobs read as four workers",
+    ),
+    Mutant(
+        "more-workers-than-the-owner-allows",
+        "solvent/capacity.py",
+        """            busy = self.executing()
+            if busy >= allowed:""",
+        """            busy = self.executing()
+            if False:""",
+        "tests_solvent.test_skill_pipelines.AWorkerTakesOneJobAtATime"
+        ".test_a_sixth_worker_is_refused",
+        "unbounded concurrency on a machine shared with MetaTrader 5",
+    ),
+    Mutant(
+        "work-in-progress-stops-counting",
+        "solvent/capacity.py",
+        "OUTSTANDING = (HELD, RUNNING)",
+        "OUTSTANDING = (HELD,)",
+        "tests_solvent.test_skill_pipelines.AWorkerTakesOneJobAtATime"
+        ".test_running_work_still_fills_its_pipeline_slot",
+        "work in progress stops counting, so the pipeline overcommits",
+    ),
+    Mutant(
+        "replenishment-never-asks",
+        "solvent/capacity.py",
+        '"needs_replenishment": depth <= budget.replenish_at,',
+        '"needs_replenishment": False,',
+        "tests_solvent.test_skill_pipelines"
+        ".ReplenishmentIsReportedNotDecided"
+        ".test_it_asks_again_at_the_threshold",
+        "pipelines drain and nothing tops them up",
+    ),
+
+    # ---- what the owner is told -------------------------------------
+
+    Mutant(
+        "a-simulated-payment-is-announced-as-money",
+        "solvent/briefing.py",
+        '        body = (f"SIMULATED payment of {_money(amount_cents)} '
+        'recorded for "',
+        '        body = (f"Payment of {_money(amount_cents)} received for "',
+        "tests_solvent.test_owner_briefings.MoneyIsNeverFlattered"
+        ".test_a_simulated_payment_is_announced_as_simulated",
+        "the owner believes money arrived when none did",
+    ),
+    Mutant(
+        "a-late-run-sends-the-morning-summary-at-midnight",
+        "solvent/briefing.py",
+        "        if start <= asked <= start + max(0, grace_minutes):",
+        "        if True:",
+        "tests_solvent.test_owner_briefings.TheClockDecidesWhichSummary"
+        ".test_a_run_long_past_the_slot_sends_nothing",
+        "a summary about a morning that has gone",
+    ),
+
     # ---- the agreement outranks the endpoint ------------------------
 
     Mutant(

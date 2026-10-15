@@ -32,6 +32,12 @@ BUSY_TIMEOUT_S = 10.0
 #: ``(table, column, column-spec)`` added to databases created before the column
 #: existed. Append to this list; never edit or remove an entry.
 MIGRATIONS = (
+    # --- per-skill capacity. A database written before the five skill
+    # --- queues existed has reservations with no capability on them;
+    # --- they read as the empty pipeline, which is the safe default
+    # --- because an unattributed obligation still counts against the
+    # --- total seconds owed.
+    ("capacity_reservations", "capability", "TEXT NOT NULL DEFAULT ''"),
     # --- the job source registry (§4). Additive: an existing installation
     # --- keeps its rows and gains these with safe defaults.
     ("work_sources", "display_name", "TEXT NOT NULL DEFAULT ''"),
@@ -484,10 +490,16 @@ CREATE TABLE IF NOT EXISTS capacity_reservations (
   -- acceptance twice -- which they do, on retry -- must not produce two
   -- obligations, and the only reliable place to say so is a UNIQUE
   -- index that a second INSERT cannot get past.
-  idempotency_key TEXT NOT NULL
+  idempotency_key TEXT NOT NULL,
+  -- Which skill's pipeline this belongs to. The owner's model is five
+  -- skill queues, not one: a limit of four jobs is four jobs *per
+  -- skill*, and a single global count cannot express that.
+  capability TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS capacity_reservations_idem
   ON capacity_reservations(idempotency_key);
+CREATE INDEX IF NOT EXISTS capacity_reservations_capability
+  ON capacity_reservations(capability, state);
 CREATE TABLE IF NOT EXISTS work_sources (
   name TEXT PRIMARY KEY, kind TEXT NOT NULL, readiness TEXT NOT NULL,
   compliance TEXT NOT NULL, determination TEXT NOT NULL DEFAULT '',

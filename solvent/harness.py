@@ -46,6 +46,7 @@ from .notify import Notifier
 from .resilience import Resilience
 from .gate import ActionGate, approval
 from .governor import FinancialGovernor
+from . import briefing
 from .ledger import SIMULATED_PREFIX, Ledger
 from .memory import BusinessMemory
 from .orchestrator import TRANSITIONS, JobOrchestrator
@@ -1154,6 +1155,23 @@ def run_business_cycle(
         return stop("contract", str(refusal))
     cycle.committed_requirements = len(s.orchestrator.effective_baseline(cycle.job_id))
 
+    # The owner asked to be told when a job is obtained. Here rather
+    # than at discovery: an opportunity is not a job until its
+    # requirements are committed, and telling them about every
+    # posting the Finder liked would be the opposite of managing by
+    # exception. A failure to notify must not lose the job, so it is
+    # recorded and the cycle carries on.
+    try:
+        briefing.job_obtained(
+            s, job_id=cycle.job_id, capability=capability,
+            amount_cents=cycle.quoted_cents or opportunity.quoted_cents,
+            source=source_name)
+    except Exception as exc:  # pragma: no cover - exercised by injection
+        s.audit.record(
+            event="notify.failed", authority="notify", initiator="harness",
+            why=f"job-obtained notification failed: {type(exc).__name__}",
+            job_id=cycle.job_id, decision="CONTINUED")
+
     # Before any work: is anything in this source capable of meaning two
     # things? `run_csv_job` has asked this since the ambiguity detector was
     # written; the business cycle did not, so a discovered job with a date
@@ -1350,6 +1368,19 @@ def run_business_cycle(
         collected_cents=cycle.invoiced_cents,
         verification_method=f"{SIMULATED_PREFIX}{payment_rail}")
     cycle.stages.append("payment")
+
+    # Announced as simulated, because it is. An owner who reads
+    # "payment received" and believes it has a different picture of
+    # their business from the one the ledger has.
+    try:
+        briefing.payment_received(
+            s, job_id=cycle.job_id, amount_cents=cycle.invoiced_cents,
+            simulated=True, method=payment_rail)
+    except Exception as exc:  # pragma: no cover - exercised by injection
+        s.audit.record(
+            event="notify.failed", authority="notify", initiator="harness",
+            why=f"payment notification failed: {type(exc).__name__}",
+            job_id=cycle.job_id, decision="CONTINUED")
 
     # --- reconcile ---------------------------------------------------------
     s.orchestrator.complete(job_id=cycle.job_id, initiator="business-cycle")

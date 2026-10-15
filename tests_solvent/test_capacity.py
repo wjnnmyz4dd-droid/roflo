@@ -79,7 +79,7 @@ class Invariant1_NoJobWithoutCapacity(Base):
             self.assertTrue(self.reserve(1, job=f"j{n}", key=f"k{n}").allowed)
         decision = self.reserve(1, job="j4", key="k4")
         self.assertFalse(decision.allowed)
-        self.assertIn("in flight", decision.why)
+        self.assertIn("pipeline", decision.why)
 
     def test_a_halt_stops_new_commitments(self):
         self.configure(halted=True)
@@ -238,8 +238,9 @@ class Invariant8_NoGateIsBypassed(Base):
         self.assertEqual(
             surface,
             {"budget", "committed_seconds", "outstanding", "owed_seconds",
-             "jobs_in_flight", "open_bids", "has_obligations", "room_for",
-             "reserve", "admit", "reservation_for", "consume", "release",
+             "jobs_in_flight", "executing", "pipelines", "open_bids",
+             "has_obligations", "room_for", "reserve", "admit",
+             "reservation_for", "start", "consume", "release",
              "pressure", "report"})
 
     def test_capacity_cannot_approve_permit_or_price(self):
@@ -386,10 +387,34 @@ class ThreeJobsByDefaultAndFourAtMost(Base):
         self.assertIs(decision.refusal, cap.Refusal.NOT_CONFIGURED)
         self.assertIn("four is the most", decision.why)
 
-    def test_more_execution_workers_than_the_ceiling_is_also_refused(self):
+    def test_more_workers_than_skills_is_allowed_but_jobs_per_skill_is_not(self):
+        """Workers are counted separately from jobs per pipeline.
+
+        This asserted that six execution workers was a configuration
+        error, which was right while the job limit was global and is
+        wrong now: the owner's model is five workers, each holding up
+        to four jobs. The ceiling bounds a pipeline, not the payroll.
+        """
         self.configure(max_concurrent_jobs=4, max_execution_workers=6,
                        max_owed_seconds=100_000.0)
+        self.assertTrue(self.s.capacity.room_for(1.0).allowed)
+        self.configure(max_concurrent_jobs=5, max_execution_workers=5,
+                       max_owed_seconds=100_000.0)
         self.assertFalse(self.s.capacity.room_for(1.0).allowed)
+
+    def test_a_pipeline_target_above_the_ceiling_is_refused(self):
+        self.configure(max_concurrent_jobs=4, pipeline_target=9,
+                       replenish_at=2, max_owed_seconds=100_000.0)
+        decision = self.s.capacity.room_for(1.0)
+        self.assertFalse(decision.allowed)
+        self.assertIn("target nothing can reach", decision.why)
+
+    def test_replenishing_at_the_target_is_refused_as_a_loop(self):
+        self.configure(max_concurrent_jobs=4, pipeline_target=4,
+                       replenish_at=4, max_owed_seconds=100_000.0)
+        decision = self.s.capacity.room_for(1.0)
+        self.assertFalse(decision.allowed)
+        self.assertIn("loop rather than a rule", decision.why)
 
     def test_the_ceiling_is_not_a_settings_field(self):
         """Four cannot become five from a form, only from the source."""
