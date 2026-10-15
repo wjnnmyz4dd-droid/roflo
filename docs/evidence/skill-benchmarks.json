@@ -1,0 +1,143 @@
+{
+  "seed": 54180933,
+  "runs": 7,
+  "skills": {
+    "csv-cleanup": {
+      "execution": {
+        "n": 7,
+        "median_ms": 0.64,
+        "p95_ms": 4.72,
+        "slowest_ms": 4.72
+      },
+      "verification": {
+        "n": 7,
+        "median_ms": 1.33,
+        "p95_ms": 2.32,
+        "slowest_ms": 2.32
+      },
+      "end_to_end": {
+        "n": 3,
+        "median_ms": 86.82,
+        "p95_ms": 110.25,
+        "slowest_ms": 110.25
+      },
+      "median_source_bytes": 605,
+      "failures": []
+    },
+    "spreadsheet-automation": {
+      "execution": {
+        "n": 7,
+        "median_ms": 2.0,
+        "p95_ms": 2.52,
+        "slowest_ms": 2.52
+      },
+      "verification": {
+        "n": 7,
+        "median_ms": 49.64,
+        "p95_ms": 54.08,
+        "slowest_ms": 54.08
+      },
+      "end_to_end": {
+        "n": 7,
+        "median_ms": 156.82,
+        "p95_ms": 207.64,
+        "slowest_ms": 207.64
+      },
+      "median_source_bytes": 2963,
+      "failures": []
+    },
+    "document-processing": {
+      "execution": {
+        "n": 7,
+        "median_ms": 0.95,
+        "p95_ms": 1.47,
+        "slowest_ms": 1.47
+      },
+      "verification": {
+        "n": 7,
+        "median_ms": 8.48,
+        "p95_ms": 10.97,
+        "slowest_ms": 10.97
+      },
+      "end_to_end": {
+        "n": 7,
+        "median_ms": 77.94,
+        "p95_ms": 91.41,
+        "slowest_ms": 91.41
+      },
+      "median_source_bytes": 2192,
+      "failures": []
+    },
+    "data-entry": {
+      "execution": {
+        "n": 7,
+        "median_ms": 0.75,
+        "p95_ms": 1.05,
+        "slowest_ms": 1.05
+      },
+      "verification": {
+        "n": 7,
+        "median_ms": 18.81,
+        "p95_ms": 31.14,
+        "slowest_ms": 31.14
+      },
+      "end_to_end": {
+        "n": 7,
+        "median_ms": 112.3,
+        "p95_ms": 140.97,
+        "slowest_ms": 140.97
+      },
+      "median_source_bytes": 538,
+      "failures": []
+    },
+    "report-builder": {
+      "execution": {
+        "n": 7,
+        "median_ms": 0.16,
+        "p95_ms": 0.34,
+        "slowest_ms": 0.34
+      },
+      "verification": {
+        "n": 7,
+        "median_ms": 0.66,
+        "p95_ms": 0.78,
+        "slowest_ms": 0.78
+      },
+      "end_to_end": {
+        "n": 7,
+        "median_ms": 68.77,
+        "p95_ms": 91.63,
+        "slowest_ms": 91.63
+      },
+      "median_source_bytes": 490,
+      "failures": []
+    }
+  },
+  "eligibility": {
+    "csv-cleanup": {
+      "samples": 0,
+      "eligible": false,
+      "why": "no database given; a fresh install has no measured runs and cannot bid on anything"
+    },
+    "spreadsheet-automation": {
+      "samples": 0,
+      "eligible": false,
+      "why": "no database given; a fresh install has no measured runs and cannot bid on anything"
+    },
+    "document-processing": {
+      "samples": 0,
+      "eligible": false,
+      "why": "no database given; a fresh install has no measured runs and cannot bid on anything"
+    },
+    "data-entry": {
+      "samples": 0,
+      "eligible": false,
+      "why": "no database given; a fresh install has no measured runs and cannot bid on anything"
+    },
+    "report-builder": {
+      "samples": 0,
+      "eligible": false,
+      "why": "no database given; a fresh install has no measured runs and cannot bid on anything"
+    }
+  }
+}

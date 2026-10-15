@@ -70,6 +70,16 @@ def due(local_time: str, *, grace_minutes: int = GRACE_MINUTES) -> str:
     return ""
 
 
+#: The notifier stores a summary at 400 characters. Shortening is done
+#: here against the same number rather than left to the column, because
+#: a column cuts mid-word and this can drop a whole line instead.
+LIMIT = 400
+
+#: What a shortened summary says about what it left out. A summary that
+#: silently dropped lines would be worse than a long one.
+MORE = "- and {n} more line(s); open the control centre"
+
+
 @dataclass
 class Summary:
     """What the owner is told, and the parts it was built from."""
@@ -82,12 +92,45 @@ class Summary:
     def event(self) -> str:
         return MORNING_SUMMARY if self.slot == MORNING else EVENING_SUMMARY
 
-    def text(self) -> str:
+    def text(self, *, limit: int = LIMIT) -> str:
+        """The summary, whole or honestly shortened.
+
+        The notifier stores a summary at 400 characters and composes a
+        280-character message from it, both of which are deliberate:
+        one is a database column and the other is a lock screen. What
+        was not deliberate was what that did to this. A full summary
+        ran past 400 and was cut mid-word -- the first version of this
+        ended "no real payment has bee", which is the single sentence
+        in the whole system that most needs to arrive intact.
+
+        So it is shortened here, where the meaning of the lines is
+        known, rather than at the column, where it is not. Lines are
+        dropped whole, from the back, so what the owner reads is true
+        and complete as far as it goes; what needs them is never
+        dropped, because that is what the message is for; and the last
+        line says how many were left out, so a shortened summary
+        announces that it is one.
+        """
         head = (f"{self.slot} summary. "
                 + (f"{len(self.needs_you)} thing(s) need you."
                    if self.needs_you else "Nothing needs you."))
-        body = "\n".join(f"- {line}" for line in
-                         (self.needs_you + self.lines))
+        wanted = [f"- {line}" for line in (self.needs_you + self.lines)]
+        kept, dropped = [], 0
+        used = len(head)
+        for n, line in enumerate(wanted):
+            # Leave room for the "and N more" line, which has to fit
+            # too -- a truncation notice that is itself truncated
+            # tells the owner nothing.
+            tail = len(MORE.format(n=len(wanted) - n)) + 1
+            if used + len(line) + 1 + (tail if n < len(wanted) - 1 else 0
+                                       ) > limit:
+                dropped = len(wanted) - n
+                break
+            kept.append(line)
+            used += len(line) + 1
+        if dropped:
+            kept.append(MORE.format(n=dropped))
+        body = "\n".join(kept)
         return f"{head}\n{body}" if body else head
 
 
@@ -121,6 +164,21 @@ def compose(solvent, *, slot: str = MORNING) -> Summary:
     if problem:
         summary.needs_you.append(f"capacity is not configured: {problem}")
 
+    # --- money, before the detail -------------------------------------
+    # First of the ordinary lines, because the summary is shortened
+    # from the back and this is the line that must never be the one
+    # dropped. A summary that lost "no real payment has been received"
+    # while keeping a pipeline census would be flattering by omission.
+    try:
+        real = solvent.ledger.real_revenue_cents()
+        summary.lines.append(f"collected revenue: {_money(real)}")
+        if not real:
+            summary.lines.append(
+                "no real payment has been received; any money in the "
+                "ledger is simulated and is not counted here")
+    except Exception:
+        summary.lines.append("the ledger could not be read")
+
     # --- the pipelines -----------------------------------------------
     try:
         pipelines = solvent.capacity.pipelines()
@@ -148,17 +206,6 @@ def compose(solvent, *, slot: str = MORNING) -> Summary:
             f"{solvent.capacity.executing()} worker(s) busy")
     except Exception:
         summary.lines.append("capacity could not be read")
-
-    # --- money, carefully ---------------------------------------------
-    try:
-        real = solvent.ledger.real_revenue_cents()
-        summary.lines.append(f"collected revenue: {_money(real)}")
-        if not real:
-            summary.lines.append(
-                "no real payment has been received; any money in the "
-                "ledger is simulated and is not counted here")
-    except Exception:
-        summary.lines.append("the ledger could not be read")
 
     return summary
 

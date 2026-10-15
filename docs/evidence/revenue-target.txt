@@ -1,0 +1,29 @@
+target: $80.00 gross per operating hour
+    over an eight hour working day (176 h/month): $14,080.00 a month
+    over every hour the vps is billed for (730 h/month): $58,400.00 a month
+
+if a job is billed           gross       net  jobs/hr  jobs/day
+at one billed hour          $40.00    $40.00      2.0      48.0
+at two billed hours         $80.00    $80.00      1.0      24.0
+
+  net is provisional -- unrecorded: minimum_project_fee_cents, platform_fee_fraction, platform_fee_minimum_cents, payment_fee_fraction, payment_fee_flat_cents, fixed_monthly_overhead_cents
+
+bids required, by what-if win rate (none of these is a measurement):
+  at one billed hour:
+      win rate 2 percent              100.0 /hr      2400.0 /day
+      win rate 5 percent               40.0 /hr       960.0 /day
+      win rate 10 percent              20.0 /hr       480.0 /day
+      win rate 20 percent              10.0 /hr       240.0 /day
+      win rate 50 percent               4.0 /hr        96.0 /day
+  at two billed hours:
+      win rate 2 percent               50.0 /hr      1200.0 /day
+      win rate 5 percent               20.0 /hr       480.0 /day
+      win rate 10 percent              10.0 /hr       240.0 /day
+      win rate 20 percent               5.0 /hr       120.0 /day
+      win rate 50 percent               2.0 /hr        48.0 /day
+
+verdict:
+  - the target needs between 1 and 2 delivered jobs an hour depending on what a job is billed at
+  - machine capacity is not the constraint: the slowest measured skill allows about 22,956 jobs an hour on one worker, which is several thousand times the requirement
+  - the constraint is won work at the owner's price, and there are zero observations of it: no bid submitted, none won, none paid
+  - the net figures are not yet real: minimum_project_fee_cents, platform_fee_fraction, platform_fee_minimum_cents, payment_fee_fraction, payment_fee_flat_cents, fixed_monthly_overhead_cents are unrecorded, which is not the same as zero

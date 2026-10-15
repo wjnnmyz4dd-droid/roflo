@@ -470,6 +470,49 @@ MUTANTS: tuple[Mutant, ...] = (
         "a summary about a morning that has gone",
     ),
 
+    Mutant(
+        "the-summary-is-cut-by-the-column",
+        "solvent/briefing.py",
+        "        wanted = [f\"- {line}\" for line in "
+        "(self.needs_you + self.lines)]",
+        "        return head + \"\\n\" + \"\\n\".join("
+        "f\"- {line}\" for line in (self.needs_you + self.lines))\n"
+        "        wanted = [f\"- {line}\" for line in "
+        "(self.needs_you + self.lines)]",
+        "tests_solvent.test_owner_briefings.ALongSummaryIsShortenedNotCut"
+        ".test_the_stored_summary_is_what_was_composed",
+        "the owner's summary ends mid-word at the database column",
+    ),
+    Mutant(
+        "the-money-line-is-the-one-dropped",
+        "solvent/briefing.py",
+        "    # --- money, before the detail ----",
+        "    return summary\n    # --- money, before the detail ----",
+        "tests_solvent.test_owner_briefings.ALongSummaryIsShortenedNotCut"
+        ".test_the_money_lines_survive_shortening",
+        "a summary that flatters by leaving the money out",
+    ),
+    Mutant(
+        "what-needs-you-is-shortened-away",
+        "solvent/briefing.py",
+        "        wanted = [f\"- {line}\" for line in "
+        "(self.needs_you + self.lines)]",
+        "        wanted = [f\"- {line}\" for line in "
+        "(self.lines + self.needs_you)]",
+        "tests_solvent.test_owner_briefings.ALongSummaryIsShortenedNotCut"
+        ".test_what_needs_you_is_never_the_part_dropped",
+        "the one line the message exists for is the line dropped",
+    ),
+    Mutant(
+        "nothing-calls-the-summary",
+        "solvent/runtime.py",
+        '        self.add_task("owner_briefing", self._tick_owner_briefing)',
+        "        pass",
+        "tests_solvent.test_owner_briefings.SomethingHasToCallIt"
+        ".test_the_runtime_registers_a_briefing_task",
+        "the summaries exist and are never sent",
+    ),
+
     # ---- the agreement outranks the endpoint ------------------------
 
     Mutant(

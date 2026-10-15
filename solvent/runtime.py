@@ -27,6 +27,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from datetime import datetime
 from enum import Enum
 from typing import Callable
 
@@ -278,6 +279,11 @@ DEFAULT_INTERVALS = {
     # button, so this is the one cadence chosen for a person waiting rather
     # than for a cheap host.
     "owner_intents": 30.0,
+    # The two summaries have a half-hour grace window, so asking every
+    # five minutes sends them within five minutes of their slot and
+    # still sends them if a tick was missed. The dedupe key is the date
+    # and the slot, so asking often does not mean telling often.
+    "owner_briefing": 300.0,
     "discovery": 900.0,        # look for work every 15 minutes
     "reconciliation": 300.0,   # re-check payment and job state every 5
     "health": 60.0,            # notice trouble within a minute
@@ -398,6 +404,7 @@ class Runtime:
         self.add_task("discovery", self._tick_discovery)
         self.add_task("diagnostics", self._tick_diagnostics)
         self.add_task("owner_intents", self._tick_owner_intents)
+        self.add_task("owner_briefing", self._tick_owner_briefing)
 
     def _tick_heartbeat(self) -> str:
         """Touch a file so something outside Solvent can tell it is working.
@@ -441,6 +448,42 @@ class Runtime:
         """
         report = self.solvent.diagnostics.record()
         return f"{len(report.findings)} check(s); worst {report.worst}"
+
+    def _tick_owner_briefing(self, now=None) -> str:
+        """Send the 06:50 and 16:30 summaries when their slot comes round.
+
+        The summaries existed as a function nobody called, which is the
+        same as not existing: an owner managing by exception needs the
+        exceptions to arrive on their own. This is the timer that makes
+        them arrive.
+
+        It asks every five minutes and sends at most one message per
+        slot per day, because the dedupe key is the date and the slot.
+        Outside both windows it does nothing and says so, which is the
+        normal result for twenty-two hours of the day.
+
+        A summary that cannot be sent is recorded and does not stop the
+        tick loop: an owner who is not told the news is worse off than
+        one who is told it late, and both are better off than one whose
+        system fell over trying.
+
+        ``now`` is for tests, which otherwise pass or fail depending on
+        what hour of the day they are run at -- and a test whose result
+        comes from the wall clock is not testing the slot logic.
+        """
+        from . import briefing
+
+        now = now or datetime.now().astimezone()
+        slot = briefing.due(now.strftime("%H:%M"))
+        if not slot:
+            return (f"no summary due at {now.strftime('%H:%M')}; "
+                    f"slots are {', '.join(briefing.SUMMARY_TIMES)}")
+        try:
+            outcome = briefing.send_summary(
+                self.solvent, slot=slot, today=now.strftime("%Y-%m-%d"))
+        except Exception as exc:
+            return f"the {slot} summary could not be sent: {exc!r}"[:300]
+        return f"{slot} summary: {outcome}"
 
     def _tick_owner_intents(self) -> str:
         """Apply what the owner asked for from the control centre.

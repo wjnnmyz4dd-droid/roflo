@@ -36,19 +36,19 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
                                    Stress)
 
 #: When the code under examination was frozen.
-FROZEN_AT = "2026-10-14T20:59:51Z"
+FROZEN_AT = "2026-10-15T10:48:02Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
 DIGESTS = {
     "solvent/capacity.py":
-        "2edd19da7ce7731bb804081ac1317565f67aef6a7ffdf6507c65f8d9767af13c",
+        "14f13b8d19fddd32e589c7893ba5b21783114da67a669c7ba7c5d5a0a8ad27b6",
     "solvent/finder.py":
         "0fac9a608a6742aeaa2ebd7309111f7a128b19977194061598583f970d423fd7",
     "solvent/revenuemodel.py":
         "2c36183d9ce87c93e029bee036b2490173e47501f607173f56c34faef73a72a3",
     "solvent/store.py":
-        "56176dab1619586046df0b2f496b97f6edae71de836a40ff06485feb98c8d911",
+        "5f66af0f3f15ec9fcc4e71147adb52aad5c894ec9ceab157f69d31e462a02f7c",
 }
 
 #: The scoring criteria, fixed before the first run. Identical to the
@@ -237,12 +237,42 @@ No criterion was tripped at any question.
 """
 
 
+FIFTH_SITTING = """Sat 2026-10-15T10:48:02Z, seed 4193036655.
+
+Six questions, 6 passed, 0 failed. The fifth sitting, and the second
+time the seal has done its job rather than merely held. Per-skill
+pipelines and the worker-occupying start() changed capacity.py and
+store.py after the fourth sitting, so the digests stopped matching
+and the exam refused to mark itself. Frozen again on the finished
+code; the freeze moved, so the seed moved, so this is a fifth paper
+and not a re-sit of the fourth.
+
+Acceptance is back up from the third and fourth papers because the
+four-job ceiling is now per skill rather than across the shop, which
+is the operating model working rather than a loosened limit.
+
+    level   7, slow_execution+spike                            7 accepted,   7 delivered, peak 0.477
+    level  13, delayed_verification+revisions                  9 accepted,   9 delivered, peak 0.811
+    level  37, failed_submissions+outage                      25 accepted,  25 delivered, peak 0.422
+    level  71, payment_delays+spike                           32 accepted,  32 delivered, peak 0.825
+    level 149, revisions+slow_execution                       46 accepted,  46 delivered, peak 0.975
+    level 307, delayed_verification+failed_submissions        46 accepted,  46 delivered, peak 0.352
+
+No criterion was tripped at any question: nothing accepted went
+undelivered, no budget was exceeded, no duplicate commitment was
+created, no deadline was missed, no obligation was lost across a
+restart, no reservation leaked, and concurrency stayed inside the
+limit throughout.
+"""
+
+
 #: Which record belongs to which freeze.
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
     "2026-10-14T14:31:21Z": SECOND_SITTING,
     "2026-10-14T17:31:06Z": THIRD_SITTING,
     "2026-10-14T20:59:51Z": FOURTH_SITTING,
+    "2026-10-15T10:48:02Z": FIFTH_SITTING,
 }
 
 
@@ -250,3 +280,4 @@ if __name__ == "__main__":
     import json
 
     print(json.dumps(sit(), indent=2, default=str))
+

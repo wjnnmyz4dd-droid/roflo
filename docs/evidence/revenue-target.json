@@ -1,0 +1,142 @@
+{
+  "target_gross_cents_per_hour": 8000,
+  "what_the_target_comes_to_monthly": {
+    "an_eight_hour_working_day": {
+      "hours": 176,
+      "gross_cents": 1408000
+    },
+    "every_hour_the_vps_is_billed_for": {
+      "hours": 730,
+      "gross_cents": 5840000
+    }
+  },
+  "owner_inputs": {
+    "hourly_rate_cents": 4000,
+    "minimum_project_fee_cents": 0,
+    "basis": "OBSERVED: the owner's own configured policy; what they charge, not what the market pays"
+  },
+  "unrecorded_cost_inputs": [
+    "minimum_project_fee_cents",
+    "platform_fee_fraction",
+    "platform_fee_minimum_cents",
+    "payment_fee_fraction",
+    "payment_fee_flat_cents",
+    "fixed_monthly_overhead_cents"
+  ],
+  "per_job": {
+    "at_one_billed_hour": {
+      "gross_cents": 4000,
+      "platform_fee_cents": 0.0,
+      "payment_fee_cents": 0.0,
+      "net_cents": 4000.0,
+      "fees_recorded": false,
+      "jobs_per_hour_for_target": 2.0,
+      "jobs_per_day_for_target": 48.0,
+      "net_cents_per_hour_at_that_rate": 8000.0
+    },
+    "at_two_billed_hours": {
+      "gross_cents": 8000,
+      "platform_fee_cents": 0.0,
+      "payment_fee_cents": 0.0,
+      "net_cents": 8000.0,
+      "fees_recorded": false,
+      "jobs_per_hour_for_target": 1.0,
+      "jobs_per_day_for_target": 24.0,
+      "net_cents_per_hour_at_that_rate": 8000.0
+    }
+  },
+  "supply": {
+    "basis": "SIMULATED: generated inputs on this host, not a client's file and not the owner's VPS",
+    "per_skill": {
+      "csv-cleanup": {
+        "end_to_end_median_ms": 86.82,
+        "jobs_per_hour_one_worker": 41465
+      },
+      "spreadsheet-automation": {
+        "end_to_end_median_ms": 156.82,
+        "jobs_per_hour_one_worker": 22956
+      },
+      "document-processing": {
+        "end_to_end_median_ms": 77.94,
+        "jobs_per_hour_one_worker": 46189
+      },
+      "data-entry": {
+        "end_to_end_median_ms": 112.3,
+        "jobs_per_hour_one_worker": 32057
+      },
+      "report-builder": {
+        "end_to_end_median_ms": 68.77,
+        "jobs_per_hour_one_worker": 52348
+      }
+    },
+    "note": "a generated 605-byte CSV is not a 200,000-row export; these rates are an upper bound on machine throughput and say nothing about how long a real job takes"
+  },
+  "demand_required": {
+    "at_one_billed_hour": {
+      "win_rate_2_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 100.0,
+        "bids_per_day": 2400.0
+      },
+      "win_rate_5_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 40.0,
+        "bids_per_day": 960.0
+      },
+      "win_rate_10_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 20.0,
+        "bids_per_day": 480.0
+      },
+      "win_rate_20_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 10.0,
+        "bids_per_day": 240.0
+      },
+      "win_rate_50_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 4.0,
+        "bids_per_day": 96.0
+      }
+    },
+    "at_two_billed_hours": {
+      "win_rate_2_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 50.0,
+        "bids_per_day": 1200.0
+      },
+      "win_rate_5_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 20.0,
+        "bids_per_day": 480.0
+      },
+      "win_rate_10_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 10.0,
+        "bids_per_day": 240.0
+      },
+      "win_rate_20_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 5.0,
+        "bids_per_day": 120.0
+      },
+      "win_rate_50_percent": {
+        "basis": "ASSUMED what-if; no bid has ever been submitted",
+        "bids_per_hour": 2.0,
+        "bids_per_day": 48.0
+      }
+    }
+  },
+  "demand_observations": {
+    "bids_submitted": 0,
+    "bids_won": 0,
+    "invoices_paid": 0,
+    "basis": "OBSERVED: counted, and all three are zero"
+  },
+  "verdict": [
+    "the target needs between 1 and 2 delivered jobs an hour depending on what a job is billed at",
+    "machine capacity is not the constraint: the slowest measured skill allows about 22,956 jobs an hour on one worker, which is several thousand times the requirement",
+    "the constraint is won work at the owner's price, and there are zero observations of it: no bid submitted, none won, none paid",
+    "the net figures are not yet real: minimum_project_fee_cents, platform_fee_fraction, platform_fee_minimum_cents, payment_fee_fraction, payment_fee_flat_cents, fixed_monthly_overhead_cents are unrecorded, which is not the same as zero"
+  ]
+}
