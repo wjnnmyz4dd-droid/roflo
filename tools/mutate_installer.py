@@ -942,7 +942,7 @@ MUTANTS: tuple[Mutant, ...] = (
            "    if entry.access_method == access.UNDETERMINED:",
            "    if False:",
            "tests_solvent.test_platform_rules.EveryPlatformTheOwnerNamedIsCatalogued"
-           ".test_every_marketplace_is_unverified_rather_than_assumed",
+           ".test_no_marketplace_reads_as_established",
            "an unread platform is UNVERIFIED, never assumed"),
     # Spreadsheet automation. The verifier is the thing under test in most of
     # these: a worker whose mistakes nobody catches is the failure mode.

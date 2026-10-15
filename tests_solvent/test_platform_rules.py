@@ -108,14 +108,24 @@ class EveryPlatformTheOwnerNamedIsCatalogued(unittest.TestCase):
         Not "every one is UNVERIFIED": that conflated nobody-has-looked
         with not-permitted, and made Freelancer's read-and-forbidden
         determination -- the stricter answer -- fail as a regression."""
-        established = (cat.ESTABLISHED_AUTOMATED,
-                       cat.ESTABLISHED_OWNER_AUTHORIZED)
+        expected = {
+            access.UNDETERMINED: cat.UNVERIFIED,
+            access.UNSUPPORTED_AUTOMATION: cat.BLOCKED_PLATFORM_RESTRICTION,
+        }
         for e in cat.CATALOGUE:
             if e.source_type != cat.FREELANCE_MARKETPLACE:
                 continue
             with self.subTest(source=e.source_id):
                 status, why = cat.operational_status(e)
-                self.assertNotIn(status, established)
+                # Exact per method, not merely "not established". A
+                # looser assertion let a mutant remove the
+                # UNDETERMINED branch entirely: the platform then fell
+                # through to PENDING, which is not established either,
+                # and nothing noticed.
+                self.assertIn(e.access_method, expected,
+                              f"{e.source_id} claims an access method this "
+                              "repository has no evidence for")
+                self.assertEqual(status, expected[e.access_method])
                 self.assertTrue(why.strip())
 
     def test_no_entry_claims_an_access_method_without_evidence_and_a_date(self):

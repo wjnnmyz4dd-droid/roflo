@@ -23,7 +23,7 @@ MetaTrader 5 was not touched.
 
 | Platform | Discovery | Bid submission | What blocks it |
 |---|---|---|---|
-| **Freelancer** | IMPLEMENTED, NOT LIVE VERIFIED | UNSUPPORTED | API terms unread; no submission transport |
+| **Freelancer** | **REQUIRES PLATFORM APPROVAL** | **REQUIRES PLATFORM APPROVAL** | Agreement forbids automated API access without express written permission |
 | **Upwork** | REQUIRES PLATFORM APPROVAL | REQUIRES PLATFORM APPROVAL | Registered application + OAuth credential |
 | **Fiverr** | UNSUPPORTED | UNSUPPORTED | No public seller API was found |
 | **PeoplePerHour** | UNKNOWN | UNKNOWN | No public API; search disallowed in robots.txt |
@@ -35,40 +35,79 @@ owner brings a posting and DeskPilot does everything after it.
 
 ---
 
-### D1. Freelancer — the only one with a verified machine route
+### D1. Freelancer — the agreement says no
 
-**Status: IMPLEMENTED, NOT LIVE VERIFIED.** An adapter exists
-(`solvent/marketplaces.py`) and parses the platform's real response
-shape, verified field by field against a live sample on 2026-10-14.
-`GET /api/projects/0.1/projects/active/` returned HTTP 200 with live
-project JSON, no credential, and the platform's own rate limits in a
-header (`200;window=60, 1000;window=3600`).
+**Status: REQUIRES PLATFORM APPROVAL.** Revised 2026-10-15. The
+previous revision of this section said the blocker was a document
+nobody had read. It has now been read, and it forbids what we were
+preparing to do.
 
-**No account or credential is needed to read it.** The blocker is a
-document, not a login.
+> **Section 33, Access and Interference:** "You agree that you will
+> not use any robot, spider, scraper or other automated means to
+> access the Website via any means, **including for the avoidance of
+> doubt access to our API or application programming interface, for
+> any purpose without our express written permission**."
+> — https://www.freelancer.com/about/terms, read 2026-10-15
 
-1. **Read Freelancer's API terms of service.** Open
-   `https://www.freelancer.com/api/docs/` and find the terms governing
-   API use. This is a *different document* from `robots.txt`, which
-   DeskPilot has already read and which does not disallow `/api/`.
-2. **Decide and record whether automated reading of active projects is
-   permitted for your account**, and by what method. In DeskPilot, run
-   `solvent setup work-source` at the terminal. This path is
-   terminal-only by design: registering a work source needs an
-   adapter, and a row naming a source is a registration rather than an
-   implementation.
-3. **Only if you also want DeskPilot to bid there:** read the terms
-   covering bid submission separately. Bidding on Freelancer may
-   consume paid credits, which is why `SUBMIT_BID` and `SPEND_MONEY`
-   are separate permissions in DeskPilot and both are currently
-   UNDETERMINED. **There is no bid-submission transport for any
-   platform**, so even a permitted bid would be prepared for you to
-   submit by hand.
+Three things follow, and one of them against the earlier reading in
+this document:
 
-After step 2, DeskPilot can discover Freelancer projects
-automatically. It still cannot bid on them — see E.
+- **HTTP 200 is not permission.** The endpoint answers without a
+  credential and publishes its own rate limits. A platform can answer
+  a request it has told you not to make.
+- **robots.txt is not the governing document.** It does not disallow
+  `/api/`, and the agreement does — the agreement is stricter and
+  says so explicitly.
+- **It covers reading, not only bidding.** Automated discovery is
+  forbidden by the same clause as automated bidding.
 
----
+The catalogue now records DISCOVER, DISCOVER_AUTHENTICATED and
+SUBMIT_BID as **FORBIDDEN** with that clause as the citation, and the
+access method as `UNSUPPORTED_AUTOMATION`. The derived status is
+**BLOCKED — PLATFORM RESTRICTION**.
+
+**The eleven feed samples recorded in this document were themselves
+that access.** They were taken on 2026-10-14, before the agreement
+was read, which was the mistake. The measurements are kept — deleting
+them would not unmake the requests — and no further sampling is
+legitimate.
+
+#### What the route looks like if permission is granted
+
+Recorded now so that the day it arrives the work is small and
+reviewed. All of this is **DOCUMENTED** at developers.freelancer.com,
+read 2026-10-15:
+
+| Piece | Value |
+|---|---|
+| Place a bid | `POST /api/projects/0.1/bids/` |
+| Body | `{"project_id", "bidder_id", "amount", "period", "milestone_percentage"}` |
+| Auth | OAuth2 authorization code at `accounts.freelancer.com/oauth/token` |
+| Header | `freelancer-oauth-v1: <access_token>` |
+| Register an app | `accounts.freelancer.com/settings/develop` |
+| Sandbox | `freelancer-sandbox.com`, config at `/developer-user-config/` |
+
+**No submission adapter has been written.** The instruction was to
+implement one *if authorized*, and it is not. Writing a bid-sending
+path against a platform that forbids it in writing would be building
+the one thing the rest of this system exists to prevent.
+
+#### Owner steps
+
+1. **Write to Freelancer and ask for express written permission**, for
+   your account, naming what you want to do: read active projects via
+   `/api/projects/0.1/projects/active/`, and submit bids via
+   `POST /api/projects/0.1/bids/`. Section 33 is the clause to cite;
+   ask them to reply in writing.
+2. **Keep their reply.** It is the evidence the catalogue needs.
+3. **Record it** with `solvent setup work-source`, which is where the
+   determination lives. The access method moves to
+   `APPROVED_INTEGRATION`.
+4. **Only then** is there anything to build, and it is roughly a day:
+   the parsing is done and tested, the gates exist.
+
+If they decline, or do not reply, Freelancer is closed to automation
+and the manual route in section G is the whole plan.
 
 ### D2. Upwork — an API exists, behind an application
 
@@ -551,11 +590,11 @@ proves:
 # PARTIALLY IMPLEMENTED
 
 Link by link, for Freelancer — the only platform with a verified
-machine route:
+machine route, now known to be a route its agreement closes:
 
 | Step | State |
 |---|---|
-| **Discover** | IMPLEMENTED, NOT LIVE VERIFIED — adapter parses the real response; terms unread, egress simulation-only |
+| **Discover** | **REQUIRES PLATFORM APPROVAL** — adapter parses the real response; the agreement forbids automated API access without express written permission |
 | **Qualify** | IMPLEMENTED, NOT LIVE VERIFIED — triage, ranking and the capacity gate all work |
 | **Bid** | **BLOCKED** — no skill has client history, so `Finder.bid` refuses every capability |
 | **Execute** | IMPLEMENTED, NOT LIVE VERIFIED — all five skills measured end to end |
@@ -574,8 +613,9 @@ Two links are missing code, not permission:
   resolves directly: a skill needs client history to be bid on, and
   gets client history by doing client work.
 
-What *is* only waiting on the owner is discovery on Freelancer, the
-whole commercial configuration, and the capacity budget.
+What *is* only waiting on the owner is the whole commercial
+configuration and the capacity budget. Discovery on Freelancer is no
+longer in that list: it waits on Freelancer, not on us.
 
 **The shortest legitimate path to a first paying customer does not go
 through any marketplace integration.** It is manual import: the owner
@@ -688,19 +728,27 @@ will not create a wallet.
   yourself.
 - Leave conversion OFF unless you have a provider to name.
 
-### 7. Read Freelancer's API terms — 30 minutes, unblocks discovery
+### 7. Ask Freelancer for written permission — unblocks everything there
 
-The only marketplace with a verified machine route, and the only thing
-in its way is a document.
+**Changed 2026-10-15.** This step used to be "read their API terms".
+They have been read. Section 33 forbids automated access to the API,
+including reading, without Freelancer's **express written
+permission**. There is nothing further to read; there is something to
+request.
 
-- Open `https://www.freelancer.com/api/docs/` and find the terms
-  governing API use.
-- Decide whether automated reading of active projects is permitted for
-  your account.
-- Record it: `solvent setup work-source`.
-- Separately decide about bidding, which may consume paid credits.
-  Even if permitted, **there is no submission transport** — a bid would
-  be prepared for you to send by hand.
+- Write to Freelancer support or their API contact from your account.
+- Name exactly what you want: read active projects via
+  `/api/projects/0.1/projects/active/`, and submit bids via
+  `POST /api/projects/0.1/bids/`.
+- Cite section 33 of the user agreement and ask for their answer in
+  writing.
+- When they reply, record the determination with
+  `solvent setup work-source` and keep the reply.
+- Until then DeskPilot will not poll them, and that refusal is now
+  enforced by the catalogue rather than by anyone remembering.
+
+Do not treat the API answering without a credential as permission. It
+answers; the agreement still says not to ask.
 
 ### 8. Register an Upwork application — 1 hour, optional
 

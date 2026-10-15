@@ -79,11 +79,15 @@ class TheInterfaceIsExactlyTheSix(unittest.TestCase):
         RESTRICTION: a stronger refusal than UNVERIFIED, and one the
         old assertion would have called a regression.
         """
-        ready = (catalogue.ESTABLISHED_AUTOMATED,
-                 catalogue.ESTABLISHED_OWNER_AUTHORIZED)
+        allowed = {catalogue.UNVERIFIED,
+                   catalogue.BLOCKED_PLATFORM_RESTRICTION}
         for row in self.rows:
             with self.subTest(source=row["source_id"]):
-                self.assertNotIn(row["status"], ready)
+                # One of exactly two, not merely "not ready": a status
+                # nobody listed here is a new state that needs looking
+                # at, and PENDING would mean a platform had quietly
+                # acquired a determination.
+                self.assertIn(row["status"], allowed)
                 self.assertTrue(row["why"].strip())
 
     def test_freelancer_is_blocked_by_its_agreement_not_by_silence(self):
