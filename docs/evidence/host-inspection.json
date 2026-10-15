@@ -1,0 +1,160 @@
+{
+  "sections": {
+    "operating_system": [
+      {
+        "name": "os",
+        "state": "MEASURED",
+        "value": "Linux",
+        "unit": "",
+        "note": ""
+      },
+      {
+        "name": "os_release",
+        "state": "MEASURED",
+        "value": "6.18.44-fc-v114",
+        "unit": "",
+        "note": ""
+      },
+      {
+        "name": "architecture",
+        "state": "MEASURED",
+        "value": "x86_64",
+        "unit": "",
+        "note": ""
+      },
+      {
+        "name": "python",
+        "state": "MEASURED",
+        "value": "3.11.17",
+        "unit": "",
+        "note": ""
+      }
+    ],
+    "processors": [
+      {
+        "name": "logical_cpus",
+        "state": "MEASURED",
+        "value": 4,
+        "unit": "cores",
+        "note": "what the OS reports, which on a VPS is what the hypervisor presents and not necessarily what is contended for"
+      },
+      {
+        "name": "cpus_available_to_this_process",
+        "state": "MEASURED",
+        "value": 4,
+        "unit": "cores",
+        "note": "absent on Windows; where it differs from the count above, the difference is the part of the machine this process may not use"
+      },
+      {
+        "name": "load_average_1m",
+        "state": "MEASURED",
+        "value": 0.11,
+        "unit": "",
+        "note": "absent on Windows. This is the single most important unmeasurable on the owner's host: without it, CPU pressure from MetaTrader 5 cannot be observed and the owner's CPU share is honoured by limiting workers instead of by sampling"
+      },
+      {
+        "name": "cpu_percent_used",
+        "state": "UNMEASURABLE",
+        "value": null,
+        "unit": "%",
+        "note": "not available from the standard library on any platform, and psutil is not installed; reported unmeasurable rather than estimated"
+      }
+    ],
+    "memory": [
+      {
+        "name": "memory_total_bytes",
+        "state": "MEASURED",
+        "value": 16874930176,
+        "unit": "bytes",
+        "note": "/proc/meminfo; absent on Windows"
+      },
+      {
+        "name": "memory_available_bytes",
+        "state": "MEASURED",
+        "value": 16280973312,
+        "unit": "bytes",
+        "note": "what is free for DeskPilot *and* for MetaTrader 5; it is not headroom DeskPilot may take"
+      },
+      {
+        "name": "memory_used_by_metatrader",
+        "state": "UNMEASURABLE",
+        "value": null,
+        "unit": "bytes",
+        "note": "not observable without enumerating another application's processes, which this system does not do on a machine it is a guest on"
+      }
+    ],
+    "disk": [
+      {
+        "name": "disk_total_bytes",
+        "state": "MEASURED",
+        "value": 270553174016,
+        "unit": "bytes",
+        "note": ""
+      },
+      {
+        "name": "disk_free_bytes",
+        "state": "MEASURED",
+        "value": 28346839040,
+        "unit": "bytes",
+        "note": "the floor in `solvent setup capacity --min-free-disk-bytes` should leave room for MetaTrader 5's own files, not just DeskPilot's"
+      },
+      {
+        "name": "disk_used_percent",
+        "state": "MEASURED",
+        "value": 5.0,
+        "unit": "%",
+        "note": ""
+      },
+      {
+        "name": "disk_io_throughput",
+        "state": "UNMEASURABLE",
+        "value": null,
+        "unit": "bytes/s",
+        "note": "not measurable without writing a benchmark file to the owner's disk, which this does not do uninvited"
+      }
+    ],
+    "deskpilot": [
+      {
+        "name": "deskpilot_peak_rss_bytes",
+        "state": "MEASURED",
+        "value": 12226560,
+        "unit": "bytes",
+        "note": "this interpreter only, and `resource` does not exist on Windows"
+      },
+      {
+        "name": "deskpilot_cpu_seconds",
+        "state": "MEASURED",
+        "value": 0.03,
+        "unit": "s",
+        "note": ""
+      }
+    ],
+    "network": [
+      {
+        "name": "outbound_policy",
+        "state": "MEASURED",
+        "value": "Action Gate + egress allowlist",
+        "unit": "",
+        "note": "DeskPilot makes no outbound request outside an Action Gate window; the allowlist is the policy's, not this tool's"
+      },
+      {
+        "name": "bandwidth_limit",
+        "state": "UNMEASURABLE",
+        "value": null,
+        "unit": "bytes/s",
+        "note": "the host states none and this does not measure it by saturating the owner's link"
+      }
+    ]
+  },
+  "measured": 15,
+  "unmeasurable": [
+    "cpu_percent_used",
+    "memory_used_by_metatrader",
+    "disk_io_throughput",
+    "bandwidth_limit"
+  ],
+  "monthly_cost_usd": 98.0,
+  "inferred_from_cost": [],
+  "is_the_owners_vps": false,
+  "note": "nothing here is inferred from the monthly cost; a price is a billing fact and not a core count"
+}

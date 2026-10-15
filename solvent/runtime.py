@@ -540,17 +540,52 @@ class Runtime:
         return f"{len(notes)} item(s) reconciled" if notes else "nothing outstanding"
 
     def _tick_discovery(self) -> str:
-        """Look for work — but only if the authorities currently permit it."""
+        """Look for work — but only if the authorities currently permit it.
+
+        Discovery is the first thing shed when the machine is under
+        pressure, and it is first for a reason the owner's ladder and
+        this one agree on: a job nobody has been promised costs
+        nothing to not find. Shedding accepted work is breaking a
+        promise, so it is last and this tick never does it.
+
+        The capacity gate already computed that ladder. Until now
+        nothing read it -- ``pressure()["relief"]`` was advice with
+        no audience, which is the same as no advice. This is the
+        audience.
+        """
         state, why = health(self.solvent, started=self.started)
         if not state.may_start_work:
             return f"skipped: {state.value} ({why})"
         if self.solvent.policy.operating_mode.blocks_new_work:
             return "skipped: operating mode blocks new work"
+        shed = self._shed()
+        if "stop speculative discovery" in shed:
+            # Not an error and not a failure: this is the system
+            # protecting a machine it shares with MetaTrader 5, and
+            # saying so plainly so a quiet discovery log can be told
+            # apart from a broken one.
+            return ("skipped: backing off under pressure — "
+                    + "; ".join(shed))
         sources = self.solvent.discovery.sources()
         permitted = [s for s in sources if s.get("readiness") == "PERMITTED"]
         if not permitted:
             return "skipped: no permitted work source"
         return f"{len(permitted)} permitted source(s) available"
+
+    def _shed(self) -> list:
+        """What the capacity gate says to stop doing, in order.
+
+        A failure to read pressure sheds everything. The alternative
+        is to carry on discovering because the thing that would have
+        told us to stop could not be consulted, and this system has
+        found that shape of bug three times now.
+        """
+        try:
+            return list(self.solvent.capacity.pressure().get("relief") or [])
+        except Exception:
+            return ["stop speculative discovery",
+                    "pressure could not be read, which is not the same as "
+                    "no pressure"]
 
     # ------------------------------------------------------------------ loop
     def run_due(self, now: float | None = None) -> list[str]:
