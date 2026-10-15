@@ -272,6 +272,12 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
         )),
     CatalogueEntry(
         "freelancer", "Freelancer.com", FREELANCE_MARKETPLACE, _TERMS,
+        # Not UNDETERMINED any more: the agreement has been read and it
+        # says no. UNSUPPORTED_AUTOMATION is the honest value while that
+        # is true, and the value it moves to is APPROVED_INTEGRATION --
+        # not PUBLIC_FEED -- because what unblocks it is a permission
+        # granted to this owner, not a property of the endpoint.
+        access_method=access.UNSUPPORTED_AUTOMATION,
         # An adapter exists: solvent.marketplaces.FreelancerActiveProjects
         # parses the documented response, verified field by field against a
         # live sample. It changes nothing about permission. This flag is
@@ -303,20 +309,56 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
               "separate document from robots.txt. Operationally nothing "
               "changes -- unread is not permitted, and both answers refuse "
               "-- but the record now says the true thing, and it tells the "
-              "owner exactly which document to read.",
+              "owner exactly which document to read.\n\n"
+              "**2026-10-15: that document has now been read, and the "
+              "answer is no.** Section 33 of the user agreement -- "
+              "Access and Interference -- says: \"You agree that you will "
+              "not use any robot, spider, scraper or other automated "
+              "means to access the Website via any means, including for "
+              "the avoidance of doubt access to our API or application "
+              "programming interface, for any purpose without our express "
+              "written permission.\"\n\n"
+              "This settles three things that were open. The 200 response "
+              "and the published rate-limit header are not permission: a "
+              "platform can answer a request it has told you not to make. "
+              "robots.txt not disallowing /api/ is not permission either, "
+              "because the agreement is the stricter document and the "
+              "agreement says API access is covered. And it applies to "
+              "reading, not only to bidding -- DISCOVER is FORBIDDEN here "
+              "rather than merely undetermined.\n\n"
+              "What would change it is a single thing: express written "
+              "permission from Freelancer. The endpoint, the OAuth2 flow "
+              "at accounts.freelancer.com/oauth/token, the documented "
+              "POST /api/projects/0.1/bids/ body and the sandbox at "
+              "freelancer-sandbox.com are all real and all waiting on "
+              "that one document.",
         terms=(
             TermsFinding(
-                access.DISCOVER, TERMS_UNDETERMINED,
-                citation="https://www.freelancer.com/robots.txt disallows "
-                         "/projects/browse.php*, /jobs/?*, /work/* and "
-                         "/find/* -- page paths, not /api/, which it does "
-                         "not mention. GET /api/projects/0.1/projects/"
-                         "active/ returned 200 with live JSON and "
-                         "`ratelimit-limit: 200;window=60, 1000;window=3600`. "
-                         "The API terms of service are unread",
-                read_on="2026-10-14"),
-            TermsFinding(access.DISCOVER_AUTHENTICATED),
-            TermsFinding(access.SUBMIT_BID),
+                access.DISCOVER, TERMS_FORBIDDEN,
+                citation="https://www.freelancer.com/about/terms section 33 (Access and "
+                         "Interference), read 2026-10-15: \"You agree that you "
+                         "will not use any robot, spider, scraper or other "
+                         "automated means to access the Website via any means, "
+                         "including for the avoidance of doubt access to our API "
+                         "or application programming interface, for any purpose "
+                         "without our express written permission.\" The API "
+                         "returning 200 is not that permission",
+                read_on="2026-10-15"),
+            TermsFinding(
+                access.DISCOVER_AUTHENTICATED, TERMS_FORBIDDEN,
+                citation="same clause: section 33 covers API access 'for "
+                         "any purpose', which includes an authenticated "
+                         "read, https://www.freelancer.com/about/terms",
+                read_on="2026-10-15"),
+            TermsFinding(
+                access.SUBMIT_BID, TERMS_FORBIDDEN,
+                citation="POST /api/projects/0.1/bids/ is documented at "
+                         "developers.freelancer.com and the endpoint "
+                         "exists, but section 33 of the user agreement "
+                         "forbids automated access to the API without "
+                         "express written permission. A documented "
+                         "endpoint is a capability, not a permission",
+                read_on="2026-10-15"),
             TermsFinding(access.SPEND_MONEY),
         )),
     CatalogueEntry(

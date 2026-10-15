@@ -383,6 +383,20 @@ MUTANTS: tuple[Mutant, ...] = (
         "a $40 job is costed at a $4 fee when the platform takes $5",
     ),
 
+    # ---- the agreement outranks the endpoint ------------------------
+
+    Mutant(
+        "a-forbidden-platform-reads-as-merely-unread",
+        "solvent/sourcecatalog.py",
+        "        access_method=access.UNSUPPORTED_AUTOMATION,\n"
+        "        # An adapter exists:",
+        "        access_method=access.UNDETERMINED,\n"
+        "        # An adapter exists:",
+        "tests_solvent.test_marketplace_interface.TheInterfaceIsExactlyTheSix"
+        ".test_freelancer_is_blocked_by_its_agreement_not_by_silence",
+        "a platform that said no reads as one nobody asked",
+    ),
+
     # ---- the one marketplace adapter --------------------------------
 
     Mutant(

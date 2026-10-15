@@ -270,7 +270,11 @@ class AFixtureIsNotTheMarketplaceItIsNamedAfter(unittest.TestCase):
                                owner_identity=OWNER, why="test")
         allowed, why = self.s.discovery.may("freelancer", access.SUBMIT_BID)
         self.assertFalse(allowed)
-        self.assertIn("nobody has read", why)
+        # Was "nobody has read". Somebody has now, and the refusal
+        # names the clause instead of the silence.
+        self.assertIn("express written permission", why)
+        self.assertIn("the owner's grant does not change what the "
+                      "platform allows", why)
 
     def test_a_fixture_can_never_be_an_active_source_anyway(self):
         self.register(FixtureSource("freelancer", []))

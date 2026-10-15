@@ -1,6 +1,26 @@
 #!/usr/bin/env python3
 """Measure what is actually on the one accessible job feed.
 
+**DO NOT SAMPLE THIS FEED AGAIN.** On 2026-10-15, after the samples
+described below had been taken, Freelancer's user agreement was read.
+Section 33 says: "You agree that you will not use any robot, spider,
+scraper or other automated means to access the Website via any means,
+including for the avoidance of doubt access to our API or application
+programming interface, for any purpose without our express written
+permission."
+
+The eleven samples behind this file's numbers were automated access
+to that API. They were taken in good faith -- the endpoint answered
+without a credential, published its own rate limits, and robots.txt
+did not disallow /api/ -- and none of that was permission. The
+agreement is the stricter document and it was not read first. That
+was the mistake, and the numbers are kept because deleting the
+evidence would not unmake the requests, but no further sampling is
+legitimate until the owner holds express written permission.
+
+The analysis below runs on samples already on disk and makes no
+request of its own, which is why it has no fetch command.
+
 Evidence gathering, not acquisition. This reads the public,
 unauthenticated, documented endpoint that Freelancer's own robots.txt
 does not disallow, and counts what comes back. It submits nothing,

@@ -442,10 +442,22 @@ class TheCatalogueClaimsNothingItCannotShow(Base):
             self.assertFalse(entry.automated_discovery_supported,
                              f"{entry.source_id} was marked automated")
 
-    def test_every_marketplace_needs_a_determination(self):
+    def test_no_marketplace_claims_a_permitted_access_method(self):
+        """Undetermined or forbidden -- never a route this repo granted.
+
+        This asserted UNDETERMINED for all six, which made a *stricter*
+        finding look like a regression. Freelancer's agreement has now
+        been read and forbids automated API access without express
+        written permission, so its method is UNSUPPORTED_AUTOMATION.
+        The rule being kept is that none of them reads as permitted.
+        """
+        permitted = (access.OFFICIAL_API, access.APPROVED_INTEGRATION,
+                     access.PUBLIC_FEED, access.PERMITTED_PUBLIC_PAGE)
         for entry in catalogue.by_type(catalogue.FREELANCE_MARKETPLACE):
-            self.assertEqual(entry.access_method, access.UNDETERMINED)
-            self.assertTrue(entry.determination_needed)
+            with self.subTest(source=entry.source_id):
+                self.assertNotIn(entry.access_method, permitted)
+                if entry.access_method == access.UNDETERMINED:
+                    self.assertTrue(entry.determination_needed)
 
     def test_every_entry_supports_manual_ingestion(self):
         """The path blocked by nothing external."""

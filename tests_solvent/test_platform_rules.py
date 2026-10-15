@@ -100,17 +100,23 @@ class EveryPlatformTheOwnerNamedIsCatalogued(unittest.TestCase):
                 self.assertIn(status, cat.OPERATIONAL_STATUSES)
                 self.assertTrue(why.strip(), "a status with no reason given")
 
-    def test_every_marketplace_is_unverified_rather_than_assumed(self):
+    def test_no_marketplace_reads_as_established(self):
         """A platform's terms decide whether automated access is permitted,
-        they differ per account, and they change. That reading cannot be made
-        from inside this repository, and a wrong guess costs the owner their
-        account permanently."""
+        they differ per account, and they change. A wrong guess costs the
+        owner their account permanently.
+
+        Not "every one is UNVERIFIED": that conflated nobody-has-looked
+        with not-permitted, and made Freelancer's read-and-forbidden
+        determination -- the stricter answer -- fail as a regression."""
+        established = (cat.ESTABLISHED_AUTOMATED,
+                       cat.ESTABLISHED_OWNER_AUTHORIZED)
         for e in cat.CATALOGUE:
             if e.source_type != cat.FREELANCE_MARKETPLACE:
                 continue
             with self.subTest(source=e.source_id):
-                status, _why = cat.operational_status(e)
-                self.assertEqual(status, cat.UNVERIFIED)
+                status, why = cat.operational_status(e)
+                self.assertNotIn(status, established)
+                self.assertTrue(why.strip())
 
     def test_no_entry_claims_an_access_method_without_evidence_and_a_date(self):
         """The anti-fabrication rule, enforced rather than trusted."""

@@ -70,10 +70,34 @@ class TheInterfaceIsExactlyTheSix(unittest.TestCase):
                 self.assertTrue(row["manual_import_available"])
 
     def test_nothing_reads_as_ready(self):
+        """None of the six is established. They are not all unread.
+
+        This asserted UNVERIFIED for every platform, which conflated
+        "nobody has looked" with "not ready". Freelancer's agreement
+        has now been read and forbids automated API access without
+        express written permission, so it reads BLOCKED - PLATFORM
+        RESTRICTION: a stronger refusal than UNVERIFIED, and one the
+        old assertion would have called a regression.
+        """
+        ready = (catalogue.ESTABLISHED_AUTOMATED,
+                 catalogue.ESTABLISHED_OWNER_AUTHORIZED)
         for row in self.rows:
             with self.subTest(source=row["source_id"]):
-                self.assertEqual(row["status"], catalogue.UNVERIFIED)
+                self.assertNotIn(row["status"], ready)
                 self.assertTrue(row["why"].strip())
+
+    def test_freelancer_is_blocked_by_its_agreement_not_by_silence(self):
+        """The 2026-10-15 reading, pinned.
+
+        Section 33 of Freelancer's user agreement forbids automated
+        access to the API "for any purpose without our express written
+        permission". The endpoint answering 200 is not permission, and
+        the catalogue has to say which of those two it is recording.
+        """
+        row = {r["source_id"]: r for r in self.rows}["freelancer"]
+        self.assertEqual(row["status"],
+                         catalogue.BLOCKED_PLATFORM_RESTRICTION)
+        self.assertIn("express written permission", row["why"])
 
 
 class TheSummaryIsHonest(unittest.TestCase):
