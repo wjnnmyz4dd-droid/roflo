@@ -349,6 +349,86 @@ All 25 new adversarial tests pass. Existing suites: 66 capacity
 adversarial, 56 probation adversarial, the crash matrix, failure
 injection.
 
+
+---
+
+## P. Mutation testing
+
+Both suites run sequentially, never concurrently, and never with a
+commit in flight — a mutant is a deliberately introduced bug, and
+committing while one is applied would write it onto the branch.
+
+### solvent suite — first run and final run
+
+| | Mutants | Killed | Survived | Not applied | Error |
+|---|---|---|---|---|---|
+| **First run** (after implementation) | 143 | 138 | 2 | 3 | 0 |
+| **Final run** (after repairs) | 143 | **143** | 0 | 0 | 0 |
+
+Both figures are recorded because the first one is the honest
+result and the second is only meaningful next to it. A NOT_APPLIED
+is not a kill and is not counted as one.
+
+**The five that did not kill, and why — every one caused by this
+sweep's own changes.**
+
+*Survived:*
+
+1. `capacity-concurrency-limit-ignored` — the new global ceiling now
+   refuses before the per-pipeline limit does. In a shop with no
+   skills configured, `committed_ceiling()` falls back to
+   `max_concurrent_jobs`, so **both controls refused at exactly
+   three** and deleting either changed nothing. Two controls that
+   refuse at the same number hide each other; this engagement has
+   found that shape three times now. Repaired by configuring five
+   skills so the global ceiling is fifteen while the pipeline limit
+   stays three, with an assertion that the two differ before testing
+   which binds.
+
+2. `capacity-decision-and-write-are-not-atomic` — the budget race it
+   was aimed at only ever lets one transaction finish, so the window
+   where two overlap never really opens. I checked whether the
+   Python lock was simply redundant, since BEGIN IMMEDIATE already
+   serialises writers across processes. **It is not:** sixteen
+   concurrent transactions on the shared connection without it
+   produce `SystemError` and `cannot commit - no transaction is
+   active`, and six of the sixteen writes vanish. Two halves
+   guarding different things, and only one was covered. Repaired
+   with a test that runs sixteen transactions all allowed to finish.
+
+*Not applied — anchors this sweep moved:*
+
+3. `the-triage-filter-outranks-the-gate` — `_at_capacity` was
+   rewritten when the global-ceiling conflict was fixed.
+4. `a-simulated-payment-is-announced-as-money` — the payment
+   notification was rewritten to carry gross, fees and net.
+5. `a-platform-label-becomes-a-capability` — `capability_for` now
+   appears in two adapters rather than one, so a bare match found it
+   twice and applied to neither. Re-anchored on surrounding context.
+
+All five killed on rerun, and the full suite was then re-run from
+scratch rather than trusting the individual reruns.
+
+### Authority boundaries covered
+
+Acquisition permission, contract acceptance, commercial policy,
+capacity admission, worker assignment, verification, delivery,
+payment reconciliation, notification dispatch, VPS resource
+protection and restart recovery all carry mutants. Fourteen are new
+this sweep, covering the bid freeze, standing authority, channel
+health, supervision escalation and the secured-versus-speculative
+distinction.
+
+One of those fourteen survived its own first run:
+`a-grant-can-unfreeze-bidding`, aimed at the belt-and-braces check
+inside `StandingAuthority.problem`. `may_accept` can never reach it
+because its first gate already refuses a competitive bid, so the
+test was satisfied by the outer gate and never exercised the inner
+one. The check is not decoration — anything holding a
+`StandingAuthority` and asking it directly gets the same answer — so
+the test now asks it directly, with a companion asserting the same
+grant still permits the open channels.
+
 ---
 
 ## Q. K-LEAN and iFixAi
