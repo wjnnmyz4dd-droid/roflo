@@ -1162,10 +1162,32 @@ def run_business_cycle(
     # exception. A failure to notify must not lose the job, so it is
     # recorded and the cycle carries on.
     try:
+        # The contract reference is what makes this a won job rather
+        # than a bid that went out. In the owner-entered flow the
+        # owner's own acceptance *is* the award, so the reference
+        # names that rather than a platform contract id -- but there
+        # is always one, because briefing.job_obtained refuses to
+        # send without it.
+        #
+        # Read from `posting` and `cycle`, which are the names that
+        # exist here. The previous line said `opportunity`, a name
+        # that has never been in this scope: it sat on the right of
+        # an `or` whose left side was always truthy, so Python never
+        # evaluated it and the NameError never fired. Adding a second
+        # use of it is what finally asked the question.
+        details = posting or {}
+        pipeline = s.capacity.pipelines().get(capability) or {}
         briefing.job_obtained(
             s, job_id=cycle.job_id, capability=capability,
-            amount_cents=cycle.quoted_cents or opportunity.quoted_cents,
-            source=source_name)
+            amount_cents=(cycle.quoted_cents
+                          or int(details.get("quoted_cents") or 0)),
+            source=source_name,
+            contract_ref=(cycle.opportunity_ref
+                          or str(details.get("ref") or "")
+                          or f"owner-accepted:{cycle.job_id}"),
+            client_ref=str(details.get("client_ref") or ""),
+            deadline=str(details.get("deadline") or ""),
+            queue_position=pipeline.get("committed"))
     except Exception as exc:  # pragma: no cover - exercised by injection
         s.audit.record(
             event="notify.failed", authority="notify", initiator="harness",
@@ -1374,8 +1396,9 @@ def run_business_cycle(
     # their business from the one the ledger has.
     try:
         briefing.payment_received(
-            s, job_id=cycle.job_id, amount_cents=cycle.invoiced_cents,
-            simulated=True, method=payment_rail)
+            s, job_id=cycle.job_id, gross_cents=cycle.invoiced_cents,
+            fees_cents=0, simulated=True, provider=payment_rail,
+            confirmed_at="")
     except Exception as exc:  # pragma: no cover - exercised by injection
         s.audit.record(
             event="notify.failed", authority="notify", initiator="harness",

@@ -473,17 +473,27 @@ class Runtime:
         """
         from . import briefing
 
-        now = now or datetime.now().astimezone()
-        slot = briefing.due(now.strftime("%H:%M"))
+        # The owner's timezone, not the server's. A host on UTC that
+        # asked itself the time would send the morning summary at
+        # 06:50 UTC, which is 01:50 or 02:50 in New York depending on
+        # the month -- and the month is exactly the part a naive
+        # clock gets wrong twice a year.
+        moment = briefing.owner_now(now)
+        slot = briefing.slot_for(moment)
         if not slot:
-            return (f"no summary due at {now.strftime('%H:%M')}; "
-                    f"slots are {', '.join(briefing.SUMMARY_TIMES)}")
+            return (f"no summary due at {moment.strftime('%H:%M %Z')}; "
+                    f"slots are {', '.join(briefing.SUMMARY_TIMES)} "
+                    f"{briefing.OWNER_TIMEZONE}")
         try:
+            # Keyed on the owner's date too. A server crossing
+            # midnight UTC mid-evening would otherwise file the 16:30
+            # summary under tomorrow and send it again.
             outcome = briefing.send_summary(
-                self.solvent, slot=slot, today=now.strftime("%Y-%m-%d"))
+                self.solvent, slot=slot,
+                today=briefing.owner_date(moment))
         except Exception as exc:
             return f"the {slot} summary could not be sent: {exc!r}"[:300]
-        return f"{slot} summary: {outcome}"
+        return f"{slot} {briefing.OWNER_TIMEZONE} summary: {outcome}"
 
     def _tick_owner_intents(self) -> str:
         """Apply what the owner asked for from the control centre.

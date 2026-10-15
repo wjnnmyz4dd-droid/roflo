@@ -24,8 +24,17 @@ thing this system does not need is another process with opinions.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
-#: When the owner wants a summary, in their own local time.
+#: The owner's timezone, named rather than assumed. Two summaries a
+#: day at a fixed wall-clock time is a daylight-saving question
+#: whether or not anybody wants it to be: a server on UTC that sends
+#: at 11:50 is sending at 06:50 for half the year and 07:50 for the
+#: other half. ZoneInfo carries the transition table, so 06:50 is
+#: 06:50 in March and in July.
+OWNER_TIMEZONE = "America/New_York"
+
+#: When the owner wants a summary, in the timezone above.
 MORNING = "06:50"
 EVENING = "16:30"
 SUMMARY_TIMES = (MORNING, EVENING)
@@ -46,6 +55,71 @@ EVENTS = (JOB_OBTAINED, PAYMENT_RECEIVED, MORNING_SUMMARY, EVENING_SUMMARY)
 def _minutes(hhmm: str) -> int:
     hours, _, minutes = hhmm.partition(":")
     return int(hours) * 60 + int(minutes)
+
+
+def zone():
+    """The owner's timezone, or UTC with the reason it is not theirs.
+
+    A missing tz database is a real possibility on a stripped
+    Windows host, and the wrong answer to it is to carry on in local
+    time as though nothing happened -- that sends the morning
+    summary at whatever hour the server happens to think it is.
+    Falling back to UTC is wrong too, but it is wrong *visibly*: the
+    summary then arrives at a consistent hour the owner can see is
+    not theirs, and :func:`zone_problem` says so in the summary
+    itself.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo(OWNER_TIMEZONE)
+    except Exception:
+        return timezone.utc
+
+
+def zone_problem() -> str:
+    """Empty when the owner's timezone is actually available."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        ZoneInfo(OWNER_TIMEZONE)
+    except Exception as exc:
+        return (f"this host has no timezone data for {OWNER_TIMEZONE} "
+                f"({type(exc).__name__}), so summary times are UTC and "
+                "will not be the owner's 06:50 and 16:30")
+    return ""
+
+
+def owner_now(at=None):
+    """The current moment in the owner's timezone.
+
+    ``at`` is for tests and for a caller that already has a time.
+    A naive datetime is read as already being the owner's local
+    time; an aware one is converted, which is the direction that
+    matters -- a UTC-clocked daemon asking "what time is it for the
+    owner" must not get its own hour back.
+    """
+    if at is None:
+        return datetime.now(zone())
+    if at.tzinfo is None:
+        return at.replace(tzinfo=zone())
+    return at.astimezone(zone())
+
+
+def slot_for(at=None, *, grace_minutes: int = GRACE_MINUTES) -> str:
+    """Which summary is due at this moment, in the owner's timezone.
+
+    The dedupe key downstream is keyed on the owner's *date*, not the
+    server's, so a run just after midnight UTC does not send
+    yesterday evening's summary a second time under today's date.
+    """
+    moment = owner_now(at)
+    return due(moment.strftime("%H:%M"), grace_minutes=grace_minutes)
+
+
+def owner_date(at=None) -> str:
+    """Today's date where the owner is. The dedupe key's other half."""
+    return owner_now(at).strftime("%Y-%m-%d")
 
 
 def due(local_time: str, *, grace_minutes: int = GRACE_MINUTES) -> str:
@@ -228,38 +302,105 @@ def send_summary(solvent, *, slot: str, today: str, clock=None) -> str:
 
 def job_obtained(solvent, *, job_id: str, capability: str = "",
                  amount_cents: int = 0, source: str = "",
-                 clock=None) -> str:
-    """Tell the owner a job was taken on."""
-    from . import notify as _notify
+                 contract_ref: str = "", deadline: str = "",
+                 worker: str = "", queue_position=None,
+                 client_ref: str = "", clock=None) -> str:
+    """Tell the owner a job was won. Only a job, never a bid.
 
-    where = f" from {source}" if source else ""
-    what = f" for {capability}" if capability else ""
-    return solvent.notifier.notify(
-        event=JOB_OBTAINED, severity=_notify.INFO,
-        summary=(f"Job obtained{what}{where}: {_money(amount_cents)} "
-                 f"agreed. It is in the pipeline and a worker will take "
-                 "it when one is free."),
-        job_id=job_id, dedupe_key=f"{JOB_OBTAINED}:{job_id}", clock=clock)
+    The owner asked for exactly two routine notifications per job,
+    and was specific about when this one fires: *after a real job or
+    contract has been confirmed*, and not merely because a bid went
+    out. Those are different events with different consequences --
+    one is an offer DeskPilot made, the other is work it now owes --
+    and a system that announced both would be telling the owner it
+    had won something four times for every time it had.
 
+    So ``contract_ref`` is required. It is whatever the award is
+    identified by: a contract id, an accepted-bid reference, the
+    owner's own confirmation. Without one this refuses to send and
+    says why, rather than announcing a win nobody can point at.
 
-def payment_received(solvent, *, job_id: str, amount_cents: int = 0,
-                     simulated: bool = False, method: str = "",
-                     clock=None) -> str:
-    """Tell the owner money arrived -- saying plainly when it did not.
-
-    A simulated payment is announced as simulated. This is the one
-    message where a comfortable wording would do real harm: an owner
-    who reads "payment received" and believes it has a different
-    picture of their business from the one the ledger has.
+    Everything else the owner listed is carried: where it came from,
+    which skill, the client and job identifiers, what it pays, when
+    it is due, which worker has it, and where it sits in that
+    skill's queue.
     """
     from . import notify as _notify
 
+    if not contract_ref:
+        raise ValueError(
+            "job_obtained needs a contract reference: this message means "
+            "work has been won, and a submitted bid is not a won job. "
+            "Pass the award identifier, or send nothing")
+
+    lines = [f"job {job_id}"]
+    if client_ref:
+        lines.append(f"client {client_ref}")
+    lines.append(f"contract {contract_ref}")
+    if source:
+        lines.append(f"via {source}")
+    if capability:
+        lines.append(f"skill {capability}")
+    lines.append(f"value {_money(amount_cents)}")
+    lines.append(f"due {deadline}" if deadline
+                 else "no deadline stated by the client")
+    lines.append(f"worker {worker}" if worker
+                 else "no worker assigned yet")
+    if queue_position is not None:
+        lines.append(f"queue position {queue_position}")
+
+    return solvent.notifier.notify(
+        event=JOB_OBTAINED, severity=_notify.INFO,
+        summary="Job obtained. " + "; ".join(lines) + ".",
+        job_id=job_id, dedupe_key=f"{JOB_OBTAINED}:{job_id}", clock=clock)
+
+
+def payment_received(solvent, *, job_id: str, gross_cents: int = 0,
+                     fees_cents: int = 0, net_cents=None,
+                     provider: str = "", confirmed_at: str = "",
+                     evidence_ref: str = "", simulated: bool = False,
+                     clock=None) -> str:
+    """Tell the owner money arrived -- and never that it did otherwise.
+
+    The owner's fields: job, gross, fees, net, provider, and the
+    timestamp the receipt was confirmed at. ``evidence_ref`` is the
+    seventh and is not optional for a real payment: this message may
+    only follow authoritative provider evidence, so it carries the
+    reference to that evidence or it is not sent.
+
+    That rule is the reason this function can be trusted at all. An
+    email saying "paid" and a customer saying "paid" are both
+    things an attacker can write. A provider's own transaction
+    record is not, and :mod:`solvent.paymentmonitor` is what reads
+    it. This only announces what that established.
+
+    A simulated payment is announced as simulated, in those words,
+    with no money moved and this is not revenue in the body. It is
+    the one message where a comfortable wording would do real harm.
+    """
+    from . import notify as _notify
+
+    if net_cents is None:
+        net_cents = max(0, int(gross_cents) - int(fees_cents))
+    if not simulated and not evidence_ref:
+        raise ValueError(
+            "payment_received needs a reference to the provider evidence "
+            "that confirmed it. An email or a customer message is not "
+            "confirmation, and this message is what the owner will "
+            "believe")
+
     if simulated:
-        body = (f"SIMULATED payment of {_money(amount_cents)} recorded for "
-                f"{job_id}. No money moved and this is not revenue.")
+        body = (f"SIMULATED payment for {job_id}: gross "
+                f"{_money(gross_cents)}, fees {_money(fees_cents)}, net "
+                f"{_money(net_cents)}. No money moved and this is not "
+                "revenue.")
     else:
-        body = (f"Payment received: {_money(amount_cents)} for {job_id}"
-                + (f" via {method}" if method else "") + ".")
+        body = (f"Payment received for {job_id}: gross "
+                f"{_money(gross_cents)}, fees {_money(fees_cents)}, net "
+                f"{_money(net_cents)}"
+                + (f", via {provider}" if provider else "")
+                + (f", confirmed {confirmed_at}" if confirmed_at else "")
+                + f", evidence {evidence_ref}.")
     return solvent.notifier.notify(
         event=PAYMENT_RECEIVED, severity=_notify.INFO, summary=body,
         job_id=job_id, dedupe_key=f"{PAYMENT_RECEIVED}:{job_id}",

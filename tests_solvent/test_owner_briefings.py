@@ -136,15 +136,16 @@ class MoneyIsNeverFlattered(Base):
         self.assertIn("any money in the ledger is simulated", text)
 
     def test_a_simulated_payment_is_announced_as_simulated(self):
-        briefing.payment_received(self.s, job_id="j1", amount_cents=25_000,
-                                  simulated=True, method="fixture")
+        briefing.payment_received(self.s, job_id="j1", gross_cents=25_000,
+                                  simulated=True, provider="fixture")
         body = self.sent(briefing.PAYMENT_RECEIVED)[0]["summary"]
         self.assertIn("SIMULATED", body)
         self.assertIn("not revenue", body)
 
     def test_a_real_payment_is_not_marked_simulated(self):
-        briefing.payment_received(self.s, job_id="j2", amount_cents=25_000,
-                                  simulated=False, method="stripe")
+        briefing.payment_received(self.s, job_id="j2", gross_cents=25_000,
+                                  evidence_ref="txn_test_1",
+                                  simulated=False, provider="stripe")
         body = self.sent(briefing.PAYMENT_RECEIVED)[0]["summary"]
         self.assertNotIn("SIMULATED", body)
         self.assertIn("Payment received", body)
@@ -154,7 +155,8 @@ class TheFourMessagesAreSent(Base):
 
     def test_job_obtained_names_the_job_and_the_money(self):
         briefing.job_obtained(self.s, job_id="j1", capability="csv-cleanup",
-                              amount_cents=25_000, source="owner_entered")
+                              amount_cents=25_000, source="owner_entered",
+                              contract_ref="award-1")
         row = self.sent(briefing.JOB_OBTAINED)[0]
         self.assertIn("csv-cleanup", row["summary"])
         self.assertIn("$250.00", row["summary"])
@@ -162,7 +164,8 @@ class TheFourMessagesAreSent(Base):
 
     def test_the_same_job_is_announced_once(self):
         for _ in range(3):
-            briefing.job_obtained(self.s, job_id="j1", amount_cents=100)
+            briefing.job_obtained(self.s, job_id="j1", amount_cents=100,
+                                  contract_ref="award-1")
         self.assertEqual(len(self.sent(briefing.JOB_OBTAINED)), 1)
 
     def test_a_summary_is_sent_once_per_slot_per_day(self):
@@ -281,7 +284,8 @@ class ALongSummaryIsShortenedNotCut(Base):
         # characters, which fits, and a case that fits is not a case
         # about shortening.
         briefing.job_obtained(self.s, job_id="j1", capability="csv-cleanup",
-                              amount_cents=4_000, source="owner_entered")
+                              amount_cents=4_000, source="owner_entered",
+                              contract_ref="award-1")
 
     def test_the_stored_summary_is_what_was_composed(self):
         """Nothing between compose and the column may shorten it.
