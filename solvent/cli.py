@@ -460,6 +460,39 @@ def cmd_setup_commercial(args: argparse.Namespace) -> int:
             return 1
         terms["hourly_rate_cents"] = int(args.hourly_rate_cents)
 
+    if args.exchange_rate:
+        rates = dict(solvent.policy.get("commercial", "exchange_rate_cents",
+                                        default={}) or {})
+        citations = dict(solvent.policy.get(
+            "commercial", "exchange_rate_citations", default={}) or {})
+        for item in args.exchange_rate:
+            parts = item.split("=", 2)
+            if len(parts) != 3 or not parts[2].strip():
+                print(f"refused: {item!r} is not CURRENCY=CENTS=CITATION. "
+                      "An exchange rate multiplies every price that comes "
+                      "off that platform; one with no source cannot be "
+                      "told apart from one somebody invented")
+                return 1
+            code, cents, citation = parts
+            try:
+                value = float(cents)
+            except ValueError:
+                print(f"refused: {cents!r} is not a number of cents")
+                return 1
+            if value <= 0:
+                print(f"refused: an exchange rate of {value} is not a rate")
+                return 1
+            code = code.strip().upper()
+            if code == "USD":
+                print("refused: USD is the owner's own currency and needs "
+                      "no rate; recording one would mean every dollar "
+                      "budget was multiplied by it")
+                return 1
+            rates[code] = value
+            citations[code] = citation.strip()
+        terms["exchange_rate_cents"] = rates
+        terms["exchange_rate_citations"] = citations
+
     if not terms:
         print("nothing to record; pass at least one term")
         return 1
@@ -1805,6 +1838,14 @@ def build_parser() -> argparse.ArgumentParser:
     commercial.add_argument("--other-direct-cost-per-job-cents", type=int,
                             default=None,
                             help="anything else each delivered job costs")
+    commercial.add_argument(
+        "--exchange-rate", action="append", default=[],
+        metavar="CURRENCY=CENTS=CITATION",
+        help="cents of the owner's currency per one unit of another, "
+             "with its source, e.g. UAH=2.4=\"ECB reference rate, "
+             "2026-10-15\". Needed for any marketplace whose budgets "
+             "are not in USD; without one those postings arrive "
+             "with no price rather than a guessed one")
     commercial.add_argument("--compute-cents-per-cpu-hour", type=int,
                             default=None,
                             help="what running this machine actually costs")

@@ -417,18 +417,27 @@ class TheCatalogueClaimsNothingItCannotShow(Base):
     def test_only_sources_with_a_real_adapter_claim_automation(self):
         """A claim of automation implies an adapter, a date and evidence.
 
-        The count has been through all three states. Nothing was
-        automated; then two public-sector APIs were researched, verified
-        and implemented; then the owner replaced the list with the six
-        marketplaces and those two were retired with their adapters. So
-        it is back to nothing -- asserted explicitly below, because an
-        implication over an empty list is a test that cannot fail.
+        The count has been through four states now. Nothing was
+        automated; then two public-sector APIs were researched,
+        verified and implemented; then the owner replaced the list
+        with the six marketplaces and those two were retired with
+        their adapters, taking it back to nothing. Then Freelancehunt
+        was read, and its agreement forbids automatic proposal
+        submission while saying nothing against reading, so one
+        source claims automated discovery and can cite the sentence
+        that lets it.
+
+        So the implication is live again and is asserted on its own.
+        The explicit empty-list check that used to stand in for it is
+        gone: it was there because an implication over an empty list
+        cannot fail, and the list is not empty any more.
         """
         automated = catalogue.automated_sources()
-        self.assertEqual(
-            [e.source_id for e in automated], [],
-            "a source claims automated discovery; none of the six "
-            "marketplaces has an adapter, and nothing else is catalogued")
+        self.assertTrue(
+            automated,
+            "no source claims automated discovery; Freelancehunt's "
+            "agreement permits a read and it has an adapter, so this "
+            "implication has stopped being tested")
         for entry in automated:
             self.assertTrue(entry.adapter_implemented,
                             f"{entry.source_id} claims automation with no adapter")
@@ -437,26 +446,74 @@ class TheCatalogueClaimsNothingItCannotShow(Base):
             self.assertTrue(entry.evidence,
                             f"{entry.source_id} claims automation with no evidence")
 
-    def test_no_commercial_marketplace_claims_automation(self):
+    def test_a_marketplace_claims_automation_only_with_a_citation(self):
+        """Six of the seven claim nothing. The seventh cites a clause.
+
+        This used to assert that none of them did, which was true
+        while none of them could. Asserting it still would mean the
+        only way to pass was to leave a permitted route unused --
+        a test that forbids finding out.
+        """
         for entry in catalogue.by_type(catalogue.FREELANCE_MARKETPLACE):
-            self.assertFalse(entry.automated_discovery_supported,
-                             f"{entry.source_id} was marked automated")
+            if not entry.automated_discovery_supported:
+                continue
+            with self.subTest(source=entry.source_id):
+                finding = entry.terms_for(access.DISCOVER)
+                self.assertEqual(finding.finding, catalogue.TERMS_PERMITTED,
+                                 f"{entry.source_id} is marked automated "
+                                 "without a permitted discovery finding")
+                self.assertTrue(finding.citation,
+                                f"{entry.source_id} claims a permission "
+                                "with nothing to cite for it")
+                self.assertTrue(finding.read_on)
+                self.assertTrue(entry.adapter_implemented)
+
+    def test_no_marketplace_may_submit_anything_automatically(self):
+        """The permission that stays shut whatever discovery says.
+
+        Reading a board and offering to work on it are different acts
+        under every agreement read so far, and the second is the one
+        that binds the owner. A platform moving from forbidden to
+        permitted *discovery* must not drag submission with it.
+        """
+        for entry in catalogue.by_type(catalogue.FREELANCE_MARKETPLACE):
+            for activity in (access.SUBMIT_BID, access.SUBMIT_APPLICATION,
+                             access.ACCEPT_CONTRACT):
+                with self.subTest(source=entry.source_id, activity=activity):
+                    self.assertNotEqual(
+                        entry.terms_for(activity).finding,
+                        catalogue.TERMS_PERMITTED,
+                        f"{entry.source_id} reads as permitted to "
+                        f"{activity}; no agreement read so far says that")
 
     def test_no_marketplace_claims_a_permitted_access_method(self):
         """Undetermined or forbidden -- never a route this repo granted.
 
-        This asserted UNDETERMINED for all six, which made a *stricter*
-        finding look like a regression. Freelancer's agreement has now
-        been read and forbids automated API access without express
-        written permission, so its method is UNSUPPORTED_AUTOMATION.
-        The rule being kept is that none of them reads as permitted.
+        This has now been wrong in both directions. It first asserted
+        UNDETERMINED for all six, which made Freelancer's stricter
+        read-and-forbidden finding look like a regression. It then
+        asserted that none reads as permitted, which made
+        Freelancehunt's permitted finding look like one too.
+
+        Neither count was the rule. The rule is that a permitted
+        access method is backed by something: a cited reading of that
+        platform's own terms, on a recorded date, with an adapter
+        that exists. An undetermined one still has to say what would
+        settle it.
         """
         permitted = (access.OFFICIAL_API, access.APPROVED_INTEGRATION,
                      access.PUBLIC_FEED, access.PERMITTED_PUBLIC_PAGE)
         for entry in catalogue.by_type(catalogue.FREELANCE_MARKETPLACE):
             with self.subTest(source=entry.source_id):
-                self.assertNotIn(entry.access_method, permitted)
-                if entry.access_method == access.UNDETERMINED:
+                if entry.access_method in permitted:
+                    finding = entry.terms_for(access.DISCOVER)
+                    self.assertEqual(finding.finding,
+                                     catalogue.TERMS_PERMITTED)
+                    self.assertTrue(finding.citation)
+                    self.assertTrue(entry.verified_on)
+                    self.assertTrue(entry.evidence)
+                    self.assertTrue(entry.adapter_implemented)
+                elif entry.access_method == access.UNDETERMINED:
                     self.assertTrue(entry.determination_needed)
 
     def test_every_entry_supports_manual_ingestion(self):

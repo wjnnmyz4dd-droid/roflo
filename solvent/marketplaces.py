@@ -204,3 +204,231 @@ class FreelancerActiveProjects(WorkSource):
                               if seo else ""),
                 risk_indicators=tuple(flags)))
         return out
+
+
+#: Freelancehunt's official API 2.0. The projects endpoint answers
+#: without a token; everything else on the host returns 401, which is
+#: a platform publishing its board on purpose rather than failing to
+#: defend it.
+FREELANCEHUNT_HOST = "api.freelancehunt.com"
+FREELANCEHUNT_PATH = "/v2/projects"
+
+#: The one status that means a project is taking proposals. Read from
+#: the platform's own status object rather than inferred from a date:
+#: a project can be open past its stated expiry and closed before it.
+FREELANCEHUNT_OPEN_STATUS = 11
+
+
+class FreelancehuntProjects(WorkSource):
+    """Open projects from Freelancehunt's official API.
+
+    The first adapter in this file whose source actually permits what
+    it does, and it is worth being precise about how narrow that is.
+    Freelancehunt's User Agreement forbids, at clause 3.1.11, "tools
+    for mass mailing of private messages or automatic proposal
+    submission on projects". Reading is not in that sentence and the
+    platform publishes an API that serves this endpoint to anybody.
+    So this class reads, and like its Freelancer sibling it has no
+    notion of bidding: on this platform that is not an undetermined
+    permission to be established later, it is a prohibition with a
+    clause number, and a ``bid`` method here would be code written
+    against the agreement.
+
+    Two things about this source that shape every opportunity it
+    produces:
+
+    **Budgets are in hryvnia.** It is a Ukrainian platform and most
+    postings are denominated in UAH. DeskPilot has no exchange rate
+    and will not invent one, so those arrive with no price and say
+    so. This is not a defect in the adapter; it is the honest result,
+    and the owner's remedy is a recorded rate, not a guess here.
+
+    **The employer's record is published.** Completed projects,
+    positive and negative reviews, a rating. That is the platform's
+    own structured statement about a counterparty, and it is carried
+    through as a flag rather than silently scored, because what
+    counts as a reliable client is the owner's judgement.
+    """
+
+    kind = "api"
+    host = FREELANCEHUNT_HOST
+    is_fixture = False
+    #: Name, budget, currency, skills, status and expiry all arrive as
+    #: schema fields. The description does not, and is quarantined.
+    structured_offer_terms = True
+    work_type = access.CLIENT_SERVICES
+
+    def __init__(self, name: str = "freelancehunt", *, limit: int = 50,
+                 capability_for: dict | None = None,
+                 rates: dict | None = None) -> None:
+        self.name = name
+        self.limit = max(1, min(int(limit), 100))
+        #: Owner-recorded exchange rates, as cents of the owner's
+        #: currency per one unit of theirs. Empty by default and
+        #: never defaulted to a number: a rate DeskPilot chose would
+        #: turn every hryvnia budget into an invented dollar price,
+        #: and the whole posting would then be priced off it. The
+        #: owner records one with a citation through
+        #: ``solvent setup commercial --exchange-rate``; until they
+        #: do, UAH postings arrive with no price and say why.
+        self.rates = {}
+        for code, cents in (rates or {}).items():
+            try:
+                value = float(cents)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                self.rates[str(code).strip().upper()] = value
+        #: Platform skill names mapped to DeskPilot capabilities. The
+        #: owner's call, empty until they make it. "BI & Data
+        #: Analytics" is not this system's `csv-cleanup` because a
+        #: taxonomy label is not a statement of what a client wants.
+        self.capability_for = {str(k).strip().lower(): str(v)
+                               for k, v in (capability_for or {}).items()}
+
+    def request(self) -> object | None:
+        """What to ask the Gate for. Never performed here."""
+        return {
+            "method": "GET",
+            "url": f"https://{FREELANCEHUNT_HOST}{FREELANCEHUNT_PATH}",
+            "headers": {"Accept": "application/json"},
+        }
+
+    # ------------------------------------------------------------ parsing
+
+    @staticmethod
+    def _projects(payload: object) -> list:
+        """The project list, or nothing, without guessing at a shape."""
+        if not isinstance(payload, dict):
+            return []
+        data = payload.get("data")
+        if not isinstance(data, list):
+            return []
+        return [p for p in data
+                if isinstance(p, dict) and p.get("type") == "project"
+                and isinstance(p.get("attributes"), dict)]
+
+    @staticmethod
+    def _is_open(attributes: dict) -> bool:
+        status = attributes.get("status")
+        if not isinstance(status, dict):
+            return False
+        try:
+            return int(status.get("id")) == FREELANCEHUNT_OPEN_STATUS
+        except (TypeError, ValueError):
+            return False
+
+    def _quoted_cents(self, attributes: dict) -> tuple[int, str]:
+        """What the client committed to, in the owner's currency or not.
+
+        Freelancehunt states one amount rather than a range, so there
+        is no most-they-might-spend to mistake for revenue here. The
+        currency is the whole problem instead: it is usually UAH, and
+        a UAH figure multiplied by a rate nobody recorded is an
+        invented price.
+        """
+        budget = attributes.get("budget")
+        if not isinstance(budget, dict):
+            return 0, "the posting states no budget"
+        code = str(budget.get("currency") or "").upper()
+        try:
+            amount = float(budget.get("amount"))
+        except (TypeError, ValueError):
+            return 0, "the posting's budget is not a number"
+        if amount <= 0:
+            return 0, "the posting states no budget above zero"
+        if code == OWNER_CURRENCY:
+            return int(round(amount * 100)), (
+                f"the {code} {amount:,.2f} the client stated")
+        named = code or "an unstated currency"
+        rate = self.rates.get(code) if code else None
+        if not rate:
+            return 0, (f"budget is {amount:,.0f} {named} and DeskPilot has "
+                       "no exchange rate, so it has no price in the "
+                       "owner's currency")
+        cents = int(round(amount * rate))
+        return cents, (f"{amount:,.0f} {code} converted at the owner's "
+                       f"recorded rate of {rate / 100:.4f} "
+                       f"{OWNER_CURRENCY} per {code}; the rate is the "
+                       "owner's recorded figure, not a live quote, and "
+                       "the client committed to the hryvnia amount rather "
+                       "than to this one")
+
+    def _needs(self, attributes: dict) -> tuple[tuple[str, ...],
+                                                tuple[str, ...]]:
+        labels = []
+        skills = attributes.get("skills")
+        if isinstance(skills, list):
+            for skill in skills:
+                if isinstance(skill, dict) and skill.get("name"):
+                    labels.append(str(skill["name"]))
+        mapped = []
+        for label in labels:
+            capability = self.capability_for.get(label.strip().lower())
+            if capability and capability not in mapped:
+                mapped.append(capability)
+        return tuple(mapped), tuple(labels)
+
+    @staticmethod
+    def _employer_note(attributes: dict) -> str:
+        """The platform's own record of the counterparty, uninterpreted."""
+        employer = attributes.get("employer")
+        if not isinstance(employer, dict):
+            return "the posting names no employer record"
+        parts = []
+        for key, label in (("completed_projects", "completed project(s)"),
+                           ("positive_reviews", "positive review(s)"),
+                           ("negative_reviews", "negative review(s)")):
+            value = employer.get(key)
+            if isinstance(value, (int, float)):
+                parts.append(f"{int(value)} {label}")
+        if not parts:
+            return "the platform published no counterparty record"
+        return ("the platform's own counterparty record: "
+                + ", ".join(parts)
+                + "; what counts as reliable is the owner's call")
+
+    def parse(self, payload: object) -> list[Opportunity]:
+        out: list[Opportunity] = []
+        for project in self._projects(payload):
+            attributes = project["attributes"]
+            if not self._is_open(attributes):
+                continue
+            cents, price_note = self._quoted_cents(attributes)
+            needs, labels = self._needs(attributes)
+            flags = [f"price: {price_note}",
+                     self._employer_note(attributes)]
+            if not needs:
+                flags.append(
+                    "no DeskPilot capability is mapped to "
+                    + (f"platform skills {', '.join(labels)}"
+                       if labels else "this posting, which states none")
+                    + "; the owner decides what a platform label means")
+            if attributes.get("is_personal"):
+                flags.append("addressed to a specific freelancer rather "
+                             "than open to proposals")
+            body = str(attributes.get("description", "") or "")
+            links = project.get("links")
+            url = ""
+            if isinstance(links, dict):
+                url = str(links.get("self") or "")
+            out.append(Opportunity(
+                id=new_id("opp"), source=self.name,
+                external_ref=str(project.get("id", "") or ""),
+                title=str(attributes.get("name", "") or "")[:300],
+                quoted_cents=cents, needs=needs,
+                # The platform's own stated expiry, carried as given.
+                # It is when proposals close, which is not the same as
+                # when the work is due -- so it is a deadline for
+                # bidding and the Finder treats it as one.
+                deadline=str(attributes.get("expired_at", "") or ""),
+                client_ref="",
+                posting=quarantine(body, source=self.name,
+                                   privacy=PrivacyClass.PUBLIC),
+                structured_terms=self.structured_offer_terms,
+                owner_entered=False,
+                payment_structure=str(
+                    attributes.get("safe_type", "") or "").upper(),
+                external_url=url,
+                risk_indicators=tuple(flags)))
+        return out

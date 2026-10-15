@@ -69,7 +69,14 @@ class TheyAreGone(unittest.TestCase):
         for entry in catalogue.CATALOGUE:
             by_type.setdefault(entry.source_type, []).append(entry.source_id)
         self.assertEqual(sorted(by_type), ["DIRECT", "FREELANCE_MARKETPLACE"])
-        self.assertEqual(len(by_type["FREELANCE_MARKETPLACE"]), 6)
+        # Seven: the owner's original six, plus Freelancehunt, which
+        # was researched later and is the only one of them whose
+        # agreement permits an automated read. The assertion that
+        # matters here is that the retired four did not come back --
+        # that is what the rest of this class checks.
+        self.assertGreaterEqual(len(by_type["FREELANCE_MARKETPLACE"]), 6)
+        for retired in RETIRED:
+            self.assertNotIn(retired, by_type["FREELANCE_MARKETPLACE"])
 
 
 class WhatRetiringThemWouldHaveOpened(unittest.TestCase):

@@ -20,11 +20,13 @@ class TheInterfaceIsExactlyTheSix(unittest.TestCase):
     def setUp(self):
         self.rows = catalogue.marketplace_interface()
 
-    def test_six_rows(self):
-        self.assertEqual(
-            sorted(r["source_id"] for r in self.rows),
-            ["contra", "fiverr", "freelancer", "guru", "peopleperhour",
-             "upwork"])
+    def test_every_catalogued_marketplace_has_a_row(self):
+        """Membership, not a count: the list has grown once already."""
+        rows = {r["source_id"] for r in self.rows}
+        for named in ("contra", "fiverr", "freelancer", "freelancehunt",
+                      "guru", "peopleperhour", "upwork"):
+            with self.subTest(source=named):
+                self.assertIn(named, rows)
 
     def test_every_row_covers_all_seven_activities(self):
         for row in self.rows:
@@ -79,8 +81,15 @@ class TheInterfaceIsExactlyTheSix(unittest.TestCase):
         RESTRICTION: a stronger refusal than UNVERIFIED, and one the
         old assertion would have called a regression.
         """
+        # Three now, not two. Freelancehunt's agreement has been read
+        # and permits a machine read, so it reads PENDING OWNER
+        # AUTHORIZATION: a determination exists and the owner has not
+        # registered the source in this deployment. That is the state
+        # between "nobody looked" and "running", and it was missing
+        # from this set because nothing had ever reached it.
         allowed = {catalogue.UNVERIFIED,
-                   catalogue.BLOCKED_PLATFORM_RESTRICTION}
+                   catalogue.BLOCKED_PLATFORM_RESTRICTION,
+                   catalogue.PENDING_OWNER_AUTHORIZATION}
         for row in self.rows:
             with self.subTest(source=row["source_id"]):
                 # One of exactly two, not merely "not ready": a status

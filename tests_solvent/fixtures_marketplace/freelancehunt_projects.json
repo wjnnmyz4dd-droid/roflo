@@ -1,0 +1,402 @@
+{
+  "data": [
+    {
+      "id": 1659201,
+      "type": "project",
+      "attributes": {
+        "name": "Clean and deduplicate a supplier price export",
+        "description": "The attached CSV has duplicate rows and inconsistent column headers. Needs tidying into one clean sheet.",
+        "description_html": "<p>The attached CSV has duplicate rows and inconsistent column headers. Needs tidying into one clean sheet.</p>",
+        "skills": [
+          {
+            "id": 199,
+            "name": "BI & Data Analytics"
+          },
+          {
+            "id": 86,
+            "name": "Databases & SQL"
+          }
+        ],
+        "status": {
+          "id": 11,
+          "name": "Open for proposals"
+        },
+        "budget": {
+          "amount": 16500,
+          "currency": "UAH"
+        },
+        "bid_count": 8,
+        "is_remote_job": false,
+        "is_premium": false,
+        "location": null,
+        "safe_type": "employer",
+        "is_personal": false,
+        "employer": {
+          "id": 2012172,
+          "type": "employer",
+          "login": "client0",
+          "first_name": "Test",
+          "last_name": "Client",
+          "avatar": {
+            "small": {
+              "url": "https://content.freelancehunt.com/profile/photo/50/gurin_and.png",
+              "width": 50,
+              "height": 50
+            },
+            "large": {
+              "url": "https://content.freelancehunt.com/profile/photo/225/gurin_and.png",
+              "width": 225,
+              "height": 225
+            }
+          },
+          "self": "https://api.freelancehunt.com/v2/employers/2012172",
+          "rating": 600,
+          "completed_projects": 1,
+          "positive_reviews": 1,
+          "negative_reviews": 0,
+          "average_grade": 10
+        },
+        "freelancer": null,
+        "tags": [
+          {
+            "id": 10315102,
+            "name": "розгортання"
+          },
+          {
+            "id": 10652002,
+            "name": "Виправлення помилок"
+          },
+          {
+            "id": 13051244,
+            "name": "моніторинг"
+          }
+        ],
+        "updates": [],
+        "published_at": "2026-10-15T16:39:51+03:00",
+        "expired_at": "2026-10-29T16:39:51+02:00"
+      }
+    },
+    {
+      "id": 1659196,
+      "type": "project",
+      "attributes": {
+        "name": "Build a monthly summary report from three spreadsheets",
+        "description": "Three xlsx files per month. Need them combined into one summary with totals per category.",
+        "description_html": "<p>Three xlsx files per month. Need them combined into one summary with totals per category.</p>",
+        "skills": [
+          {
+            "id": 59,
+            "name": "3D Modeling"
+          },
+          {
+            "id": 117,
+            "name": "Packaging and label design"
+          }
+        ],
+        "status": {
+          "id": 11,
+          "name": "Open for proposals"
+        },
+        "budget": {
+          "amount": 1500,
+          "currency": "UAH"
+        },
+        "bid_count": 1,
+        "is_remote_job": false,
+        "is_premium": false,
+        "location": null,
+        "safe_type": "employer",
+        "is_personal": false,
+        "employer": {
+          "id": 2054995,
+          "type": "employer",
+          "login": "client1",
+          "first_name": "Test",
+          "last_name": "Client",
+          "avatar": {
+            "small": {
+              "url": "https://content.freelancehunt.com/profile/photo/50/Kokoridou7.png",
+              "width": 50,
+              "height": 50
+            },
+            "large": {
+              "url": "https://content.freelancehunt.com/profile/photo/225/Kokoridou7.png",
+              "width": 225,
+              "height": 225
+            }
+          },
+          "self": "https://api.freelancehunt.com/v2/employers/2054995",
+          "rating": 40,
+          "completed_projects": 0,
+          "positive_reviews": 0,
+          "negative_reviews": 0,
+          "average_grade": null
+        },
+        "freelancer": null,
+        "tags": [
+          {
+            "id": 2054788,
+            "name": "3D друк"
+          },
+          {
+            "id": 4117283,
+            "name": "step"
+          },
+          {
+            "id": 11009960,
+            "name": "Фотополімерний друк"
+          },
+          {
+            "id": 13051563,
+            "name": "STL"
+          },
+          {
+            "id": 13052731,
+            "name": "CAD-моделювання"
+          }
+        ],
+        "updates": [],
+        "published_at": "2026-10-15T16:18:27+03:00",
+        "expired_at": "2026-10-29T16:18:27+02:00"
+      }
+    },
+    {
+      "id": 1659193,
+      "type": "project",
+      "attributes": {
+        "name": "Convert scanned invoices into a structured sheet",
+        "description": "Roughly 40 PDF invoices. Need supplier, date, net and total pulled into columns.",
+        "description_html": "<p>Roughly 40 PDF invoices. Need supplier, date, net and total pulled into columns.</p>",
+        "skills": [
+          {
+            "id": 1,
+            "name": "PHP"
+          },
+          {
+            "id": 99,
+            "name": "Web Programming"
+          }
+        ],
+        "status": {
+          "id": 11,
+          "name": "Open for proposals"
+        },
+        "budget": {
+          "amount": 10000,
+          "currency": "UAH"
+        },
+        "bid_count": 74,
+        "is_remote_job": false,
+        "is_premium": false,
+        "location": null,
+        "safe_type": "employer",
+        "is_personal": false,
+        "employer": {
+          "id": 944600,
+          "type": "employer",
+          "login": "client2",
+          "first_name": "Test",
+          "last_name": "Client",
+          "avatar": {
+            "small": {
+              "url": "https://content.freelancehunt.com/profile/photo/50/hugo2.png",
+              "width": 50,
+              "height": 50
+            },
+            "large": {
+              "url": "https://content.freelancehunt.com/profile/photo/225/hugo2.png",
+              "width": 225,
+              "height": 225
+            }
+          },
+          "self": "https://api.freelancehunt.com/v2/employers/944600",
+          "rating": 6675,
+          "completed_projects": 83,
+          "positive_reviews": 83,
+          "negative_reviews": 0,
+          "average_grade": 10
+        },
+        "freelancer": null,
+        "tags": [
+          {
+            "id": 19362,
+            "name": "vps"
+          },
+          {
+            "id": 681321,
+            "name": "acf"
+          },
+          {
+            "id": 1710424,
+            "name": "WebP"
+          },
+          {
+            "id": 10636013,
+            "name": "WordPress"
+          }
+        ],
+        "updates": [],
+        "published_at": "2026-10-15T16:09:08+03:00",
+        "expired_at": "2026-10-18T16:09:29+03:00"
+      }
+    },
+    {
+      "id": 1659192,
+      "type": "project",
+      "attributes": {
+        "name": "Reformat a product document to our house template",
+        "description": "A docx that needs headings, numbering and tables brought into line with the attached template.",
+        "description_html": "<p>A docx that needs headings, numbering and tables brought into line with the attached template.</p>",
+        "skills": [
+          {
+            "id": 14,
+            "name": "Search Engine Optimization (SEO)"
+          },
+          {
+            "id": 134,
+            "name": "Website SEO Audit"
+          }
+        ],
+        "status": {
+          "id": 11,
+          "name": "Open for proposals"
+        },
+        "budget": null,
+        "bid_count": 16,
+        "is_remote_job": false,
+        "is_premium": false,
+        "location": null,
+        "safe_type": "employer",
+        "is_personal": false,
+        "employer": {
+          "id": 1988586,
+          "type": "employer",
+          "login": "client3",
+          "first_name": "Test",
+          "last_name": "Client",
+          "avatar": {
+            "small": {
+              "url": "https://content.freelancehunt.com/profile/photo/50/EASYFEET.png",
+              "width": 50,
+              "height": 50
+            },
+            "large": {
+              "url": "https://content.freelancehunt.com/profile/photo/225/EASYFEET.png",
+              "width": 225,
+              "height": 225
+            }
+          },
+          "self": "https://api.freelancehunt.com/v2/employers/1988586",
+          "rating": 369,
+          "completed_projects": 1,
+          "positive_reviews": 1,
+          "negative_reviews": 0,
+          "average_grade": 10
+        },
+        "freelancer": null,
+        "tags": [
+          {
+            "id": 416083,
+            "name": "schema.org"
+          },
+          {
+            "id": 10636189,
+            "name": "Google Analytics"
+          },
+          {
+            "id": 10636517,
+            "name": "Shopify"
+          },
+          {
+            "id": 10637269,
+            "name": "Google Search Console"
+          }
+        ],
+        "updates": [],
+        "published_at": "2026-10-15T16:07:34+03:00",
+        "expired_at": "2026-10-29T16:07:34+02:00"
+      }
+    },
+    {
+      "id": 1659190,
+      "type": "project",
+      "attributes": {
+        "name": "Enter contact records into a spreadsheet from a list",
+        "description": "About 200 records. Name, company, email, phone, one row each.",
+        "description_html": "<p>About 200 records. Name, company, email, phone, one row each.</p>",
+        "skills": [
+          {
+            "id": 17,
+            "name": "Logo Design"
+          },
+          {
+            "id": 90,
+            "name": "Illustrations & Drawings"
+          }
+        ],
+        "status": {
+          "id": 11,
+          "name": "Open for proposals"
+        },
+        "budget": {
+          "amount": 1000,
+          "currency": "UAH"
+        },
+        "bid_count": 22,
+        "is_remote_job": false,
+        "is_premium": false,
+        "location": null,
+        "safe_type": "employer",
+        "is_personal": false,
+        "employer": {
+          "id": 2054961,
+          "type": "employer",
+          "login": "client4",
+          "first_name": "Test",
+          "last_name": "Client",
+          "avatar": {
+            "small": {
+              "url": "https://content.freelancehunt.com/profile/photo/50/voonya_employer.png",
+              "width": 50,
+              "height": 50
+            },
+            "large": {
+              "url": "https://content.freelancehunt.com/profile/photo/225/voonya_employer.png",
+              "width": 225,
+              "height": 225
+            }
+          },
+          "self": "https://api.freelancehunt.com/v2/employers/2054961",
+          "rating": 40,
+          "completed_projects": 0,
+          "positive_reviews": 0,
+          "negative_reviews": 0,
+          "average_grade": null
+        },
+        "freelancer": null,
+        "tags": [
+          {
+            "id": 2634,
+            "name": "favicon"
+          },
+          {
+            "id": 10636489,
+            "name": "Adobe illustrator"
+          },
+          {
+            "id": 10639295,
+            "name": "SVG"
+          }
+        ],
+        "updates": [],
+        "published_at": "2026-10-15T16:05:44+03:00",
+        "expired_at": "2026-10-29T16:05:44+02:00"
+      }
+    }
+  ],
+  "links": {
+    "self": "https://api.freelancehunt.com/v2/projects",
+    "next": "https://api.freelancehunt.com/v2/projects?page[number]=2",
+    "last": "https://api.freelancehunt.com/v2/projects?page[number]=52"
+  }
+}

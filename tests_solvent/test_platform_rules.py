@@ -73,10 +73,16 @@ class EveryPlatformTheOwnerNamedIsCatalogued(unittest.TestCase):
         else disappearing still fails here.
         """
         have = {e.source_id for e in cat.CATALOGUE}
-        self.assertEqual(have, set(self.REQUIRED),
-                         "the catalogue is no longer exactly the six "
-                         "marketplaces plus the owner's own three channels")
-        self.assertEqual(len(cat.CATALOGUE), len(self.REQUIRED))
+        # A subset check, not an equality. What this guards is the
+        # catalogue losing something without review; growing is how a
+        # researched platform gets added, and Freelancehunt was added
+        # in exactly that way. Equality made the two indistinguishable
+        # and would have been passed by deleting the new entry.
+        missing = set(self.REQUIRED) - have
+        self.assertEqual(missing, set(),
+                         f"the catalogue lost {sorted(missing)}; entries "
+                         "are retired by name, never by disappearing")
+        self.assertGreaterEqual(len(cat.CATALOGUE), len(self.REQUIRED))
 
     def test_the_retired_entries_are_gone_and_stay_gone(self):
         have = {e.source_id for e in cat.CATALOGUE}
@@ -84,14 +90,24 @@ class EveryPlatformTheOwnerNamedIsCatalogued(unittest.TestCase):
             with self.subTest(source=source_id):
                 self.assertNotIn(source_id, have)
 
-    def test_exactly_six_marketplaces(self):
-        """The objective, stated as a number."""
-        marketplaces = [e.source_id for e in cat.CATALOGUE
-                        if e.source_type == cat.FREELANCE_MARKETPLACE]
-        self.assertEqual(
-            sorted(marketplaces),
-            ["contra", "fiverr", "freelancer", "guru", "peopleperhour",
-             "upwork"])
+    def test_the_six_the_owner_named_are_all_present(self):
+        """The objective, stated as membership rather than as a count.
+
+        The owner named six and later named a seventh, Freelancehunt,
+        which turned out to be the only one whose agreement permits a
+        machine read. A test that asserted the number six would have
+        had to be deleted to add it, and a test deleted to let a
+        change through was never protecting anything.
+
+        What is still worth asserting: none of the six the owner
+        originally named has quietly fallen out of the list.
+        """
+        marketplaces = {e.source_id for e in cat.CATALOGUE
+                        if e.source_type == cat.FREELANCE_MARKETPLACE}
+        for named in ("contra", "fiverr", "freelancer", "guru",
+                      "peopleperhour", "upwork"):
+            with self.subTest(source=named):
+                self.assertIn(named, marketplaces)
 
     def test_every_entry_derives_one_of_the_seven_statuses(self):
         for e in cat.CATALOGUE:
@@ -111,6 +127,9 @@ class EveryPlatformTheOwnerNamedIsCatalogued(unittest.TestCase):
         expected = {
             access.UNDETERMINED: cat.UNVERIFIED,
             access.UNSUPPORTED_AUTOMATION: cat.BLOCKED_PLATFORM_RESTRICTION,
+            # Read, permitted, adapter written, and still not running:
+            # the owner registers a source, not this repository.
+            access.OFFICIAL_API: cat.PENDING_OWNER_AUTHORIZATION,
         }
         for e in cat.CATALOGUE:
             if e.source_type != cat.FREELANCE_MARKETPLACE:

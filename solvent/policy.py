@@ -103,6 +103,20 @@ DEFAULT_POLICY: dict[str, Any] = {
         # the Finder checks separately. An hourly contract is otherwise
         # billed for the hours actually worked, however few.
         "minimum_hours": 1.0,
+        # Exchange rates, as cents of the owner's currency per one unit
+        # of the other, recorded by the owner with a citation. Empty
+        # until they are, and empty means postings in that currency
+        # have no price rather than a guessed one. This exists because
+        # the one marketplace whose agreement permits an automated read
+        # denominates its budgets in hryvnia: without a recorded rate,
+        # a permitted integration produces nothing anybody can quote.
+        "exchange_rate_cents": {},
+        # The citation behind each rate, keyed the same way. A rate with
+        # no entry here is not usable, for the same reason a market rate
+        # is not: a number whose source nobody recorded cannot be told
+        # apart from one somebody made up, and this one multiplies
+        # every price that comes off the platform.
+        "exchange_rate_citations": {},
         # Per-capability market rate and work standard, recorded by the owner
         # with a citation. Empty until they are.
         "market_hourly_cents": {},
