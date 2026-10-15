@@ -158,6 +158,47 @@ class ItParsesWhatThePlatformActuallySent(unittest.TestCase):
                          "client prose must not arrive as a bare string")
 
 
+class ADirectInvitationIsNotAnOpenPosting(unittest.TestCase):
+    """is_personal is the platform saying "this one is for you".
+
+    It matters more than it looks. Clause 3.1.11 forbids automatic
+    proposal submission on projects; a posting addressed to one
+    freelancer is not something you submit a proposal to, so it is
+    the one shape of marketplace work this system could legitimately
+    acquire unattended -- if the platform's acceptance terms were
+    ever established.
+    """
+
+    def invitation(self):
+        data = payload()
+        data["data"][0]["attributes"]["is_personal"] = True
+        return FreelancehuntProjects().parse(data)[0]
+
+    def test_a_personal_posting_is_flagged(self):
+        flags = " ".join(self.invitation().risk_indicators)
+        self.assertIn("addressed to a specific freelancer", flags)
+
+    def test_acquisition_reads_that_flag_as_an_invitation(self):
+        from solvent import acquisition as acq
+
+        self.assertEqual(acq.classify(self.invitation()),
+                         acq.DIRECT_INVITATION)
+
+    def test_an_ordinary_posting_reads_as_a_bid(self):
+        from solvent import acquisition as acq
+
+        ordinary = FreelancehuntProjects().parse(payload())[0]
+        self.assertEqual(acq.classify(ordinary), acq.COMPETITIVE_BID)
+
+    def test_an_invitation_is_still_not_acceptable_unattended(self):
+        """Discovery is permitted here; acceptance has not been read."""
+        from solvent import acquisition as acq
+
+        problem = acq.channel_problem(self.invitation(),
+                                      source_id="freelancehunt")
+        self.assertIn("automated contract acceptance", problem)
+
+
 class MoneyIsNotInvented(unittest.TestCase):
     """Every budget on this platform is hryvnia, and that is the result."""
 

@@ -577,6 +577,68 @@ def cmd_setup_probation(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup_standing(args: argparse.Namespace) -> int:
+    """Record what DeskPilot may accept without asking the owner.
+
+    The owner wants no manual job management during normal operation,
+    which needs something able to say yes on their behalf. This is
+    that, and it is deliberately narrow: one capability, a ceiling in
+    money, a floor in notice, a count. Everything outside goes back
+    to them.
+
+    It cannot authorise a bid. ``solvent.acquisition`` refuses the
+    competitive channel whatever a grant says, because no platform
+    read so far permits a machine to submit proposals.
+    """
+    from . import acquisition as acq
+    from .harness import CAPABILITIES
+
+    solvent = _owner_solvent(args)
+    capability = (args.capability or "").strip()
+    if capability not in CAPABILITIES:
+        print(f"refused: no such certified skill: {capability}. The five "
+              f"are {', '.join(sorted(CAPABILITIES))}")
+        return 1
+
+    grants = dict(solvent.policy.get("acquisition", "standing",
+                                     default={}) or {})
+    if args.revoke:
+        # Zeroed and marked, never deleted: the policy merge is a deep
+        # merge, so removing a key by writing an empty dict is a silent
+        # no-op. That trap cost a sweep once already.
+        grants[capability] = {"max_value_cents": 0, "min_deadline_hours": 0,
+                              "max_jobs": 0, "revoked": True}
+        solvent.policy.amend({"acquisition": {"standing": grants}},
+                             args.owner, args.reason)
+        print(f"standing authority for {capability} revoked; every job in "
+              "that skill now needs the owner")
+        return 0
+
+    if args.max_jobs <= 0:
+        print("refused: a standing grant of zero jobs is not a grant; to "
+              "end one use --revoke, which says so in the record")
+        return 1
+    if args.max_value_cents <= 0:
+        print("refused: a standing yes with no value ceiling is a blank "
+              "cheque; set --max-value-cents")
+        return 1
+    grants[capability] = {
+        "max_value_cents": int(args.max_value_cents),
+        "min_deadline_hours": float(args.min_deadline_hours),
+        "max_jobs": int(args.max_jobs),
+        "channels": list(acq.OPEN_CHANNELS),
+    }
+    solvent.policy.amend({"acquisition": {"standing": grants}},
+                         args.owner, args.reason)
+    print(f"standing authority recorded for {capability}")
+    print(f"  [OK ] up to {args.max_jobs} job(s), each at most "
+          f"${args.max_value_cents / 100:,.2f}, with at least "
+          f"{args.min_deadline_hours:.0f}h notice")
+    print(f"  [OK ] channels: {', '.join(acq.OPEN_CHANNELS)}")
+    print(f"  [NOTE] {acq.BID_FREEZE}")
+    return 0
+
+
 def cmd_setup_capacity(args: argparse.Namespace) -> int:
     """Record how much work DeskPilot may owe at one time.
 
@@ -1900,6 +1962,22 @@ def build_parser() -> argparse.ArgumentParser:
                 "licence blob, byte-identical "
                 "(docs/solvent-model-rights-evidence.md)")
     model.set_defaults(func=cmd_setup_model)
+
+    standing = owned(setup_sub.add_parser(
+        "standing", help="pre-agree to take direct-hire work unasked"))
+    standing.add_argument("--capability", required=True)
+    standing.add_argument("--max-value-cents", type=int, default=0,
+                          help="the most a job may be worth and still be "
+                               "taken without asking")
+    standing.add_argument("--min-deadline-hours", type=float, default=0.0,
+                          help="the least notice a job may give and still "
+                               "be taken without asking")
+    standing.add_argument("--max-jobs", type=int, default=0,
+                          help="how many jobs this grant covers in total")
+    standing.add_argument("--revoke", action="store_true")
+    standing.add_argument("--reason",
+                          default="owner grants standing authority")
+    standing.set_defaults(func=cmd_setup_standing)
 
     capability = owned(setup_sub.add_parser(
         "capability", help="register the owner's promotions in this database"))

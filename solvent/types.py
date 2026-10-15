@@ -595,3 +595,15 @@ def check_of(requirement) -> str:
 #: decision about the architecture, not about a number.
 JOBS_PER_AGENT_DEFAULT = 3
 JOBS_PER_AGENT_CEILING = 4
+
+#: Certified skills, and therefore worker slots and pipelines. The
+#: five-queue model multiplies by this, so it lives beside the
+#: per-pipeline numbers rather than being counted somewhere else.
+CERTIFIED_SKILL_COUNT = 5
+
+#: Jobs the whole shop may hold: five pipelines of four. Derived, so
+#: raising the per-pipeline ceiling raises this and the two cannot
+#: drift apart. It is NOT a worker count -- workers are bounded by
+#: CERTIFIED_SKILL_COUNT, and conflating the two is the specific
+#: mistake this constant exists to stop being made a third time.
+GLOBAL_COMMITTED_CEILING = CERTIFIED_SKILL_COUNT * JOBS_PER_AGENT_CEILING

@@ -131,11 +131,25 @@ class TheCeilingIsNotAFormField(Spooled):
                 self.assertLessEqual(self.budget().max_concurrent_jobs,
                                      JOBS_PER_AGENT_CEILING)
 
-    def test_the_declared_bound_is_the_ceiling(self):
+    def test_the_declared_bounds_are_the_right_two_ceilings(self):
+        """Jobs and workers are different counts with different limits.
+
+        This asserted both were the four-job ceiling, which is what
+        the form actually did -- so an owner configuring the
+        five-worker model through the control centre had it silently
+        clamped to four with no message saying so. The command line
+        had the identical bug; a form is a slower way to set the same
+        policy, so the same fix was needed in both places.
+        """
+        from solvent.types import CERTIFIED_SKILL_COUNT
+
         _, _, high = CAPACITY_LIMITS["max_concurrent_jobs"]
-        self.assertEqual(high, JOBS_PER_AGENT_CEILING)
+        self.assertEqual(high, JOBS_PER_AGENT_CEILING,
+                         "a pipeline still holds at most four")
         _, _, workers = CAPACITY_LIMITS["max_execution_workers"]
-        self.assertEqual(workers, JOBS_PER_AGENT_CEILING)
+        self.assertEqual(workers, CERTIFIED_SKILL_COUNT,
+                         "one worker per certified skill, and five "
+                         "must be reachable from the form")
 
     def test_an_unknown_limit_is_refused_by_name(self):
         results = self.ask("tighten_capacity", egress="everything")

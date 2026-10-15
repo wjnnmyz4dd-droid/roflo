@@ -426,11 +426,18 @@ class ThreeJobsByDefaultAndFourAtMost(Base):
         self.assertIn("loop rather than a rule", decision.why)
 
     def test_the_ceiling_is_not_a_settings_field(self):
-        """Four cannot become five from a form, only from the source."""
+        """A form cannot raise a ceiling, only choose within one.
+
+        The bound here is the *global* ceiling, not the per-pipeline
+        one, because the count this preference filters against is
+        shop-wide. Clamping it at four stopped the Finder assessing
+        anything at all once one skill was full.
+        """
+        from solvent.types import GLOBAL_COMMITTED_CEILING
         from solvent.web.intents import WORK_PREFERENCES
 
         _, _, low, high = WORK_PREFERENCES["max_concurrent_jobs"]
-        self.assertEqual(high, cap.JOBS_PER_AGENT_CEILING)
+        self.assertEqual(high, GLOBAL_COMMITTED_CEILING)
         self.assertGreaterEqual(low, 1)
 
     def test_the_triage_filter_cannot_exceed_the_gate(self):
@@ -441,10 +448,15 @@ class ThreeJobsByDefaultAndFourAtMost(Base):
         room. The gate binds either way, but a filter set to fifty
         would tell the owner they had raised a limit they had not.
         """
+        from solvent.types import GLOBAL_COMMITTED_CEILING
+
         self.s.policy.amend({"qualification": {"max_concurrent_jobs": 50}},
                             OWNER, "test: an optimistic filter")
         qualification = self.s.qualification
-        qualification._committed_count = lambda: cap.JOBS_PER_AGENT_CEILING
+        # The gate's ceiling for a shop-wide count is the shop-wide
+        # one. Comparing a global count against the per-pipeline four
+        # was the defect, not the clamp.
+        qualification._committed_count = lambda: GLOBAL_COMMITTED_CEILING
         self.assertTrue(
             qualification._at_capacity(),
             "the triage filter still had room at the gate's ceiling, so "

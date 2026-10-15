@@ -68,6 +68,18 @@ DEFAULT_POLICY: dict[str, Any] = {
     # empty on purpose: a shipped default here would be an invented rate, and
     # an invented rate is what a client gets quoted. `quoting` refuses a
     # binding quote until the owner has recorded evidence.
+    # How work may arrive, and what the owner has pre-agreed to take
+    # without being asked. Empty means every job needs them, which is
+    # the safe default and also the one that makes the business need
+    # a human all day -- so it is a thing to configure, not a thing
+    # to leave.
+    "acquisition": {
+        # Per capability: max_value_cents, min_deadline_hours,
+        # max_jobs, and optionally channels. Competitive bidding can
+        # never be listed; solvent.acquisition refuses it whatever a
+        # grant says, because no platform permits it.
+        "standing": {},
+    },
     "commercial": {
         # How DeskPilot's own cost is modelled. AI_OPERATING counts what
         # DeskPilot actually spends -- compute and fees. HUMAN_LABOUR is the

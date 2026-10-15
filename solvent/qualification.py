@@ -404,12 +404,24 @@ class Qualification:
         let more work through -- but it can tell the owner they have
         raised a limit they have not, which is its own kind of defect.
         Clamped so the two cannot disagree.
-        """
-        from .capacity import JOBS_PER_AGENT_CEILING, JOBS_PER_AGENT_DEFAULT
 
+        The clamp was the *per-pipeline* ceiling, and
+        ``_committed_count`` counts every job in the shop. Four
+        csv-cleanup jobs therefore stopped the Finder qualifying
+        anything at all, in any skill, while the operating model
+        targets twenty -- the five queues could never fill because
+        qualification stopped looking after the first four. It is the
+        global ceiling now, which is what a global count should be
+        compared against.
+        """
+        from .types import (GLOBAL_COMMITTED_CEILING,
+                            JOBS_PER_AGENT_DEFAULT)
+
+        default = max(JOBS_PER_AGENT_DEFAULT, GLOBAL_COMMITTED_CEILING)
         limit = int(self._policy.get("qualification", "max_concurrent_jobs",
-                                     default=JOBS_PER_AGENT_DEFAULT))
-        return self._committed_count() >= min(limit, JOBS_PER_AGENT_CEILING)
+                                     default=default))
+        return self._committed_count() >= min(limit,
+                                              GLOBAL_COMMITTED_CEILING)
 
     # -------------------------------------------------------------- ranking
 

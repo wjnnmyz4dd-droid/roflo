@@ -26,7 +26,8 @@ import json
 import secrets
 from pathlib import Path
 
-from ..types import JOBS_PER_AGENT_CEILING
+from ..types import (CERTIFIED_SKILL_COUNT,
+                      GLOBAL_COMMITTED_CEILING, JOBS_PER_AGENT_CEILING)
 
 #: Where intents are written. Writable by the web user, read by the runtime.
 INTENT_SPOOL = "/var/lib/solvent/owner-intents"
@@ -90,12 +91,12 @@ WORK_PREFERENCES: dict[str, tuple[str, str, int, int]] = {
     # name: (policy section, key, minimum, maximum)
     "minimum_value_cents": ("qualification", "minimum_value_cents", 0,
                             100_000_00),
-    # Bounded by capacity.JOBS_PER_AGENT_CEILING, not by what a filter
-    # could tolerate. The gate refuses past four whatever this says, and
-    # a form that accepts fifty tells the owner they have raised a limit
-    # they have not.
+    # Bounded by the *global* ceiling, not the per-pipeline one. This
+    # key filters which opportunities are worth assessing and the
+    # count behind it is shop-wide, so clamping it at four stopped
+    # the Finder looking at anything once one skill was busy.
     "max_concurrent_jobs": ("qualification", "max_concurrent_jobs", 1,
-                            JOBS_PER_AGENT_CEILING),
+                            GLOBAL_COMMITTED_CEILING),
     "default_hours": ("qualification", "default_hours", 1, 500),
 }
 
@@ -260,14 +261,20 @@ class IntentWriter(WriteOnlySpool):
 #: is the only direction that can hurt, so ``set_capacity_budget``
 #: needs an owner approval like every other consequential verb.
 #:
-#: The upper bound on the job and worker counts is not a policy choice.
-#: It is ``types.JOBS_PER_AGENT_CEILING``, and a form cannot move it.
+#: The upper bounds are not policy choices, and they are not all the
+#: same number. A job limit is per pipeline and a worker count is per
+#: shop: this form clamped both at four, so an owner configuring the
+#: five-worker model through the control centre had it silently
+#: reduced to four and no message saying so. The command line had the
+#: same bug and was fixed first; a form is just a slower way to set
+#: the same policy, so it had to be fixed here too.
 CAPACITY_LIMITS: dict[str, tuple[str, float, float]] = {
     # name: (kind, minimum, maximum)
     "max_owed_seconds": ("number", 0, 86_400 * 7),
     "max_concurrent_jobs": ("whole", 0, JOBS_PER_AGENT_CEILING),
-    "max_execution_workers": ("whole", 0, JOBS_PER_AGENT_CEILING),
-    "max_verification_workers": ("whole", 0, JOBS_PER_AGENT_CEILING),
+    "max_committed_jobs": ("whole", 0, GLOBAL_COMMITTED_CEILING),
+    "max_execution_workers": ("whole", 0, CERTIFIED_SKILL_COUNT),
+    "max_verification_workers": ("whole", 0, CERTIFIED_SKILL_COUNT),
     "max_open_bids": ("whole", 0, 50),
     "revision_headroom_fraction": ("number", 0.0, 4.0),
     "min_free_disk_bytes": ("whole", 0, 10 ** 13),

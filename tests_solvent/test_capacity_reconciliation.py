@@ -291,5 +291,72 @@ class TheMachineMayLowerTheOwnersUpperBound(Base):
         self.assertIn("disk", report["throttled_because"])
 
 
+class NoConflictingGlobalLimitSurvivesAnywhere(unittest.TestCase):
+    """The audit the owner asked for, kept as a test.
+
+    Reconciling eight limits is not finished when the gate is right.
+    The same numbers are read by the qualification filter and by the
+    control centre's forms, and both had quietly kept the old global
+    ceiling -- so the gate would have allowed twenty jobs while the
+    Finder stopped looking at four and the web form clamped five
+    workers to four without saying so.
+
+    Neither was a gate failing open. Both were limits failing *shut*
+    in a place nobody was watching, which is the harder kind to
+    notice: the system just quietly does less than it was configured
+    to do.
+    """
+
+    def test_a_worker_count_is_never_bounded_by_the_job_ceiling(self):
+        from solvent.types import (CERTIFIED_SKILL_COUNT,
+                                   JOBS_PER_AGENT_CEILING)
+        from solvent.web.intents import CAPACITY_LIMITS
+
+        for name in ("max_execution_workers", "max_verification_workers"):
+            with self.subTest(name=name):
+                _, _, maximum = CAPACITY_LIMITS[name]
+                self.assertEqual(maximum, CERTIFIED_SKILL_COUNT)
+                self.assertGreater(maximum, JOBS_PER_AGENT_CEILING,
+                                   "five workers must be configurable")
+
+    def test_the_job_ceiling_still_bounds_a_pipeline(self):
+        """The other half: the per-pipeline limit was never wrong."""
+        from solvent.types import JOBS_PER_AGENT_CEILING
+        from solvent.web.intents import CAPACITY_LIMITS
+
+        _, _, maximum = CAPACITY_LIMITS["max_concurrent_jobs"]
+        self.assertEqual(maximum, JOBS_PER_AGENT_CEILING)
+
+    def test_the_global_ceiling_is_derived_not_typed_twice(self):
+        from solvent.types import (CERTIFIED_SKILL_COUNT,
+                                   GLOBAL_COMMITTED_CEILING,
+                                   JOBS_PER_AGENT_CEILING)
+
+        self.assertEqual(GLOBAL_COMMITTED_CEILING,
+                         CERTIFIED_SKILL_COUNT * JOBS_PER_AGENT_CEILING)
+
+    def test_qualification_compares_a_global_count_to_a_global_limit(self):
+        """It counted every job and compared against four."""
+        import inspect
+
+        from solvent.qualification import Qualification
+
+        source = inspect.getsource(Qualification._at_capacity)
+        self.assertIn("GLOBAL_COMMITTED_CEILING", source)
+        self.assertNotIn("min(limit, JOBS_PER_AGENT_CEILING)", source)
+
+    def test_the_finder_keeps_qualifying_past_one_full_pipeline(self):
+        """The behaviour, not the constant.
+
+        Four committed jobs in one skill must not stop the shop
+        assessing work for the other four skills.
+        """
+        from solvent.types import (GLOBAL_COMMITTED_CEILING,
+                                   JOBS_PER_AGENT_CEILING)
+
+        self.assertGreater(GLOBAL_COMMITTED_CEILING, JOBS_PER_AGENT_CEILING,
+                           "one full pipeline would still fill the shop")
+
+
 if __name__ == "__main__":
     unittest.main()
