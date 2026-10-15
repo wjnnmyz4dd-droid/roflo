@@ -136,6 +136,56 @@ class A02_TwoSimultaneousBidsTakeTheSameRoom(Base):
         self.assertEqual(sum(1 for d in out if d.allowed), 1)
         self.assertLessEqual(self.s.capacity.owed_seconds(), 600.0)
 
+    def test_concurrent_transactions_do_not_corrupt_each_other(self):
+        """Sixteen that all succeed, not eight that all but one fail.
+
+        The budget race above is the defect this class was written
+        for, and it is limited by design: only one of the eight can
+        win, so only one transaction ever completes and the window
+        where two overlap is never really opened.
+
+        That let a mutant removing the Python lock survive. Removing
+        it genuinely breaks things -- sixteen concurrent
+        transactions on a shared connection produce SystemError and
+        "cannot commit - no transaction is active", and six of the
+        sixteen writes vanish -- but nothing asserted it, because no
+        test ran enough transactions that were all allowed to finish.
+
+        BEGIN IMMEDIATE serialises *writers across processes*. The
+        lock serialises *this process's threads* on one shared
+        connection. Two halves, and only one of them was covered.
+        """
+        db = self.s.store.for_authority("capacity")
+        barrier = threading.Barrier(16)
+        errors = []
+
+        def write(n):
+            barrier.wait()
+            try:
+                with db.transaction():
+                    db.query_one("SELECT count(*) AS c FROM "
+                                 "capacity_reservations")
+                    db.execute(
+                        "INSERT INTO capacity_reservations"
+                        "(id,ts,job_id,kind,units,state,why,"
+                        "idempotency_key,capability) "
+                        "VALUES(?,?,?,?,?,?,?,?,?)",
+                        (f"r{n}", "t", f"j{n}", cap.EXECUTE, 1.0,
+                         cap.HELD, "concurrency", f"key{n}", ""))
+            except Exception as exc:
+                errors.append(f"{type(exc).__name__}: {exc}")
+
+        threads = [threading.Thread(target=write, args=(n,))
+                   for n in range(16)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [], "concurrent transactions raised")
+        rows = db.query("SELECT id FROM capacity_reservations "
+                        "WHERE why = 'concurrency'")
+        self.assertEqual(len(rows), 16, "writes were lost under contention")
+
     def test_the_write_lock_is_taken_against_other_processes_too(self):
         """The lock serialises threads; BEGIN IMMEDIATE serialises writers.
 

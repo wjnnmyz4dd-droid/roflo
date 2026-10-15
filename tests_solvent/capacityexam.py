@@ -36,19 +36,19 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
                                    Stress)
 
 #: When the code under examination was frozen.
-FROZEN_AT = "2026-10-15T10:48:02Z"
+FROZEN_AT = "2026-10-15T17:55:41Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
 DIGESTS = {
     "solvent/capacity.py":
-        "14f13b8d19fddd32e589c7893ba5b21783114da67a669c7ba7c5d5a0a8ad27b6",
+        "395a587bdd644d85d891d30448fb9b5ed467c06d18ecf35d9fc3da7966969fcf",
     "solvent/finder.py":
         "0fac9a608a6742aeaa2ebd7309111f7a128b19977194061598583f970d423fd7",
     "solvent/revenuemodel.py":
         "2c36183d9ce87c93e029bee036b2490173e47501f607173f56c34faef73a72a3",
     "solvent/store.py":
-        "5f66af0f3f15ec9fcc4e71147adb52aad5c894ec9ceab157f69d31e462a02f7c",
+        "fa72817a7ed0b1377a1e02c247675207a46e4d5c4c931c20e8d7ab474a77f3b9",
 }
 
 #: The scoring criteria, fixed before the first run. Identical to the
@@ -266,6 +266,36 @@ limit throughout.
 """
 
 
+SIXTH_SITTING = """Sat 2026-10-15T17:55:41Z, seed 584221398.
+
+Six questions, 6 passed, 0 failed. The sixth sitting, and the third
+time the seal has done its job rather than merely held.
+
+Sealed after the direct-hire sweep. capacity.py gained the global
+committed ceiling, bid exposure, deadline capacity and
+effective_workers; store.py gained the payments client_ref column.
+Four of the eight limits this paper examines did not exist at the
+fifth sitting, so the seal broke on the first run afterwards and
+the exam refused to mark itself, which is the behaviour the seal is
+for.
+
+    level   7, slow_execution+spike                            7 accepted,   7 delivered, peak 0.32
+    level  13, delayed_verification+revisions                 11 accepted,  11 delivered, peak 0.69
+    level  37, failed_submissions+outage                      17 accepted,  17 delivered, peak 0.875
+    level  71, payment_delays+spike                            5 accepted,   5 delivered, peak 0.463
+    level 149, revisions+slow_execution                       31 accepted,  31 delivered, peak 0.963
+    level 307, delayed_verification+failed_submissions        79 accepted,  79 delivered, peak 0.686
+
+No criterion was tripped at any question: nothing accepted went
+undelivered, no budget was exceeded, no duplicate commitment was
+created, no deadline was missed, no obligation was lost across a
+restart, no reservation leaked, and concurrency stayed inside the
+limit throughout -- now including the global ceiling and the
+worst-case bid exposure, which are new limits this paper had never
+been marked against before.
+"""
+
+
 #: Which record belongs to which freeze.
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
@@ -273,6 +303,7 @@ SITTINGS = {
     "2026-10-14T17:31:06Z": THIRD_SITTING,
     "2026-10-14T20:59:51Z": FOURTH_SITTING,
     "2026-10-15T10:48:02Z": FIFTH_SITTING,
+    "2026-10-15T17:55:41Z": SIXTH_SITTING,
 }
 
 

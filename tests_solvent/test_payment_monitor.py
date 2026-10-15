@@ -242,6 +242,46 @@ class SimulatedMoneyIsNotReceivables(Base):
             self.s.ledger.real_revenue_cents())
 
 
+class ConfirmedIsNotTheSameAsReal(Base):
+    """The trap the lifecycle run exposed.
+
+    A simulated payment reaches PAYMENT_CONFIRMED, because that is
+    the state it is in and "simulated" is not one of the owner's
+    seven. Anything reporting money from the state alone would
+    therefore report a rehearsal as income.
+    """
+
+    def test_a_simulated_payment_is_confirmed(self):
+        self.simulated_confirmed("sim")
+        self.assertEqual(self.s.payments.state("sim"),
+                         pm.PAYMENT_CONFIRMED)
+
+    def test_but_it_is_not_real(self):
+        self.simulated_confirmed("sim")
+        self.assertFalse(self.s.payments.real("sim"))
+
+    def test_a_verified_payment_is_real(self):
+        self.paid("b", 25_000)
+        self.assertTrue(self.s.payments.real("b"))
+
+    def test_an_unpaid_invoice_is_not_real(self):
+        self.invoice("a")
+        self.assertFalse(self.s.payments.real("a"))
+
+    def simulated_confirmed(self, job_id):
+        from solvent.ledger import SIMULATED_PREFIX
+
+        pid = self.s.ledger.open_payment(job_id=job_id, amount_cents=4_000,
+                                         rail="fixture")
+        db = self.s.store.for_authority("ledger")
+        db.execute("UPDATE payments SET state = ?, collected_cents = ?, "
+                   "verification_method = ? WHERE id = ?",
+                   (PaymentState.PAID.value, 4_000,
+                    f"{SIMULATED_PREFIX}fixture", pid))
+        db.commit()
+        self.assertTrue(self.s.ledger.is_simulated(job_id))
+
+
 class ProjectedIsNeverAddedToCollected(Base):
     """Two numbers, because adding them is how a business imagines cash."""
 

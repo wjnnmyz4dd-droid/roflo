@@ -129,7 +129,19 @@ class PaymentMonitor:
     # ------------------------------------------------------- one job
 
     def state(self, job_id: str) -> str:
-        """Which of the owner's seven states this job's money is in."""
+        """Which of the owner's seven states this job's money is in.
+
+        **A simulated payment reads as PAYMENT_CONFIRMED here**, and
+        that is deliberate rather than an oversight: these are the
+        owner's seven states and "simulated" is not one of them, so
+        inventing an eighth would be the second payment state machine
+        the owner asked not to have.
+
+        It is still a trap for anything that reports money from this
+        value alone. :meth:`real` is the question to ask instead --
+        every figure in this module that touches money already asks
+        it, and so does ``Ledger.real_revenue_cents``.
+        """
         try:
             row = self._ledger.payment_for(job_id)
         except Exception:
@@ -147,6 +159,16 @@ class PaymentMonitor:
         except ValueError:
             return NOT_INVOICED
         return _FROM_LEDGER.get(ledger_state, NOT_INVOICED)
+
+    def real(self, job_id: str) -> bool:
+        """Is this confirmed *and* real money? The question to report on.
+
+        Exists because ``state() == PAYMENT_CONFIRMED`` is true of a
+        rehearsal, and anything announcing revenue off the state
+        alone would announce a rehearsal as income.
+        """
+        return (self.state(job_id) == PAYMENT_CONFIRMED
+                and not self.is_simulated(job_id))
 
     def is_simulated(self, job_id: str) -> bool:
         try:

@@ -50,17 +50,21 @@ class Base(unittest.TestCase):
         budget.update(over)
         self.s.policy.amend({"capacity": budget}, OWNER, "test: budget")
 
-    def reserve(self, seconds, *, kind=cap.EXECUTE, job="job", key=None):
+    def reserve(self, seconds, *, kind=cap.EXECUTE, job="job", key=None,
+                capability=""):
         return self.s.capacity.reserve(
             seconds, kind=kind, job_id=job,
-            idempotency_key=key or f"{kind}:{job}:{seconds}")
+            idempotency_key=key or f"{kind}:{job}:{seconds}",
+            capability=capability)
 
-    def offer(self, count, seconds=120.0, kind=cap.EXECUTE):
+    def offer(self, count, seconds=120.0, kind=cap.EXECUTE,
+              capability=""):
         """Offer `count` jobs at once and report which were taken."""
         taken, refused = [], []
         for n in range(count):
             decision = self.reserve(seconds, kind=kind, job=f"j{n}",
-                                    key=f"offer-{kind}-{n}")
+                                    key=f"offer-{kind}-{n}",
+                                    capability=capability)
             (taken if decision.allowed else refused).append(decision)
         return taken, refused
 
@@ -90,8 +94,23 @@ class S1_TenFiftyAndOneHundredAtOnce(Base):
         """
         # Workers at the ceiling, jobs at the default: the job limit
         # is the lower of the two, so it is the one that refuses.
-        self.configure(max_execution_workers=4, max_concurrent_jobs=3)
-        taken, refused = self.offer(100)
+        #
+        # Five skills are configured so the *global* ceiling is
+        # 5 x 3 = 15 while the per-pipeline limit stays 3. Without
+        # that, both land on 3 -- a shop with no skills has a global
+        # ceiling equal to its per-pipeline limit -- and the two
+        # controls become indistinguishable, which let a mutant that
+        # deleted the per-pipeline check survive. Two controls that
+        # refuse at the same number hide each other, and this suite
+        # has now found that shape three times.
+        self.configure(max_execution_workers=4, max_concurrent_jobs=3,
+                       skills=["csv-cleanup", "data-entry",
+                               "document-processing", "report-builder",
+                               "spreadsheet-automation"])
+        self.assertEqual(self.s.capacity.committed_ceiling(), 15,
+                         "the global ceiling equals the per-pipeline "
+                         "limit, so this cannot tell them apart")
+        taken, refused = self.offer(100, capability="csv-cleanup")
         self.assertEqual(len(taken), 3)
         self.assertEqual(len(refused), 97)
         self.assertEqual(self.s.capacity.jobs_in_flight(), 3)

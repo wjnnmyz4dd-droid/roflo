@@ -188,8 +188,9 @@ MUTANTS: tuple[Mutant, ...] = (
             if self._conn.in_transaction:""",
         "tests_solvent.test_capacity_adversarial"
         ".A02_TwoSimultaneousBidsTakeTheSameRoom"
-        ".test_it_holds_with_eight_of_them",
-        "two callers pass the same gate and overcommit the budget",
+        ".test_concurrent_transactions_do_not_corrupt_each_other",
+        "concurrent transactions on one connection lose writes and "
+        "raise SystemError",
     ),
     Mutant(
         "capacity-an-unreadable-disk-reads-as-healthy",
@@ -285,8 +286,9 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "the-triage-filter-outranks-the-gate",
         "solvent/qualification.py",
-        "        return self._committed_count() >= min(limit, "
-        "JOBS_PER_AGENT_CEILING)",
+        "        return self._committed_count() >= min(limit,\n"
+        "                                              "
+        "GLOBAL_COMMITTED_CEILING)",
         "        return self._committed_count() >= limit",
         "tests_solvent.test_capacity.ThreeJobsByDefaultAndFourAtMost"
         ".test_the_triage_filter_cannot_exceed_the_gate",
@@ -456,9 +458,8 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "a-simulated-payment-is-announced-as-money",
         "solvent/briefing.py",
-        '        body = (f"SIMULATED payment of {_money(amount_cents)} '
-        'recorded for "',
-        '        body = (f"Payment of {_money(amount_cents)} received for "',
+        '        body = (f"SIMULATED payment for {job_id}: gross "',
+        '        body = (f"Payment received for {job_id}: gross "',
         "tests_solvent.test_owner_briefings.MoneyIsNeverFlattered"
         ".test_a_simulated_payment_is_announced_as_simulated",
         "the owner believes money arrived when none did",
@@ -721,8 +722,31 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "a-platform-label-becomes-a-capability",
         "solvent/marketplaces.py",
-        """            capability = self.capability_for.get(label.strip().lower())""",
-        """            capability = label.strip().lower().replace(" ", "-")""",
+        # Both adapters carry this line now, so the mutant is anchored
+        # on the Freelancer one by the comment above it. A bare match
+        # found it twice and applied to neither.
+        """        mapped = []
+        for label in labels:
+            capability = self.capability_for.get(label.strip().lower())
+            if capability and capability not in mapped:
+                mapped.append(capability)
+        return tuple(mapped), tuple(labels)
+
+    def parse(self, payload: object) -> list[Opportunity]:
+        out: list[Opportunity] = []
+        for project in self._projects(payload):
+            if project.get("deleted") or project.get("nonpublic"):""",
+        """        mapped = []
+        for label in labels:
+            capability = label.strip().lower().replace(" ", "-")
+            if capability and capability not in mapped:
+                mapped.append(capability)
+        return tuple(mapped), tuple(labels)
+
+    def parse(self, payload: object) -> list[Opportunity]:
+        out: list[Opportunity] = []
+        for project in self._projects(payload):
+            if project.get("deleted") or project.get("nonpublic"):""",
         "tests_solvent.test_marketplace_adapters.CategoriesAreNotCapabilities"
         ".test_an_unmapped_posting_asks_for_nothing",
         "a job board's taxonomy decides what DeskPilot claims it can do",

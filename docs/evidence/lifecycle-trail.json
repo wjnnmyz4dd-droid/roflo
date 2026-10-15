@@ -1,0 +1,153 @@
+{
+  "completed": true,
+  "stopped_at": "",
+  "why_stopped": "",
+  "job_id": "job_467fb1c765b94e9c",
+  "trail": [
+    {
+      "stage": "DISCOVERY",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.641+00:00",
+      "elapsed_ms": 4738.0,
+      "detail": "owner-entered channel; no platform permission involved",
+      "evidence": "solvent/discovery.py"
+    },
+    {
+      "stage": "ACQUISITION_CHANNEL",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.642+00:00",
+      "elapsed_ms": 4738.2,
+      "detail": "DIRECT_CLIENT: within the owner's standing authority for csv-cleanup: DIRECT_CLIENT, $250.00, 1 of 4",
+      "evidence": "solvent/acquisition.py"
+    },
+    {
+      "stage": "QUALIFICATION",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.643+00:00",
+      "elapsed_ms": 4739.6,
+      "detail": "11 requirement(s) agreed",
+      "evidence": "solvent/qualification.py"
+    },
+    {
+      "stage": "PRICING",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.699+00:00",
+      "elapsed_ms": 4795.6,
+      "detail": "quoted 25000 cents",
+      "evidence": "solvent/finder.py"
+    },
+    {
+      "stage": "COMMERCIAL_APPROVAL",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.699+00:00",
+      "elapsed_ms": 4795.6,
+      "detail": "owner accepted the quote",
+      "evidence": "solvent/governor"
+    },
+    {
+      "stage": "CAPACITY_APPROVAL",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.699+00:00",
+      "elapsed_ms": 4795.6,
+      "detail": "12 requirement(s) committed",
+      "evidence": "solvent/capacity.py"
+    },
+    {
+      "stage": "ACCEPTANCE",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.699+00:00",
+      "elapsed_ms": 4795.6,
+      "detail": "job job_467fb1c765b94e9c",
+      "evidence": "solvent/orchestrator.py"
+    },
+    {
+      "stage": "SKILL_QUEUE",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.3,
+      "detail": "{\"committed\": 0, \"executing\": 0, \"target\": 4, \"replenish_at\": 2, \"needs_replenishment\": true, \"room\": 4}",
+      "evidence": "solvent/capacity.py pipelines()"
+    },
+    {
+      "stage": "WORKER_EXECUTION",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.3,
+      "detail": "executed in the cycle (55.9 ms total)",
+      "evidence": "solvent/services.py"
+    },
+    {
+      "stage": "INDEPENDENT_VERIFICATION",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.3,
+      "detail": "1 round(s), tier reachable=True",
+      "evidence": "solvent/independent.py"
+    },
+    {
+      "stage": "REVISION",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.3,
+      "detail": "no revision was required by this case",
+      "evidence": "solvent/feedback.py"
+    },
+    {
+      "stage": "DELIVERY",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.3,
+      "detail": "delivered=True",
+      "evidence": "solvent/harness.py"
+    },
+    {
+      "stage": "INVOICE",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.3,
+      "detail": "25000 cents invoiced",
+      "evidence": "solvent/ledger.py"
+    },
+    {
+      "stage": "PAYMENT_CONFIRMATION",
+      "status": "SIMULATED",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.4,
+      "detail": "state=PAYMENT_CONFIRMED; simulated=True; no verified rail event exists because no rail is connected",
+      "evidence": "solvent/paymentmonitor.py"
+    },
+    {
+      "stage": "CAPACITY_RELEASE",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.4,
+      "detail": "0 job(s) still in flight after completion",
+      "evidence": "solvent/capacity.py"
+    },
+    {
+      "stage": "REPLENISHMENT",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4796.9,
+      "detail": "{\"csv-cleanup\": true}",
+      "evidence": "solvent/capacity.py pipelines()"
+    },
+    {
+      "stage": "NOTIFICATIONS",
+      "status": "LIVE",
+      "at": "2026-10-15T17:30:57.700+00:00",
+      "elapsed_ms": 4797.0,
+      "detail": "sent: ['business.job_obtained', 'business.payment_received']",
+      "evidence": "solvent/briefing.py"
+    }
+  ],
+  "first_not_live": {
+    "stage": "PAYMENT_CONFIRMATION",
+    "status": "SIMULATED",
+    "at": "2026-10-15T17:30:57.700+00:00",
+    "elapsed_ms": 4796.4,
+    "detail": "state=PAYMENT_CONFIRMED; simulated=True; no verified rail event exists because no rail is connected",
+    "evidence": "solvent/paymentmonitor.py"
+  },
+  "cycle_ms": 55.9
+}
