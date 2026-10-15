@@ -24,6 +24,6 @@ bids required, by what-if win rate (none of these is a measurement):
 
 verdict:
   - the target needs between 1 and 2 delivered jobs an hour depending on what a job is billed at
-  - machine capacity is not the constraint: the slowest measured skill allows about 22,956 jobs an hour on one worker, which is several thousand times the requirement
+  - on representative inputs the slowest measured skill allows about 1,303 job(s) an hour on one worker (69,619 byte input, 2,764 ms of work); machine capacity still exceeds the requirement, by a far smaller margin than the synthetic figures suggested
   - the constraint is won work at the owner's price, and there are zero observations of it: no bid submitted, none won, none paid
   - the net figures are not yet real: minimum_project_fee_cents, platform_fee_fraction, platform_fee_minimum_cents, payment_fee_fraction, payment_fee_flat_cents, fixed_monthly_overhead_cents are unrecorded, which is not the same as zero

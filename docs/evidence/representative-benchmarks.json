@@ -1,0 +1,508 @@
+{
+  "sizes": {
+    "csv-cleanup": {
+      "small": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 944,
+        "execution": {
+          "n": 5,
+          "p50_ms": 1.21,
+          "p90_ms": 3.27,
+          "p95_ms": 3.27,
+          "max_ms": 3.27
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 1.65,
+          "p90_ms": 3.32,
+          "p95_ms": 3.32,
+          "max_ms": 3.32
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "medium": {
+        "label": "REPRESENTATIVE WORKLOAD",
+        "scaled": true,
+        "median_source_bytes": 6987,
+        "execution": {
+          "n": 5,
+          "p50_ms": 5.34,
+          "p90_ms": 6.74,
+          "p95_ms": 6.74,
+          "max_ms": 6.74
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 9.55,
+          "p90_ms": 13.17,
+          "p95_ms": 13.17,
+          "max_ms": 13.17
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "large": {
+        "label": "REPRESENTATIVE WORKLOAD",
+        "scaled": true,
+        "median_source_bytes": 43439,
+        "execution": {
+          "n": 5,
+          "p50_ms": 30.88,
+          "p90_ms": 36.5,
+          "p95_ms": 36.5,
+          "max_ms": 36.5
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 59.73,
+          "p90_ms": 75.42,
+          "p95_ms": 75.42,
+          "max_ms": 75.42
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "complex": {
+        "label": "REPRESENTATIVE WORKLOAD",
+        "scaled": true,
+        "median_source_bytes": 92089,
+        "execution": {
+          "n": 5,
+          "p50_ms": 61.48,
+          "p90_ms": 79.91,
+          "p95_ms": 79.91,
+          "max_ms": 79.91
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 119.85,
+          "p90_ms": 178.14,
+          "p95_ms": 178.14,
+          "max_ms": 178.14
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      }
+    },
+    "spreadsheet-automation": {
+      "small": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 2985,
+        "execution": {
+          "n": 5,
+          "p50_ms": 2.14,
+          "p90_ms": 2.98,
+          "p95_ms": 2.98,
+          "max_ms": 2.98
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 52.57,
+          "p90_ms": 61.46,
+          "p95_ms": 61.46,
+          "max_ms": 61.46
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "medium": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 2985,
+        "execution": {
+          "n": 5,
+          "p50_ms": 2.08,
+          "p90_ms": 2.74,
+          "p95_ms": 2.74,
+          "max_ms": 2.74
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 50.16,
+          "p90_ms": 65.8,
+          "p95_ms": 65.8,
+          "max_ms": 65.8
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "large": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 2985,
+        "execution": {
+          "n": 5,
+          "p50_ms": 2.14,
+          "p90_ms": 2.35,
+          "p95_ms": 2.35,
+          "max_ms": 2.35
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 52.95,
+          "p90_ms": 58.14,
+          "p95_ms": 58.14,
+          "max_ms": 58.14
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "complex": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 2985,
+        "execution": {
+          "n": 5,
+          "p50_ms": 1.89,
+          "p90_ms": 2.88,
+          "p95_ms": 2.88,
+          "max_ms": 2.88
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 48.63,
+          "p90_ms": 53.82,
+          "p95_ms": 53.82,
+          "max_ms": 53.82
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      }
+    },
+    "document-processing": {
+      "small": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 2194,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.99,
+          "p90_ms": 1.61,
+          "p95_ms": 1.61,
+          "max_ms": 1.61
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 7.49,
+          "p90_ms": 17.96,
+          "p95_ms": 17.96,
+          "max_ms": 17.96
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "medium": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 2194,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.83,
+          "p90_ms": 1.27,
+          "p95_ms": 1.27,
+          "max_ms": 1.27
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 6.79,
+          "p90_ms": 9.92,
+          "p95_ms": 9.92,
+          "max_ms": 9.92
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "large": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 2194,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.82,
+          "p90_ms": 1.4,
+          "p95_ms": 1.4,
+          "max_ms": 1.4
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 7.93,
+          "p90_ms": 12.13,
+          "p95_ms": 12.13,
+          "max_ms": 12.13
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "complex": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 2194,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.76,
+          "p90_ms": 0.79,
+          "p95_ms": 0.79,
+          "max_ms": 0.79
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 6.84,
+          "p90_ms": 12.96,
+          "p95_ms": 12.96,
+          "max_ms": 12.96
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      }
+    },
+    "data-entry": {
+      "small": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 553,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.66,
+          "p90_ms": 0.93,
+          "p95_ms": 0.93,
+          "max_ms": 0.93
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 14.89,
+          "p90_ms": 19.54,
+          "p95_ms": 19.54,
+          "max_ms": 19.54
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "medium": {
+        "label": "REPRESENTATIVE WORKLOAD",
+        "scaled": true,
+        "median_source_bytes": 5910,
+        "execution": {
+          "n": 5,
+          "p50_ms": 3.58,
+          "p90_ms": 3.69,
+          "p95_ms": 3.69,
+          "max_ms": 3.69
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 134.31,
+          "p90_ms": 140.61,
+          "p95_ms": 140.61,
+          "max_ms": 140.61
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "large": {
+        "label": "REPRESENTATIVE WORKLOAD",
+        "scaled": true,
+        "median_source_bytes": 34248,
+        "execution": {
+          "n": 5,
+          "p50_ms": 19.64,
+          "p90_ms": 34.95,
+          "p95_ms": 34.95,
+          "max_ms": 34.95
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 1037.95,
+          "p90_ms": 1079.49,
+          "p95_ms": 1079.49,
+          "max_ms": 1079.49
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "complex": {
+        "label": "REPRESENTATIVE WORKLOAD",
+        "scaled": true,
+        "median_source_bytes": 69619,
+        "execution": {
+          "n": 5,
+          "p50_ms": 53.87,
+          "p90_ms": 59.12,
+          "p95_ms": 59.12,
+          "max_ms": 59.12
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 2709.76,
+          "p90_ms": 2870.21,
+          "p95_ms": 2870.21,
+          "max_ms": 2870.21
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      }
+    },
+    "report-builder": {
+      "small": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 525,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.16,
+          "p90_ms": 0.28,
+          "p95_ms": 0.28,
+          "max_ms": 0.28
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 0.69,
+          "p90_ms": 0.79,
+          "p95_ms": 0.79,
+          "max_ms": 0.79
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "medium": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 525,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.12,
+          "p90_ms": 0.14,
+          "p95_ms": 0.14,
+          "max_ms": 0.14
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 0.6,
+          "p90_ms": 0.71,
+          "p95_ms": 0.71,
+          "max_ms": 0.71
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "large": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 525,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.12,
+          "p90_ms": 0.29,
+          "p95_ms": 0.29,
+          "max_ms": 0.29
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 0.63,
+          "p90_ms": 0.98,
+          "p95_ms": 0.98,
+          "max_ms": 0.98
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      },
+      "complex": {
+        "label": "SYNTHETIC BENCHMARK",
+        "scaled": false,
+        "median_source_bytes": 525,
+        "execution": {
+          "n": 5,
+          "p50_ms": 0.11,
+          "p90_ms": 0.15,
+          "p95_ms": 0.15,
+          "max_ms": 0.15
+        },
+        "verification": {
+          "n": 5,
+          "p50_ms": 0.61,
+          "p90_ms": 0.7,
+          "p95_ms": 0.7,
+          "max_ms": 0.7
+        },
+        "failure_rate": 0.0,
+        "refusals": []
+      }
+    }
+  },
+  "concurrency": {
+    "1": {
+      "wall_s": 0.147,
+      "completed": 1,
+      "errors": [],
+      "peak_rss_bytes": 36466688,
+      "execution": {
+        "n": 1,
+        "p50_ms": 40.99,
+        "p90_ms": 40.99,
+        "p95_ms": 40.99,
+        "max_ms": 40.99
+      }
+    },
+    "2": {
+      "wall_s": 0.209,
+      "completed": 2,
+      "errors": [],
+      "peak_rss_bytes": 36466688,
+      "execution": {
+        "n": 2,
+        "p50_ms": 38.28,
+        "p90_ms": 40.83,
+        "p95_ms": 40.83,
+        "max_ms": 40.83
+      }
+    },
+    "3": {
+      "wall_s": 0.184,
+      "completed": 3,
+      "errors": [],
+      "peak_rss_bytes": 36466688,
+      "execution": {
+        "n": 3,
+        "p50_ms": 38.59,
+        "p90_ms": 57.28,
+        "p95_ms": 57.28,
+        "max_ms": 57.28
+      }
+    },
+    "4": {
+      "wall_s": 1.299,
+      "completed": 4,
+      "errors": [],
+      "peak_rss_bytes": 36466688,
+      "execution": {
+        "n": 4,
+        "p50_ms": 50.07,
+        "p90_ms": 84.29,
+        "p95_ms": 84.29,
+        "max_ms": 84.29
+      }
+    },
+    "5": {
+      "wall_s": 1.582,
+      "completed": 5,
+      "errors": [],
+      "peak_rss_bytes": 37089280,
+      "execution": {
+        "n": 5,
+        "p50_ms": 43.16,
+        "p90_ms": 72.44,
+        "p95_ms": 72.44,
+        "max_ms": 72.44
+      }
+    }
+  },
+  "real_client_jobs": 0,
+  "labels": {
+    "synthetic": "SYNTHETIC BENCHMARK",
+    "representative": "REPRESENTATIVE WORKLOAD",
+    "real": "REAL CLIENT JOB"
+  },
+  "note": "every figure here is generated input on this container. No client has sent DeskPilot a file, so the REAL CLIENT JOB column is empty by fact rather than by omission."
+}

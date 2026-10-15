@@ -192,32 +192,54 @@ def _requirement(solvent, target_cents_per_hour: int) -> dict:
 
 def _measured_throughput() -> dict:
     """Jobs per hour the measured timings allow, per skill."""
-    path = ROOT / "docs" / "evidence" / "skill-benchmarks.json"
-    if not path.exists():
-        return {"basis": "UNMEASURED",
-                "note": "run tools/benchmark_skills.py --json into "
-                        "docs/evidence/skill-benchmarks.json first"}
-    data = json.loads(path.read_text(encoding="utf-8"))
-    skills = data.get("skills", data)
-    rows = {}
-    for name, row in skills.items():
-        if not isinstance(row, dict):
-            continue
-        ms = (row.get("end_to_end") or {}).get("median_ms")
-        if not ms:
-            continue
-        rows[name] = {
-            "end_to_end_median_ms": ms,
-            "jobs_per_hour_one_worker": round(3_600_000 / ms),
+    # Prefer the representative measurements over the synthetic ones.
+    # The synthetic figures are the generator's smallest case and
+    # produced the "23,000 jobs an hour" number that made the target
+    # look like a rounding error; the representative ones are the
+    # same work at a size a client might actually send, and they are
+    # two orders of magnitude slower.
+    representative = ROOT / "docs" / "evidence" / \
+        "representative-benchmarks.json"
+    if representative.exists():
+        data = json.loads(representative.read_text(encoding="utf-8"))
+        rows = {}
+        for name, sizes in (data.get("sizes") or {}).items():
+            best = None
+            for size in ("complex", "large", "medium", "small"):
+                row = sizes.get(size) or {}
+                if row.get("execution", {}).get("n"):
+                    best = (size, row)
+                    break
+            if not best:
+                continue
+            size, row = best
+            total_ms = (row["execution"]["p50_ms"]
+                        + row["verification"]["p50_ms"])
+            rows[name] = {
+                "size_class": size,
+                "label": row.get("label"),
+                "source_bytes": row.get("median_source_bytes"),
+                "execute_plus_verify_p50_ms": round(total_ms, 1),
+                "jobs_per_hour_one_worker": round(3_600_000 / total_ms),
+            }
+        slowest = (max(rows.values(),
+                       key=lambda r: r["execute_plus_verify_p50_ms"])
+                   if rows else None)
+        return {
+            "basis": "REPRESENTATIVE: generated inputs scaled to sizes a "
+                     "client might send, measured on this container. Not "
+                     "a client's file and not the owner's VPS",
+            "per_skill": rows,
+            "slowest": slowest,
+            "note": "execution plus verification, not the whole business "
+                    "cycle; three of the five could not be scaled because "
+                    "their formats are zip containers, so those rows are "
+                    "still the generator's smallest case and overstate "
+                    "throughput",
         }
-    return {
-        "basis": "SIMULATED: generated inputs on this host, not a client's "
-                 "file and not the owner's VPS",
-        "per_skill": rows,
-        "note": "a generated 605-byte CSV is not a 200,000-row export; "
-                "these rates are an upper bound on machine throughput "
-                "and say nothing about how long a real job takes",
-    }
+    return {"basis": "UNMEASURED",
+            "note": "run tools/representative_benchmarks.py --json into "
+                    "docs/evidence/representative-benchmarks.json first"}
 
 
 def _verdict(per_job, measured, unrecorded) -> list:
@@ -236,12 +258,14 @@ def _verdict(per_job, measured, unrecorded) -> list:
     per_skill = (measured.get("per_skill") or {})
     if per_skill:
         slowest = max(per_skill.values(),
-                      key=lambda r: r["end_to_end_median_ms"])
+                      key=lambda r: r["execute_plus_verify_p50_ms"])
         lines.append(
-            f"machine capacity is not the constraint: the slowest measured "
-            f"skill allows about {slowest['jobs_per_hour_one_worker']:,} "
-            "jobs an hour on one worker, which is several thousand times "
-            "the requirement")
+            f"on representative inputs the slowest measured skill allows "
+            f"about {slowest['jobs_per_hour_one_worker']:,} job(s) an hour "
+            f"on one worker ({slowest['source_bytes']:,} byte input, "
+            f"{slowest['execute_plus_verify_p50_ms']:,.0f} ms of work); "
+            "machine capacity still exceeds the requirement, by a far "
+            "smaller margin than the synthetic figures suggested")
     lines.append(
         "the constraint is won work at the owner's price, and there are "
         "zero observations of it: no bid submitted, none won, none paid")
