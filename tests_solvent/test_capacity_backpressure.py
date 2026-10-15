@@ -46,10 +46,12 @@ class Base(unittest.TestCase):
         budget.update(over)
         self.s.policy.amend({"capacity": budget}, OWNER, "test: budget")
 
-    def reserve(self, seconds, *, kind=cap.EXECUTE, job="job", key=None):
+    def reserve(self, seconds, *, kind=cap.EXECUTE, job="job", key=None,
+                capability=""):
         return self.s.capacity.reserve(
             seconds, kind=kind, job_id=job,
-            idempotency_key=key or f"{kind}:{job}:{seconds}")
+            idempotency_key=key or f"{kind}:{job}:{seconds}",
+            capability=capability)
 
     def host(self, **fields):
         self.s.capacity._diagnostics = type(
@@ -184,22 +186,34 @@ class WorkersAreTheCpuControl(Base):
                          budget.max_concurrent_jobs)
 
     def test_a_worker_limit_of_zero_does_not_open_the_gate(self):
-        """Every reservation here is for one job, so the concurrency
-        limit cannot refuse any of them and only the worker fallback
-        can. Spreading them over six jobs let the job limit do the
-        refusing, and a mutant that made the fallback unlimited
-        survived behind it.
+        """More jobs admitted than the fallback allows to run.
+
+        This test has now failed to catch the same mutant twice, each
+        time because the admission limit did the refusing before the
+        worker fallback was ever reached, and a check whose success
+        does not depend on the thing it checks passes either way.
+
+        The second version put six jobs in one unattributed pipeline,
+        so admission stopped at two, two started, and "at most two
+        started" was true whether the fallback was two or ten
+        thousand. Three pipelines of two fixes it: six are admitted,
+        the fallback allows two, and one job per skill allows three --
+        so a fallback that had quietly become unlimited would start
+        three and be seen.
         """
+        skills = ("csv-cleanup", "data-entry", "report-builder")
         self.configure(max_execution_workers=0, max_concurrent_jobs=2,
-                       max_owed_seconds=10_000.0)
-        held = [self.reserve(10, job=f"j{n}", key=f"k{n}")
-                for n in range(6)]
-        # Two pipelines' worth admitted, and with no worker count set
-        # the fallback is that same limit rather than no limit.
-        self.assertEqual(sum(1 for d in held if d.allowed), 2)
+                       max_owed_seconds=10_000.0, skills=list(skills))
+        held = [self.reserve(10, job=f"{skill}-{n}", key=f"{skill}:{n}",
+                             capability=skill)
+                for skill in skills for n in range(2)]
+        self.assertEqual(sum(1 for d in held if d.allowed), 6,
+                         "if fewer than six were admitted, admission is "
+                         "doing the refusing again and this is not "
+                         "testing the worker fallback")
         started = [self.s.capacity.start(d.reservation_id)
                    for d in held if d.allowed]
-        self.assertLessEqual(sum(1 for d in started if d.allowed), 2)
+        self.assertEqual(sum(1 for d in started if d.allowed), 2)
 
 
 class ReliefShedsTheRightThingFirst(Base):

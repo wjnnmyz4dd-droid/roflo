@@ -419,6 +419,47 @@ def cmd_setup_commercial(args: argparse.Namespace) -> int:
         terms["market_hourly_cents"] = rates
         terms["market_rate_citations"] = citations
 
+    # ---- what a delivered job costs ---------------------------------
+    # The revenue model reads all five of these and treats an unset one
+    # as unknown rather than as zero, which is right -- but there was
+    # no command to set any of them, so every net figure the model
+    # produced was the gross figure wearing a different label, and the
+    # only remedy documented anywhere was editing the policy by hand.
+    for name, value, what in (
+            ("platform_fee_fraction", args.platform_fee_fraction,
+             "the marketplace's cut as a fraction, e.g. 0.1 for 10%"),
+            ("payment_fee_fraction", args.payment_fee_fraction,
+             "the payment provider's percentage, e.g. 0.029"),
+    ):
+        if value is None:
+            continue
+        if not 0 <= value < 1:
+            print(f"refused: {name} of {value} is not a fraction below "
+                  f"one ({what})")
+            return 1
+        terms[name] = float(value)
+
+    for name, value in (
+            ("platform_fee_minimum_cents", args.platform_fee_minimum_cents),
+            ("payment_fee_flat_cents", args.payment_fee_flat_cents),
+            ("fixed_monthly_overhead_cents",
+             args.fixed_monthly_overhead_cents),
+            ("other_direct_cost_per_job_cents",
+             args.other_direct_cost_per_job_cents),
+    ):
+        if value is None:
+            continue
+        if value < 0:
+            print(f"refused: {name} cannot be negative")
+            return 1
+        terms[name] = int(value)
+
+    if args.hourly_rate_cents is not None:
+        if args.hourly_rate_cents <= 0:
+            print("refused: an hourly rate of zero is not a rate")
+            return 1
+        terms["hourly_rate_cents"] = int(args.hourly_rate_cents)
+
     if not terms:
         print("nothing to record; pass at least one term")
         return 1
@@ -430,11 +471,22 @@ def cmd_setup_commercial(args: argparse.Namespace) -> int:
                     solvent.orchestrator, solvent.store)
     configured, gaps = finder.commercially_configured()
     print("commercial terms recorded")
+    unrecorded = [name for name in (
+        "platform_fee_fraction", "platform_fee_minimum_cents",
+        "payment_fee_fraction", "payment_fee_flat_cents",
+        "fixed_monthly_overhead_cents")
+        if not solvent.policy.get("commercial", name, default=0)]
     if configured:
         print("  [OK ] all four are set; the Finder may recommend work")
-        return 0
     for gap in gaps:
         print(f"  [NEED] {gap}")
+    if unrecorded:
+        print("  [NOTE] unrecorded, and unrecorded is not zero: "
+              + ", ".join(unrecorded))
+        print("         every net and margin figure stays provisional "
+              "until these are set")
+    if configured:
+        return 0
     return 0
 
 
@@ -506,7 +558,13 @@ def cmd_setup_capacity(args: argparse.Namespace) -> int:
     Deciding a budget by looking at the hardware is how a shared VPS
     becomes an unshared one, and this one is shared with MetaTrader 5.
     """
+    from .harness import CAPABILITIES
     from .types import JOBS_PER_AGENT_CEILING
+
+    #: One worker per certified skill, and no more. Not a hardware
+    #: judgement -- the five are what the shop can do.
+    CERTIFIED_SKILLS = tuple(sorted(CAPABILITIES))
+    MAX_WORKERS = len(CERTIFIED_SKILLS)
 
     solvent = _owner_solvent(args)
     budget: dict = {}
@@ -520,8 +578,29 @@ def cmd_setup_capacity(args: argparse.Namespace) -> int:
             return 1
         budget["max_owed_seconds"] = float(args.max_owed_seconds)
 
-    for name, value in (("max_concurrent_jobs", args.max_concurrent_jobs),
-                        ("max_execution_workers", args.max_execution_workers),
+    # The job ceiling and the worker count are different numbers, and
+    # for a while this treated them as the same one. The ceiling is
+    # how many jobs a single skill pipeline may hold -- three by
+    # default, four at most. The worker count is how many jobs run at
+    # once across the whole shop, and the owner's operating model has
+    # five skills with a worker each, so capping it at four refused
+    # the architecture the rest of the system was built for.
+    if args.max_concurrent_jobs is not None:
+        if args.max_concurrent_jobs < 1:
+            print(f"refused: max_concurrent_jobs of "
+                  f"{args.max_concurrent_jobs} is not a limit")
+            return 1
+        if args.max_concurrent_jobs > JOBS_PER_AGENT_CEILING:
+            print(f"refused: max_concurrent_jobs of "
+                  f"{args.max_concurrent_jobs} is above the "
+                  f"{JOBS_PER_AGENT_CEILING} a skill pipeline may hold. "
+                  "Three is the default and four is the most that can be "
+                  "configured; past that is a decision about the "
+                  "architecture, not about a number")
+            return 1
+        budget["max_concurrent_jobs"] = int(args.max_concurrent_jobs)
+
+    for name, value in (("max_execution_workers", args.max_execution_workers),
                         ("max_verification_workers",
                          args.max_verification_workers)):
         if value is None:
@@ -529,14 +608,37 @@ def cmd_setup_capacity(args: argparse.Namespace) -> int:
         if value < 1:
             print(f"refused: {name} of {value} is not a limit")
             return 1
-        if value > JOBS_PER_AGENT_CEILING:
-            print(f"refused: {name} of {value} is above the "
-                  f"{JOBS_PER_AGENT_CEILING} this work agent may hold. Three "
-                  "is the default and four is the most that can be "
-                  "configured; past that is a decision about the "
-                  "architecture, not about a number")
+        if value > MAX_WORKERS:
+            print(f"refused: {name} of {value} is above {MAX_WORKERS}. "
+                  "The model is one worker per certified skill, and there "
+                  "are five; more workers than skills is concurrency "
+                  "nobody asked for on a machine shared with "
+                  "MetaTrader 5")
             return 1
         budget[name] = int(value)
+
+    if args.skill:
+        unknown = [s for s in args.skill if s not in CERTIFIED_SKILLS]
+        if unknown:
+            print("refused: no such certified skill: "
+                  + ", ".join(sorted(unknown))
+                  + ". The five are " + ", ".join(CERTIFIED_SKILLS))
+            return 1
+        budget["skills"] = sorted(set(args.skill))
+
+    if args.pipeline_target is not None:
+        if not 0 < args.pipeline_target <= JOBS_PER_AGENT_CEILING:
+            print(f"refused: a pipeline target of {args.pipeline_target} is "
+                  f"outside 1 to {JOBS_PER_AGENT_CEILING}. A target nothing "
+                  "can reach is not a target")
+            return 1
+        budget["pipeline_target"] = int(args.pipeline_target)
+
+    if args.replenish_at is not None:
+        if args.replenish_at < 0:
+            print("refused: a negative top-up line is not a line")
+            return 1
+        budget["replenish_at"] = int(args.replenish_at)
 
     if args.cpu_share is not None:
         if not 0 < args.cpu_share <= 1:
@@ -588,10 +690,19 @@ def cmd_setup_capacity(args: argparse.Namespace) -> int:
     if problem:
         print(f"  [NEED] {problem}")
         return 0
-    print(f"  [OK ] {current.max_owed_seconds:.0f}s owed at once, "
-          f"{current.max_concurrent_jobs} job(s) in flight, "
+    print(f"  [OK ] {current.max_owed_seconds:.0f}s owed per pipeline, "
+          f"{current.max_concurrent_jobs} job(s) per skill in flight, "
           f"{current.workers('EXECUTE')} execution worker(s), "
           f"{current.cpu_share:.0%} of a machine shared with MetaTrader 5")
+    pipelines = solvent.capacity.pipelines()
+    if pipelines:
+        print("  [OK ] pipelines: " + ", ".join(
+            f"{name} {row['committed']}/{row['target']}"
+            for name, row in sorted(pipelines.items())))
+    else:
+        print("  [NEED] no skill pipelines are configured; pass --skill "
+              "once per certified skill so the Finder knows what to "
+              "replenish")
     if solvent.policy.get("capacity", "halted", default=False):
         print("  [NOTE] new work is halted; pass --resume to allow it")
     return 0
@@ -1641,6 +1752,17 @@ def build_parser() -> argparse.ArgumentParser:
                           default=None,
                           help="multiplier on a measured estimate before a "
                                "deadline is promised; never below 1")
+    capacity.add_argument("--skill", action="append", default=[],
+                          metavar="CAPABILITY",
+                          help="a certified skill that gets its own "
+                               "pipeline and its own worker; pass once per "
+                               "skill")
+    capacity.add_argument("--pipeline-target", type=int, default=None,
+                          help="jobs each skill's pipeline aims to hold; "
+                               "3 by default, 4 at the very most")
+    capacity.add_argument("--replenish-at", type=int, default=None,
+                          help="the depth at which a pipeline asks for more "
+                               "work, e.g. 2; must be below the target")
     capacity.add_argument("--halt", action="store_true",
                           help="stop taking new work, without dropping work "
                                "in flight")
@@ -1655,6 +1777,34 @@ def build_parser() -> argparse.ArgumentParser:
                            "taking"))
     commercial.add_argument("--minimum-fee-cents", type=int, default=None,
                             help="the smallest job worth the overhead")
+    commercial.add_argument("--hourly-rate-cents", type=int, default=None,
+                            help="the rate an hourly contract is billed "
+                                 "at; the owner's own rate, not a market "
+                                 "observation")
+    commercial.add_argument("--platform-fee-fraction", type=float,
+                            default=None,
+                            help="the marketplace's cut, e.g. 0.1 for 10%%")
+    commercial.add_argument("--platform-fee-minimum-cents", type=int,
+                            default=None,
+                            help="the least the marketplace takes whatever "
+                                 "the percentage comes to, e.g. 500 for "
+                                 "Freelancer's '10%% or $5, whichever is "
+                                 "greater'")
+    commercial.add_argument("--payment-fee-fraction", type=float,
+                            default=None,
+                            help="the payment provider's percentage, "
+                                 "e.g. 0.029")
+    commercial.add_argument("--payment-fee-flat-cents", type=int,
+                            default=None,
+                            help="the payment provider's per-transaction "
+                                 "charge, e.g. 30")
+    commercial.add_argument("--fixed-monthly-overhead-cents", type=int,
+                            default=None,
+                            help="the VPS and anything else billed monthly "
+                                 "whether or not DeskPilot works")
+    commercial.add_argument("--other-direct-cost-per-job-cents", type=int,
+                            default=None,
+                            help="anything else each delivered job costs")
     commercial.add_argument("--compute-cents-per-cpu-hour", type=int,
                             default=None,
                             help="what running this machine actually costs")

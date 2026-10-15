@@ -368,3 +368,109 @@ class ThePlatformFeeHasAFloor(unittest.TestCase):
                              {"platform_fee_minimum_cents": 0}},
                             OWNER, "test: without the floor")
         self.assertLess(self.cost(4_000).total_cents, with_floor)
+
+
+class TheFeesCanActuallyBeRecorded(unittest.TestCase):
+    """`solvent setup commercial` could not record a single fee.
+
+    The revenue model reads five cost inputs -- the platform's
+    percentage and its floor, the payment provider's percentage and
+    its flat charge, and the fixed monthly overhead -- and treats each
+    unset one as UNKNOWN rather than as zero, which is right. But no
+    command set any of them, so every net figure the model produced
+    was the gross figure wearing a different label, and the only
+    remedy documented anywhere was editing the policy by hand.
+
+    A report that told the owner to configure these with a command
+    that could not configure them would have been the second time in
+    this engagement that a checklist named a command that did not do
+    what it said.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.db = f"{self.box.name}/fees.db"
+
+    def run_cli(self, *args):
+        import contextlib
+        import io
+
+        from solvent.cli import main
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = main(["setup", "commercial", "--db", self.db,
+                         "--owner", OWNER, *args])
+        return code, out.getvalue()
+
+    def recorded(self, name):
+        solvent = Solvent(self.db)
+        self.addCleanup(lambda: solvent.store.close())
+        return solvent.policy.get("commercial", name, default=None)
+
+    def test_the_platform_percentage_is_recorded(self):
+        code, said = self.run_cli("--platform-fee-fraction", "0.1")
+        self.assertEqual(code, 0, said)
+        self.assertEqual(self.recorded("platform_fee_fraction"), 0.1)
+
+    def test_the_platform_floor_is_recorded(self):
+        """Freelancer takes 10% or $5, whichever is greater."""
+        code, said = self.run_cli("--platform-fee-minimum-cents", "500")
+        self.assertEqual(code, 0, said)
+        self.assertEqual(self.recorded("platform_fee_minimum_cents"), 500)
+
+    def test_the_payment_fees_are_recorded(self):
+        code, said = self.run_cli("--payment-fee-fraction", "0.029",
+                                  "--payment-fee-flat-cents", "30")
+        self.assertEqual(code, 0, said)
+        self.assertEqual(self.recorded("payment_fee_fraction"), 0.029)
+        self.assertEqual(self.recorded("payment_fee_flat_cents"), 30)
+
+    def test_the_monthly_overhead_is_recorded(self):
+        code, said = self.run_cli("--fixed-monthly-overhead-cents", "9800")
+        self.assertEqual(code, 0, said)
+        self.assertEqual(self.recorded("fixed_monthly_overhead_cents"), 9800)
+
+    def test_the_hourly_rate_is_recorded(self):
+        code, said = self.run_cli("--hourly-rate-cents", "4000")
+        self.assertEqual(code, 0, said)
+        self.assertEqual(self.recorded("hourly_rate_cents"), 4000)
+
+    def test_a_fraction_above_one_is_refused(self):
+        code, said = self.run_cli("--platform-fee-fraction", "1.5")
+        self.assertEqual(code, 1, said)
+        self.assertIn("not a fraction below one", said)
+
+    def test_a_negative_charge_is_refused(self):
+        code, said = self.run_cli("--payment-fee-flat-cents", "-1")
+        self.assertEqual(code, 1, said)
+        self.assertIn("cannot be negative", said)
+
+    def test_a_refusal_records_nothing(self):
+        """The shipped default is 0.0, so "unchanged" is 0.0, not None."""
+        self.run_cli("--platform-fee-fraction", "1.5")
+        self.assertEqual(self.recorded("platform_fee_fraction"), 0.0)
+
+    def test_unrecorded_fees_are_said_out_loud(self):
+        """Unrecorded is not zero, and silence would read as zero."""
+        code, said = self.run_cli("--minimum-fee-cents", "4000")
+        self.assertEqual(code, 0, said)
+        self.assertIn("unrecorded is not zero", said)
+        for name in ("platform_fee_fraction", "platform_fee_minimum_cents",
+                     "payment_fee_fraction", "payment_fee_flat_cents",
+                     "fixed_monthly_overhead_cents"):
+            with self.subTest(name=name):
+                self.assertIn(name, said)
+
+    def test_once_recorded_they_stop_being_listed(self):
+        code, said = self.run_cli(
+            "--platform-fee-fraction", "0.1",
+            "--platform-fee-minimum-cents", "500",
+            "--payment-fee-fraction", "0.029",
+            "--payment-fee-flat-cents", "30",
+            "--fixed-monthly-overhead-cents", "9800")
+        self.assertEqual(code, 0, said)
+        self.assertNotIn("unrecorded is not zero", said)

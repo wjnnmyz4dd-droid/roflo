@@ -94,14 +94,17 @@ MUTANTS: tuple[Mutant, ...] = (
         "unlimited bids out, every one of which could be accepted",
     ),
     Mutant(
-        "capacity-worker-limit-ignored",
+        "capacity-verification-worker-limit-ignored",
         "solvent/capacity.py",
-        "            if busy >= allowed_workers:",
-        "            if False:",
+        """            busy = len(self.outstanding(VERIFY))
+            if busy >= allowed:""",
+        """            busy = len(self.outstanding(VERIFY))
+            if False:""",
         "tests_solvent.test_capacity_backpressure.WorkersAreTheCpuControl"
-        ".test_execution_workers_are_limited",
-        "the only control honouring the owner's CPU share on a machine "
-        "shared with MetaTrader 5",
+        ".test_verification_workers_are_limited_separately",
+        "unbounded checking on a machine shared with MetaTrader 5; the "
+        "execution half of this control is covered separately, and for a "
+        "while removing this half was invisible because of it",
     ),
     Mutant(
         "capacity-zero-worker-limit-means-unlimited",
@@ -511,6 +514,48 @@ MUTANTS: tuple[Mutant, ...] = (
         "tests_solvent.test_owner_briefings.SomethingHasToCallIt"
         ".test_the_runtime_registers_a_briefing_task",
         "the summaries exist and are never sent",
+    ),
+
+    Mutant(
+        "the-cli-caps-workers-at-the-job-ceiling",
+        "solvent/cli.py",
+        "        if value > MAX_WORKERS:",
+        "        if value > JOBS_PER_AGENT_CEILING:",
+        "tests_solvent.test_setup_capacity.ItRefusesWhatTheGateWouldRefuse"
+        ".test_one_worker_per_skill_is_allowed",
+        "the command refuses the five-worker model the system is built "
+        "for",
+    ),
+    Mutant(
+        "an-uncertified-skill-gets-a-pipeline",
+        "solvent/cli.py",
+        "        unknown = [s for s in args.skill "
+        "if s not in CERTIFIED_SKILLS]",
+        "        unknown = []",
+        "tests_solvent.test_setup_capacity.ThePipelinesAreConfigurable"
+        ".test_an_uncertified_skill_is_refused",
+        "a queue, a worker and a target for work nobody certified",
+    ),
+
+    Mutant(
+        "a-fee-above-one-is-recorded-as-a-fraction",
+        "solvent/cli.py",
+        "        if not 0 <= value < 1:",
+        "        if False:",
+        "tests_solvent.test_commercial_configuration"
+        ".TheFeesCanActuallyBeRecorded"
+        ".test_a_fraction_above_one_is_refused",
+        "a 150% platform fee, recorded as the owner's own figure",
+    ),
+    Mutant(
+        "unrecorded-fees-pass-in-silence",
+        "solvent/cli.py",
+        """        if not solvent.policy.get("commercial", name, default=0)]""",
+        """        if False]""",
+        "tests_solvent.test_commercial_configuration"
+        ".TheFeesCanActuallyBeRecorded"
+        ".test_unrecorded_fees_are_said_out_loud",
+        "unrecorded costs read as zero costs, and every margin flatters",
     ),
 
     # ---- the agreement outranks the endpoint ------------------------
