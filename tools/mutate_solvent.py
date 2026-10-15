@@ -558,6 +558,132 @@ MUTANTS: tuple[Mutant, ...] = (
         "unrecorded costs read as zero costs, and every margin flatters",
     ),
 
+    # ---- the channel that is frozen shut ----------------------------
+
+    Mutant(
+        "an-open-posting-may-be-bid-on",
+        "solvent/acquisition.py",
+        "    if channel == COMPETITIVE_BID:\n        return BID_FREEZE",
+        "    if False:\n        return BID_FREEZE",
+        "tests_solvent.test_direct_hire.CompetitiveBiddingIsFrozen"
+        ".test_an_open_posting_is_refused",
+        "automatic proposal submission, which clause 3.1.11 forbids",
+    ),
+    Mutant(
+        "a-grant-can-unfreeze-bidding",
+        "solvent/acquisition.py",
+        "        if channel == COMPETITIVE_BID:\n            # Belt and braces.",
+        "        if False:\n            # Belt and braces.",
+        "tests_solvent.test_direct_hire.CompetitiveBiddingIsFrozen"
+        ".test_the_grant_refuses_a_bid_on_its_own_account",
+        "a hand-edited policy authorising a prohibited act",
+    ),
+    Mutant(
+        "the-freeze-replaces-the-platform-check",
+        "solvent/acquisition.py",
+        "    entry = catalogue.entry(source_id or "
+        "getattr(opportunity, \"source\", \"\"))",
+        "    return \"\"\n    entry = catalogue.entry(source_id or "
+        "getattr(opportunity, \"source\", \"\"))",
+        "tests_solvent.test_direct_hire.AnInvitationStillHasToBeAccepted"
+        ".test_an_invitation_from_a_platform_that_has_not_been_read",
+        "an invitation accepted on a platform whose terms nobody read",
+    ),
+    Mutant(
+        "a-standing-yes-with-no-ceiling",
+        "solvent/acquisition.py",
+        "        if value_cents <= 0:",
+        "        if False:",
+        "tests_solvent.test_direct_hire"
+        ".StandingAuthorityIsTheOwnersPreAgreedYes"
+        ".test_an_unpriced_job_is_never_a_standing_yes",
+        "a blank cheque signed in advance",
+    ),
+
+    # ---- a channel nobody has called --------------------------------
+
+    Mutant(
+        "an-untested-channel-reads-as-healthy",
+        "solvent/channelhealth.py",
+        "            return Health(channel, UNCERTAIN,\n"
+        "                          \"nothing has been observed on this "
+        "channel, so \"",
+        "            return Health(channel, HEALTHY,\n"
+        "                          \"nothing has been observed on this "
+        "channel, so \"",
+        "tests_solvent.test_supervision_and_channels"
+        ".AChannelNobodyHasCalledIsNotHealthy"
+        ".test_an_untested_channel_is_paused",
+        "an expired token read as a working one until something fails",
+    ),
+    Mutant(
+        "an-expired-token-is-merely-degraded",
+        "solvent/channelhealth.py",
+        "    AUTH_FAILED: UNCERTAIN,",
+        "    AUTH_FAILED: HEALTHY,",
+        "tests_solvent.test_supervision_and_channels"
+        ".AChannelNobodyHasCalledIsNotHealthy"
+        ".test_an_expired_token_is_uncertain_immediately",
+        "calling a marketplace all day with a dead token",
+    ),
+    Mutant(
+        "a-restriction-does-not-block",
+        "solvent/channelhealth.py",
+        "    RESTRICTED: BLOCKED,",
+        "    RESTRICTED: HEALTHY,",
+        "tests_solvent.test_supervision_and_channels"
+        ".AChannelNobodyHasCalledIsNotHealthy"
+        ".test_a_restriction_blocks_rather_than_degrades",
+        "hammering a platform that has already restricted the account",
+    ),
+
+    # ---- noticing what has stopped ----------------------------------
+
+    Mutant(
+        "a-check-that-could-not-run-reports-all-clear",
+        "solvent/supervision.py",
+        "            except Exception as exc:\n"
+        "                findings.append(Finding(",
+        "            except Exception as exc:\n"
+        "                continue\n"
+        "                findings.append(Finding(",
+        "tests_solvent.test_supervision_and_channels"
+        ".TheSupervisorNoticesStillness"
+        ".test_a_check_that_cannot_run_is_a_finding_not_a_silence",
+        "silence from a supervisor that never looked",
+    ),
+    Mutant(
+        "every-finding-interrupts-the-owner",
+        "solvent/supervision.py",
+        "            if finding.severity != CRITICAL:\n                continue",
+        "            if False:\n                continue",
+        "tests_solvent.test_supervision_and_channels.TheOwnerIsNotFlooded"
+        ".test_only_critical_findings_interrupt",
+        "an alert the owner learns to ignore",
+    ),
+    Mutant(
+        "a-failed-escalation-is-swallowed",
+        "solvent/supervision.py",
+        "                failed.append(f\"{finding.dedupe_key}: {exc}\")",
+        "                pass",
+        "tests_solvent.test_supervision_and_channels.TheOwnerIsNotFlooded"
+        ".test_a_failed_escalation_is_recorded_not_swallowed",
+        "a notification failure that reports success",
+    ),
+
+    # ---- secured work is only what was accepted ---------------------
+
+    Mutant(
+        "an-offer-counts-as-secured-work",
+        "solvent/capacity.py",
+        "        secured = stages[\"accepted_contracts\"] or 0",
+        "        secured = ((stages[\"accepted_contracts\"] or 0)\n"
+        "                   + (stages[\"submitted_offers\"] or 0))",
+        "tests_solvent.test_capacity_reconciliation.ThirteenStagesKeptApart"
+        ".test_an_offer_is_never_counted_as_secured_work",
+        "a shop that believes it has won work it has only offered for",
+    ),
+
     # ---- the agreement outranks the endpoint ------------------------
 
     Mutant(

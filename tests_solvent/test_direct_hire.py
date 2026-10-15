@@ -100,6 +100,38 @@ class CompetitiveBiddingIsFrozen(Base):
         self.assertFalse(allowed)
         self.assertIn("frozen", why)
 
+    def test_the_grant_refuses_a_bid_on_its_own_account(self):
+        """The second gate, reached directly.
+
+        may_accept refuses a competitive bid at its first gate, so
+        the check inside StandingAuthority.problem is unreachable
+        through it -- a mutant that deleted that check survived,
+        because the test above was satisfied by the outer gate and
+        never exercised the inner one.
+
+        It is not redundant. Anything holding a StandingAuthority and
+        asking it directly gets the same answer, which is what makes
+        it defence in depth rather than decoration.
+        """
+        authority = acq.StandingAuthority(
+            capability="csv-cleanup", max_value_cents=30_000,
+            min_deadline_hours=48, max_jobs=4,
+            channels=(acq.COMPETITIVE_BID, acq.DIRECT_CLIENT))
+        problem = authority.problem(
+            channel=acq.COMPETITIVE_BID, value_cents=10_000,
+            deadline_hours=72, already_taken=0)
+        self.assertIn("frozen", problem)
+
+    def test_the_same_grant_allows_the_open_channels(self):
+        """So the test above is refusing the channel, not everything."""
+        authority = acq.StandingAuthority(
+            capability="csv-cleanup", max_value_cents=30_000,
+            min_deadline_hours=48, max_jobs=4,
+            channels=(acq.COMPETITIVE_BID, acq.DIRECT_CLIENT))
+        self.assertEqual(
+            authority.problem(channel=acq.DIRECT_CLIENT, value_cents=10_000,
+                              deadline_hours=72, already_taken=0), "")
+
     def test_the_freeze_adds_a_gate_and_removes_none(self):
         """A route the platform forbids stays forbidden.
 
