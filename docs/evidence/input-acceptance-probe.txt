@@ -1,0 +1,31 @@
+# Input acceptance probe — audit evidence
+
+Realistic client inputs fed to the existing workers from a scratch
+directory outside the repository. Read-only: no production code was
+modified and nothing was installed.
+
+Two rows below are probe artifacts rather than capability gaps, and
+are corrected in the report: "comma decimal" refused on a column-name
+mismatch I introduced, and "plain text (supported)" refused because
+the probe passed a requirement that did not match it. Re-run cleanly,
+.txt is read and EU decimals pass through untouched when nothing
+computes on them.
+
+The real boundaries, confirmed separately: non-ASCII bytes outside
+UTF-8 refuse; semicolon and tab delimiters refuse; PDF is not read.
+
+  ACCEPT  utf-8 comma (the happy path)               
+  ACCEPT  utf-8 BOM (Excel default on Windows)       
+  REFUSE  windows-1252 accented (EU export)          source is not readable as CSV: 'utf-8' codec can't decode byte 0xe9 in positio
+  REFUSE  utf-16 (Excel 'Unicode text' export)       source is not readable as CSV: 'utf-8' codec can't decode byte 0xff in positio
+  REFUSE  semicolon-delimited (EU default)           source is not a CSV file: every row has exactly one field; if this is tab- or 
+  REFUSE  tab-delimited                              source is not a CSV file: every row has exactly one field; if this is tab- or 
+  REFUSE  comma decimal (1.234,56 EU numbers)        R11: unknown column(s): ['Customer']
+  REFUSE  a real .xlsx renamed .csv                  source is not a CSV file: it contains binary control bytes (0x00, 0x03, 0x04, 
+  REFUSE  PDF invoice (the commonest real job)       the source cannot be processed: .pdf is not a format this capability reads: a 
+  REFUSE  legacy .doc                                the source cannot be processed: .doc is not a format this capability reads: th
+  REFUSE  RTF                                        the source cannot be processed: .rtf is not a format this capability reads: Ri
+  REFUSE  OpenDocument .odt                          the source cannot be processed: .odt is not a format this capability reads: Op
+  REFUSE  plain text (supported)                     no requirement says what to do with the document: name an extraction, a conver
+
+accepted 2 of 13
