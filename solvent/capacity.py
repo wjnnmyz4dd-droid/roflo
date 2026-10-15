@@ -88,6 +88,14 @@ TIGHT_AT = 0.8
 CEILING = "CEILING"
 FLOOR = "FLOOR"
 
+#: Readings that describe the machine rather than the order book.
+#: Worker concurrency is reduced for these and for nothing else: a
+#: shop that is busy should not run fewer workers, and a host that is
+#: running out of disk should. Module level rather than a class
+#: attribute, because an invariant test enumerates the gate's public
+#: surface and a constant is not a decision it makes.
+RESOURCE_SIGNALS = ("disk_free_bytes", "memory_used_percent")
+
 
 class Refusal(Enum):
     """Why capacity said no. Each is a different problem to fix."""
@@ -135,6 +143,19 @@ class Budget:
     #: asks for more. Both are the owner's numbers.
     pipeline_target: int = 0
     replenish_at: int = 0
+    #: Committed jobs across *all* pipelines together. Five pipelines of
+    #: four is twenty, and without this the per-pipeline limit is the
+    #: only one there is: five skills could each fill to four and the
+    #: shop would hold twenty obligations having never checked whether
+    #: twenty is a number it can deliver. Zero means "the per-pipeline
+    #: limits govern", never "unlimited".
+    max_committed_jobs: int = 0
+    #: The furthest ahead DeskPilot will promise. A deadline beyond this
+    #: is not refused for being far away -- it is that work nearer than
+    #: this has to fit in front of it, and this is the window the fit is
+    #: checked over. Zero means deadline capacity is not checked, which
+    #: is a setting rather than a default to rely on.
+    deadline_horizon_hours: float = 0.0
     #: Refuse new work above this much memory in use. Only consulted
     #: where the host reports memory at all; a Windows VPS does not,
     #: and an unmeasured signal is reported as unmeasured, not as fine.
@@ -177,6 +198,17 @@ class Budget:
             return (f"a pipeline target of {self.pipeline_target} is above "
                     f"the {self.max_concurrent_jobs} jobs a skill may hold; "
                     "a target nothing can reach is not a target")
+        if (self.max_committed_jobs > 0
+                and self.max_committed_jobs < self.max_concurrent_jobs):
+            return (f"a global ceiling of {self.max_committed_jobs} job(s) "
+                    f"is below the {self.max_concurrent_jobs} a single "
+                    "pipeline may hold, so one skill could never fill "
+                    "even though the limits say it may")
+        if (self.max_committed_jobs > 0
+                and self.max_committed_jobs < self.max_execution_workers):
+            return (f"a global ceiling of {self.max_committed_jobs} job(s) "
+                    f"with {self.max_execution_workers} worker(s) leaves a "
+                    "worker that can never be given anything to do")
         if self.replenish_at >= self.pipeline_target > 0:
             return (f"replenishing at {self.replenish_at} with a target of "
                     f"{self.pipeline_target} would top up a pipeline that "
@@ -253,6 +285,9 @@ class Capacity:
                 get("max_verification_workers", 0) or 0),
             pipeline_target=int(get("pipeline_target", 0) or 0),
             replenish_at=int(get("replenish_at", 0) or 0),
+            max_committed_jobs=int(get("max_committed_jobs", 0) or 0),
+            deadline_horizon_hours=float(
+                get("deadline_horizon_hours", 0) or 0),
             max_memory_used_percent=float(
                 get("max_memory_used_percent", 0) or 0))
 
@@ -335,6 +370,50 @@ class Capacity:
     def open_bids(self) -> int:
         return len(self.outstanding(BID))
 
+    def committed_ceiling(self) -> int:
+        """The global cap on committed jobs, however it is reached.
+
+        An owner who set only the per-pipeline numbers still has a
+        global ceiling -- it is just implied rather than stated, and
+        the implied one is what the five pipelines come to. Returning
+        it rather than zero means the exposure check below always has
+        a number to check against.
+        """
+        budget = self.budget()
+        if budget.max_committed_jobs > 0:
+            return budget.max_committed_jobs
+        skills = len(self._skills())
+        if skills and budget.max_concurrent_jobs > 0:
+            return skills * budget.max_concurrent_jobs
+        return budget.max_concurrent_jobs
+
+    def exposure(self) -> dict:
+        """Everything owed or possibly owed, by what kind of thing it is.
+
+        A discovered opportunity is not a job commitment. An outstanding
+        bid is a potential obligation. An awarded contract is a real
+        one. Counting them in one number is how a shop talks itself
+        into believing it has room: four bids out and sixteen jobs
+        committed is twenty obligations if the week goes well, and
+        "sixteen committed" is the comfortable half of that sentence.
+
+        ``worst_case_committed`` is the number that matters for
+        admission, because every outstanding bid could be accepted
+        tomorrow and none of them will ask first.
+        """
+        committed = self.jobs_in_flight()
+        bids = self.open_bids()
+        ceiling = self.committed_ceiling()
+        return {
+            "committed_jobs": committed,
+            "outstanding_bids": bids,
+            "worst_case_committed": committed + bids,
+            "committed_ceiling": ceiling,
+            "worst_case_headroom": max(0, ceiling - committed - bids),
+            "executing": self.executing(),
+            "owed_seconds": round(self.owed_seconds(), 1),
+        }
+
     def has_obligations(self) -> bool:
         """Is anything owed? Discovery waits while this is true."""
         return any(r.kind != BID for r in self.outstanding())
@@ -405,10 +484,41 @@ class Capacity:
                     f"which is the limit; every one of them could be "
                     "accepted tomorrow",
                     owed, seconds, budget.max_owed_seconds)
+            # A bid limit on its own bounds how many offers are out,
+            # not whether they can be honoured. Sixteen jobs committed
+            # against a ceiling of twenty leaves room for four more
+            # bids by that count and none at all by this one, because
+            # four acceptances would make twenty-one obligations. The
+            # offer is refused rather than the commitment broken: the
+            # client who accepts is not the one who should discover
+            # the shop was full.
+            ceiling = self.committed_ceiling()
+            worst_case = self.jobs_in_flight() + self.open_bids() + 1
+            if ceiling > 0 and worst_case > ceiling:
+                return Decision(
+                    False, Refusal.NO_ROOM,
+                    f"{self.jobs_in_flight()} job(s) are committed and "
+                    f"{self.open_bids()} bid(s) are out; one more offer "
+                    f"would be {worst_case} obligations if every one were "
+                    f"accepted, against the {ceiling} this shop can hold",
+                    owed, seconds, budget.max_owed_seconds)
         else:
             in_flight = self.jobs_in_flight(capability)
             fresh = job_id and job_id not in {
                 r.job_id for r in self.outstanding() if r.kind != BID}
+            ceiling = self.committed_ceiling()
+            fresh_global = job_id and job_id not in {
+                r.job_id for r in self.outstanding() if r.kind != BID}
+            if (fresh_global and ceiling > 0
+                    and self.jobs_in_flight() >= ceiling):
+                return Decision(
+                    False, Refusal.NO_ROOM,
+                    f"{self.jobs_in_flight()} job(s) are committed across "
+                    f"every pipeline, which is the {ceiling} this shop "
+                    "holds; a free slot in one pipeline is not free "
+                    "capacity in the shop",
+                    owed, seconds, budget.max_owed_seconds,
+                    self.jobs_in_flight())
             if fresh and in_flight >= budget.max_concurrent_jobs:
                 where = (f"{capability}'s pipeline" if capability
                          else "the unattributed pipeline")
@@ -672,13 +782,15 @@ class Capacity:
             budget = self.budget()
             capability = (row["capability"] if "capability" in row.keys()
                           else "") or ""
-            allowed = budget.workers(EXECUTE)
+            allowed, throttle = self.effective_workers(EXECUTE)
             busy = self.executing()
             if busy >= allowed:
                 return Decision(
                     False, Refusal.NO_ROOM,
-                    f"{busy} worker(s) are already executing, which is the "
-                    f"{allowed} the owner allows",
+                    (f"{busy} worker(s) are already executing, which is the "
+                     f"{allowed} currently allowed"
+                     + (f" ({throttle})" if throttle
+                        else " by the owner's limit")),
                     reservation_id=reservation_id)
             if capability and self.executing(capability):
                 return Decision(
@@ -802,6 +914,105 @@ class Capacity:
                 "value": value, "limit": limit, "utilisation": used,
                 "mode": mode, "note": note}
 
+    def effective_workers(self, kind: str) -> tuple:
+        """How many workers may actually start, and why that number.
+
+        The owner's five is an upper bound, not an instruction to run
+        five resource-hungry processes on a box that also runs
+        MetaTrader 5. This reduces the bound when the machine says so
+        and leaves it alone when the machine says nothing it was asked
+        about.
+
+        Three rules, in order, each deterministic:
+
+        1. A **measured** resource signal reading FULL drops the limit
+           to one. Not to zero: zero cannot be told apart from halted,
+           and halting is the owner's decision with its own command.
+           One worker means work in progress still finishes.
+        2. A measured resource signal reading TIGHT halves it, floored
+           at one.
+        3. A resource limit the owner set that this host **will not
+           report** also drops it to one. An unreadable metric is not
+           a healthy one, and the alternative -- carrying on at five
+           because nobody could check -- is the failure this whole
+           file exists to avoid.
+
+        Nothing here stops a worker that is already running. It bounds
+        what may *start*, so reducing concurrency preserves queued
+        commitments rather than abandoning them; whether those
+        commitments remain deliverable at the lower rate is a deadline
+        question, and :meth:`deadline_problem` is where it is asked.
+        """
+        allowed = self.budget().workers(kind)
+        if allowed <= 1:
+            return allowed, ""
+        worst, culprit = OK, ""
+        # ``reading``, not ``signal``: an invariant test forbids the bare
+        # identifier anywhere in this file, because that is what
+        # ``import signal`` and ``signal.SIGTERM`` look like and nothing
+        # here may ever send one to a process. MetaTrader 5 is on this
+        # machine. A backpressure reading is not an OS signal, and the
+        # guard is worth more than the nicer variable name.
+        for reading in self.pressure()["signals"]:
+            if reading["name"] not in RESOURCE_SIGNALS:
+                continue
+            state = reading["state"]
+            if state == UNMEASURED and reading["limit"]:
+                return 1, (f"{reading['name']} is a limit the owner set and "
+                           "this host will not report it; one worker until "
+                           "it can be read")
+            if state == FULL:
+                worst, culprit = FULL, reading["name"]
+                break
+            if state == TIGHT and worst != FULL:
+                worst, culprit = TIGHT, reading["name"]
+        if worst == FULL:
+            return 1, f"{culprit} is at its limit; one worker until it clears"
+        if worst == TIGHT:
+            reduced = max(1, allowed // 2)
+            if reduced < allowed:
+                return reduced, (f"{culprit} is tight; {reduced} worker(s) "
+                                 f"instead of {allowed}")
+        return allowed, ""
+
+    def deadline_problem(self, seconds: float, deadline_hours: float) -> str:
+        """Whether this job's deadline survives the queue in front of it.
+
+        Deadline capacity is not the same limit as job capacity and
+        was not being checked as one. A shop with room for a job can
+        still be unable to deliver it on time, because the work
+        already owed has to come out of the same hours -- and the
+        number of workers those hours are divided between is the
+        *effective* count, not the configured one, so a throttled host
+        makes deadlines harder rather than only slower.
+
+        Returns the reason it does not fit, or empty when it does.
+        """
+        budget = self.budget()
+        if not deadline_hours or budget.deadline_horizon_hours <= 0:
+            return ""
+        if deadline_hours > budget.deadline_horizon_hours:
+            return ""
+        workers, _ = self.effective_workers(EXECUTE)
+        workers = max(1, workers)
+        # Everything already owed, plus this, shared between the
+        # workers that may actually run. The safety factor is the
+        # owner's and is applied here rather than assumed elsewhere.
+        ahead = self.owed_seconds() + float(seconds)
+        # Read from policy, not from Budget. The Finder already reads
+        # it from there and a second copy on Budget would be a second
+        # answer to the same question, which is how two limits that
+        # are supposed to be one drift apart.
+        factor = max(1.0, float(self._policy.get(
+            "capacity", "deadline_safety_factor", default=1.0) or 1.0))
+        needed_hours = (ahead * factor) / (workers * 3600.0)
+        if needed_hours > deadline_hours:
+            return (f"{ahead:.0f}s of work is owed across {workers} "
+                    f"worker(s), which is {needed_hours:.1f}h at the "
+                    f"owner's {factor:g}x safety factor, and this job is "
+                    f"due in {deadline_hours:.1f}h")
+        return ""
+
     def pressure(self) -> dict:
         """Every backpressure signal, each labelled measured or not.
 
@@ -910,6 +1121,9 @@ class Capacity:
             "max_concurrent_jobs": budget.max_concurrent_jobs,
             "open_bids": self.open_bids(),
             "max_open_bids": budget.max_open_bids,
+            "exposure": self.exposure(),
+            "effective_execution_workers": self.effective_workers(EXECUTE)[0],
+            "throttled_because": self.effective_workers(EXECUTE)[1],
             "by_kind": {k: round(v, 1) for k, v in sorted(by_kind.items())},
             "revision_headroom_fraction": budget.revision_headroom_fraction,
             "unreconciled": self._unreconciled(),

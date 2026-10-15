@@ -237,8 +237,17 @@ class Invariant8_NoGateIsBypassed(Base):
         surface = {n for n in dir(self.s.capacity) if not n.startswith("_")}
         self.assertEqual(
             surface,
+            # Everything here either answers "is there room" or
+            # reports what is already owed. committed_ceiling and
+            # exposure are the second kind: exposure counts committed
+            # jobs and outstanding bids separately and says what the
+            # worst case comes to, and deciding nothing is the point
+            # of it -- the gate reads it, the Finder reads it, and
+            # neither is told what to do about it.
             {"budget", "committed_seconds", "outstanding", "owed_seconds",
              "jobs_in_flight", "executing", "pipelines", "open_bids",
+             "committed_ceiling", "exposure",
+             "effective_workers", "deadline_problem",
              "has_obligations", "room_for", "reserve", "admit",
              "reservation_for", "start", "consume", "release",
              "pressure", "report"})

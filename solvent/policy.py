@@ -181,6 +181,14 @@ DEFAULT_POLICY: dict[str, Any] = {
         "skills": [],
         # What a pipeline aims to hold, and the depth at which it asks
         # for more. Zero means the Finder is never told to top up.
+        # Committed jobs across every pipeline together. Zero does not
+        # mean unlimited: it means the per-pipeline limits imply it,
+        # and what they imply is skills x max_concurrent_jobs.
+        "max_committed_jobs": 0,
+        # The window deadline feasibility is checked over. Zero turns
+        # the check off, which is a decision rather than a default to
+        # lean on.
+        "deadline_horizon_hours": 0.0,
         "pipeline_target": 0,
         "replenish_at": 0,
         # A sent bid is a contingent obligation: if it wins, the work
