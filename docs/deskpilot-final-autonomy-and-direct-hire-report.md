@@ -369,6 +369,16 @@ Both figures are recorded because the first one is the honest
 result and the second is only meaningful next to it. A NOT_APPLIED
 is not a kill and is not counted as one.
 
+### installer suite
+
+| | Mutants | Killed | Survived | Not applied | Error |
+|---|---|---|---|---|---|
+| `tools/mutate_installer.py` | 194 | **194** | 0 | 0 | 0 |
+
+Run after the solvent suite finished, never beside it. Unchanged
+from the previous sweep, which is the expected result: this sweep
+touched the business logic and not the installer.
+
 **The five that did not kill, and why — every one caused by this
 sweep's own changes.**
 
