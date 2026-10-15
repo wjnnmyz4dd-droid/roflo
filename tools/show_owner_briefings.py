@@ -56,10 +56,13 @@ def show(today: str = "2026-10-15") -> int:
 
             briefing.job_obtained(
                 solvent, job_id="demo-1", capability="csv-cleanup",
-                amount_cents=4_000, source="owner_entered")
+                amount_cents=4_000, source="owner_entered",
+                contract_ref="owner-accepted:demo-1",
+                client_ref="client:demo", deadline="2026-10-20T17:00Z",
+                worker="csv-cleanup worker", queue_position=1)
             briefing.payment_received(
-                solvent, job_id="demo-1", amount_cents=4_000,
-                simulated=True, method="simulated")
+                solvent, job_id="demo-1", gross_cents=4_000,
+                fees_cents=516, simulated=True, provider="simulated")
             for slot in briefing.SUMMARY_TIMES:
                 briefing.send_summary(solvent, slot=slot, today=today)
 

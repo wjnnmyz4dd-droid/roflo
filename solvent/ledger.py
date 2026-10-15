@@ -132,13 +132,22 @@ class Ledger:
 
     def open_payment(self, *, job_id: str, amount_cents: Cents, rail: str,
                      payment_id: str | None = None, currency: str = "usd",
-                     external_ref: str = "") -> str:
+                     external_ref: str = "", client_ref: str = "") -> str:
+        """Open a payment row.
+
+        ``client_ref`` is who owes it. It defaults to empty and the
+        row is still valid without it -- but an invoice with nobody
+        attached cannot answer "has this client paid for the last
+        job", so the payment monitor reports those as unattributed
+        rather than quietly folding them into somebody's record.
+        """
         payment_id = payment_id or new_id("pay")
         self._db.execute(
             "INSERT INTO payments(id,job_id,state,amount_cents,collected_cents,rail,"
-            "updated_at,currency,external_ref) VALUES(?,?,?,?,0,?,?,?,?)",
+            "updated_at,currency,external_ref,client_ref) "
+            "VALUES(?,?,?,?,0,?,?,?,?,?)",
             (payment_id, job_id, PaymentState.ESTIMATED.value, amount_cents, rail,
-             now(), currency.lower(), external_ref))
+             now(), currency.lower(), external_ref, client_ref))
         self._db.commit()
         self._audit.record(
             event="payment.opened", authority="ledger", initiator="ledger",
@@ -353,6 +362,18 @@ class Ledger:
             "actual_cost_cents": cost, "actual_profit_cents": profit,
             "margin": (profit / revenue) if revenue > 0 else 0.0,
         }
+
+    def invoiced_job_ids(self) -> list[str]:
+        """Every job with a payment row, newest first.
+
+        Exists because the payment monitor needs the whole order book
+        and the only reads here were per-job. It could have reached
+        into ``_db`` from outside; a second place that knows this
+        table's column names is a second place to update when they
+        change, so the read lives with the table instead.
+        """
+        return [r["job_id"] for r in self._db.query(
+            "SELECT DISTINCT job_id FROM payments ORDER BY updated_at DESC")]
 
     def verified_job_ids(self) -> list[str]:
         """Jobs whose revenue was externally verified — the calibration sample."""

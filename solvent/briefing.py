@@ -213,10 +213,26 @@ def _money(cents) -> str:
 
 
 def compose(solvent, *, slot: str = MORNING) -> Summary:
-    """Build the summary from the authorities that own each part."""
+    """Build the summary from the authorities that own each part.
+
+    The owner's list, in the order they will read it. What needs
+    them first, because that is what the message is for; then money,
+    with collected and projected kept apart; then the jobs; then the
+    machine. Shortening drops from the back, so the order is also a
+    priority.
+
+    Every figure is read from whichever authority owns it, and a
+    reading that fails is said rather than skipped -- a summary with
+    a line missing looks exactly like a summary with nothing to
+    report.
+    """
     summary = Summary(slot=slot)
 
     # --- what needs the owner, first, because that is the point ------
+    broken_clock = zone_problem()
+    if broken_clock:
+        summary.needs_you.append(broken_clock)
+
     try:
         pending = [n for n in solvent.notifier.unresolved()]
         if pending:
@@ -238,22 +254,67 @@ def compose(solvent, *, slot: str = MORNING) -> Summary:
     if problem:
         summary.needs_you.append(f"capacity is not configured: {problem}")
 
+    try:
+        workers, throttle = solvent.capacity.effective_workers("EXECUTE")
+        if throttle:
+            summary.needs_you.append(
+                f"running {workers} worker(s) rather than the configured "
+                f"limit: {throttle}")
+    except Exception:
+        summary.needs_you.append("worker capacity could not be read")
+
     # --- money, before the detail -------------------------------------
     # First of the ordinary lines, because the summary is shortened
-    # from the back and this is the line that must never be the one
-    # dropped. A summary that lost "no real payment has been received"
-    # while keeping a pipeline census would be flattering by omission.
+    # from the back and these are the lines that must never be the
+    # ones dropped. A summary that lost "no real payment has been
+    # received" while keeping a pipeline census would be flattering
+    # by omission.
     try:
-        real = solvent.ledger.real_revenue_cents()
-        summary.lines.append(f"collected revenue: {_money(real)}")
-        if not real:
+        money = solvent.payments.profit()
+    except Exception:
+        money = None
+        summary.needs_you.append("the ledger could not be read")
+    if money is not None:
+        # A figure that could not be read is None, never zero. Zero is
+        # a quiet month and None is a broken database, and the whole
+        # point of the distinction is that they must not look alike.
+        if money["problems"]:
+            summary.needs_you.append(
+                "the ledger could not be read: "
+                + "; ".join(money["problems"]))
+        if money["collected_revenue_cents"] is not None:
+            summary.lines.append(
+                f"collected {_money(money['collected_revenue_cents'])}, "
+                f"actual profit {_money(money['actual_profit_cents'])}")
+        if money["invoiced_but_unpaid_cents"]:
+            summary.lines.append(
+                f"invoiced and unpaid "
+                f"{_money(money['invoiced_but_unpaid_cents'])}, which is "
+                "owed rather than earned")
+        if money["collected_revenue_cents"] == 0:
             summary.lines.append(
                 "no real payment has been received; any money in the "
                 "ledger is simulated and is not counted here")
-    except Exception:
-        summary.lines.append("the ledger could not be read")
 
-    # --- the pipelines -----------------------------------------------
+    # --- the jobs ------------------------------------------------------
+    try:
+        exposure = solvent.capacity.exposure()
+        summary.lines.append(
+            f"{exposure['committed_jobs']} job(s) committed of "
+            f"{exposure['committed_ceiling']}, {exposure['executing']} "
+            f"running, {exposure['outstanding_bids']} bid(s) out")
+    except Exception:
+        summary.lines.append("the order book could not be read")
+
+    try:
+        census = solvent.payments.census()
+        listed = ", ".join(f"{name.lower().replace('_', ' ')} {count}"
+                           for name, count in census.items() if count)
+        summary.lines.append(f"payments: {listed}" if listed
+                             else "no invoices have been issued")
+    except Exception:
+        summary.lines.append("the payment states could not be read")
+
     try:
         pipelines = solvent.capacity.pipelines()
     except Exception:
@@ -262,7 +323,7 @@ def compose(solvent, *, slot: str = MORNING) -> Summary:
         short = [name for name, row in pipelines.items()
                  if row["needs_replenishment"]]
         summary.lines.append(
-            f"pipelines: "
+            "pipelines: "
             + ", ".join(f"{name} {row['committed']}/{row['target']}"
                         for name, row in pipelines.items()))
         if short:
@@ -271,15 +332,16 @@ def compose(solvent, *, slot: str = MORNING) -> Summary:
     else:
         summary.lines.append("no skill pipelines are configured")
 
-    # --- capacity -----------------------------------------------------
+    # --- the machine ----------------------------------------------------
     try:
-        report = solvent.capacity.report()
+        pressure = solvent.capacity.pressure()
+        unmeasured = pressure.get("unmeasured") or []
         summary.lines.append(
-            f"owed {report['owed_seconds']:.0f}s of "
-            f"{report['budget_seconds']:.0f}s allowed, "
-            f"{solvent.capacity.executing()} worker(s) busy")
+            f"host {pressure['state']}"
+            + (f", unmeasured: {', '.join(sorted(unmeasured))}"
+               if unmeasured else ""))
     except Exception:
-        summary.lines.append("capacity could not be read")
+        summary.lines.append("host pressure could not be read")
 
     return summary
 

@@ -125,14 +125,18 @@ class TheSummaryLeadsWithWhatNeedsYou(Base):
 
         self.s.ledger.real_revenue_cents = explode
         summary = briefing.compose(self.s, slot=briefing.MORNING)
+        # It is a "needs you" line now, not an ordinary one: a
+        # ledger that will not open is the owner's problem before it
+        # is a line of detail, and the shortening drops detail first.
         self.assertIn("ledger could not be read", summary.text())
+        self.assertTrue(any("ledger" in line for line in summary.needs_you))
 
 
 class MoneyIsNeverFlattered(Base):
 
     def test_collected_revenue_is_zero_and_says_why(self):
         text = briefing.compose(self.s, slot=briefing.EVENING).text()
-        self.assertIn("collected revenue: $0.00", text)
+        self.assertIn("collected $0.00", text)
         self.assertIn("any money in the ledger is simulated", text)
 
     def test_a_simulated_payment_is_announced_as_simulated(self):
@@ -297,7 +301,7 @@ class ALongSummaryIsShortenedNotCut(Base):
         """
         self.five_skills()
         composed = briefing.compose(self.s, slot=briefing.MORNING).text()
-        self.assertGreater(len(composed), briefing.LIMIT - 60,
+        self.assertGreater(len(composed), briefing.LIMIT - 70,
                            "this case no longer overflows, so it is not "
                            "testing shortening")
         briefing.send_summary(self.s, slot=briefing.MORNING,
@@ -314,7 +318,7 @@ class ALongSummaryIsShortenedNotCut(Base):
         self.assertIn("more line(s)", row["summary"],
                       "nothing was dropped, so this case is not testing "
                       "what survives dropping")
-        self.assertIn("collected revenue", row["summary"])
+        self.assertIn("collected $", row["summary"])
         self.assertIn("no real payment has been received", row["summary"])
 
 

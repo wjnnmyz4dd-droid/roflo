@@ -37,6 +37,7 @@ from .discovery import (
 )
 from .metrics import business_metrics
 from .owner import OwnerChannel
+from .paymentmonitor import PaymentMonitor
 from .readiness import assert_may_attempt_first_real_job, first_revenue_readiness
 from .skillslab import SkillsLab
 from .qualification import Qualification, Verdict
@@ -147,6 +148,11 @@ class Solvent:
         self.audit = AuditLog(self.store)
         self.policy = PolicyStore(self.store, self.audit, owner_identity=OWNER)
         self.ledger = Ledger(self.store, self.audit)
+        # A read-only view over the Ledger, not a second authority on
+        # money. It writes nothing and moves nothing; it answers
+        # which of the owner's seven payment states a job is in, what
+        # is outstanding, and which clients are behind.
+        self.payments = PaymentMonitor(self.ledger, self.policy)
         self.pricing = PricingReference(self.store, self.policy)
         self.governor = FinancialGovernor(self.store, self.audit, self.policy,
                                           self.ledger, self.pricing)

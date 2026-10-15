@@ -32,6 +32,13 @@ BUSY_TIMEOUT_S = 10.0
 #: ``(table, column, column-spec)`` added to databases created before the column
 #: existed. Append to this list; never edit or remove an entry.
 MIGRATIONS = (
+    # --- who owes this invoice. The payments table recorded what was
+    # --- owed and on which rail, and never who owed it, so the
+    # --- question "has this client paid for the last job" had no
+    # --- answer and every unpaid invoice read as unattributed. The
+    # --- owner asked for repeat business from overdue clients to be
+    # --- escalated, which is unanswerable without this column.
+    ("payments", "client_ref", "TEXT NOT NULL DEFAULT ''"),
     # --- per-skill capacity. A database written before the five skill
     # --- queues existed has reservations with no capability on them;
     # --- they read as the empty pipeline, which is the safe default

@@ -311,6 +311,13 @@ class PaymentState(Enum):
     PAID = "PAID"
     PARTIALLY_PAID = "PARTIALLY_PAID"
     OVERDUE = "OVERDUE"
+    #: The rail told us the attempt failed -- a declined card, a
+    #: reversed transfer, a payout that bounced. Distinct from
+    #: OVERDUE, which is silence, and from DISPUTED, which is the
+    #: client objecting. A failure is the provider's own statement
+    #: that this particular attempt did not happen, and it is the
+    #: one of the three that can be retried without anybody arguing.
+    PAYMENT_FAILED = "PAYMENT_FAILED"
     REFUNDED = "REFUNDED"
     DISPUTED = "DISPUTED"
 
