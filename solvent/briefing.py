@@ -26,6 +26,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from .capacity import LIFECYCLE_STAGES as LIFECYCLE_UNREAD
+
 #: The owner's timezone, named rather than assumed. Two summaries a
 #: day at a fixed wall-clock time is a daylight-saving question
 #: whether or not anybody wants it to be: a server on UTC that sends
@@ -210,6 +212,31 @@ class Summary:
 
 def _money(cents) -> str:
     return f"${(cents or 0) / 100:,.2f}"
+
+
+def lifecycle_census(solvent) -> dict:
+    """The thirteen stages, assembled from the authorities that own them.
+
+    Capacity owns twelve of them and is forbidden from naming the
+    ledger, so the thirteenth is filled in here -- this module
+    already reads every authority and holds none of them, which
+    makes it the right place to join two views that may not know
+    about each other.
+    """
+    try:
+        census = solvent.capacity.lifecycle(
+            orchestrator=getattr(solvent, "orchestrator", None))
+    except Exception as exc:
+        return {"stages": {}, "unread_stages": list(LIFECYCLE_UNREAD),
+                "problem": f"the capacity gate could not be read: {exc}"}
+    try:
+        census["stages"]["outstanding_payments"] = len(
+            solvent.payments.outstanding())
+    except Exception:
+        census["stages"]["outstanding_payments"] = None
+    census["unread_stages"] = [name for name, value
+                               in census["stages"].items() if value is None]
+    return census
 
 
 def compose(solvent, *, slot: str = MORNING) -> Summary:

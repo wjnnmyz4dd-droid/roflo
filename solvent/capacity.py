@@ -96,6 +96,27 @@ FLOOR = "FLOOR"
 #: surface and a constant is not a decision it makes.
 RESOURCE_SIGNALS = ("disk_free_bytes", "memory_used_percent")
 
+#: Every distinct place a piece of work can be, in the order it
+#: travels. Thirteen rather than one number, because the whole point
+#: is that a discovered opportunity, a submitted offer and an
+#: accepted contract are three different things and only the last is
+#: work the owner has to deliver.
+LIFECYCLE_STAGES = (
+    "discovered_opportunities",
+    "qualified_opportunities",
+    "prepared_offers",
+    "submitted_offers",
+    "pending_acceptance",
+    "accepted_contracts",
+    "queued_obligations",
+    "active_jobs",
+    "awaiting_verification",
+    "awaiting_revision",
+    "delivered_jobs",
+    "closed_jobs",
+    "outstanding_payments",
+)
+
 
 class Refusal(Enum):
     """Why capacity said no. Each is a different problem to fix."""
@@ -386,6 +407,81 @@ class Capacity:
         if skills and budget.max_concurrent_jobs > 0:
             return skills * budget.max_concurrent_jobs
         return budget.max_concurrent_jobs
+
+    def lifecycle(self, *, orchestrator=None) -> dict:
+        """Where every piece of work is, by stage. Decides nothing.
+
+        Thirteen stages, kept apart because collapsing any two of
+        them is how a shop talks itself into believing it has more
+        secured work than it has. The three that matter most:
+
+        * a **discovered** opportunity is not secured work;
+        * a **submitted offer** is a potential obligation;
+        * an **accepted contract** is a real one.
+
+        Counting those together produces a number that is comforting
+        and wrong. ``secured`` below is deliberately only the last
+        kind, and ``speculative`` is deliberately named rather than
+        added to it.
+
+        Read from whichever authority owns each stage. A stage whose
+        authority is not wired reports None rather than zero, because
+        "nothing there" and "nobody asked" are different answers and
+        this system has confused them before.
+
+        ``outstanding_payments`` is always one of the unread ones
+        here, and deliberately. An invariant test forbids this gate
+        from naming the ledger at all -- capacity decides what may be
+        owed in *work*, and a gate that also had an opinion about
+        money would be two authorities. Whoever assembles the full
+        census fills that stage in from the payment monitor; this
+        reports the twelve stages it actually owns and says the
+        thirteenth is not its to answer.
+        """
+        from .types import JobState
+
+        stages = dict.fromkeys(LIFECYCLE_STAGES)
+        stages["submitted_offers"] = self.open_bids()
+        stages["pending_acceptance"] = self.open_bids()
+        stages["queued_obligations"] = max(
+            0, self.jobs_in_flight() - self.executing())
+        stages["active_jobs"] = self.executing()
+        stages["accepted_contracts"] = self.jobs_in_flight()
+
+        if orchestrator is not None:
+            try:
+                jobs = list(orchestrator.jobs())
+            except Exception:
+                jobs = None
+            if jobs is not None:
+                def count(*states):
+                    return len([j for j in jobs if j.state in states])
+
+                stages["discovered_opportunities"] = count(JobState.INTAKE)
+                stages["qualified_opportunities"] = count(
+                    JobState.QUALIFYING)
+                stages["prepared_offers"] = count(
+                    JobState.AWAITING_OWNER_APPROVAL)
+                stages["awaiting_verification"] = count(JobState.VERIFYING)
+                stages["awaiting_revision"] = count(
+                    JobState.REVISION_REQUESTED)
+                stages["delivered_jobs"] = count(
+                    JobState.READY_FOR_DELIVERY, JobState.AWAITING_PAYMENT,
+                    JobState.COMPLETE)
+                stages["closed_jobs"] = count(JobState.COMPLETE)
+
+        secured = stages["accepted_contracts"] or 0
+        speculative = stages["submitted_offers"] or 0
+        return {
+            "stages": stages,
+            "secured_work": secured,
+            "speculative_work": speculative,
+            "unread_stages": [name for name, value in stages.items()
+                              if value is None],
+            "basis": ("secured counts accepted contracts only; an offer "
+                      "that has been sent is a potential obligation and "
+                      "is reported beside it, never added to it"),
+        }
 
     def exposure(self) -> dict:
         """Everything owed or possibly owed, by what kind of thing it is.

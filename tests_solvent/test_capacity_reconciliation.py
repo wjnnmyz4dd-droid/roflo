@@ -360,3 +360,83 @@ class NoConflictingGlobalLimitSurvivesAnywhere(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThirteenStagesKeptApart(Base):
+    """A discovered opportunity is not secured work.
+
+    The owner listed thirteen distinct places a piece of work can be
+    and asked for them tracked separately. The reason is arithmetic:
+    collapsing any two produces a number that is comforting and
+    wrong, and the specific collapse that matters is counting an
+    offer you have sent as work you have won.
+    """
+
+    def census(self):
+        """Through the assembler, which is the only thing that sees all
+        thirteen: the capacity gate is forbidden from naming the
+        ledger, so it reports twelve and briefing joins the last."""
+        from solvent import briefing
+
+        return briefing.lifecycle_census(self.s)
+
+    def test_every_stage_is_reported(self):
+        from solvent.capacity import LIFECYCLE_STAGES
+
+        self.assertEqual(len(LIFECYCLE_STAGES), 13)
+        self.assertEqual(sorted(self.census()["stages"]),
+                         sorted(LIFECYCLE_STAGES))
+
+    def test_an_offer_is_never_counted_as_secured_work(self):
+        """The decisive one."""
+        self.bid(0)
+        self.bid(1)
+        census = self.census()
+        self.assertEqual(census["secured_work"], 0)
+        self.assertEqual(census["speculative_work"], 2)
+
+    def test_an_accepted_contract_is_secured_work(self):
+        self.admit("csv-cleanup", 0)
+        self.assertEqual(self.census()["secured_work"], 1)
+
+    def test_queued_and_active_are_different_stages(self):
+        self.fill_everything()
+        for skill in SKILLS:
+            held = self.s.capacity.reservation_for(f"{skill}-0", cap.EXECUTE)
+            self.s.capacity.start(held)
+        stages = self.census()["stages"]
+        self.assertEqual(stages["active_jobs"], 5)
+        self.assertEqual(stages["queued_obligations"], 15)
+        self.assertEqual(stages["accepted_contracts"], 20)
+
+    def test_the_basis_says_offers_are_not_added_to_contracts(self):
+        self.assertIn("never added to it", self.census()["basis"])
+
+    def test_a_stage_with_no_authority_wired_reads_unread(self):
+        """None, not zero. Nobody asked is not nothing there."""
+        census = self.s.capacity.lifecycle()
+        self.assertIn("discovered_opportunities", census["unread_stages"])
+        self.assertIsNone(census["stages"]["discovered_opportunities"])
+
+    def test_the_gate_never_names_the_ledger(self):
+        """Capacity owns work owed, not money owed.
+
+        It reports twelve stages and leaves outstanding_payments
+        unread, because a gate with an opinion about money would be
+        a second authority over it.
+        """
+        census = self.s.capacity.lifecycle(orchestrator=self.s.orchestrator)
+        self.assertIsNone(census["stages"]["outstanding_payments"])
+        self.assertIn("outstanding_payments", census["unread_stages"])
+
+    def test_a_wired_authority_reads_zero_rather_than_unread(self):
+        census = self.census()
+        self.assertEqual(census["unread_stages"], [])
+        self.assertEqual(census["stages"]["discovered_opportunities"], 0)
+
+    def test_it_decides_nothing(self):
+        """A census that refused work would be a second gate."""
+        self.fill_everything()
+        before = self.s.capacity.jobs_in_flight()
+        self.census()
+        self.assertEqual(self.s.capacity.jobs_in_flight(), before)

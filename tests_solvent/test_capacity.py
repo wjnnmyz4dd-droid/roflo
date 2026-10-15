@@ -246,7 +246,7 @@ class Invariant8_NoGateIsBypassed(Base):
             # neither is told what to do about it.
             {"budget", "committed_seconds", "outstanding", "owed_seconds",
              "jobs_in_flight", "executing", "pipelines", "open_bids",
-             "committed_ceiling", "exposure",
+             "committed_ceiling", "exposure", "lifecycle",
              "effective_workers", "deadline_problem",
              "has_obligations", "room_for", "reserve", "admit",
              "reservation_for", "start", "consume", "release",

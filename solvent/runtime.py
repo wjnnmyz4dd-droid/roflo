@@ -284,6 +284,10 @@ DEFAULT_INTERVALS = {
     # still sends them if a tick was missed. The dedupe key is the date
     # and the slot, so asking often does not mean telling often.
     "owner_briefing": 300.0,
+    # Often enough to catch a stall within the hour, rarely enough
+    # that a persistent one is not re-reported every minute. The
+    # dedupe key does the rest.
+    "supervision": 600.0,
     "discovery": 900.0,        # look for work every 15 minutes
     "reconciliation": 300.0,   # re-check payment and job state every 5
     "health": 60.0,            # notice trouble within a minute
@@ -405,6 +409,7 @@ class Runtime:
         self.add_task("diagnostics", self._tick_diagnostics)
         self.add_task("owner_intents", self._tick_owner_intents)
         self.add_task("owner_briefing", self._tick_owner_briefing)
+        self.add_task("supervision", self._tick_supervision)
 
     def _tick_heartbeat(self) -> str:
         """Touch a file so something outside Solvent can tell it is working.
@@ -494,6 +499,25 @@ class Runtime:
         except Exception as exc:
             return f"the {slot} summary could not be sent: {exc!r}"[:300]
         return f"{slot} {briefing.OWNER_TIMEZONE} summary: {outcome}"
+
+    def _tick_supervision(self) -> str:
+        """Look for work that has stopped moving, and escalate once.
+
+        The supervisor fixes nothing. It notices, names the authority
+        that owns the fix, and interrupts the owner only for the
+        critical ones -- a WARN belongs in the next summary, which
+        wants reading today rather than answering now.
+        """
+        supervisor = getattr(self.solvent, "supervisor", None)
+        if supervisor is None:
+            return "no supervisor is wired"
+        findings = supervisor.check()
+        if not findings:
+            return "nothing has stalled"
+        sent = supervisor.escalate(findings, notifier=self.solvent.notifier)
+        worst = sorted({f.severity for f in findings})
+        return (f"{len(findings)} finding(s) ({', '.join(worst)}); "
+                f"{len(sent)} escalated")
 
     def _tick_owner_intents(self) -> str:
         """Apply what the owner asked for from the control centre.

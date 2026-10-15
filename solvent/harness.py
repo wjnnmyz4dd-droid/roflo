@@ -37,7 +37,9 @@ from .discovery import (
 )
 from .metrics import business_metrics
 from .owner import OwnerChannel
+from .channelhealth import ChannelHealth
 from .paymentmonitor import PaymentMonitor
+from .supervision import Supervisor
 from .readiness import assert_may_attempt_first_real_job, first_revenue_readiness
 from .skillslab import SkillsLab
 from .qualification import Qualification, Verdict
@@ -153,6 +155,10 @@ class Solvent:
         # which of the owner's seven payment states a job is in, what
         # is outstanding, and which clients are behind.
         self.payments = PaymentMonitor(self.ledger, self.policy)
+        #: Whether each acquisition channel is answering properly.
+        #: Holds no permission: the catalogue decides what a channel
+        #: may do and this decides whether it is working.
+        self.channels = ChannelHealth(self.store, self.audit)
         self.pricing = PricingReference(self.store, self.policy)
         self.governor = FinancialGovernor(self.store, self.audit, self.policy,
                                           self.ledger, self.pricing)
@@ -203,6 +209,13 @@ class Solvent:
         self.capacity = Capacity(self.store, self.policy, self.audit,
                                  applications=self.applications,
                                  diagnostics=self.diagnostics)
+        #: Notices work that has quietly stopped moving. Reads every
+        #: authority and holds none of their powers: it can see a
+        #: stalled worker and it cannot start one.
+        self.supervisor = Supervisor(
+            capacity=self.capacity, orchestrator=self.orchestrator,
+            payments=self.payments, applications=self.applications,
+            channels=self.channels)
         self.feedback = ClientFeedback(self.store, self.audit, self.orchestrator)
         # Customer service reads the record and answers the client. It calls
         # the feedback authority for intake, classification and investigation
