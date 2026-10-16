@@ -18,6 +18,13 @@ constraints. Weights are judgment; inputs are measured. Where evidence
 could not be obtained, the question is marked **UNRESOLVED** rather
 than filled with a guess.
 
+**Second pass, same day.** The first pass left three of Part VI's required
+measurements unsupplied (CPU, error rate, recovery time) and listed
+pagination, deduplication and repeat-client support as open. Those are
+now closed and marked **[2nd pass]** where they appear. One finding is a
+**correction**: section D understated Channel C, because
+`solvent/storefront.py` already implements most of it.
+
 **The five distinctions, applied throughout.** Technical feasibility,
 contractual permission, API capability, owner approval, and production
 readiness are tracked separately and never collapsed. Technical
@@ -263,8 +270,26 @@ the brief lists — five service categories, fixed-price packages, hourly
 options, uploads, quoting, checkout, intake, assignment, verification,
 delivery, payment confirmation — is permissible.
 
-**It also has no customers.** The brief's warning is the correct one and
-I will not soften it: building a site does not create demand. The
+**Correction [2nd pass]: most of Channel C already exists.** The first
+pass treated it as a greenfield build and scored its implementation
+difficulty accordingly. `solvent/storefront.py` (573 lines, with 281
+lines of tests) already implements the five service offers — one per
+certified skill — with fixed-price scope, included/excluded lists, a
+revision policy, structured intake questions with missing-answer
+validation, an order lifecycle in customer-readable states, and the
+thing that matters most architecturally: an order becomes an
+`Opportunity` on a `StorefrontSource` and enters **the existing
+pipeline**, so there is no second engine. Two gates are already welded
+shut — `published` is False and no code here can change it, and an
+offer whose capability is not cleared for delivery cannot be opened.
+
+What is genuinely missing is narrower than "a website": **checkout,
+any payment rail, customer file upload, automated quoting, and a
+public customer-facing site.** `solvent/web/` is the owner's
+authenticated console, not a storefront.
+
+**It still has no customers.** The brief's warning is the correct one
+and I will not soften it: building a site does not create demand. The
 honest position is that I have **not measured** acquisition cost or
 conversion for this niche, and inventing figures would be worse than
 saying so.
@@ -314,11 +339,21 @@ that hourly introduces.
 permission to *respond* to one is unresolved everywhere and must not be
 inferred from a reading permission.
 
-**Repeat-client contracts.** The highest-value and least-examined
-route. A satisfied client is the only acquisition channel with no
-third-party permission question, no CAC and a known conversion rate.
-`clientrelations.py` exists; whether it supports a repeat-engagement
-flow was not audited here and is listed in section Q.
+**Repeat-client contracts [2nd pass — now audited].** The highest-value
+route, and the ingredients are already present. Across jobs, DeskPilot
+already: recalls `client_performance` from Business Memory keyed by
+`client_ref` during qualification; aggregates every outstanding invoice
+by client in `paymentmonitor.client_standing()`; and can refuse further
+work from a non-payer via `may_take_more_work_from()`. So a returning
+client is recognised, and a bad payer is already blocked.
+
+**What is missing is the outreach step.** `clientrelations.py` is
+scoped to a single job's conversation — it answers, clarifies, assesses
+sentiment and escalates, but nothing proactively re-approaches a past
+client. That step is Channel A's core motion and it is the smallest
+unbuilt thing standing between DeskPilot and its best channel. It is
+also a *consequential* action and therefore the Action Gate's to
+authorise, not the browser's.
 
 **Automated intake where permitted.** On the owner's own site,
 everything. Through a platform, nothing beyond reading.
@@ -400,10 +435,29 @@ Ranked by benefit against risk and cost:
    the run also auto-wrote `page-<timestamp>.yml` into `--output-dir`,
    so retention needs a policy. Cost: trivial. **This is the single
    highest-value change and it needs no new code in the server.**
-2. **Pagination-aware extraction with deduplication.** Benefit:
-   correctness, not cost — the measured risk on listing boards is
-   missing jobs, not spending tokens. Cost: low. Not yet measured
-   against a paginated fixture (section Q).
+2. **Pagination-aware extraction with deduplication [2nd pass — now
+   measured].** Benefit: correctness, not cost, and the numbers are
+   stark. Against a 5-page board of 126 unique listings carrying 24
+   planted duplicates, in bare `<div>`s with no headings or ARIA roles:
+
+   | strategy | listings found | wrong |
+   |---|---:|---|
+   | first page only | 30 | **96 missed (76%)** |
+   | all pages, no dedup | 120 records | **12 double-counted** |
+   | all pages + dedup, one page failed | 108 | **18 missed, silently** |
+   | + targeted retry of the failed page | **126** | none |
+
+   The third row is the dangerous one and the reason this ranks second:
+   the deduplicated crawl *looked* successful at 108 listings while
+   silently missing 18, because one page returned HTTP 500 and nothing
+   tracked the gap. Unreadable must not read as healthy — the same rule
+   the capability sweep kept rediscovering. Targeted retry of only the
+   failed page recovered all 126 in **0.088 s**.
+
+   Incidental finding: the ARIA-poor markup did **not** defeat
+   extraction. The snapshot still carried the `/p/<id>` links, so the
+   accessibility-tree blindness risk is narrower than feared for
+   list-shaped pages.
 3. **Scoped snapshots (`target`).** Benefit: 4% here, likely more on a
    page with heavy chrome. Low cost, low risk.
 4. **`browser_find` for sparse lookups only.** Measured: a broad regex
@@ -416,6 +470,10 @@ Ranked by benefit against risk and cost:
 6. **Screenshot fallback.** Fixed 1,229 tokens, but unparseable by
    deterministic code. Appropriate only as evidence for a human, never
    as the extraction path.
+
+**Whole-crawl cost [2nd pass].** Five pages, snapshots written to disk:
+**125 response tokens in total**, 0.464 s wall. The file route scales
+across pagination, not just within one page.
 
 **The rule the brief asked for is the one the measurements support:**
 do not optimise tokens at the expense of missed jobs. The
@@ -629,6 +687,20 @@ regardless, and memory is what threatens MT5.
 Other measured figures: a single session idles at ~127 MB and peaks at
 ~908 MB with pages open; browser-use's equivalent was ~1,188 MB.
 
+**CPU [2nd pass].** A 5-page crawl cost **1.24 CPU-seconds**, 0.248 per
+page, over 1.02 s wall — **1.21 cores busy** during the burst. So
+discovery is a short one-core spike, not a sustained load. That is the
+right shape for MT5 coexistence and it argues for scheduling rather
+than throttling: run it between ticks, not continuously at low
+priority.
+
+**Crash behaviour [2nd pass].** Killing all seven browser child
+processes mid-crawl produced an explicit failure on the next call in
+**0.034 s** — `Target page, context or browser has been closed` — not a
+silent empty result. Restarting and finishing the remaining pages took
+**0.884 s** and recovered 126 of 126 listings. The server fails loudly
+when its browser dies, which is the behaviour a supervisor can act on.
+
 Recommendations:
 - **One headless worker, started per discovery window and torn down.**
   Not a resident service.
@@ -696,15 +768,22 @@ No live site. Fixtures only. Nothing submits, messages or pays.
 5. Duplicate detection across overlapping pages.
 6. Client-requirement interpretation → unconfirmed drafts only.
 
-**Reliability** (fault injection against a local mock)
+**Reliability** (fault injection against a local mock). Items 7, 8, 13
+and 14 were **executed in the second pass**; the rest remain designed.
 7. Browser crash mid-extraction → restart, no partial record kept.
+   **[executed]** detected in 0.034 s with an explicit error; full
+   recovery in 0.884 s.
 8. Navigation timeout → bounded retry, then refusal.
 9. Session expiry → re-auth refused without the Gate.
 10. Changed layout / broken selector → refuse, do not guess.
 11. Unexpected popup and partial load.
 12. Network failure and download failure.
 13. Pagination error → detect a gap rather than silently truncate.
-14. Restart recovery → resume without duplicating.
+    **[executed]** an HTTP 500 on one page cost 18 listings with no
+    error surfaced by the crawl itself — the gap must be tracked by the
+    caller, because nothing below it will.
+14. Restart recovery → resume without duplicating. **[executed]**
+    126/126 recovered, no double-counting after dedup.
 
 **Security — adversarial**
 15. Prompt injection in a job description.
@@ -830,12 +909,24 @@ it is worth building for the *second* dollar and beyond.
 6. **Extraction correctness on real listing pages** — all figures here
    are from synthetic fixtures. A saved-page corpus is the missing
    evidence, and it can be built without touching a live site.
-7. **Pagination and deduplication** — designed, not measured.
-8. **Windows behaviour** — everything here ran on Linux.
-9. **Whether `clientrelations.py` supports repeat engagements** — not
-   audited; relevant because repeat clients are the best channel.
+7. ~~Pagination and deduplication~~ — **closed [2nd pass]**: measured.
+   Page-one-only misses 76%; a failed page silently costs 18 listings;
+   targeted retry recovers all 126 in 0.088 s (section F).
+8. **Windows behaviour** — everything here ran on Linux. Still open,
+   and now the largest unmeasured risk, because the CPU and crash
+   figures that would justify scheduling were taken on Linux.
+9. ~~Whether `clientrelations.py` supports repeat engagements~~ —
+   **closed [2nd pass]**: client memory and payment standing already
+   span jobs; the proactive outreach step does not exist (section D).
 10. **Transitive licence and CVE review** of the Playwright tree — not
     done.
+11. **Channel C's remaining build** — now scoped rather than guessed:
+    checkout, a payment rail, file upload, automated quoting and a
+    public site. The business logic exists (section C.5). What that
+    remainder costs was not estimated.
+12. **Error rate on real pages** — the 0.20 measured here was injected
+    by me. Real boards fail at an unknown rate, and the retry design
+    depends on it.
 
 ---
 

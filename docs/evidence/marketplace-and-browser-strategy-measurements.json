@@ -276,5 +276,108 @@
     "ground_truth_listings": 120,
     "note": "full fidelity on disk at a fixed 42-token response cost"
   },
-  "probe_corrections": "Two rows in the first extraction run were defects in the probe, not in the tool: a mis-escaped regex and a wrong output path. Both were re-run and the corrected figures are recorded in place with a note. The uncorrected values are not carried forward."
+  "probe_corrections": "Two rows in the first extraction run were defects in the probe, not in the tool: a mis-escaped regex and a wrong output path. Both were re-run and the corrected figures are recorded in place with a note. The uncorrected values are not carried forward.",
+  "second_pass_2026_10_16": {
+    "why": "The first pass left Part VI's CPU, error-rate and recovery-time measurements unsupplied and listed pagination, deduplication and clientrelations as open. These close them.",
+    "fixture": {
+      "pages": 5,
+      "cards_per_page": 30,
+      "card_instances": 150,
+      "unique_listings": 126,
+      "duplicates_planted": 24,
+      "markup": "bare divs, no headings, no ARIA roles",
+      "injected_fault": "page 3 served HTTP 500"
+    },
+    "pagination_and_dedup": {
+      "ground_truth_unique": 126,
+      "total_card_instances": 150,
+      "duplicates_planted": 24,
+      "page1_only": {
+        "found": 30,
+        "missed": 96
+      },
+      "all_pages_no_dedup": {
+        "records": 120,
+        "double_counted": 12
+      },
+      "all_pages_dedup_before_recovery": {
+        "found": 108,
+        "missed": 18
+      },
+      "injected_failures": {
+        "pages": [
+          3
+        ],
+        "error_rate": 0.2
+      },
+      "after_targeted_retry": {
+        "found": 126,
+        "missed": 0,
+        "recovery_seconds": 0.088
+      },
+      "crawl_seconds_5_pages": 0.464,
+      "response_tokens_total_5_pages": 125
+    },
+    "cpu_and_crash": {
+      "cpu_seconds_5_pages": 1.24,
+      "wall": 1.024,
+      "detection_seconds": 0.034,
+      "restart_seconds": 0.884,
+      "listings_after_recovery": 126,
+      "ground_truth": 126
+    },
+    "cpu_detail": {
+      "cpu_seconds_5_pages": 1.24,
+      "cpu_seconds_per_page": 0.248,
+      "wall_seconds": 1.024,
+      "cores_busy_equivalent": 1.21
+    },
+    "crash_detail": {
+      "browser_children_killed": 7,
+      "detection_seconds": 0.034,
+      "error_is_explicit": true,
+      "error_text": "Target page, context or browser has been closed",
+      "restart_and_finish_seconds": 0.884,
+      "listings_after_recovery": 126,
+      "ground_truth": 126
+    },
+    "aria_poor_markup_note": "Bare divs with no roles or headings did NOT defeat extraction: the accessibility snapshot still carried the /p/<id> links, so listings were recoverable."
+  },
+  "code_audit_second_pass": {
+    "storefront_exists": {
+      "file": "solvent/storefront.py",
+      "lines": 573,
+      "implements": [
+        "five service offers, one per certified skill",
+        "fixed-price scope with included/excluded and revision policy",
+        "structured intake questions with missing-answer validation",
+        "order lifecycle with customer-readable states",
+        "orders become Opportunity on a StorefrontSource, entering the existing pipeline",
+        "publication gate: published=False and no code can change it",
+        "certification gate: an uncertified capability cannot be advertised",
+        "owner minimum-fee floor"
+      ],
+      "does_not_implement": [
+        "checkout (0 mentions)",
+        "Stripe or any payment rail (0)",
+        "customer file upload (0)",
+        "automated quoting (1 mention)",
+        "a public customer-facing site"
+      ],
+      "tests": "tests_solvent/test_storefront.py, 281 lines"
+    },
+    "web_app_is_owner_console": {
+      "file": "solvent/web/app.py, auth.py",
+      "finding": "owner-authenticated console, not a customer storefront"
+    },
+    "repeat_client_support": {
+      "clientrelations_scope": "per job; no cross-job engagement flow",
+      "exists_across_jobs": [
+        "qualification.py recalls memory kind 'client_performance' by client_ref",
+        "paymentmonitor.client_standing() aggregates outstanding invoices by client_ref",
+        "may_take_more_work_from() can refuse a non-paying client"
+      ],
+      "missing": "no proactive re-approach of a past client; that step is Channel A's core motion"
+    }
+  }
 }
