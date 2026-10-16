@@ -265,15 +265,89 @@ def read_source(path: str | Path) -> tuple[list[str], list[dict], dict[int, str]
     return _source_csv(path)
 
 
+#: This module's own answer to "what encoding, what separator". The worker
+#: detects both instead of assuming UTF-8 and commas, and a verifier still
+#: assuming them could not read the file the worker had just accepted: the
+#: job was done and then refused at verification, which is safe and useless.
+#:
+#: Written here rather than imported from :mod:`solvent.tabular`, which is
+#: what the worker uses. A decoder shared with the worker cannot catch the
+#: worker decoding wrongly -- both would misread the file the same way and
+#: agree perfectly about the misreading.
+_SOURCE_LADDER = ("utf-8-sig", "utf-16", "cp1252")
+_SOURCE_DELIMITERS = ",;"
+_BOMS = (b"\xff\xfe", b"\xfe\xff")
+
+
+def _decode_source(raw: bytes) -> str:
+    """The client's bytes as text, or raise.
+
+    UTF-16 only behind a byte-order mark: without one it is not a rung but
+    a trap, because the codec accepts any even-length input and returns CJK
+    rather than raising.
+    """
+    for encoding in _SOURCE_LADDER:
+        if encoding == "utf-16" and not raw.startswith(_BOMS):
+            continue
+        try:
+            text = raw.decode(encoding)
+        except (UnicodeDecodeError, UnicodeError, LookupError):
+            continue
+        if "\ufffd" in text or "\x00" in text:
+            continue
+        return text
+    raise _Unreadable(
+        "the source does not decode as " + ", ".join(_SOURCE_LADDER)
+        + " without losing characters")
+
+
+def _source_separator(text: str) -> str:
+    """The separator that gives every line the same number of fields."""
+    lines = [line for line in text.splitlines()[:50] if line.strip()]
+    if not lines:
+        return ","
+    best, best_width = ",", 0
+    for candidate in _SOURCE_DELIMITERS:
+        try:
+            rows = list(csv.reader(lines, delimiter=candidate))
+        except csv.Error:
+            continue
+        widths = {len(row) for row in rows if row}
+        if len(widths) != 1:
+            continue
+        width = widths.pop()
+        if width >= 2 and width > best_width:
+            best, best_width = candidate, width
+    return best
+
+
+def _source_table(path: Path) -> list[list[str]]:
+    """Every row of the client's file, blank rows included."""
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise _Unreadable(f"{path} could not be read: {exc}") from exc
+    text = _decode_source(raw)
+    try:
+        return list(csv.reader(io.StringIO(text),
+                               delimiter=_source_separator(text)))
+    except csv.Error as exc:
+        raise _Unreadable(f"{path} will not parse as CSV: {exc}") from exc
+
+
 def _source_csv(path: Path) -> tuple[list[str], list[dict], dict[int, str]]:
-    columns, rows = read_table(path)
+    # Read once, keeping blank rows, because the source row numbers the
+    # worker reported are counted over the file as written. A verifier whose
+    # row numbers drift from the worker's cannot tell a wrongly-held record
+    # from a correctly-held one.
+    raw = _source_table(path)
+    present = [r for r in raw if any(str(c).strip() for c in r)]
+    if not present:
+        raise _Unreadable(f"{path} has no rows at all, not even a header")
+    columns = [str(c) for c in present[0]]
     if len(set(columns)) != len(columns):
         raise _Unreadable("the source header names the same column twice")
     records, faults = [], {}
-    # read_table drops blank rows, so re-read to keep the source row numbers the
-    # worker reported. A verifier whose row numbers drift from the worker's
-    # cannot tell a wrongly-held record from a correctly-held one.
-    raw = list(csv.reader(io.StringIO(path.read_bytes().decode("utf-8-sig"))))
     numbered = [(i, r) for i, r in enumerate(raw, start=1)
                 if any(str(c).strip() for c in r)]
     for position, (_, row) in enumerate(numbered[1:], start=2):

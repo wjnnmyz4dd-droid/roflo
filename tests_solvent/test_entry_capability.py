@@ -280,18 +280,40 @@ class JobLevelRefusals(Base):
         self.assertIn("cannot be inferred", report.refused[0])
 
     def test_a_source_that_is_not_text_at_all_is_refused_not_guessed_at(self):
-        self.source.write_bytes(b"\xff\xfe\x00\x01 not utf-8")
+        """A PNG, which is binary in a way no encoding can talk round."""
+        self.source.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x01\x02\x03")
         report = worker.execute(source=self.source, destination=self.output,
                                 requirements=brief())
         self.assertIn("could not be read", report.refused[0])
-        self.assertIn("not UTF-8", report.refused[0])
+        self.assertIn("binary file", report.refused[0])
         self.assertFalse(self.output.exists())
 
     def test_a_file_that_decodes_but_is_not_this_clients_table(self):
         """Readable text whose columns are not the ones the brief maps."""
-        self.source.write_bytes(b"\x00\x01\x02 not a client export")
+        self.source.write_bytes(b"alpha,beta\n1,2\n3,4\n")
         report = worker.execute(source=self.source, destination=self.output,
                                 requirements=brief())
+        self.assertIn("does not have", report.refused[0])
+        self.assertFalse(self.output.exists())
+
+    def test_a_byte_order_mark_is_taken_at_its_word_and_the_mapping_catches_it(self):
+        """A limit of encoding detection, recorded rather than hidden.
+
+        A byte-order mark is a declaration, and the decoder believes it: any
+        even-length file carrying one decodes as UTF-16 without complaint,
+        into CJK if its bytes were never UTF-16 at all. Nothing in the
+        decoder can tell, and guessing past a BOM would be worse.
+
+        What stops such a file is the next step rather than luck. Data entry
+        cannot run without a mapping -- a brief with none is refused for that
+        -- and a mapping names the client's real columns, which decoded
+        nonsense never has. So the job is refused, and this test exists so
+        that the reason is on the record and stays true.
+        """
+        self.source.write_bytes(b"\xff\xfe\x00\x01 not utf-16 at all")
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=brief())
+        self.assertTrue(report.refused)
         self.assertIn("does not have", report.refused[0])
         self.assertFalse(self.output.exists())
 
@@ -776,6 +798,61 @@ class TheVerifierSaysWhenItCannotTell(Base):
         self.assertEqual(report.verdict, verifier.UNVERIFIABLE)
         self.assertIn("does not look like an exceptions file",
                       self.finding(report, "records_reconcile").detail)
+
+
+
+class AEuropeanExportIsTranscribedByBothHalves(Base):
+    """The worker and the verifier have to accept the same file.
+
+    Data entry transcribes a client's own records, so refusing a
+    semicolon-separated cp1252 export -- what Excel writes across
+    continental Europe -- refused the work this capability exists for.
+
+    Both halves are exercised, because widening only one is worse than
+    widening neither: when the worker read the file and the verifier could
+    not, the job was done and then refused at verification. Safe, and
+    useless.
+    """
+
+    def european_source(self):
+        rows = [list(r) for r in SOURCE]
+        rows[1][1] = "Caf\u00e9 M\u00fcnster"
+        buffer = io.StringIO(newline="")
+        csv.writer(buffer, delimiter=";", lineterminator="\n").writerows(rows)
+        self.source.write_bytes(buffer.getvalue().encode("cp1252"))
+
+    def test_the_worker_reads_it(self):
+        self.european_source()
+        report = worker.execute(source=self.source, destination=self.output,
+                                requirements=brief())
+        self.assertEqual(report.refused, [])
+
+    def test_the_verifier_reads_the_same_file_and_every_check_passes(self):
+        self.european_source()
+        worker.execute(source=self.source, destination=self.output,
+                       requirements=brief())
+        report = verifier.verify(source=self.source, output=self.output,
+                                 requirements=brief())
+        failed = [(f.check, f.detail) for f in report.findings
+                  if not f.result.satisfies]
+        self.assertEqual(failed, [])
+
+    def test_the_accented_name_survives_to_the_deliverable(self):
+        """Accepting the file is worth nothing if the name arrives mangled."""
+        self.european_source()
+        worker.execute(source=self.source, destination=self.output,
+                       requirements=brief())
+        delivered = self.output.read_text(encoding="utf-8")
+        self.assertIn("Caf\u00e9 M\u00fcnster", delivered)
+        self.assertNotIn("\ufffd", delivered)
+
+    def test_the_encoding_it_chose_is_recorded_rather_than_assumed(self):
+        """An assumption that is made and not declared is the one nobody audits."""
+        self.european_source()
+        worker.execute(source=self.source, destination=self.output,
+                       requirements=brief())
+        self.assertEqual(worker._read_csv.last_encoding, "cp1252")
+        self.assertEqual(worker._read_csv.last_delimiter, ";")
 
 
 if __name__ == "__main__":

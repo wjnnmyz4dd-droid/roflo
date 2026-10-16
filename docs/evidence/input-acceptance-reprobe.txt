@@ -1,0 +1,76 @@
+# Input acceptance probe, re-run — before and after the encoding work
+
+The same thirteen realistic client inputs the audit measured, fed to
+the production workers by one script against two commits:
+
+  before  f980efc  (the audit's state, nothing from this sweep)
+  after   776d38d  (solvent.tabular, the independent readers, OD-16)
+
+The script is docs/evidence/acceptance-probe.py. It imports solvent
+and writes only into a temporary directory. Run it against another
+checkout with SOLVENT_ROOT=<path>.
+
+## What is being counted
+
+The audit's original line read "accepted 2 of 13", and that number
+should not be carried forward unqualified: the original probe's own
+notes flagged two of its rows as probe artifacts rather than
+capability gaps. Re-run cleanly, the pre-sweep code accepts four.
+The honest before/after is 4 to 7.
+
+"Refused" is also not automatically a failure. A PDF is genuinely not
+a CSV, and refusing it is the right answer; forcing thirteen
+acceptances would mean delivering work in formats nothing here has
+certified. So each input carries the outcome it *should* have and the
+three results are counted apart.
+
+                                            before    after
+  accepted, of 7 that should be                 4        7
+  correctly refused, of 6 that should be        6        6
+  wrongly refused                               3        0
+  wrongly accepted                              0        0
+  handled correctly                         10/13    13/13
+
+## The three that changed
+
+  windows-1252 accented (EU export)
+    before: 'utf-8' codec can't decode byte 0xe9 in position ...
+    after:  accepted, read as cp1252, and the assumption is declared
+            on the work report rather than left invisible
+
+  utf-16 (Excel "Unicode text" export)
+    before: 'utf-8' codec can't decode byte 0xff in position ...
+    after:  accepted, behind a byte-order mark only
+
+  semicolon-delimited (EU default)
+    before: every row has exactly one field
+    after:  accepted; a semicolon .csv is the same format, same
+            extension, and is what Excel writes across continental
+            Europe
+
+## The six that are refused, and stay refused
+
+  tab-delimited .......... .tsv is a different advertised format, and
+                           a test asserts that proving CSV does not
+                           imply TSV. Sniffing tab would have started
+                           delivering work nothing certified.
+  a real .xlsx ........... binary; now refused with "exported to CSV
+                           first", which is advice its owner can act
+                           on, rather than "re-save it as UTF-8",
+                           which they cannot
+  PDF invoice ............ not read
+  legacy .doc ............ not read
+  RTF .................... not read
+  OpenDocument .odt ...... not read
+
+The PDF is the commonest real job in this market and remains the
+largest single gap. Nothing in this sweep changed that.
+
+## One weak acceptance, stated rather than counted as a win
+
+"comma decimal (1.234,56 EU numbers)" is accepted both before and
+after, and the acceptance is thin: it passes because the requirements
+used here do not compute on that column, so the values travel through
+as text. It is not evidence that EU decimal numbers are understood.
+Any requirement that totalled or sorted that column would be a
+different measurement, and this probe does not make it.

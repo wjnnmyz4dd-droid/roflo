@@ -487,14 +487,22 @@ def read_records(path: str | Path) -> tuple[list[str], list[dict], list[str]]:
 
 
 def _read_csv(raw: bytes) -> tuple[list[str], list[dict], list[str]]:
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise _Unreadable(f"the source is not UTF-8 text: {exc}") from exc
-    try:
-        rows = list(csv.reader(io.StringIO(text)))
-    except csv.Error as exc:
-        raise _Unreadable(f"the source will not parse as CSV: {exc}") from exc
+    """Read the client's table, as the client saved it.
+
+    This assumed UTF-8 and commas, which refused a continental European
+    export -- semicolon-separated cp1252 -- at the door, on a capability
+    whose whole job is transcribing a client's own records. It now uses
+    :mod:`solvent.tabular`, the same detection csv-cleanup uses.
+
+    The encoding and separator chosen are recorded on the function so the
+    report can state them. An assumption that is made and not declared is
+    the one nobody audits.
+    """
+    rows, encoding, delimiter, problem = tabular.read(raw)
+    if problem:
+        raise _Unreadable(f"the source is not readable as CSV: {problem}")
+    _read_csv.last_encoding = encoding
+    _read_csv.last_delimiter = delimiter
     rows = [row for row in rows if any(str(cell).strip() for cell in row)]
     if not rows:
         raise _Unreadable("the source has no rows at all, not even a header")
@@ -515,6 +523,10 @@ def _read_csv(raw: bytes) -> tuple[list[str], list[dict], list[str]]:
             raise _Unreadable(
                 f"the source carries more than {MAX_RECORDS} records")
     return columns, records, problems
+
+
+_read_csv.last_encoding = ""
+_read_csv.last_delimiter = ""
 
 
 def _read_json(raw: bytes) -> tuple[list[str], list[dict], list[str]]:
