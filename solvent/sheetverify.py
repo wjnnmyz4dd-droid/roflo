@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from . import types, xlsx
+from . import opcpackage, types, xlsx
 
 PASS, FAIL, UNVERIFIABLE = "PASS", "FAIL", "UNVERIFIABLE"
 
@@ -302,11 +302,28 @@ def verify(*, source: str | Path, output: str | Path, requirements: list,
             f"the delivered file is not a workbook that opens: {exc}"))
         return report
 
+    # This said PASS on the evidence "read back through solvent.xlsx",
+    # which is not evidence that the client can open the file -- it is
+    # evidence that our reader reads our writer. Measured: read_workbook
+    # accepts a package with [Content_Types].xml removed, with _rels/.rels
+    # removed, and with the workbook's own relationships removed, and Excel
+    # refuses all three. The packaging question is now asked by opcpackage,
+    # which is built on zipfile and xml.etree and shares no code with the
+    # writer.
+    trouble = opcpackage.problem(Path(output).read_bytes())
+    if trouble:
+        report.findings.append(Finding(
+            "", "opens_as_workbook", FAIL,
+            f"the delivered file is not a package Excel will open: "
+            f"{trouble}"))
+        return report
+
     report.findings.append(Finding(
         "", "opens_as_workbook", PASS,
         f"the delivered file opens and has "
         f"{len(after.sheets)} worksheet(s)",
-        evidence=f"read back through {xlsx.__name__}"))
+        evidence="the package is structurally valid, checked independently "
+                 "of the writer, and it reads back as a workbook"))
 
     source_sheets = {s.name: _table(s) for s in before.sheets}
     try:

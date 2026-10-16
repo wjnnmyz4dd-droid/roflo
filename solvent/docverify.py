@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import docx, types
+from . import docx, opcpackage, types
 
 PASS, FAIL, UNVERIFIABLE = "PASS", "FAIL", "UNVERIFIABLE"
 
@@ -380,10 +380,25 @@ def _decide(rid, check, params, spec, document, lines, extraction, delivered,
             return Finding(rid, check, PASS,
                            f"the deliverable is a readable extraction of "
                            f"{len(extraction['fields'])} field(s)")
+        # "solvent.docx read it back" is not evidence that Word will open
+        # it; it is evidence that our reader reads our writer. Measured:
+        # docx.read_document accepts a package with [Content_Types].xml
+        # removed and one with _rels/.rels removed, both of which Word
+        # refuses. opcpackage asks the packaging question with zipfile and
+        # xml.etree instead, sharing no code with the writer.
+        if Path(output).suffix.lower() == ".docx":
+            trouble = opcpackage.problem(Path(output).read_bytes())
+            if trouble:
+                return Finding(
+                    rid, check, FAIL,
+                    f"the deliverable is not a package Word will open: "
+                    f"{trouble}")
         return Finding(rid, check, PASS,
                        f"the deliverable opens as {delivered.kind}: "
                        f"{len(delivered.paragraphs)} paragraph(s), "
-                       f"{len(delivered.tables)} table(s)")
+                       f"{len(delivered.tables)} table(s)",
+                       "the package is structurally valid, checked "
+                       "independently of the writer")
 
     if check == "unsupported_declared":
         return Finding(rid, check, PASS,
