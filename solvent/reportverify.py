@@ -4,6 +4,16 @@ Same independence rule as the CSV checks: every check re-reads the source and th
 produced document from disk and recomputes the answer. It never imports the
 worker and never sees what the worker believes it did.
 
+That sentence was false for most of this module's life. It imported the
+worker's ``load_source``, so worker and checker read the client's file through
+one parser and any misreading was shared. A source with two columns named
+``amount`` is the demonstration: ``csv.DictReader`` keeps the last and silently
+drops the first, the worker reported the wrong column's figures, and
+``check_no_invented_facts`` confirmed that every figure traced to the supplied
+data -- which it did, to the misreading of it. csv-cleanup refuses that same
+file as ambiguous. :func:`_load_source` below is this module's own, and it
+refuses it too.
+
 The check that matters most is :func:`check_no_invented_facts`. A report is
 dangerous precisely when it is fluent, and the failure a client cannot see is a
 figure that appears in the document and nowhere in the data they supplied. So
@@ -13,12 +23,12 @@ cannot be traced fails the job.
 
 from __future__ import annotations
 
+import csv
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from .reportwork import load_source
 from .types import CheckResult
 
 #: Numbers in the document that need no source: list markers, table rules,
@@ -35,6 +45,62 @@ class CheckOutcome:
     @property
     def passed(self) -> bool:
         return self.result.satisfies
+
+
+def _load_source(path: str | Path) -> tuple[dict, list, str]:
+    """``(facts, rows, problem)`` -- the client's file, read here.
+
+    Deliberately a second implementation of the same contract rather than an
+    import of the worker's. Two readers that agree are evidence; one reader
+    consulted twice is not, and a check cannot catch a misparse it shares.
+
+    Stricter than the worker's in the one place the worker was too permissive.
+    A duplicated column name makes every reference to it ambiguous, and
+    ``csv.DictReader`` resolves that ambiguity invisibly by keeping whichever
+    column came last. There is no answer to give about a file like that, so
+    this returns a problem, and a check that cannot establish the truth
+    reports that rather than passing.
+    """
+    import json as _json
+
+    target = Path(path)
+    if not target.exists():
+        return {}, [], f"source not found: {target}"
+    try:
+        text = target.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        return {}, [], f"source is not readable text: {exc}"
+    if not text.strip():
+        return {}, [], "source is empty; there are no facts to report"
+
+    if target.suffix.lower() == ".json" or text.lstrip().startswith("{"):
+        try:
+            data = _json.loads(text)
+        except ValueError as exc:
+            return {}, [], f"source is not valid JSON: {exc}"
+        if not isinstance(data, dict):
+            return {}, [], "source JSON must be an object of named facts"
+        rows = data.get("rows") or []
+        if rows and not all(isinstance(r, dict) for r in rows):
+            return {}, [], "'rows' must be a list of objects"
+        return {k: v for k, v in data.items() if k != "rows"}, rows, ""
+
+    try:
+        table = list(csv.reader(text.splitlines()))
+    except csv.Error as exc:
+        return {}, [], f"source is not readable as CSV: {exc}"
+    table = [row for row in table if row]
+    if len(table) < 2:
+        return {}, [], "source has no data rows"
+    header = table[0]
+    repeated = sorted({name for name in header if header.count(name) > 1})
+    if repeated:
+        return {}, [], (
+            f"duplicate column name(s) {repeated}: a reference to one of them "
+            "could mean either column, so no figure drawn from it can be "
+            "checked")
+    rows = [dict(zip(header, row)) for row in table[1:]]
+    return {}, rows, ""
 
 
 def _lines(text: str) -> set:
@@ -115,7 +181,7 @@ def check_no_invented_facts(source, output, params) -> CheckOutcome:
     text, problem = _read(output)
     if problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, problem)
-    facts, rows, source_problem = load_source(source)
+    facts, rows, source_problem = _load_source(source)
     if source_problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, source_problem)
 
@@ -206,7 +272,7 @@ def check_section_present(source, output, params) -> CheckOutcome:
     computed = {"heading": heading, "kind": kind, "lines": len(content)}
 
     if kind == "facts":
-        facts, rows, source_problem = load_source(source)
+        facts, rows, source_problem = _load_source(source)
         if source_problem:
             return CheckOutcome(CheckResult.UNVERIFIABLE, source_problem)
         missing = []
@@ -264,7 +330,7 @@ def check_facts_rendered(source, output, params) -> CheckOutcome:
     text, problem = _read(output)
     if problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, problem)
-    facts, rows, source_problem = load_source(source)
+    facts, rows, source_problem = _load_source(source)
     if source_problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, source_problem)
     fields = params.get("fields") or []
@@ -323,7 +389,7 @@ def check_total_correct(source, output, params) -> CheckOutcome:
     text, problem = _read(output)
     if problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, problem)
-    facts, rows, source_problem = load_source(source)
+    facts, rows, source_problem = _load_source(source)
     if source_problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, source_problem)
     column = params.get("column")
@@ -351,7 +417,7 @@ def check_rows_tabulated(source, output, params) -> CheckOutcome:
     text, problem = _read(output)
     if problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, problem)
-    facts, rows, source_problem = load_source(source)
+    facts, rows, source_problem = _load_source(source)
     if source_problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, source_problem)
     if not rows:
@@ -409,7 +475,7 @@ def check_missing_disclosed(source, output, params) -> CheckOutcome:
     text, problem = _read(output)
     if problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, problem)
-    facts, rows, source_problem = load_source(source)
+    facts, rows, source_problem = _load_source(source)
     if source_problem:
         return CheckOutcome(CheckResult.UNVERIFIABLE, source_problem)
     fields = params.get("fields") or []

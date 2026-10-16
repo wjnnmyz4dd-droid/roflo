@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import pathlib
+import tempfile
 import unittest
 
 from solvent import csvverify, csvwork
@@ -249,6 +250,13 @@ class ChecksAreIndependentOfTheWorker(unittest.TestCase):
         self.assertNotIn("csvwork", imported)
         self.assertNotIn("harness", imported)
         self.assertNotIn("WorkReport", imported)
+        # And not the worker's decoder. solvent.tabular is a library rather
+        # than the worker, which makes it the easy mistake: importing it
+        # would be convenient, would look harmless, and would mean a file
+        # both sides decoded wrongly reconciled perfectly against itself --
+        # exactly the failure the checks exist to catch, reintroduced
+        # through a shared helper instead of a shared module.
+        self.assertNotIn("tabular", imported)
 
     def test_a_check_recomputes_rather_than_reading_a_report(self):
         """Hand the check a correct claim about an incorrect file. It disagrees."""
@@ -360,3 +368,125 @@ class CapabilityPromotion(unittest.TestCase):
         ok, why = promotion_verdict(self.evidence(version=""))
         self.assertFalse(ok)
         self.assertIn("version", why)
+
+
+class MojibakeIsTheNewWayToBeWrong(unittest.TestCase):
+    """Detecting an encoding adds exactly one failure no other check can see.
+
+    Every other check compares the deliverable against the same source the
+    worker read. Misread the source end to end and the two agree perfectly:
+    the rows reconcile, the totals are preserved, nothing was dropped, and
+    the client receives a column of CJK where their customers used to be.
+
+    The first version of ``no_character_substitution`` asked whether every
+    delivered character appears in the source under *some* decoding it
+    performed itself, and passed this exact case. That question cannot fail
+    -- mojibake is by construction a valid decoding of the source under the
+    wrong codec -- so the check rediscovered the worker's mistake and
+    certified it.
+    """
+
+    HONEST = "Order ID,Customer\n1001,Caf\u00e9 M\u00fcnster\n"
+
+    def files(self, source_bytes, output_bytes):
+        directory = pathlib.Path(tempfile.mkdtemp())
+        source = directory / "in.csv"
+        output = directory / "out.csv"
+        source.write_bytes(source_bytes)
+        output.write_bytes(output_bytes)
+        return str(source), str(output)
+
+    def test_a_correctly_read_cp1252_export_passes(self):
+        source, output = self.files(self.HONEST.encode("cp1252"),
+                                    self.HONEST.encode("utf-8"))
+        outcome = csvverify.run("no_character_substitution", source=source,
+                                output=output, params={})
+        self.assertEqual(outcome.result, CheckResult.PASS, outcome.detail)
+
+    def test_single_byte_text_delivered_as_cjk_fails(self):
+        mangled = self.HONEST.encode("cp1252").decode("utf-16", errors="ignore")
+        source, output = self.files(self.HONEST.encode("cp1252"),
+                                    mangled.encode("utf-8"))
+        outcome = csvverify.run("no_character_substitution", source=source,
+                                output=output, params={})
+        self.assertEqual(outcome.result, CheckResult.FAIL, outcome.detail)
+        self.assertIn("mojibake", outcome.detail)
+
+    def test_a_lost_character_fails(self):
+        source, output = self.files(
+            self.HONEST.encode("cp1252"),
+            "Order ID,Customer\n1001,Caf\ufffd M\ufffdnster\n".encode("utf-8"))
+        outcome = csvverify.run("no_character_substitution", source=source,
+                                output=output, params={})
+        self.assertEqual(outcome.result, CheckResult.FAIL, outcome.detail)
+
+    def test_a_genuinely_non_latin_file_is_not_held_to_a_latin_expectation(self):
+        """The ASCII-share rule must only speak where it has standing.
+
+        A Chinese client's file is mostly non-ASCII and entirely correct.
+        A check that failed it would have replaced one wrong answer with
+        another.
+        """
+        chinese = "\u8ba2\u5355,\u5ba2\u6237\n1001,\u5317\u4eac\u516c\u53f8\n"
+        source, output = self.files(chinese.encode("utf-8"),
+                                    chinese.encode("utf-8"))
+        outcome = csvverify.run("no_character_substitution", source=source,
+                                output=output, params={})
+        self.assertEqual(outcome.result, CheckResult.PASS, outcome.detail)
+
+    def test_a_genuine_utf16_source_read_correctly_passes(self):
+        source, output = self.files(self.HONEST.encode("utf-16"),
+                                    self.HONEST.encode("utf-8"))
+        outcome = csvverify.run("no_character_substitution", source=source,
+                                output=output, params={})
+        self.assertEqual(outcome.result, CheckResult.PASS, outcome.detail)
+
+    def test_heavily_transformed_but_honest_work_still_passes(self):
+        """Renaming, trimming and dropping rows must not look like corruption."""
+        source, output = self.files(
+            ("Order ID , Customer \n" + "0001, Caf\u00e9  \n" * 40).encode("cp1252"),
+            ("order_id,customer\n" + "1,Caf\u00e9\n" * 40).encode("utf-8"))
+        outcome = csvverify.run("no_character_substitution", source=source,
+                                output=output, params={})
+        self.assertEqual(outcome.result, CheckResult.PASS, outcome.detail)
+
+
+class TheAdvertisedFormatBoundsWhatIsRead(unittest.TestCase):
+    """Reading more encodings is not licence to read more formats.
+
+    ``supported_formats`` is ``("csv",)`` and a separate test asserts that
+    proving CSV does not imply TSV. A semicolon ``.csv`` is what Excel writes
+    across continental Europe -- same format, same extension. A tab-separated
+    file is a different one, and sniffing it would have started delivering
+    work in a format nothing certified.
+    """
+
+    def run_bytes(self, payload):
+        directory = pathlib.Path(tempfile.mkdtemp())
+        source = directory / "in.csv"
+        source.write_bytes(payload)
+        return run_csv_job(source=str(source), requirements=fx.SIMPLE,
+                           workdir=str(directory))
+
+    def test_a_semicolon_export_is_accepted(self):
+        report = self.run_bytes(
+            "Order ID;Customer;Total\n1001;Acme;10.00\n1002;Beta;20.00\n"
+            .encode("utf-8"))
+        self.assertTrue(report.delivered, report.escalated)
+
+    def test_a_tab_separated_file_is_refused_rather_than_guessed(self):
+        report = self.run_bytes(
+            b"Order ID\tCustomer\tTotal\n1001\tAcme\t10.00\n")
+        self.assertFalse(report.delivered)
+        self.assertIn("comma-separated", report.escalated)
+
+    def test_a_pdf_is_refused(self):
+        """It decodes as cp1252 and has no delimiter, so only the shape catches it."""
+        report = self.run_bytes(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+        self.assertFalse(report.delivered)
+        self.assertIn("not a CSV file", report.escalated)
+
+    def test_a_spreadsheet_is_refused_with_advice_its_owner_can_act_on(self):
+        report = self.run_bytes(b"PK\x03\x04" + b"\x00" * 200)
+        self.assertFalse(report.delivered)
+        self.assertIn("exported to CSV", report.escalated)

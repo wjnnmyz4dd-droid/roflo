@@ -528,5 +528,109 @@ class ConcurrentClientsStayApart(unittest.TestCase):
         self.assertNotEqual(a_digest, b_digest)
 
 
+class TheCheckerDoesNotShareTheWorkersParser(unittest.TestCase):
+    """CRITICAL. The module's own docstring claimed an independence it did not have.
+
+    :mod:`solvent.reportverify` imported ``load_source`` from the worker, so
+    both read the client's file through one parser and neither could see a
+    misreading the other made. ``csv.DictReader`` resolves a duplicated column
+    name by keeping whichever column came last, silently, and the result was a
+    report built from the wrong column that ``check_no_invented_facts``
+    confirmed as tracing to the supplied data -- which it did, to the
+    misreading of it.
+
+    Two reads of one file are not two opinions about it.
+    """
+
+    SOURCE = ("item,amount,amount\n"
+              "Consulting,100.00,999.00\n"
+              "Support,50.00,888.00\n")
+
+    def setUp(self):
+        self.directory = pathlib.Path(tempfile.mkdtemp())
+        self.source = self.directory / "supplied.csv"
+        self.source.write_text(self.SOURCE, encoding="utf-8")
+
+    def test_the_checker_does_not_import_the_worker(self):
+        """Structural, so the claim cannot quietly lapse again.
+
+        Against the parsed imports, not the file text, so the docstring may
+        go on discussing the worker while the code cannot reach it.
+        """
+        import ast
+
+        tree = ast.parse(pathlib.Path(reportverify.__file__).read_text(
+            encoding="utf-8"))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported |= {a.name for a in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                imported.add(node.module or "")
+                imported |= {a.name for a in node.names}
+        self.assertNotIn("reportwork", imported)
+        self.assertNotIn("load_source", imported)
+        self.assertNotIn("harness", imported)
+
+    def test_the_worker_refuses_an_ambiguous_column_rather_than_picking_one(self):
+        destination = self.directory / "report.md"
+        report = reportwork.build(
+            source=self.source, destination=destination,
+            requirements=[
+                Requirement(id="R1", text="table",
+                            source=RS.CLIENT_CONFIRMED_STRUCTURED,
+                            acceptance="table", check="report_section",
+                            params={"kind": "table", "heading": "Lines",
+                                    "columns": ["item", "amount"]},
+                            criticality=Criticality.MANDATORY)])
+        self.assertTrue(report.refused)
+        self.assertIn("duplicate column name", report.refused[0])
+        self.assertFalse(destination.exists(),
+                         "a refused job must not leave a document behind")
+
+    def test_the_checker_will_not_bless_a_report_built_from_the_wrong_column(self):
+        """The document that used to pass every check.
+
+        Written out directly rather than produced, because the worker now
+        refuses to produce it -- and the checker has to stand on its own
+        anyway. Not a PASS: the source cannot be read unambiguously, so there
+        is no answer to give.
+        """
+        destination = self.directory / "report.md"
+        destination.write_text(
+            "## Lines\n\n| item | amount |\n|---|---|\n"
+            "| Consulting | 999.00 |\n| Support | 888.00 |\n\n"
+            "## Totals\n\n- amount total: 1887.00\n", encoding="utf-8")
+        for check in ("report_total_correct", "report_no_invented_facts"):
+            with self.subTest(check=check):
+                outcome = reportverify.run(
+                    check, source=str(self.source), output=str(destination),
+                    params={"column": "amount", "columns": ["item", "amount"]})
+                self.assertFalse(outcome.passed)
+                self.assertIn("duplicate column name", outcome.detail)
+
+    def test_an_unambiguous_source_is_still_read_by_both(self):
+        """The fix must not refuse ordinary work."""
+        plain = self.directory / "plain.csv"
+        plain.write_text("item,amount\nConsulting,100.00\nSupport,50.00\n",
+                         encoding="utf-8")
+        destination = self.directory / "plain.md"
+        report = reportwork.build(
+            source=plain, destination=destination,
+            requirements=[
+                Requirement(id="R1", text="total",
+                            source=RS.CLIENT_CONFIRMED_STRUCTURED,
+                            acceptance="total", check="report_section",
+                            params={"kind": "total", "heading": "Totals",
+                                    "column": "amount"},
+                            criticality=Criticality.MANDATORY)])
+        self.assertEqual(report.refused, [])
+        outcome = reportverify.run(
+            "report_total_correct", source=str(plain),
+            output=str(destination), params={"column": "amount"})
+        self.assertTrue(outcome.passed, outcome.detail)
+        self.assertIn("150.00", destination.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

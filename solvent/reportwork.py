@@ -101,11 +101,25 @@ def load_source(path: str | Path) -> tuple[dict, list, str]:
         return facts, rows, ""
 
     try:
-        rows = [dict(r) for r in csv.DictReader(text.splitlines())]
+        table = [row for row in csv.reader(text.splitlines()) if row]
     except csv.Error as exc:
         return {}, [], f"source is not readable as CSV: {exc}"
-    if not rows:
+    if len(table) < 2:
         return {}, [], "source has no data rows"
+
+    # csv.DictReader was used here, and it resolves a duplicated column name
+    # by keeping whichever column came last -- silently. A file with two
+    # `amount` columns was reported from the second one, and every check
+    # agreed, because the checks read the file through this same function.
+    # csv-cleanup has always refused this shape as ambiguous; so does this.
+    header = table[0]
+    repeated = sorted({name for name in header if header.count(name) > 1})
+    if repeated:
+        return {}, [], (
+            f"duplicate column name(s) {repeated}: a requirement naming one "
+            "of them could mean either column, so no report drawn from it "
+            "would be safe")
+    rows = [dict(zip(header, row)) for row in table[1:]]
     return {}, rows, ""
 
 
