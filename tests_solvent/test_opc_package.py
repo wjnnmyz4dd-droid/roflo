@@ -84,10 +84,17 @@ class WhatItRefuses(unittest.TestCase):
                               opcpackage.problem(without(blob, "_rels/.rels")))
 
     def test_a_workbook_whose_sheet_relationships_are_gone(self):
-        """The workbook names its sheets by id; without the rels, by nothing."""
+        """The workbook names its sheets by id; without the rels, by nothing.
+
+        Asserting the precise message rather than the phrase "relationship
+        id", because two guards here can both refuse this file -- the one
+        that notices the whole part is missing and the one that notices an
+        id resolves to nothing -- and mutation testing showed the looser
+        assertion could not tell which was doing the work.
+        """
         trouble = opcpackage.problem(
             without(a_workbook(), "xl/_rels/workbook.xml.rels"))
-        self.assertIn("relationship id", trouble)
+        self.assertIn("has no xl/_rels/workbook.xml.rels", trouble)
 
     def test_a_part_the_main_document_references_is_missing(self):
         trouble = opcpackage.problem(without(a_workbook(), "xl/styles.xml"))

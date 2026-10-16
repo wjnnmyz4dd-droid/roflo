@@ -144,11 +144,33 @@ def decode(raw: bytes) -> Decoded:
             # read as single-byte. Not fatal here; try the next rung.
             continue
         return Decoded(text=text, encoding=encoding)
-    if b"\x00" in raw[:SAMPLE_BYTES]:
-        # Said separately because it is a different problem with a different
-        # remedy. A .xlsx is a zip full of NUL bytes; telling its owner to
-        # "re-save it as UTF-8" is advice they cannot act on, where "export
-        # it to CSV first" is the actual next step.
+    sample = raw[:SAMPLE_BYTES]
+    if b"\x00" in sample:
+        # Two different problems with two different remedies, so they are
+        # said separately. A .xlsx is a zip full of NUL bytes and telling
+        # its owner to "re-save it as UTF-8" is advice they cannot act on.
+        # UTF-16 saved without a byte-order mark is NUL-heavy too, but in a
+        # pattern: one NUL per character, all on the same side. It is a
+        # text file, it is readable, and the client can fix it in one step
+        # -- but not here, because without the mark it cannot be told from
+        # other encodings with any certainty, and guessing is how a file
+        # becomes mojibake.
+        # Both halves of the test matter. "One parity is mostly NUL" is
+        # also true of a solid run of NULs, which is what a zip full of
+        # empty space looks like -- the first version of this said a .xlsx
+        # was UTF-16. Interleaving means NULs on one side and *text* on
+        # the other.
+        pairs = max(1, len(sample) // 2)
+        odd = sum(1 for i in range(1, len(sample), 2) if sample[i] == 0)
+        even = sum(1 for i in range(0, len(sample), 2) if sample[i] == 0)
+        interleaved = ((odd / pairs > 0.8 and even / pairs < 0.2)
+                       or (even / pairs > 0.8 and odd / pairs < 0.2))
+        if interleaved:
+            return Decoded(problem=(
+                "it looks like UTF-16 text saved without a byte-order mark. "
+                "Without the mark that cannot be told from other encodings "
+                "with any certainty, and guessing produces mojibake; re-save "
+                "it as UTF-8, or as Unicode text with a byte-order mark"))
         return Decoded(problem=(
             "it contains NUL bytes, so it is a binary file rather than text; "
             "a spreadsheet or document must be exported to CSV before it can "

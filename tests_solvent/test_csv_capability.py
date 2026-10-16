@@ -370,6 +370,51 @@ class CapabilityPromotion(unittest.TestCase):
         self.assertIn("version", why)
 
 
+class ItReadsWhatTheClientActuallySaved(unittest.TestCase):
+    """The encoding ladder, and the one rung that is a trap.
+
+    Python's utf-16 codec does not fail on input that is not UTF-16: it
+    accepts any even-length byte sequence and returns CJK. So "it decoded
+    as UTF-16" carries no information on its own, and an un-gated UTF-16
+    rung sits at the top of the ladder swallowing every cp1252 file of
+    even length. The gate is the byte-order mark.
+    """
+
+    def run_bytes(self, payload):
+        directory = pathlib.Path(tempfile.mkdtemp())
+        source = directory / "in.csv"
+        source.write_bytes(payload)
+        return run_csv_job(source=str(source), requirements=fx.SIMPLE,
+                           workdir=str(directory))
+
+    PLAIN = "Order ID,Customer,Total\n1001,Acme,10.00\n1002,Beta,20.00\n"
+
+    def test_a_utf16_file_with_a_mark_is_read(self):
+        self.assertTrue(self.run_bytes(self.PLAIN.encode("utf-16")).delivered)
+
+    def test_a_bomless_utf16_file_is_refused_rather_than_misread(self):
+        """The case that would be silently delivered as CJK.
+
+        Refusing is the right answer and not a shortfall: without the mark
+        there is no way to tell this from a single-byte encoding, and the
+        client can fix it in one step once told.
+        """
+        report = self.run_bytes(self.PLAIN.encode("utf-16-le"))
+        self.assertFalse(report.delivered)
+        self.assertIn("byte-order mark", report.escalated)
+
+    def test_a_cp1252_file_of_even_length_is_not_taken_for_utf16(self):
+        """What the gate is actually protecting.
+
+        An even-length cp1252 file decodes under UTF-16 without raising. If
+        the rung were untgated this would be delivered as CJK.
+        """
+        payload = "Order ID,Customer\n1001,Caf\u00e9 M\u00fcnster\n".encode("cp1252")
+        self.assertEqual(len(payload) % 2, 0, "the fixture must be even-length")
+        report = self.run_bytes(payload)
+        self.assertTrue(report.delivered, report.escalated)
+
+
 class MojibakeIsTheNewWayToBeWrong(unittest.TestCase):
     """Detecting an encoding adds exactly one failure no other check can see.
 
@@ -419,6 +464,51 @@ class MojibakeIsTheNewWayToBeWrong(unittest.TestCase):
         outcome = csvverify.run("no_character_substitution", source=source,
                                 output=output, params={})
         self.assertEqual(outcome.result, CheckResult.FAIL, outcome.detail)
+
+    def test_the_ascii_share_rule_catches_what_the_character_rule_cannot(self):
+        """Two rules, tested apart, because together they hide each other.
+
+        Mutation testing found this: breaking the ASCII-share rule changed
+        nothing, because the character rule caught the same mojibake, and
+        breaking the character rule changed nothing, because the share rule
+        did. Both looked pinned and neither was.
+
+        Here only the share rule can speak. Every non-ASCII character
+        delivered is genuinely present in the cp1252 reading of the source,
+        so the character rule is satisfied -- and the deliverable is still
+        wrong, because a source that is 96% printable ASCII cannot honestly
+        produce one that is 0%.
+        """
+        source, output = self.files(
+            ("Order ID,Customer,Note\n" + "1001,Cafe,Munster\n" * 6
+             + "1002,\u00e9\u00e9\u00e9,\u00e9\u00e9\u00e9\n").encode("cp1252"),
+            ("\u00e9" * 400).encode("utf-8"))
+        outcome = csvverify.run("no_character_substitution", source=source,
+                                output=output, params={})
+        self.assertEqual(outcome.result, CheckResult.FAIL, outcome.detail)
+        self.assertIn("printable ASCII", outcome.detail)
+
+    def test_the_character_rule_catches_what_the_ascii_share_rule_cannot(self):
+        """The other half of the same pair, isolated the other way.
+
+        One field decoded with the wrong codec and the rest came through
+        fine, so the deliverable stays mostly ASCII and the share rule has
+        nothing to say. What catches it is that the character delivered
+        exists only in a UTF-16 reading of a source that is not UTF-16 --
+        and the check may not reach for UTF-16 unless the bytes say so.
+        That pin is the whole fix; without it the check finds the
+        character, agrees with itself, and passes.
+        """
+        raw = b"Order ID,Customer\n1001,Acme Ltd\n1002,Beta Ltd\n"
+        wide = [c for c in raw.decode("utf-16", errors="ignore") if ord(c) > 127]
+        source, output = self.files(
+            raw,
+            (f"Order ID,Customer\n1001,Acme {wide[0]}Ltd\n1002,Beta Ltd\n")
+            .encode("utf-8"))
+        outcome = csvverify.run("no_character_substitution", source=source,
+                                output=output, params={})
+        self.assertEqual(outcome.result, CheckResult.FAIL, outcome.detail)
+        self.assertIn("no reading of it", outcome.detail)
 
     def test_a_genuinely_non_latin_file_is_not_held_to_a_latin_expectation(self):
         """The ASCII-share rule must only speak where it has standing.

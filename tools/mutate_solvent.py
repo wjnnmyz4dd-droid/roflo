@@ -1653,6 +1653,116 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_authorising_without_a_provider_is_refused",
         "conversion would read as authorised with nobody named to perform "
         "it, implying Solvent does it"),
+
+    # --- the encoding ladder and the checks that bound it -----------------
+    # Every control added in the capability-activation sweep. A control
+    # nobody mutated is a control nobody pinned, whatever its test is
+    # called -- and three of these exist because the first version of the
+    # control did not work.
+
+    Mutant(
+        "a-bomless-file-is-trusted-as-utf-16",
+        "solvent/tabular.py",
+        '        if encoding == "utf-16" and not raw.startswith(BOMS):',
+        "        if False:",
+        "tests_solvent.test_csv_capability.ItReadsWhatTheClientActuallySaved"
+        ".test_a_bomless_utf16_file_is_refused_rather_than_misread",
+        "Python's utf-16 codec accepts any even-length input, so every "
+        "cp1252 file of even length would decode to CJK and be delivered "
+        "as mojibake"),
+
+    Mutant(
+        "the-sniffer-considers-tab-again",
+        "solvent/tabular.py",
+        'CANDIDATES = ",;"',
+        r'CANDIDATES = ",;\t|"',
+        "tests_solvent.test_csv_capability.TheAdvertisedFormatBoundsWhatIsRead"
+        ".test_a_tab_separated_file_is_refused_rather_than_guessed",
+        "the capability starts delivering .tsv work, a format it does not "
+        "advertise and nothing certified"),
+
+    Mutant(
+        "a-one-column-file-is-plausible-after-all",
+        "solvent/csvwork.py",
+        """        return ("every row has exactly one field; if this is tab- or "
+                "pipe-separated it must be converted to comma-separated first")""",
+        '        return ""',
+        "tests_solvent.test_csv_capability.TheAdvertisedFormatBoundsWhatIsRead"
+        ".test_a_pdf_is_refused",
+        "a PDF is accepted, cleaned, verified against itself and delivered "
+        "-- which is what happened when this guard was removed"),
+
+    Mutant(
+        "mojibake-passes-the-ascii-share-rule",
+        "solvent/csvverify.py",
+        """        if (source_ascii >= _SOURCE_IS_ASCII_ENOUGH
+                and output_ascii < _OUTPUT_MUST_STAY_ASCII):""",
+        "        if False:",
+        "tests_solvent.test_csv_capability.MojibakeIsTheNewWayToBeWrong"
+        ".test_the_ascii_share_rule_catches_what_the_character_rule_cannot",
+        "a file misread end to end reconciles perfectly with itself and "
+        "every other check passes it. Pointed at the isolating test: the "
+        "obvious one is also killed by the character rule, so it pinned "
+        "neither"),
+
+    Mutant(
+        "the-substitution-check-may-pick-any-encoding",
+        "solvent/csvverify.py",
+        """    candidates = ("utf-16", "utf-16-le", "utf-16-be") if utf16_source else (
+        "utf-8-sig", "cp1252", "latin-1")""",
+        '    candidates = ("utf-8-sig", "cp1252", "latin-1", "utf-16")',
+        "tests_solvent.test_csv_capability.MojibakeIsTheNewWayToBeWrong"
+        ".test_the_character_rule_catches_what_the_ascii_share_rule_cannot",
+        "the first version of this check: free to choose a codec, it "
+        "rediscovers the worker's mistake and certifies it"),
+
+    Mutant(
+        "the-report-reader-keeps-the-last-duplicate-column",
+        "solvent/reportwork.py",
+        """    repeated = sorted({name for name in header if header.count(name) > 1})
+    if repeated:""",
+        """    repeated = []
+    if repeated:""",
+        "tests_solvent.test_report_capability"
+        ".TheCheckerDoesNotShareTheWorkersParser"
+        ".test_the_worker_refuses_an_ambiguous_column_rather_than_picking_one",
+        "a column named twice resolves to whichever came last, silently, "
+        "and the client's other column is never reported"),
+
+    Mutant(
+        "the-report-checker-reads-an-ambiguous-source-anyway",
+        "solvent/reportverify.py",
+        """    repeated = sorted({name for name in header if header.count(name) > 1})
+    if repeated:""",
+        """    repeated = []
+    if repeated:""",
+        "tests_solvent.test_report_capability"
+        ".TheCheckerDoesNotShareTheWorkersParser"
+        ".test_the_checker_will_not_bless_a_report_built_from_the_wrong_column",
+        "the independent reader stops being stricter than the worker, so "
+        "nothing is left to catch the worker"),
+
+    Mutant(
+        "a-package-missing-its-required-parts-still-opens",
+        "solvent/opcpackage.py",
+        """    for required in (CONTENT_TYPES, ROOT_RELS):
+        if required not in names:""",
+        """    for required in ():
+        if required not in names:""",
+        "tests_solvent.test_opc_package.TheVerifierUsesIt"
+        ".test_a_workbook_excel_would_refuse_no_longer_passes",
+        "opens_as_workbook goes back to meaning only that our reader reads "
+        "our writer"),
+
+    Mutant(
+        "the-package-check-ignores-unresolved-relationship-ids",
+        "solvent/opcpackage.py",
+        "    if referenced and main_rels not in parsed:",
+        "    if False:",
+        "tests_solvent.test_opc_package.WhatItRefuses"
+        ".test_a_workbook_whose_sheet_relationships_are_gone",
+        "a workbook that names its worksheets by ids nothing resolves is "
+        "called openable"),
 )
 
 
