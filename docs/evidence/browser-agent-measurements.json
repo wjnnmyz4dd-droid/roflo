@@ -1,0 +1,157 @@
+{
+  "generated": "2026-10-16",
+  "method": "All figures produced in an isolated scratch directory outside the DeskPilot tree. Nothing was installed into the project. The only network use was cloning public repositories and installing packages into throwaway environments; the browser benchmarks ran against a loopback HTTP server serving a synthetic fixture.",
+  "environment": {
+    "python": "3.11.17",
+    "node": "v22.22.0",
+    "chromium": "/opt/pw-browsers/chromium-1194 (preinstalled in the container image)"
+  },
+  "token_estimation": {
+    "text": "characters / 4, the usual rough rule; indicative only",
+    "image": "width*height/750, Anthropic image-token formula"
+  },
+  "perception_scaling": [
+    {
+      "cards": 1,
+      "html_bytes": 505,
+      "snapshot_chars": 615,
+      "snapshot_tokens": 154,
+      "snapshot_s": 0.01,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 23247,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.058
+    },
+    {
+      "cards": 5,
+      "html_bytes": 1851,
+      "snapshot_chars": 2165,
+      "snapshot_tokens": 541,
+      "snapshot_s": 0.01,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 77672,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.087
+    },
+    {
+      "cards": 20,
+      "html_bytes": 6907,
+      "snapshot_chars": 8057,
+      "snapshot_tokens": 2014,
+      "snapshot_s": 0.022,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 77672,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.112
+    },
+    {
+      "cards": 60,
+      "html_bytes": 20387,
+      "snapshot_chars": 23937,
+      "snapshot_tokens": 5984,
+      "snapshot_s": 0.027,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 77672,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.052
+    },
+    {
+      "cards": 120,
+      "html_bytes": 40608,
+      "snapshot_chars": 47759,
+      "snapshot_tokens": 11940,
+      "snapshot_s": 0.079,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 77672,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.11
+    }
+  ],
+  "browser_use_perception_scaling": [
+    {
+      "cards": 1,
+      "chars": 197,
+      "approx_tokens": 49,
+      "seconds": 0.48,
+      "interactive_elements": 2
+    },
+    {
+      "cards": 5,
+      "chars": 956,
+      "approx_tokens": 239,
+      "seconds": 0.112,
+      "interactive_elements": 10
+    },
+    {
+      "cards": 20,
+      "chars": 2527,
+      "approx_tokens": 632,
+      "seconds": 0.182,
+      "interactive_elements": 26
+    },
+    {
+      "cards": 60,
+      "chars": 2527,
+      "approx_tokens": 632,
+      "seconds": 0.137,
+      "interactive_elements": 26
+    },
+    {
+      "cards": 120,
+      "chars": 2553,
+      "approx_tokens": 638,
+      "seconds": 0.314,
+      "interactive_elements": 26
+    }
+  ],
+  "playwright_mcp_single_page": {
+    "screenshot_png_bytes": 73849,
+    "screenshot_pixels": "1280x720",
+    "screenshot_tokens_anthropic_formula": 1229,
+    "snapshot_chars": 2582,
+    "snapshot_tokens_at_4_chars": 646,
+    "ratio_screenshot_to_snapshot_tokens": 1.9,
+    "process_tree_rss_mb": 740.4,
+    "processes_in_tree": 8
+  },
+  "browser_use_memory": {
+    "chrome_processes": 14,
+    "chrome_rss_mb": 1095.1,
+    "python_peak_rss_mb": 92.8,
+    "combined_mb": 1187.9
+  },
+  "playwright_mcp_default_tools": {
+    "tool_count": 25,
+    "tools": [
+      "browser_click",
+      "browser_close",
+      "browser_console_messages",
+      "browser_drag",
+      "browser_drop",
+      "browser_emulate_media",
+      "browser_evaluate",
+      "browser_file_upload",
+      "browser_fill_form",
+      "browser_find",
+      "browser_handle_dialog",
+      "browser_hover",
+      "browser_navigate",
+      "browser_navigate_back",
+      "browser_network_request",
+      "browser_network_requests",
+      "browser_press_key",
+      "browser_resize",
+      "browser_run_code_unsafe",
+      "browser_select_option",
+      "browser_snapshot",
+      "browser_tabs",
+      "browser_take_screenshot",
+      "browser_type",
+      "browser_wait_for"
+    ],
+    "risky_default": [
+      "browser_evaluate",
+      "browser_run_code_unsafe"
+    ]
+  }
+}
