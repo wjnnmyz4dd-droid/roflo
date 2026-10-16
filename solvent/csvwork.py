@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+from . import tabular
 from .errors import FailClosed
 
 #: Bumped when behaviour changes in a way that could alter an output. Recorded
@@ -55,7 +56,11 @@ OPERATIONS = frozenset({
 #: them as unplannable would refuse exactly the requirements that catch the
 #: quietest failures.
 VERIFY_ONLY = frozenset({"row_reconciliation", "parses_as_csv",
-                         "no_unauthorised_changes"})
+                         "no_unauthorised_changes",
+                         # "the characters delivered are the client's" is the
+                         # same shape: nothing to carry out, something to be
+                         # true of the result.
+                         "no_character_substitution"})
 
 #: Date formats that mean exactly one day whoever reads them. A year-first date
 #: and a date with a month name cannot be read two ways, so they need no
@@ -110,6 +115,12 @@ class WorkReport:
     duplicates_removed: int = 0
     exceptions: list[str] = field(default_factory=list)
     refused: list[str] = field(default_factory=list)
+    #: What the reader assumed about the source. Recorded rather than
+    #: inferred downstream: a job that read a cp1252 file is a job
+    #: whose report should say so, and the verifier cross-checks the
+    #: delivered artifact for substitution damage independently.
+    source_encoding: str = ""
+    source_delimiter: str = ""
 
     @property
     def clean(self) -> bool:
@@ -209,13 +220,28 @@ def execute(*, source: str | Path, destination: str | Path, requirements: list,
         report.refused.append(f"source artifact not found: {source}")
         return report
 
+    # Encoding and delimiter are detected and *declared*, never
+    # assumed. This used to open utf-8-sig with a comma reader, which
+    # refused every cp1252 and semicolon export a European client
+    # sends -- two of thirteen realistic inputs were accepted. The
+    # detection is a fixed ladder rather than a probability, and the
+    # assumption it settles on is recorded on the report so the owner
+    # and the verifier can both see what was assumed.
     try:
-        with open(source, newline="", encoding="utf-8-sig") as handle:
-            reader = csv.reader(handle)
-            rows = list(reader)
-    except (UnicodeDecodeError, csv.Error) as exc:
-        report.refused.append(f"source is not readable as CSV: {exc}")
+        raw = source.read_bytes()
+    except OSError as exc:
+        report.refused.append(f"source could not be read: {exc}")
         return report
+    rows, encoding, delimiter, problem = tabular.read(raw)
+    if problem:
+        # Worded to say what the owner needs to act on. A file this cannot
+        # decode or parse is, for every purpose Solvent has, not a CSV file,
+        # and the escalation that the audit's xlsx incident left behind is
+        # phrased that way on purpose.
+        report.refused.append(f"source is not a CSV file: {problem}")
+        return report
+    report.source_encoding = encoding
+    report.source_delimiter = delimiter
 
     if not rows:
         report.refused.append("source is empty; there is nothing to clean")
@@ -428,8 +454,16 @@ def _not_plausibly_csv(rows: list[list[str]]) -> str:
     if len(header) == 1 and len(rows) > 1 and all(len(r) == 1 for r in rows[:20]):
         # One column everywhere is legal but is also what a binary blob or a
         # wrong delimiter looks like. Say so rather than proceed silently.
+        #
+        # This guard was removed when solvent.tabular arrived, on the reasoning
+        # that the sniffer settles the delimiter first so a single column must
+        # be genuine. That reasoning was wrong: the sniffer falls back to comma
+        # whenever it cannot tell, which is precisely what a PDF does, and a
+        # PDF was accepted, cleaned, verified and delivered. It is restored,
+        # and the tab-separated case it names is now the honest one -- this
+        # capability reads comma- and semicolon-separated CSV and nothing else.
         return ("every row has exactly one field; if this is tab- or "
-                "semicolon-separated it must be converted to comma-separated first")
+                "pipe-separated it must be converted to comma-separated first")
     return ""
 
 

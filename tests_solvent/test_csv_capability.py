@@ -117,15 +117,67 @@ class ItRefusesWhatItCannotDo(unittest.TestCase):
         self.assertIn("ambiguous", r.escalated.lower())
 
     def test_an_undecodable_source_does_not_produce_a_deliverable(self):
+        """Bytes that fail every rung of the ladder.
+
+        The old fixture here was b"\xff\xfe", which this test called
+        undecodable because the reader assumed UTF-8. It is not: in
+        cp1252 those bytes are the perfectly ordinary characters y-
+        diaeresis and thorn, and the file is now read and declared as
+        cp1252 -- the refusal was a false negative caused by the
+        assumption, which is the whole reason solvent.tabular exists.
+
+        0x81, 0x8d, 0x8f, 0x90 and 0x9d are undefined in cp1252 and
+        are not valid UTF-8 or UTF-16 either, so they fail all three
+        and a refusal is the correct answer.
+        """
         import pathlib as _p, tempfile as _t
 
         directory = _p.Path(_t.mkdtemp())
         source = directory / "bad.csv"
-        source.write_bytes(b"Order ID,Customer\n1001,\xff\xfe invalid utf-8\n")
+        source.write_bytes(b"Order ID,Customer\n1001,\x81\x8d\x8f\x90\x9d\n")
         r = run_csv_job(source=str(source), requirements=fx.SIMPLE,
                         workdir=str(directory))
         self.assertFalse(r.delivered)
-        self.assertIn("not readable as CSV", r.escalated)
+        self.assertIn("not a CSV file", r.escalated)
+        self.assertIn("does not decode", r.escalated)
+
+    def test_a_cp1252_export_is_read_and_the_assumption_declared(self):
+        """What the old assumption refused, and what honesty requires.
+
+        Accepting the file is only half of it. cp1252 decodes almost
+        any byte sequence without complaining, so a cp1252 result is
+        a weaker claim than a UTF-8 one and the report has to say
+        which was used.
+        """
+        import pathlib as _p, tempfile as _t
+
+        from solvent.csvwork import execute as run_worker
+
+        directory = _p.Path(_t.mkdtemp())
+        source = directory / "eu.csv"
+        source.write_bytes(
+            "Order ID,Customer\n1001,Café Münster\n".encode("cp1252"))
+        report = run_worker(source=str(source),
+                            destination=str(directory / "out.csv"),
+                            requirements=fx.SIMPLE)
+        self.assertEqual(report.refused, [])
+        self.assertEqual(report.source_encoding, "cp1252")
+        self.assertEqual(report.source_delimiter, ",")
+
+    def test_a_semicolon_export_is_read_and_declared(self):
+        import pathlib as _p, tempfile as _t
+
+        from solvent.csvwork import execute as run_worker
+
+        directory = _p.Path(_t.mkdtemp())
+        source = directory / "eu.csv"
+        source.write_text("Order ID;Customer;Amount\n"
+                          "1001;Acme;10.00\n1002;Beta;20.00\n",
+                          encoding="utf-8")
+        report = run_worker(source=str(source),
+                            destination=str(directory / "out.csv"),
+                            requirements=fx.SIMPLE)
+        self.assertEqual(report.source_delimiter, ";")
 
     def test_an_unterminated_quote_is_a_known_limit_not_a_silent_loss(self):
         """Python's csv reader accepts an unterminated quote and swallows the

@@ -2455,10 +2455,20 @@ CAPABILITIES = {
 #: ``sort_rows`` once they met the same evidence standard. OD-15 is the owner's
 #: clearance of the other four capabilities for client work, on their recorded
 #: certification and black-box evidence.
+#:
+#: OD-16 adds ``no_character_substitution``, which arrived with encoding
+#: detection. Reading more than UTF-8 introduced exactly one new way to be
+#: wrong -- picking the wrong encoding -- and it is the one way no other check
+#: can see, because every other check compares the deliverable against the
+#: same source the worker misread, so a file mangled end to end reconciles
+#: perfectly with itself. Certified on the same generated battery as the
+#: rest: fourteen correct artifacts accepted and twenty-eight defects caught
+#: across two classes, mojibake and a lost character.
 CSV_CERTIFIED_SCOPE = (
-    "drop_exact_duplicates", "map_values", "no_unauthorised_changes",
-    "normalise_dates", "parses_as_csv", "preserve_columns", "rename_headers",
-    "require_columns", "row_reconciliation", "sort_rows", "trim_whitespace",
+    "drop_exact_duplicates", "map_values", "no_character_substitution",
+    "no_unauthorised_changes", "normalise_dates", "parses_as_csv",
+    "preserve_columns", "rename_headers", "require_columns",
+    "row_reconciliation", "sort_rows", "trim_whitespace",
 )
 
 CSV_PROMOTION = Capability(

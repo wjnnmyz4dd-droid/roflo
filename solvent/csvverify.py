@@ -59,6 +59,97 @@ def _read(path: str | Path) -> tuple[list[str], list[list[str]], str]:
     # this rule is one line either way.
     return rows[0], [row for row in rows[1:] if row], ""
 
+#: The client's file may arrive in whatever their spreadsheet exported. The
+#: deliverable may not: Solvent writes UTF-8 with commas, and :func:`_read`
+#: above stays strict about that on purpose, because a worker that emitted
+#: cp1252 would be a defect rather than an input.
+#:
+#: Written here rather than imported from :mod:`solvent.tabular`, which is
+#: what the worker uses, for the reason the whole module exists: if the check
+#: shared the worker's decoder, a file both misread the same way would
+#: reconcile perfectly against itself and every check would pass. The cost of
+#: stating it twice is that an ambiguous file can be read two ways and the
+#: checks then refuse the job. That is the safe direction to fail.
+_SOURCE_LADDER = ("utf-8-sig", "utf-16", "cp1252")
+_SOURCE_DELIMITERS = ",;\t|"
+_BOMS = (b"\xff\xfe", b"\xfe\xff")
+
+
+def _decode_source(raw: bytes) -> tuple[str, str]:
+    """``(text, problem)`` for a client file of unknown encoding.
+
+    UTF-16 is tried only behind a byte-order mark. Without one it is a trap:
+    ordinary Western text in a single-byte encoding decodes under UTF-16
+    without raising, into CJK, and an encoding that never refuses would sit at
+    the top of any ladder and swallow everything below it.
+    """
+    if not raw:
+        return "", "artifact is empty"
+    for encoding in _SOURCE_LADDER:
+        if encoding == "utf-16" and not raw.startswith(_BOMS):
+            continue
+        try:
+            text = raw.decode(encoding)
+        except (UnicodeDecodeError, UnicodeError, LookupError):
+            continue
+        # A replacement character means this codec already lost a byte, and a
+        # NUL means the file is not text at all. Either way the next rung is
+        # a better answer than a damaged string.
+        if "�" in text or "\x00" in text:
+            continue
+        return text, ""
+    return "", ("artifact is not readable as text under any supported "
+                "encoding (tried " + ", ".join(_SOURCE_LADDER) + ")")
+
+
+def _source_delimiter(text: str) -> str:
+    """Which separator holds this file together?
+
+    The one that gives every line the same number of fields, and the most
+    fields, wins. A file genuinely separated by semicolons has one comma
+    column; the reverse never happens by accident.
+    """
+    lines = [line for line in text.splitlines()[:50] if line.strip()]
+    if not lines:
+        return ","
+    best, best_score = ",", (0, 0)
+    for candidate in _SOURCE_DELIMITERS:
+        try:
+            rows = list(csv.reader(lines, delimiter=candidate))
+        except csv.Error:
+            continue
+        widths = {len(row) for row in rows if row}
+        if len(widths) != 1:
+            continue
+        width = widths.pop()
+        if width < 2:
+            continue
+        score = (width, -_SOURCE_DELIMITERS.index(candidate))
+        if score > best_score:
+            best, best_score = candidate, score
+    return best
+
+
+def _read_source(path: str | Path) -> tuple[list[str], list[list[str]], str]:
+    """``(header, body, problem)`` for the client's file, decoded here."""
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        return [], [], f"artifact not found: {path}"
+    except OSError as exc:
+        return [], [], f"artifact could not be read: {exc}"
+    text, problem = _decode_source(raw)
+    if problem:
+        return [], [], problem
+    try:
+        rows = list(csv.reader(text.splitlines(True),
+                               delimiter=_source_delimiter(text)))
+    except csv.Error as exc:
+        return [], [], f"artifact does not parse as CSV: {exc}"
+    if not rows:
+        return [], [], "artifact is empty"
+    return rows[0], [row for row in rows[1:] if row], ""
+
 
 def _key(row: list[str]) -> tuple:
     return tuple(_WS.sub(" ", cell.strip()) for cell in row)
@@ -159,7 +250,7 @@ def check_require_columns(source, output, params) -> CheckOutcome:
 
 def check_drop_exact_duplicates(source, output, params) -> CheckOutcome:
     """Two things must hold: none left, and none invented."""
-    _, src_body, p1 = _read(source)
+    _, src_body, p1 = _read_source(source)
     _, out_body, p2 = _read(output)
     if p1 or p2:
         return CheckOutcome(CheckResult.UNVERIFIABLE, p1 or p2)
@@ -186,7 +277,7 @@ def check_drop_exact_duplicates(source, output, params) -> CheckOutcome:
 
     # Counting alone let another job's file through whenever the two happened to
     # have the same number of distinct rows. A count is not an identity.
-    accounted = _accounted_columns(_read(source)[0], _distinct_rows(src_body),
+    accounted = _accounted_columns(_read_source(source)[0], _distinct_rows(src_body),
                                    _read(output)[0], out_body)
     computed["accounted_columns"] = accounted
     if not accounted:
@@ -289,7 +380,7 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
                             "no columns named, so there is nothing to check")
 
     declared = params.get("date_format", "")
-    source_header, source_body, source_problem = _read(source)
+    source_header, source_body, source_problem = _read_source(source)
 
     # Prefer comparing each date with the day *its own row* supplied. Falling
     # back to the set of all supplied days is weaker on purpose rather than by
@@ -368,7 +459,7 @@ def check_preserve_columns(source, output, params) -> CheckOutcome:
     of values itself — so an amount that was altered, dropped or added shows up
     even if the rows were reordered.
     """
-    src_header, src_body, p1 = _read(source)
+    src_header, src_body, p1 = _read_source(source)
     out_header, out_body, p2 = _read(output)
     if p1 or p2:
         return CheckOutcome(CheckResult.UNVERIFIABLE, p1 or p2)
@@ -500,7 +591,7 @@ def check_row_reconciliation(source, output, params) -> CheckOutcome:
     This is the check that catches the quiet failure: a row that was neither a
     duplicate nor anything the client asked to remove, simply gone.
     """
-    src_header, src_body, p1 = _read(source)
+    src_header, src_body, p1 = _read_source(source)
     out_header, out_body, p2 = _read(output)
     if p1 or p2:
         return CheckOutcome(CheckResult.UNVERIFIABLE, p1 or p2)
@@ -581,7 +672,7 @@ def check_no_unauthorised_changes(source, output, params) -> CheckOutcome:
     client never thought to mention, which are exactly the ones nobody would
     have written a requirement for.
     """
-    src_header, src_body, p1 = _read(source)
+    src_header, src_body, p1 = _read_source(source)
     out_header, out_body, p2 = _read(output)
     if p1 or p2:
         return CheckOutcome(CheckResult.UNVERIFIABLE, p1 or p2)
@@ -721,7 +812,7 @@ def check_parses_as_csv(source, output, params) -> CheckOutcome:
                             {"widths": sorted(widths)})
 
     if not body:
-        _, source_body, source_problem = _read(source)
+        _, source_body, source_problem = _read_source(source)
         if not source_problem and source_body:
             return CheckOutcome(
                 CheckResult.FAIL,
@@ -736,6 +827,162 @@ def check_parses_as_csv(source, output, params) -> CheckOutcome:
 
 #: The registry a requirement's ``check`` name resolves against. A requirement
 #: naming something absent is refused at commitment rather than skipped later.
+#: Printable ASCII, plus the three whitespace bytes a CSV actually uses.
+_ASCII_PRINTABLE = frozenset(range(0x20, 0x7F)) | {0x09, 0x0A, 0x0D}
+
+#: Above this share of printable-ASCII bytes, a source is Latin-script
+#: business data and its deliverable has to stay Latin-script too. Below
+#: it the rule has no standing and says nothing.
+_SOURCE_IS_ASCII_ENOUGH = 0.80
+
+#: Honest work on such a source never falls below this. Whole-file
+#: mojibake lands near zero, so the gap between the two is wide enough
+#: that renaming, mapping, trimming and date normalisation cannot cross
+#: it.
+_OUTPUT_MUST_STAY_ASCII = 0.50
+
+_SNIFF_BYTES = 64 * 1024
+
+
+def _is_utf16_family(raw: bytes) -> bool:
+    """Is this source one of the encodings where ASCII is not itself?
+
+    Nearly every encoding a client exports maps bytes 0x20-0x7E to the
+    same characters: UTF-8, cp1252, every ISO-8859, KOI8, mac-roman. The
+    UTF-16 and UTF-32 families do not. Which family a file belongs to is
+    a fact about its bytes rather than a judgement call: either it opens
+    with a byte-order mark, or its ASCII is interleaved with the NUL
+    bytes those encodings pad with. Nothing here is a choice, which is
+    the point - a check that may choose its own encoding can always
+    choose the one that excuses the output.
+    """
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return True
+    sample = raw[:_SNIFF_BYTES]
+    if not sample:
+        return False
+    return sample.count(0) / len(sample) > 0.20
+
+
+def _printable_share(values) -> float:
+    """What fraction of these code points are printable ASCII?"""
+    total = len(values)
+    if not total:
+        return 0.0
+    return sum(1 for v in values if v in _ASCII_PRINTABLE) / total
+
+
+def check_no_character_substitution(source, output, params) -> CheckOutcome:
+    """Did reading the source under the wrong encoding mangle its text?
+
+    The worker now detects an encoding instead of assuming UTF-8, which
+    widens what can be accepted and introduces exactly one new way to be
+    wrong: choosing the wrong encoding and delivering mojibake that every
+    other check happily passes, because every other check compares the
+    output against the same misread source.
+
+    An earlier version of this check asked whether every delivered
+    character appears in the source under *some* decoding this check
+    performs itself. That question cannot fail. Mojibake is by
+    construction a valid decoding of the source under the wrong codec, so
+    a check free to try several codecs simply rediscovers the worker's
+    mistake and certifies it. It passed cp1252 read as UTF-16 - the exact
+    corruption it was written to catch - and the reason it passed is that
+    its own candidate list contained UTF-16.
+
+    What is tested here instead are two things the check cannot talk
+    itself out of:
+
+    1. The delivered artifact contains no replacement character. One
+       means a byte was lost on the way in or out, and the lost byte was
+       somebody's customer name.
+    2. A source that is overwhelmingly printable ASCII must yield a
+       deliverable that is still substantially printable ASCII. Reading
+       single-byte text as UTF-16 pairs the bytes and turns an invoice
+       into CJK; the share collapses from above 0.80 to near zero. This
+       rule engages only where it has standing, so a genuinely Chinese or
+       Cyrillic client file is not held to a Latin expectation.
+
+    The non-ASCII characters are then checked against the source, but the
+    family of encodings tried is fixed by the bytes rather than chosen:
+    UTF-16 is considered only for a source that demonstrably is UTF-16.
+    Within a family the particular codec is still left open, because a
+    file can be genuinely ambiguous between cp1252 and Latin-1 and the
+    question worth asking is not "did it pick the one I would have
+    picked" but "are the characters it delivered actually in the client's
+    file".
+    """
+    from pathlib import Path as _Path
+
+    try:
+        delivered = _Path(output).read_bytes()
+        raw = _Path(source).read_bytes()
+    except OSError as exc:
+        return CheckOutcome(CheckResult.FAIL, f"files unreadable: {exc}")
+
+    try:
+        text = delivered.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            f"the delivered artifact is not UTF-8: {exc}")
+    if "�" in text:
+        return CheckOutcome(
+            CheckResult.FAIL,
+            "the delivered artifact contains the replacement character, "
+            "so at least one character of the client's data was lost in "
+            "reading or writing it")
+
+    utf16_source = _is_utf16_family(raw)
+
+    if not utf16_source:
+        source_ascii = _printable_share(raw[:_SNIFF_BYTES])
+        output_ascii = _printable_share(
+            [ord(c) for c in text[:_SNIFF_BYTES]])
+        if (source_ascii >= _SOURCE_IS_ASCII_ENOUGH
+                and output_ascii < _OUTPUT_MUST_STAY_ASCII):
+            return CheckOutcome(
+                CheckResult.FAIL,
+                f"the source is {source_ascii:.0%} printable ASCII but the "
+                f"deliverable is only {output_ascii:.0%}; single-byte text "
+                "has been read as a wide encoding and the deliverable is "
+                "mojibake",
+                computed={"source_ascii_share": round(source_ascii, 4),
+                          "output_ascii_share": round(output_ascii, 4)})
+
+    exotic = {c for c in text if ord(c) > 127}
+    if not exotic:
+        return CheckOutcome(CheckResult.PASS,
+                            "the deliverable is plain ASCII; no character "
+                            "could have been substituted")
+
+    # Decoded here, by this check, with no reference to what the worker
+    # decided - and with the encoding family pinned by the bytes above, so
+    # that the one codec capable of manufacturing an excuse is unavailable
+    # unless the source really is written in it.
+    candidates = ("utf-16", "utf-16-le", "utf-16-be") if utf16_source else (
+        "utf-8-sig", "cp1252", "latin-1")
+    for encoding in candidates:
+        try:
+            candidate = raw.decode(encoding)
+        except (UnicodeDecodeError, UnicodeError, LookupError):
+            continue
+        if "�" in candidate:
+            continue
+        if exotic <= set(candidate):
+            return CheckOutcome(
+                CheckResult.PASS,
+                f"every non-ASCII character delivered is present in the "
+                f"source when read as {encoding}")
+    sample = "".join(sorted(exotic))[:24]
+    return CheckOutcome(
+        CheckResult.FAIL,
+        f"the deliverable contains characters ({sample!r}) that appear in "
+        "the source under no reading of it in its own encoding family; the "
+        "source was very likely decoded as the wrong encoding and the "
+        "deliverable is mojibake")
+
+
 CHECKS = {
     "require_columns": check_require_columns,
     "drop_exact_duplicates": check_drop_exact_duplicates,
@@ -748,6 +995,7 @@ CHECKS = {
     "row_reconciliation": check_row_reconciliation,
     "no_unauthorised_changes": check_no_unauthorised_changes,
     "parses_as_csv": check_parses_as_csv,
+    "no_character_substitution": check_no_character_substitution,
 }
 
 

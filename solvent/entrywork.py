@@ -43,6 +43,8 @@ import io
 import json
 import re
 from dataclasses import dataclass, field
+
+from . import tabular
 from datetime import date as _date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path

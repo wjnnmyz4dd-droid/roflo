@@ -85,9 +85,19 @@ def expected_outcome(capability: str, case) -> str:
 
         from solvent.ambiguity import date_readings
 
+        # Read with the shape the generator recorded, not with a guess and
+        # not with the system's own detection. A hard-coded comma here saw
+        # one nameless column in a semicolon export, found no date column in
+        # it, and so expected a delivery for a file whose dates read two
+        # ways -- marking the system wrong for asking the question it should
+        # ask. Calling solvent.tabular instead would fix the symptom and ruin
+        # the oracle: it would then expect whatever the detection does,
+        # including whatever it gets wrong.
+        encoding = case.truth.get("source_encoding") or "utf-8"
+        delimiter = case.truth.get("source_delimiter") or ","
         text = (case.source_text
-                or (case.source_bytes or b"").decode("utf-8", "replace"))
-        rows = list(csv.reader(io.StringIO(text)))
+                or (case.source_bytes or b"").decode(encoding, "replace"))
+        rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
         if rows and "Order Date" in rows[0]:
             column = rows[0].index("Order Date")
             for row in rows[1:]:

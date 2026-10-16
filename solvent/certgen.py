@@ -140,19 +140,47 @@ def _date(rng) -> tuple[str, str, bool]:
 CSV_HEADER = "Order ID,Customer,Order Date,Region,Units,Total"
 
 
-def _quote(value: str) -> str:
-    if any(c in value for c in ',"\n'):
+def _quote(value: str, delimiter: str = ",") -> str:
+    if any(c in value for c in (delimiter, '"', "\n")):
         return '"' + value.replace('"', '""') + '"'
     return value
 
 
-def _rows_to_csv(rows, header=None) -> str:
-    lines = [",".join(_quote(h) for h in header) if header else CSV_HEADER]
-    lines += [",".join(_quote(str(cell)) for cell in row) for row in rows]
+def _rows_to_csv(rows, header=None, delimiter: str = ",") -> str:
+    head = (delimiter.join(_quote(h, delimiter) for h in header) if header
+            else delimiter.join(CSV_HEADER.split(",")))
+    lines = [head]
+    lines += [delimiter.join(_quote(str(cell), delimiter) for cell in row)
+              for row in rows]
     return "\n".join(lines) + "\n"
 
 
-def csv_case(rng: random.Random) -> Case:
+#: How a client's spreadsheet exported the file. The worker detects these
+#: rather than assuming UTF-8 with commas, so the battery has to contain them.
+#: A checker certified only against UTF-8 commas has never been asked whether
+#: it can read what the worker is now willing to accept, and the pair would be
+#: certified on an input shape that no longer bounds the system -- the worker
+#: would accept a semicolon-delimited cp1252 export and the checks would then
+#: refuse to verify their own correct work.
+#:
+#: Cycled by case index, not drawn at random, for the reason :func:`_build`
+#: gives: a coin flip can leave a shape with too few instances to clear the
+#: evidence floor, and then the certification differs from seed to seed. Seven
+#: entries against a fourteen-case battery means each shape appears exactly
+#: twice, every run. The common shape is listed three times because it is the
+#: common case and should stay the bulk of the evidence.
+#:
+#: cp1252 with semicolons is not a contrivance: it is what a German or French
+#: Excel writes by default, and it was one of the inputs the acceptance probe
+#: measured this system refusing.
+#: No tab entry. Tab-separated is ``.tsv``, which this capability does not
+#: advertise and nothing has certified; generating it here would have meant a
+#: battery whose correct answer is "refuse" scored as a failure to deliver.
+_SOURCE_SHAPES = (("utf-8", ","), ("utf-8", ","), ("utf-8", ","),
+                  ("cp1252", ","), ("cp1252", ";"), ("utf-8", ";"))
+
+
+def csv_case(rng: random.Random, index: int = 0) -> Case:
     """A cleanup job whose correct output is known before the source exists.
 
     The clean rows are invented first. The source is then *dirtied* from them —
@@ -209,9 +237,26 @@ def csv_case(rng: random.Random) -> Case:
                         if row[0] in unambiguous_ids]
 
     mapping = {r.lower(): r for r in _REGIONS}
+
+    # The shape the client's file arrives in. The deliverable is always UTF-8
+    # with commas -- that is Solvent's own output contract and not negotiable
+    # -- but the source is whatever the client had. A source that will not
+    # survive its drawn encoding falls back rather than being silently
+    # mangled here: a battery that generates mojibake and calls it correct
+    # teaches the verifier the wrong answer.
+    encoding, delimiter = _SOURCE_SHAPES[index % len(_SOURCE_SHAPES)]
+    source_text = _rows_to_csv(dirty, delimiter=delimiter)
+    source_bytes = b""
+    if encoding != "utf-8":
+        try:
+            source_bytes = source_text.encode(encoding)
+        except UnicodeEncodeError:
+            encoding, source_bytes = "utf-8", b""
+
     return Case(
         source_name="client_supplied.csv",
-        source_text=_rows_to_csv(dirty),
+        source_text=source_text,
+        source_bytes=source_bytes,
         good_output=_rows_to_csv(ordered, header=clean_header),
         params={
             "rename_headers": {"mapping": {renamed_from: renamed_to}},
@@ -226,6 +271,7 @@ def csv_case(rng: random.Random) -> Case:
             "map_values": {"column": "Region", "case_insensitive": True,
                            "mapping": mapping},
             "parses_as_csv": {},
+            "no_character_substitution": {},
             "no_unauthorised_changes": {
                 "authorised_columns": {"Order Date": "full", "Region": "full",
                                        "Customer": "whitespace",
@@ -236,7 +282,8 @@ def csv_case(rng: random.Random) -> Case:
         truth={"clean_rows": ordered, "duplicates": duplicates,
                "unambiguous_rows": unambiguous_rows,
                "renamed_from": renamed_from, "renamed_to": renamed_to,
-               "sort_columns": ["Order ID"]})
+               "sort_columns": ["Order ID"],
+               "source_encoding": encoding, "source_delimiter": delimiter})
 
 
 def report_case(rng: random.Random) -> Case:
@@ -677,7 +724,52 @@ def _row_values_rotated(case, rng):
     return _rebuild([lines[0]] + [_join(row) for row in rows])
 
 
+def _mojibake(case, rng):
+    """The source read under the wrong encoding and carried through.
+
+    This is the defect that arrived with encoding detection. Every other
+    check compares the deliverable against the same source the worker read,
+    so a file misread end to end reconciles perfectly with itself: the row
+    counts match, the totals match, nothing was dropped, and the client
+    receives a spreadsheet of CJK where their customer names used to be.
+    """
+    text = case.good_output
+    try:
+        single_byte = text.encode("cp1252")
+    except UnicodeEncodeError:
+        return None
+    mangled = single_byte.decode("utf-16", errors="ignore")
+    if not mangled or mangled == text:
+        return None
+    return mangled
+
+
+def _character_lost(case, rng):
+    """One character replaced by the replacement character.
+
+    A byte lost on the way in or out. Narrower than mojibake and easier to
+    miss, because the file still parses, still reconciles, and still has the
+    right number of rows -- one name is just spelled wrong forever.
+    """
+    lines = _csv_lines(case.good_output)
+    index = _pick_body(lines, rng)
+    if index is None:
+        return None
+    cells = _split(lines[index])
+    if len(cells) < 2 or not cells[1]:
+        return None
+    position = rng.randrange(len(cells[1]))
+    cells[1] = cells[1][:position] + "\ufffd" + cells[1][position + 1:]
+    lines[index] = _join(cells)
+    return _rebuild(lines)
+
+
 CSV_DEFECTS = (
+    Defect("ENCODING_MOJIBAKE", "no_character_substitution", _mojibake,
+           note="read under the wrong encoding; reconciles perfectly with "
+                "itself and is unreadable to the client"),
+    Defect("CHARACTER_LOST", "no_character_substitution", _character_lost,
+           note="one byte lost; the file still parses and still reconciles"),
     Defect("ROW_VALUES_ROTATED", "row_reconciliation", _row_values_rotated,
            note="every value present, every value on the wrong row"),
     Defect("COLUMNS_REORDERED", "no_unauthorised_changes", _columns_reordered,

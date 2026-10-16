@@ -31,6 +31,7 @@ import csv
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 from .types import RequirementSource
 
@@ -119,11 +120,33 @@ def declared_date_format(requirements) -> str:
 
 
 def _csv_rows(path):
+    """The client's file, read the way the worker will read it.
+
+    This used to assume UTF-8 and commas while the worker detected both. The
+    mismatch was silent and it pointed the wrong way: on a semicolon export
+    this function saw one nameless column, found no date column in it, and
+    reported no ambiguity -- so a file full of ``09/08/2025`` went straight
+    to the worker without anyone being asked which day that is. Reading
+    nothing has to mean "I could not read this", never "there is nothing
+    here to worry about".
+
+    Sharing :mod:`solvent.tabular` with the worker is deliberate here, and is
+    not the independence the checks need: this runs *before* the work, on the
+    worker's side of the line, and its whole job is to anticipate what the
+    worker will see. A different answer from the worker's is the bug.
+    """
+    from . import tabular
+
     try:
-        with open(path, newline="", encoding="utf-8-sig") as handle:
-            rows = [r for r in csv.reader(handle) if r]
-    except (OSError, UnicodeDecodeError, csv.Error):
+        raw = Path(path).read_bytes()
+    except OSError:
         return [], []
+    rows, _encoding, _delimiter, problem = tabular.read(raw)
+    if problem:
+        # The worker will refuse this file for the same reason, so there is
+        # no job left to ask a question about.
+        return [], []
+    rows = [r for r in rows if r]
     return (rows[0], rows[1:]) if rows else ([], [])
 
 
