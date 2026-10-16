@@ -1,0 +1,280 @@
+{
+  "generated": "2026-10-16",
+  "method": "All browser measurements ran in an isolated scratch directory against a loopback HTTP server serving synthetic fixtures. No live marketplace was automated. robots.txt fetches are plain HTTP GETs of the file a site publishes for machines; no marketplace page, API or account was exercised.",
+  "token_estimation": {
+    "text": "characters / 4, indicative only",
+    "image": "width*height/750 (Anthropic image-token formula)"
+  },
+  "upstream_recheck_2026_10_16": {
+    "browser-use": {
+      "audited": "ccd22fef47a1a36e0c4596fef5db73a5117b9d06",
+      "moved": false
+    },
+    "playwright-mcp": {
+      "audited": "b8b4183e099f136cbec0388a6088d4aa2f6b9685",
+      "moved": false
+    },
+    "UI-TARS-desktop": {
+      "audited": "3ac2cb8d946d78d5ff92ad17b318eaafa18c178c",
+      "moved": false
+    },
+    "playwright monorepo": {
+      "audited": "ac22e99d98291194ddb5a14b53c05deac514e604",
+      "now": "7676475ba4083370b856467aa2f891827c45bf06",
+      "moved": true,
+      "runCode_still_core_and_unsafe": true
+    }
+  },
+  "security_findings": {
+    "unsafe_tool_executes": true,
+    "unsafe_tool_reached_host_browser_never_visited": true,
+    "allowed_origins_constrains_browser_not_tool": true,
+    "unknown_tool_name_rejected_by_server": true,
+    "webmcp_page_registered_tools_default": "enabled; --no-webmcp disables",
+    "listening_ports_stdio_mode": [],
+    "listening_ports_port_mode": [
+      "one ephemeral TCP port"
+    ],
+    "facade_blocked_unsafe_calls": true,
+    "tool_names_written_to_pipe_under_facade": [
+      "browser_navigate"
+    ]
+  },
+  "robots_txt_fetched": {
+    "contra.com": {
+      "bytes": 222,
+      "fetched": "2026-10-16",
+      "http": 200
+    },
+    "freelancehunt.com": {
+      "bytes": 1738,
+      "fetched": "2026-10-16",
+      "http": 200
+    },
+    "www.fiverr.com": {
+      "bytes": 2049,
+      "fetched": "2026-10-16",
+      "http": 200
+    },
+    "www.freelancer.com": {
+      "bytes": 2620,
+      "fetched": "2026-10-16",
+      "http": 200
+    },
+    "www.guru.com": {
+      "bytes": 882,
+      "fetched": "2026-10-16",
+      "http": 403
+    },
+    "www.peopleperhour.com": {
+      "bytes": 1588,
+      "fetched": "2026-10-16",
+      "http": 200
+    },
+    "www.upwork.com": {
+      "bytes": 9725,
+      "fetched": "2026-10-16",
+      "http": 200
+    }
+  },
+  "policy_pages_unreadable_by_machine": {
+    "freelancehunt.com/en/service/rules": 403,
+    "freelancehunt.com/en/pages/agreement.html": 403,
+    "www.upwork.com/legal/api": 403,
+    "www.upwork.com/legal": 403,
+    "www.upwork.com/developer/documentation/graphql/api/docs/index.html": 403
+  },
+  "extraction_strategies": [
+    {
+      "strategy": "full snapshot",
+      "resp_chars": 46343,
+      "resp_tokens": 11586,
+      "ids_found": 120,
+      "urls_found": 120,
+      "seconds": 0.064
+    },
+    {
+      "strategy": "snapshot depth=6",
+      "resp_chars": 46343,
+      "resp_tokens": 11586,
+      "ids_found": 120,
+      "urls_found": 120,
+      "seconds": 0.089
+    },
+    {
+      "strategy": "snapshot depth=10",
+      "resp_chars": 46343,
+      "resp_tokens": 11586,
+      "ids_found": 120,
+      "urls_found": 120,
+      "seconds": 0.057
+    },
+    {
+      "strategy": "snapshot target=main",
+      "resp_chars": 44578,
+      "resp_tokens": 11144,
+      "ids_found": 120,
+      "urls_found": 120,
+      "seconds": 0.095
+    },
+    {
+      "strategy": "find regex 'Project \\d+' (corrected)",
+      "resp_chars": 46166,
+      "resp_tokens": 11541,
+      "ids_found": 119,
+      "urls_found": 119,
+      "seconds": 0.056,
+      "correction": "the first run escaped the regex wrongly and matched nothing, reporting 12 tokens; corrected figure shown"
+    },
+    {
+      "strategy": "find text 'View details'",
+      "resp_chars": 46117,
+      "resp_tokens": 11529,
+      "ids_found": 120,
+      "urls_found": 120,
+      "seconds": 0.047
+    },
+    {
+      "strategy": "snapshot -> file",
+      "resp_chars": 169,
+      "resp_tokens": 42,
+      "ids_found": 120,
+      "urls_found": 120,
+      "seconds": 0.057,
+      "correction": "the first run looked for the written file in the wrong directory and scored 0; the file was found and scored 120/120, see extraction_to_file"
+    }
+  ],
+  "worker_scaling": [
+    {
+      "workers": 1,
+      "pages": 10,
+      "seconds": 1.63,
+      "pages_per_sec": 6.13,
+      "rss_mb_idle": 126.9,
+      "rss_mb_working": 908.3,
+      "procs": 2
+    },
+    {
+      "workers": 2,
+      "pages": 10,
+      "seconds": 1.44,
+      "pages_per_sec": 6.96,
+      "rss_mb_idle": 250.3,
+      "rss_mb_working": 1758.4,
+      "procs": 3
+    },
+    {
+      "workers": 3,
+      "pages": 10,
+      "seconds": 1.36,
+      "pages_per_sec": 7.38,
+      "rss_mb_idle": 377.3,
+      "rss_mb_working": 2603.8,
+      "procs": 4
+    }
+  ],
+  "perception_scaling_playwright_mcp": [
+    {
+      "cards": 1,
+      "html_bytes": 505,
+      "snapshot_chars": 615,
+      "snapshot_tokens": 154,
+      "snapshot_s": 0.01,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 23247,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.058
+    },
+    {
+      "cards": 5,
+      "html_bytes": 1851,
+      "snapshot_chars": 2165,
+      "snapshot_tokens": 541,
+      "snapshot_s": 0.01,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 77672,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.087
+    },
+    {
+      "cards": 20,
+      "html_bytes": 6907,
+      "snapshot_chars": 8057,
+      "snapshot_tokens": 2014,
+      "snapshot_s": 0.022,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 77672,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.112
+    },
+    {
+      "cards": 60,
+      "html_bytes": 20387,
+      "snapshot_chars": 23937,
+      "snapshot_tokens": 5984,
+      "snapshot_s": 0.027,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 77672,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.052
+    },
+    {
+      "cards": 120,
+      "html_bytes": 40608,
+      "snapshot_chars": 47759,
+      "snapshot_tokens": 11940,
+      "snapshot_s": 0.079,
+      "screenshot_px": "1280x720",
+      "screenshot_png_bytes": 77672,
+      "screenshot_tokens": 1229,
+      "screenshot_s": 0.11
+    }
+  ],
+  "perception_scaling_browser_use": [
+    {
+      "cards": 1,
+      "chars": 197,
+      "approx_tokens": 49,
+      "seconds": 0.48,
+      "interactive_elements": 2
+    },
+    {
+      "cards": 5,
+      "chars": 956,
+      "approx_tokens": 239,
+      "seconds": 0.112,
+      "interactive_elements": 10
+    },
+    {
+      "cards": 20,
+      "chars": 2527,
+      "approx_tokens": 632,
+      "seconds": 0.182,
+      "interactive_elements": 26
+    },
+    {
+      "cards": 60,
+      "chars": 2527,
+      "approx_tokens": 632,
+      "seconds": 0.137,
+      "interactive_elements": 26
+    },
+    {
+      "cards": 120,
+      "chars": 2553,
+      "approx_tokens": 638,
+      "seconds": 0.314,
+      "interactive_elements": 26
+    }
+  ],
+  "extraction_to_file": {
+    "response_chars": 169,
+    "response_tokens": 42,
+    "file_chars": 46198,
+    "listings_in_file": 120,
+    "urls_in_file": 120,
+    "ground_truth_listings": 120,
+    "note": "full fidelity on disk at a fixed 42-token response cost"
+  },
+  "probe_corrections": "Two rows in the first extraction run were defects in the probe, not in the tool: a mis-escaped regex and a wrong output path. Both were re-run and the corrected figures are recorded in place with a note. The uncorrected values are not carried forward."
+}
