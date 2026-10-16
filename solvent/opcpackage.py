@@ -35,6 +35,19 @@ import zipfile
 CONTENT_TYPES = "[Content_Types].xml"
 ROOT_RELS = "_rels/.rels"
 
+#: A .docx and a .xlsx are ZIP archives, so reading every XML part means
+#: decompressing attacker-controlled data. Measured before these existed: a
+#: 206 KB package with one highly compressible part made this function
+#: allocate 815 MB and then call the file valid. The deliverable side is
+#: ours, but the *source* side is a file a client sent, and this process
+#: shares a machine with the owner's own work.
+#:
+#: Bounded by reading rather than by the header's declared size, because a
+#: crafted archive can declare anything. One byte past the limit is enough
+#: to know, and that byte is never allocated past the limit.
+MAX_PART_BYTES = 32 * 1024 * 1024
+MAX_TOTAL_BYTES = 128 * 1024 * 1024
+
 _RELS_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 _TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
 _R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -82,12 +95,24 @@ def problem(data: bytes) -> str:
     # Every XML part must parse. A part that does not is a file that opens
     # as far as the ZIP and then fails in the application.
     parsed: dict[str, ET.Element] = {}
+    budget = MAX_TOTAL_BYTES
     for name in sorted(names):
         if not (name.endswith(".xml") or name.endswith(".rels")):
             continue
+        allowed = min(MAX_PART_BYTES, budget)
         try:
-            parsed[name] = ET.fromstring(archive.read(name))
-        except (ET.ParseError, KeyError, OSError) as exc:
+            with archive.open(name) as handle:
+                blob = handle.read(allowed + 1)
+        except (zipfile.BadZipFile, KeyError, OSError, RuntimeError) as exc:
+            return f"{name} could not be read from the package: {exc}"
+        if len(blob) > allowed:
+            return (f"{name} expands to more than {allowed} bytes; a package "
+                    "this large is refused rather than decompressed, because "
+                    "a small archive can expand without limit")
+        budget -= len(blob)
+        try:
+            parsed[name] = ET.fromstring(blob)
+        except ET.ParseError as exc:
             return f"{name} is not well-formed XML: {exc}"
 
     root_rels = parsed[ROOT_RELS]

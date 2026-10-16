@@ -258,11 +258,26 @@ def _external_targets(archive, names) -> list[str]:
     return sorted(set(found))
 
 
+#: Same reasoning as :data:`solvent.xlsx.MAX_PART_BYTES`: a .docx is a ZIP,
+#: so reading a part decompresses a client's data, and ``max_blocks`` only
+#: counts blocks the parser has already built. A small archive can expand
+#: without limit.
+MAX_PART_BYTES = 32 * 1024 * 1024
+
+
 def _parse(archive, part: str):
     try:
-        raw = archive.read(part)
+        with archive.open(part) as handle:
+            raw = handle.read(MAX_PART_BYTES + 1)
     except KeyError as exc:
         raise UnsupportedDocument(f"the archive has no {part}") from exc
+    except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        raise UnsupportedDocument(
+            f"{part} could not be read from the package: {exc}") from exc
+    if len(raw) > MAX_PART_BYTES:
+        raise UnsupportedDocument(
+            f"{part} expands to more than {MAX_PART_BYTES:,} bytes, so it is "
+            "refused rather than decompressed")
     try:
         # resolve_entities is off by default in ElementTree, so an entity
         # expansion cannot reach the filesystem through this parser. Stated

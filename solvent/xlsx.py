@@ -165,6 +165,19 @@ class Workbook:
 # Reading
 # ---------------------------------------------------------------------------
 
+#: A workbook is a ZIP, so reading a part decompresses client-controlled
+#: data, and ``max_cells`` cannot help: it counts cells the parser has
+#: already built. Measured before this existed -- a 410 KB workbook with a
+#: padded worksheet part made this function allocate 1.23 GB over 5.2
+#: seconds and then accept the file. This process shares a machine with
+#: the owner's own work, so that is an outage they would feel.
+#:
+#: Bounded by reading rather than by the header's declared size, which a
+#: crafted archive can set to anything. Generous enough that a workbook at
+#: the ``max_cells`` limit still fits.
+MAX_PART_BYTES = 64 * 1024 * 1024
+
+
 def read_workbook(data: bytes, *, max_cells: int = 2_000_000) -> Workbook:
     """Parse an ``.xlsx`` file's bytes.
 
@@ -464,12 +477,21 @@ def _parse(archive, part: str):
     """
     try:
         with archive.open(part) as handle:
-            return ET.parse(handle).getroot()
+            blob = handle.read(MAX_PART_BYTES + 1)
+    except KeyError as exc:
+        raise UnsupportedWorkbook(f"{part} is missing from the package") from exc
+    except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        raise UnsupportedWorkbook(
+            f"{part} could not be read from the package: {exc}") from exc
+    if len(blob) > MAX_PART_BYTES:
+        raise UnsupportedWorkbook(
+            f"{part} expands to more than {MAX_PART_BYTES:,} bytes, so it is "
+            "refused rather than decompressed")
+    try:
+        return ET.fromstring(blob)
     except ET.ParseError as exc:
         raise UnsupportedWorkbook(
             f"{part} is not readable XML: {exc}") from exc
-    except KeyError as exc:
-        raise UnsupportedWorkbook(f"{part} is missing from the package") from exc
 
 
 # ---------------------------------------------------------------------------

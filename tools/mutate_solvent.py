@@ -1763,6 +1763,40 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_a_workbook_whose_sheet_relationships_are_gone",
         "a workbook that names its worksheets by ids nothing resolves is "
         "called openable"),
+
+    # --- a small archive that expands without limit -----------------------
+
+    Mutant(
+        "a-workbook-part-may-expand-without-limit",
+        "solvent/xlsx.py",
+        "    if len(blob) > MAX_PART_BYTES:",
+        "    if False:",
+        "tests_solvent.test_hostile_client_files"
+        ".ASmallArchiveThatExpandsWithoutLimit"
+        ".test_a_workbook_part_that_expands_past_the_limit_is_refused",
+        "a 410 KB client workbook allocates 1.23 GB and is accepted, on a "
+        "machine shared with the owner's own session"),
+
+    Mutant(
+        "a-document-part-may-expand-without-limit",
+        "solvent/docx.py",
+        "    if len(raw) > MAX_PART_BYTES:",
+        "    if False:",
+        "tests_solvent.test_hostile_client_files"
+        ".ASmallArchiveThatExpandsWithoutLimit"
+        ".test_a_document_part_that_expands_past_the_limit_is_refused",
+        "the same amplification through the document reader"),
+
+    Mutant(
+        "the-package-check-decompresses-without-limit",
+        "solvent/opcpackage.py",
+        "        if len(blob) > allowed:",
+        "        if False:",
+        "tests_solvent.test_hostile_client_files"
+        ".ASmallArchiveThatExpandsWithoutLimit"
+        ".test_the_package_check_does_not_decompress_without_limit",
+        "a 206 KB package allocates 815 MB in the check that is supposed to "
+        "be the careful one"),
 )
 
 
