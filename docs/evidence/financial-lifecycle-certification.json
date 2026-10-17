@@ -1,0 +1,600 @@
+{
+  "measurement": "DeskPilot full financial lifecycle, 100 synthetic contracts",
+  "date": "2026-10-17",
+  "baseline_commit": "b08d52e",
+  "production_code_changed": false,
+  "authorisation_note": "Testing and simulation only. Synthetic contracting details, contracts, customers, invoices and payment events were created inside disposable test systems, which this round's execution authority permits. No production capacity semantics changed, no job limit raised, no real invoice issued, no live rail connected, no funds moved.",
+  "no_fabricated_earnings": {
+    "ledger_real_revenue_cents": 0,
+    "every_payment_verification_method": "SIMULATED:fixture",
+    "why_this_matters": "Ledger.real_revenue_cents() excludes anything whose verification method carries the simulated prefix. It reads 0 in every run, which is the system itself certifying that no simulated money was counted as earnings."
+  },
+  "contracting_preflight": {
+    "as_shipped": {
+      "decided": false,
+      "provisioning_required": [
+        "legal_name",
+        "address",
+        "tax_reference",
+        "email"
+      ],
+      "invoice_allowed": [
+        false,
+        "INVOICE needs contracting detail the owner has not provided: legal_name, address, email"
+      ],
+      "rail_allowed": [
+        false,
+        "PAYMENT_RAIL needs contracting detail the owner has not provided: legal_name, address, email, tax_reference"
+      ],
+      "client_agreement_allowed": [
+        false,
+        "CLIENT_AGREEMENT needs contracting detail the owner has not provided: legal_name, email"
+      ]
+    },
+    "with_synthetic_party": {
+      "decided": true,
+      "provisioning_required": [],
+      "invoice_allowed": [
+        true,
+        "INVOICE has every contracting detail it needs"
+      ],
+      "rail_allowed": [
+        true,
+        "PAYMENT_RAIL has every contracting detail it needs"
+      ],
+      "client_agreement_allowed": [
+        true,
+        "CLIENT_AGREEMENT has every contracting detail it needs"
+      ]
+    }
+  },
+  "preflight_five_skills": {
+    "preflight_jobs": 5,
+    "reached_invoice_stage": 5,
+    "stopped_at_invoice": 0,
+    "real_revenue_cents": 0,
+    "rows": [
+      {
+        "skill": "csv-cleanup",
+        "delivered": true,
+        "stopped_at": "",
+        "why": "",
+        "invoiced_cents": 40000,
+        "collected_cents": 40000,
+        "payment_state": "PAID",
+        "verification_method": "SIMULATED:fixture",
+        "payment_simulated": true,
+        "stages": 14
+      },
+      {
+        "skill": "spreadsheet-automation",
+        "delivered": true,
+        "stopped_at": "",
+        "why": "",
+        "invoiced_cents": 40000,
+        "collected_cents": 40000,
+        "payment_state": "PAID",
+        "verification_method": "SIMULATED:fixture",
+        "payment_simulated": true,
+        "stages": 14
+      },
+      {
+        "skill": "document-processing",
+        "delivered": true,
+        "stopped_at": "",
+        "why": "",
+        "invoiced_cents": 40000,
+        "collected_cents": 40000,
+        "payment_state": "PAID",
+        "verification_method": "SIMULATED:fixture",
+        "payment_simulated": true,
+        "stages": 14
+      },
+      {
+        "skill": "data-entry",
+        "delivered": true,
+        "stopped_at": "",
+        "why": "",
+        "invoiced_cents": 40000,
+        "collected_cents": 40000,
+        "payment_state": "PAID",
+        "verification_method": "SIMULATED:fixture",
+        "payment_simulated": true,
+        "stages": 14
+      },
+      {
+        "skill": "report-builder",
+        "delivered": true,
+        "stopped_at": "",
+        "why": "",
+        "invoiced_cents": 40000,
+        "collected_cents": 40000,
+        "payment_state": "PAID",
+        "verification_method": "SIMULATED:fixture",
+        "payment_simulated": true,
+        "stages": 14
+      }
+    ]
+  },
+  "financial_100_contracts": {
+    "contracts": 100,
+    "wall_s": 26.6,
+    "totals": {
+      "quoted_cents": 12937500,
+      "invoiced_cents": 1037500,
+      "collected_cents": 1037500,
+      "cost_cents": 135138,
+      "profit_cents": 902362,
+      "delivered": 43,
+      "accepted": 100
+    },
+    "real_revenue_cents_sum": 0,
+    "by_skill": {
+      "csv-cleanup": {
+        "contracts": 20,
+        "delivered": 3,
+        "quoted_cents": 2587500,
+        "invoiced_cents": 87500,
+        "collected_cents": 87500,
+        "cost_cents": 11378,
+        "profit_cents": 76122
+      },
+      "spreadsheet-automation": {
+        "contracts": 20,
+        "delivered": 10,
+        "quoted_cents": 2587500,
+        "invoiced_cents": 237500,
+        "collected_cents": 237500,
+        "cost_cents": 30940,
+        "profit_cents": 206560
+      },
+      "document-processing": {
+        "contracts": 20,
+        "delivered": 10,
+        "quoted_cents": 2587500,
+        "invoiced_cents": 237500,
+        "collected_cents": 237500,
+        "cost_cents": 30940,
+        "profit_cents": 206560
+      },
+      "data-entry": {
+        "contracts": 20,
+        "delivered": 10,
+        "quoted_cents": 2587500,
+        "invoiced_cents": 237500,
+        "collected_cents": 237500,
+        "cost_cents": 30940,
+        "profit_cents": 206560
+      },
+      "report-builder": {
+        "contracts": 20,
+        "delivered": 10,
+        "quoted_cents": 2587500,
+        "invoiced_cents": 237500,
+        "collected_cents": 237500,
+        "cost_cents": 30940,
+        "profit_cents": 206560
+      }
+    },
+    "by_band": {
+      "small": {
+        "contracts": 25,
+        "delivered": 21,
+        "quoted_cents": 187500,
+        "invoiced_cents": 157500,
+        "collected_cents": 157500,
+        "cost_cents": 20958,
+        "profit_cents": 136542
+      },
+      "standard": {
+        "contracts": 25,
+        "delivered": 22,
+        "quoted_cents": 1000000,
+        "invoiced_cents": 880000,
+        "collected_cents": 880000,
+        "cost_cents": 114180,
+        "profit_cents": 765820
+      },
+      "large": {
+        "contracts": 25,
+        "delivered": 0,
+        "quoted_cents": 3000000,
+        "invoiced_cents": 0,
+        "collected_cents": 0,
+        "cost_cents": 0,
+        "profit_cents": 0
+      },
+      "premium": {
+        "contracts": 25,
+        "delivered": 0,
+        "quoted_cents": 8750000,
+        "invoiced_cents": 0,
+        "collected_cents": 0,
+        "cost_cents": 0,
+        "profit_cents": 0
+      }
+    },
+    "payment_states": {
+      "PAID": 43,
+      "null": 57
+    },
+    "verification_methods": {
+      "SIMULATED:fixture": 43,
+      "null": 57
+    },
+    "stops": {
+      "": 43,
+      "contract": 13,
+      "verification-eligibility": 34,
+      "independent-review": 10
+    },
+    "reconciliation": {
+      "invoiced_minus_collected_cents": 0,
+      "profit_equals_collected_minus_cost": true,
+      "profit_cents_reported": 902362,
+      "collected_minus_cost_cents": 902362,
+      "real_revenue_is_zero": true
+    }
+  },
+  "financial_rows_sample": [
+    {
+      "ref": "CT-0000-csv-cleanup#01",
+      "skill": "csv-cleanup",
+      "band": "small",
+      "client": "client:acme",
+      "quoted_cents": 7500,
+      "accepted": true,
+      "delivered": true,
+      "stopped_at": "",
+      "why": "",
+      "invoiced_cents": 7500,
+      "collected_cents": 7500,
+      "cost_cents": 998,
+      "profit_cents": 6502,
+      "payment_state": "PAID",
+      "verification_method": "SIMULATED:fixture",
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.027168375000002243
+    },
+    {
+      "ref": "CT-0001-csv-cleanup#02",
+      "skill": "csv-cleanup",
+      "band": "standard",
+      "client": "client:borealis",
+      "quoted_cents": 40000,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "contract",
+      "why": "waiting on the client: The Order Date column contains dates such as 01",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    },
+    {
+      "ref": "CT-0002-csv-cleanup#03",
+      "skill": "csv-cleanup",
+      "band": "large",
+      "client": "client:cindermill",
+      "quoted_cents": 120000,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "contract",
+      "why": "waiting on the client: The Order Date column contains dates such as 02",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    },
+    {
+      "ref": "CT-0003-csv-cleanup#04",
+      "skill": "csv-cleanup",
+      "band": "premium",
+      "client": "client:dovetail",
+      "quoted_cents": 350000,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "verification-eligibility",
+      "why": "this job needs T2_INDEPENDENT_REVIEW before it may be delivered, and n",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    },
+    {
+      "ref": "CT-0004-csv-cleanup#05",
+      "skill": "csv-cleanup",
+      "band": "small",
+      "client": "client:everlane",
+      "quoted_cents": 7500,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "contract",
+      "why": "waiting on the client: The Order Date column contains dates such as 01",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    },
+    {
+      "ref": "CT-0005-csv-cleanup#06",
+      "skill": "csv-cleanup",
+      "band": "standard",
+      "client": "client:acme",
+      "quoted_cents": 40000,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "contract",
+      "why": "waiting on the client: The Order Date column contains dates such as 04",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    },
+    {
+      "ref": "CT-0006-csv-cleanup#07",
+      "skill": "csv-cleanup",
+      "band": "large",
+      "client": "client:borealis",
+      "quoted_cents": 120000,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "verification-eligibility",
+      "why": "this job needs T2_INDEPENDENT_REVIEW before it may be delivered, and n",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    },
+    {
+      "ref": "CT-0007-csv-cleanup#08",
+      "skill": "csv-cleanup",
+      "band": "premium",
+      "client": "client:cindermill",
+      "quoted_cents": 350000,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "contract",
+      "why": "waiting on the client: The Order Date column contains dates such as 04",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    },
+    {
+      "ref": "CT-0008-csv-cleanup#09",
+      "skill": "csv-cleanup",
+      "band": "small",
+      "client": "client:dovetail",
+      "quoted_cents": 7500,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "contract",
+      "why": "waiting on the client: The Order Date column contains dates such as 03",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    },
+    {
+      "ref": "CT-0009-csv-cleanup#10",
+      "skill": "csv-cleanup",
+      "band": "standard",
+      "client": "client:everlane",
+      "quoted_cents": 40000,
+      "accepted": true,
+      "delivered": false,
+      "stopped_at": "contract",
+      "why": "waiting on the client: The Order Date column contains dates such as 01",
+      "invoiced_cents": 0,
+      "collected_cents": 0,
+      "cost_cents": 0,
+      "profit_cents": 0,
+      "payment_state": null,
+      "verification_method": null,
+      "simulated": true,
+      "real_revenue_cents": 0,
+      "wall_s": 0.0
+    }
+  ],
+  "crashes_through_the_financial_lifecycle": {
+    "stage_crashes": [
+      {
+        "seam": "delivery",
+        "raised": "InjectedFault",
+        "money_before": {
+          "collected": 40000,
+          "real": 0
+        },
+        "money_after": {
+          "collected_on_clean_job": 40000,
+          "real": 0
+        },
+        "earlier_job_money_unchanged": true,
+        "real_revenue_still_zero": true,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "payment_events": 0
+      },
+      {
+        "seam": "ledger",
+        "raised": "InjectedFault",
+        "money_before": {
+          "collected": 40000,
+          "real": 0
+        },
+        "money_after": {
+          "collected_on_clean_job": 40000,
+          "real": 0
+        },
+        "earlier_job_money_unchanged": true,
+        "real_revenue_still_zero": true,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "payment_events": 0
+      },
+      {
+        "seam": "delivery_gate",
+        "raised": "InjectedFault",
+        "money_before": {
+          "collected": 40000,
+          "real": 0
+        },
+        "money_after": {
+          "collected_on_clean_job": 40000,
+          "real": 0
+        },
+        "earlier_job_money_unchanged": true,
+        "real_revenue_still_zero": true,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "payment_events": 0
+      },
+      {
+        "seam": "verification",
+        "raised": "InjectedFault",
+        "money_before": {
+          "collected": 40000,
+          "real": 0
+        },
+        "money_after": {
+          "collected_on_clean_job": 40000,
+          "real": 0
+        },
+        "earlier_job_money_unchanged": true,
+        "real_revenue_still_zero": true,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "payment_events": 0
+      }
+    ],
+    "restart": {
+      "booked_contracts": 6,
+      "before": {
+        "jobs": 6,
+        "payments": 0,
+        "invoiced_ids": 1,
+        "collected_total": 7500,
+        "real": 0,
+        "audit_ok": true
+      },
+      "after": {
+        "jobs": 6,
+        "payments": 0,
+        "invoiced_ids": 1,
+        "collected_total": 7500,
+        "real": 0,
+        "audit_ok": true
+      },
+      "every_figure_survived": true
+    }
+  },
+  "brain_capacity_and_periodic": {
+    "brain_off": {
+      "delivered": 17,
+      "collected_cents": 420000,
+      "cost_cents": 54694,
+      "profit_cents": 365306
+    },
+    "brain_on": {
+      "delivered": 17,
+      "collected_cents": 420000,
+      "cost_cents": 54694,
+      "profit_cents": 365306
+    },
+    "brain_difference_cents": 0,
+    "capacity_defect_cost": {
+      "one_long_lived_shop": {
+        "delivered": 3,
+        "collected_cents": 87500,
+        "profit_cents": 76122,
+        "wall_s": 2.3
+      },
+      "virgin_system_per_contract": {
+        "delivered": 43,
+        "collected_cents": 1037500,
+        "profit_cents": 902362
+      },
+      "profit_lost_to_the_defect_cents": 826240
+    },
+    "periodic": {
+      "billable_contracts_of_100": 43,
+      "mean_profit_per_billable_contract_cents": 20985,
+      "mean_execution_seconds": 0.048,
+      "note": "Hour/day/week/month below are DEMAND-bounded, not compute- bounded. They state what the measured per-contract economics would yield at a given arrival rate; DeskPilot has no customers, so the true rate today is zero.",
+      "1_job_per_hour": {
+        "profit_per_hour_usd": 209.85,
+        "profit_per_8h_day_usd": 1678.81,
+        "profit_per_5d_week_usd": 8394.07,
+        "profit_per_22d_month_usd": 36933.89
+      },
+      "4_jobs_per_hour": {
+        "profit_per_hour_usd": 839.41,
+        "profit_per_8h_day_usd": 6715.25,
+        "profit_per_5d_week_usd": 33576.26,
+        "profit_per_22d_month_usd": 147735.55
+      },
+      "10_jobs_per_hour": {
+        "profit_per_hour_usd": 2098.52,
+        "profit_per_8h_day_usd": 16788.13,
+        "profit_per_5d_week_usd": 83940.65,
+        "profit_per_22d_month_usd": 369338.87
+      }
+    }
+  },
+  "prior_round_context": {
+    "busy_shop_and_crash_evidence": "docs/evidence/busy-business-load-and-recovery.json",
+    "supervision_remediation": "docs/evidence/p0-supervision-and-storage-remediation.json"
+  },
+  "limits": [
+    "Linux measurements; the VPS is Windows. MT5 coexistence is NOT certified.",
+    "Every customer, contract, invoice and payment is synthetic.",
+    "Simulated results are not a substitute for real-world certification.",
+    "Hourly/daily/weekly/monthly figures are demand-bounded arithmetic over measured per-contract economics, not forecasts. DeskPilot has no customers, so the true arrival rate today is zero."
+  ]
+}
