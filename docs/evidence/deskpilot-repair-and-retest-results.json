@@ -265,5 +265,13 @@
     },
     "delta": "exactly the 6 new tests in test_remediation_p0p1.py",
     "first_run_failure": "QualificationOwnsNoEconomics tripped on the word 'calibration' in a docstring I added. The test is correct; the comment was reworded, not the test."
+  },
+  "mutation": {
+    "mutants": 155,
+    "killed": 155,
+    "survived": 0,
+    "not_applied": 0,
+    "sources_restored_clean": true,
+    "note": "unchanged from the pre-repair run; neither repair loosened a pinned control"
   }
 }

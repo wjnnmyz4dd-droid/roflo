@@ -197,4 +197,16 @@ comment rather than touch the test.
 The 44 skips are the pre-existing egress-guard subprocess suite and are
 **not counted as passed**.
 
+## Mutation
+
+**155 mutants, 155 killed, 0 survived, 0 NOT_APPLIED.** Run after the
+repairs, sequentially, with no other harness running; sources verified
+restored clean afterwards and the tree byte-identical to the commit.
+NOT_APPLIED was not counted as a kill.
+
+Unchanged from the pre-repair run, which is the point: neither repair
+loosened a control the mutation suite pins. That matters most for the
+capacity change, where a careless edit would have widened a real
+limit.
+
 MT5 coexistence remains **uncertified** — everything here is Linux.
