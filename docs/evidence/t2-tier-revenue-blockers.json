@@ -1,0 +1,47 @@
+{
+  "measurement": "Why 91% of quoted contract value is unservable: the three T2 routes",
+  "date": "2026-10-17",
+  "baseline_commit": "91987f5",
+  "production_code_changed": false,
+  "context": "The financial certification found every large ($1,200) and premium ($3,500) contract refused for want of T2_INDEPENDENT_REVIEW -- $117,500 of $129,375 quoted. That report called the ceiling 'unlockable' without testing it. This tests it.",
+  "route_1_owner_review": {
+    "requirement": "a cryptographically signed approval naming the artifact digest",
+    "blocked_by": "SOLVENT_OWNER_KEY unset: 'owner review: unavailable (no owner signing key)'",
+    "and_when_the_key_IS_set": {
+      "measured": "delivery is then refused for every job, T1 included",
+      "exact_refusal": "action gate refused delivery: C2_EXTERNAL_COMMUNICATION exceeds any preauthorization and an Owner Channel is configured, so approvals must be signed by it",
+      "cause": "harness.py mints an UNSIGNED gate.approval() for delivery; no production path mints a SignedApproval for it",
+      "baseline_effect": "100 contracts delivered 0 with the key set, versus 43 without it",
+      "test_coverage": "no existing test runs a full business cycle with an owner signing key configured"
+    },
+    "verdict": "BLOCKED both ways"
+  },
+  "route_2_differential_review_csv": {
+    "requirement": "an independently authored reader for the deliverable's format",
+    "exact_refusal": "differential review (csv): unavailable (no independently authored reader for .csv is known to this build, so a second automated opinion would be Solvent reading its own output twice)",
+    "affects": ["csv-cleanup", "data-entry", "report-builder"],
+    "verdict": "BLOCKED - the reader does not exist"
+  },
+  "route_3_differential_review_xlsx": {
+    "requirement": "the independently authored reader agrees",
+    "measured_refusal": "the independent reader disagrees with the deliverable: Client ref values all came from the source: 3 value(s) the source never had",
+    "investigation": {
+      "requirement_under_test": "consolidate_sheets {'sheets': ['Q1 data', 'Q2 data']}",
+      "source_sheets": {"Q1 data": ["CR-2266","CR-3852","CR-4243","CR-8097","CR-8196"],
+                         "Q2 data": ["CR-4181","CR-4952","CR-5486","CR-6484","CR-8064"]},
+      "output_values": ["CR-2266","CR-3852","CR-4243","CR-5486","CR-6484","CR-8064","CR-8097","CR-8196"],
+      "not_in_the_first_sheet_alone": ["CR-5486","CR-6484","CR-8064"],
+      "not_in_the_union_of_source_sheets": []
+    },
+    "verdict": "FALSE POSITIVE in the reviewer, not fabrication by the worker",
+    "defect": "independent.py's provenance check reads only the first sheet of the source workbook, so a correctly consolidated output is flagged as inventing values. It blocks every T2-tier spreadsheet job that uses consolidate_sheets.",
+    "what_was_NOT_found": "The worker did not invent data. Every value it emitted came from a source sheet."
+  },
+  "financial_consequence": {
+    "quoted_total_usd": 129375.00,
+    "quoted_in_T2_bands_usd": 117500.00,
+    "share_unservable_percent": 91,
+    "note": "All three T2 routes are blocked, each for a different reason, which is why no large or premium contract completed."
+  },
+  "not_done": "No production file was modified. These are documented for owner approval, per this round's execution authority."
+}

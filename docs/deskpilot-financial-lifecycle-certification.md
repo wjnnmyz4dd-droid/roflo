@@ -88,12 +88,72 @@ currently cannot serve.** The revenue ceiling is set by the
 **verification tier**, not by speed, capacity or skill.
 
 The important detail: it is **T2, not T3**. T3 would be structural —
-nothing here can manufacture an external fact. T2 needs an independent
-reviewer, which is a configuration the owner can provide. **This
-ceiling is unlockable.** A further 5 per band did reach a reviewer and
-were rejected by it (*"the independent reader disagrees with the
-deliverable"*), which is either the reviewer working or a false
-positive, and I have not established which.
+nothing here can manufacture an external fact.
+
+I originally wrote that T2 "needs an independent reviewer, which is a
+configuration the owner can provide" and called the ceiling
+**unlockable**. I then tested that claim instead of leaving it, and it
+does not hold: **all three routes to T2 are blocked, each for a
+different reason.** See *The three T2 routes* below. I also said I had
+not established whether the reviewer's rejections were real or false
+positives. They are **false positives**, and that is now proven.
+
+### The three T2 routes, tested
+
+**Route 1 — owner review.** Needs a signed approval naming the artifact
+digest, so it needs `SOLVENT_OWNER_KEY`. Unset, the refusal is explicit:
+*"owner review: unavailable (no owner signing key)"*.
+
+Setting the key does not help, and this is the part worth knowing:
+**with a signing key configured, every delivery is refused** —
+
+> *action gate refused delivery: C2_EXTERNAL_COMMUNICATION exceeds any
+> preauthorization and an Owner Channel is configured, so approvals must
+> be signed by it*
+
+`harness.py` mints an **unsigned** approval for delivery and no
+production path mints a signed one. Measured: with the key set, **0 of
+100 contracts delivered**, against 43 without it — T1 work included. No
+existing test runs a full business cycle with a signing key configured,
+which is why this has not been seen before. **Blocked both ways.**
+
+**Route 2 — differential review of a `.csv` deliverable.** The refusal
+is categorical:
+
+> *differential review (csv): unavailable (no independently authored
+> reader for .csv is known to this build, so a second automated opinion
+> would be Solvent reading its own output twice)*
+
+The reader does not exist. This covers csv-cleanup, data-entry and
+report-builder. **Blocked.**
+
+**Route 3 — differential review of an `.xlsx` deliverable.** Here the
+reader exists, runs, and **disagrees**:
+
+> *the independent reader disagrees with the deliverable: Client ref
+> values all came from the source: 3 value(s) the source never had*
+
+That reads like the worker inventing data, which would be the most
+serious finding in this engagement. **It is not.** The job's own
+checklist requires `consolidate_sheets {'sheets': ['Q1 data', 'Q2
+data']}`, and the reader compares the consolidated output against
+**only the first sheet** of the source workbook:
+
+| | Client ref values |
+|---|---|
+| source `Q1 data` | CR-2266, CR-3852, CR-4243, CR-8097, CR-8196 |
+| source `Q2 data` | CR-4181, CR-4952, CR-5486, CR-6484, CR-8064 |
+| output | the eight that survived the row filters, from **both** |
+| missing from the **first sheet alone** | **3** — CR-5486, CR-6484, CR-8064 |
+| missing from the **union of both sheets** | **0** |
+
+Exactly the three the reviewer complained about, and **not one value
+the worker did not take from a source sheet.** It is a **false positive
+in the verifier**, and it blocks every T2-tier spreadsheet job that
+consolidates sheets. The worker is correct; the reviewer is wrong.
+
+**So the ceiling is not merely unconfigured — it is three separate
+defects**, and that is why no large or premium contract completed.
 
 Per skill, margin is flat at **87%** across all five; the only skill
 that differs is csv-cleanup (3 delivered, not 10), because 13 of its 20
@@ -236,9 +296,12 @@ audit chain never broke in any run.
 1. **Capacity never released — −$8,262.40 per 100 contracts (92%).**
    `COMPLETE` is not terminal. Needs owner authorisation; I did not
    touch it.
-2. **No T2 reviewer — $117,500 of quoted work (91%) unservable.**
-   Configuration, not architecture. The largest revenue unlock
-   available.
+2. **All three T2 routes blocked — $117,500 of quoted work (91%)
+   unservable.** Not one defect but three: no `.csv` reader exists; the
+   `.xlsx` reader false-positives on consolidated sheets; and enabling
+   the owner signing key, which is the third route, stops delivery
+   altogether. Still the largest revenue unlock available, and now with
+   three specific fixes attached rather than a configuration note.
 3. **Jobs stranded mid-verification** (previous report) — each crash
    permanently shrinks the shop.
 4. **The Brain contributes $0.** Not broken; never asked a question.
@@ -246,9 +309,31 @@ audit chain never broke in any run.
 *Stops it being real:* no payment rail (`money_can_move: False`), **no
 contracting details — which this round proves blocks invoicing
 entirely**, `max_committed_jobs = 0` as shipped, and no customer flow.
-None is an engineering defect.
+None of those four is an engineering defect — they are owner decisions.
+
+The T2 blockers **are** engineering defects, and they are what caps the
+business at small and standard work. Documented here for approval
+rather than fixed, since changing them is outside this round's
+authority:
+
+1. **`independent.py` provenance check reads only the first source
+   sheet.** A correctly consolidated output is flagged as inventing
+   values. Fix: compare against the union of the sheets the checklist
+   named. Small, and it unlocks T2-tier spreadsheet work.
+2. **No independently authored `.csv` reader.** Fix: adopt one, or
+   accept that `.csv` deliverables cannot reach T2 without a human.
+   This is a dependency decision.
+3. **An owner signing key stops delivery.** `harness.py` mints an
+   unsigned approval for a C2 external effect. Fix: mint a signed one
+   when a channel is configured. Until then the two features are
+   mutually exclusive, and no test covers the combination.
 
 ---
+
+*A follow-up pass tested the "unlockable" claim this report first made
+about the T2 ceiling and found it wrong in a way that mattered; the
+section above records what the tests showed. Evidence:
+`docs/evidence/t2-tier-revenue-blockers.json`.*
 
 *Regression and mutation stand from `a7763a5`: 4,722 passed, 44
 skipped, 10,085 subtests; 155/155 mutants killed. No production code
