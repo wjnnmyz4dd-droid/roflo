@@ -121,6 +121,46 @@ def _scope_requirement(need: str) -> Requirement:
         criticality=Criticality.ADVISORY)
 
 
+#: The job states that occupy a processing slot.
+#:
+#: Written out rather than derived from ``is_terminal``, because the two
+#: questions differ and conflating them cost the business most of its
+#: throughput. ``is_terminal`` asks *can this job still change*, and only
+#: REJECTED and FAILED cannot. Occupancy asks *is work still owed*, which
+#: is a smaller set, and counting a finished job as occupying meant the
+#: shop seized for good after ``max_concurrent_jobs`` lifetime successes:
+#: measured at the shipped ceiling of three, three COMPLETE jobs held all
+#: three slots and every later opportunity was refused.
+#:
+#: What is deliberately absent:
+#:
+#: ``INTAKE``, ``QUALIFYING``
+#:     Evaluating a posting costs a moment's thought, not a slot. Counting
+#:     them stopped Solvent assessing more than a handful of postings.
+#: ``COMPLETE``, ``REJECTED``, ``FAILED``
+#:     Nothing further is owed.
+#: ``AWAITING_PAYMENT``
+#:     The work has shipped; what is outstanding is money, not labour. The
+#:     unpaid-exposure limit is the control for that, and it is a better
+#:     one -- it reasons about amounts rather than counting jobs. Holding a
+#:     *processing* slot for an unpaid invoice would stop the shop working
+#:     while adding nothing the exposure limit does not already do.
+#:
+#: Releasing a slot is not forgiveness of a debt. The payment record, the
+#: invoice and the audit trail are untouched by this and outlive the job.
+OCCUPIES_CAPACITY = frozenset({
+    JobState.AWAITING_OWNER_APPROVAL,
+    JobState.ACCEPTED,
+    JobState.EXECUTING,
+    JobState.BLOCKED,
+    JobState.VERIFYING,
+    JobState.READY_FOR_DELIVERY,
+    # Re-opened work. The client has asked for changes, so labour is owed
+    # again and the slot comes back with it.
+    JobState.REVISION_REQUESTED,
+})
+
+
 class Qualification:
     """The one accept/reject/escalate authority. It owns no economics."""
 
@@ -377,16 +417,17 @@ class Qualification:
         return decision
 
     def _committed_count(self) -> int:
-        """Jobs that actually consume capacity.
+        """Jobs that actually consume a processing slot.
 
-        Evaluating a candidate costs nothing but a moment's thought, so a job still
-        in INTAKE or QUALIFYING must not count. Counting them made Solvent unable
-        to assess more than a handful of postings, which would defeat discovery
-        entirely.
+        Shop-wide. A per-skill count is what the five-queues operating
+        model wants, and it cannot be built here yet: a job does not
+        record which capability it belongs to. The one column that could
+        carry it already means something to the Governor, so reusing it
+        would quietly change what the Governor derives from it. See the
+        remediation report.
         """
         return len([j for j in self._orchestrator.jobs()
-                    if not j.state.is_terminal
-                    and j.state not in (JobState.INTAKE, JobState.QUALIFYING)])
+                    if j.state in OCCUPIES_CAPACITY])
 
     def _owner_identity(self) -> str:
         owners = self._policy.get("governance", "owner_identities", default=[])

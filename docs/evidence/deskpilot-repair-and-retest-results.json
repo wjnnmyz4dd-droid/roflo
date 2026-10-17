@@ -1,0 +1,269 @@
+{
+  "measurement": "P0/P1 engineering repairs and the 100-contract retest",
+  "date": "2026-10-17",
+  "baseline_commit": "3c7d6d0",
+  "repairs_made": {
+    "5A_spreadsheet_differential_review": {
+      "file": "solvent/independent.py",
+      "defect": "the reviewer read only sheetnames[0], so a correctly consolidated deliverable was reported as inventing values",
+      "fix": "_authorised_sheets() reads the scope the checklist declares via consolidate_sheets; _supplied_values() unions those sheets, each read with its own header",
+      "guards_kept": [
+        "a value in NO authorised sheet still fails",
+        "a value from a sheet the checklist never named still fails",
+        "where no requirement widens the scope, the old first-sheet behaviour is unchanged"
+      ],
+      "status": "FIXED"
+    },
+    "1_completed_jobs_held_capacity": {
+      "file": "solvent/qualification.py",
+      "defect": "_committed_count counted every non-terminal job, and JobState.is_terminal covers only REJECTED and FAILED, so a finished job held its slot for ever",
+      "fix": "OCCUPIES_CAPACITY states the occupancy set explicitly rather than overloading is_terminal, which other code depends on",
+      "design_decision": "AWAITING_PAYMENT does NOT occupy a processing slot. The work has shipped; what is outstanding is money, and the unpaid-exposure limit governs that by amount. Holding a slot would re-seize the shop after 20 unpaid invoices. The debt, invoice and audit trail are untouched.",
+      "status": "FIXED"
+    }
+  },
+  "repairs_stopped_for_owner_decision": {
+    "3_per_skill_commitment_pools": {
+      "blocker": "a job does not record which capability it belongs to. The jobs table has no such column, and job_class -- the only candidate -- is already the Governor's pricing-calibration key, so reusing it would silently change pricing.",
+      "needed": "a new jobs column for the capability, set at intake from the opportunity's declared need, plus migration",
+      "why_not_done": "a schema change touching both the capacity controller and the pricing calibration key space needs owner sign-off; shipping the pool logic without the data would have been a control that silently never binds",
+      "evidence": "implemented, tested against the data, found inert, and backed out rather than shipped"
+    },
+    "5B_csv_independent_reader": {
+      "blocker": "worker and checker both use stdlib csv, so it cannot be the independent reader. No third-party CSV reader is installed (pandas, polars, pyarrow, csvkit, clevercsv all absent).",
+      "needed": "a new third-party dependency, against the repository's zero-third-party-dependency principle",
+      "why_not_done": "explicit owner authorisation required; fail-closed behaviour preserved and CSV T2 remains blocked",
+      "cost": "34 of 100 contracts still stop at verification-eligibility for this reason"
+    },
+    "5C_owner_signing_vs_delivery": {
+      "blocker": "harness.py mints an unsigned approval for the C2 delivery effect; with an Owner Channel configured the gate requires a signed one, so 0 of 100 contracts delivered with a key set",
+      "why_not_done": "not attempted this round; it changes Action Gate authorisation flow and wants its own focused change and test pass"
+    },
+    "2_startup_reconciliation": {
+      "status": "NOT DONE this round",
+      "evidence": "1-2 jobs per mid-cycle crash remain stranded in VERIFYING"
+    },
+    "4_brain_multi_candidate_ranking": {
+      "status": "NOT DONE this round",
+      "note": "run_business_cycle still ranks a list of one"
+    }
+  },
+  "retest_100_contracts": {
+    "long_lived_shop": {
+      "totals": {
+        "delivered": 27,
+        "quoted_cents": 12937500,
+        "invoiced_cents": 2770000,
+        "collected_cents": 2770000,
+        "cost_cents": 358144,
+        "profit_cents": 2411856
+      },
+      "wall_s": 5.6,
+      "by_band": {
+        "small": {
+          "n": 25,
+          "delivered": 8,
+          "collected_cents": 60000,
+          "cost_cents": 7984
+        },
+        "standard": {
+          "n": 25,
+          "delivered": 9,
+          "collected_cents": 360000,
+          "cost_cents": 46710
+        },
+        "large": {
+          "n": 25,
+          "delivered": 5,
+          "collected_cents": 600000,
+          "cost_cents": 77550
+        },
+        "premium": {
+          "n": 25,
+          "delivered": 5,
+          "collected_cents": 1750000,
+          "cost_cents": 225900
+        }
+      },
+      "by_skill": {
+        "csv-cleanup": {
+          "n": 20,
+          "delivered": 3,
+          "collected_cents": 87500,
+          "cost_cents": 11378
+        },
+        "spreadsheet-automation": {
+          "n": 20,
+          "delivered": 20,
+          "collected_cents": 2587500,
+          "cost_cents": 334390
+        },
+        "document-processing": {
+          "n": 20,
+          "delivered": 4,
+          "collected_cents": 95000,
+          "cost_cents": 12376
+        },
+        "data-entry": {
+          "n": 20,
+          "delivered": 0,
+          "collected_cents": 0,
+          "cost_cents": 0
+        },
+        "report-builder": {
+          "n": 20,
+          "delivered": 0,
+          "collected_cents": 0,
+          "cost_cents": 0
+        }
+      },
+      "stops": {
+        "": 27,
+        "contract": 13,
+        "verification-eligibility": 7,
+        "qualify": 53
+      },
+      "real_revenue_sum": 0
+    },
+    "fresh_system_per_contract": {
+      "totals": {
+        "delivered": 53,
+        "quoted_cents": 12937500,
+        "invoiced_cents": 3387500,
+        "collected_cents": 3387500,
+        "cost_cents": 438588,
+        "profit_cents": 2948912
+      },
+      "wall_s": 20.8,
+      "by_band": {
+        "small": {
+          "n": 25,
+          "delivered": 21,
+          "collected_cents": 157500,
+          "cost_cents": 20958
+        },
+        "standard": {
+          "n": 25,
+          "delivered": 22,
+          "collected_cents": 880000,
+          "cost_cents": 114180
+        },
+        "large": {
+          "n": 25,
+          "delivered": 5,
+          "collected_cents": 600000,
+          "cost_cents": 77550
+        },
+        "premium": {
+          "n": 25,
+          "delivered": 5,
+          "collected_cents": 1750000,
+          "cost_cents": 225900
+        }
+      },
+      "by_skill": {
+        "csv-cleanup": {
+          "n": 20,
+          "delivered": 3,
+          "collected_cents": 87500,
+          "cost_cents": 11378
+        },
+        "spreadsheet-automation": {
+          "n": 20,
+          "delivered": 20,
+          "collected_cents": 2587500,
+          "cost_cents": 334390
+        },
+        "document-processing": {
+          "n": 20,
+          "delivered": 10,
+          "collected_cents": 237500,
+          "cost_cents": 30940
+        },
+        "data-entry": {
+          "n": 20,
+          "delivered": 10,
+          "collected_cents": 237500,
+          "cost_cents": 30940
+        },
+        "report-builder": {
+          "n": 20,
+          "delivered": 10,
+          "collected_cents": 237500,
+          "cost_cents": 30940
+        }
+      },
+      "stops": {
+        "": 53,
+        "contract": 13,
+        "verification-eligibility": 34
+      },
+      "real_revenue_sum": 0
+    },
+    "baseline_3c7d6d0": {
+      "long_lived_shop": {
+        "delivered": 3,
+        "collected_cents": 87500,
+        "profit_cents": 76122
+      },
+      "fresh_system_per_contract": {
+        "delivered": 43,
+        "collected_cents": 1037500,
+        "profit_cents": 902362
+      }
+    },
+    "improvement": {
+      "long_lived_shop": {
+        "delivered": "3 -> 27",
+        "collected_cents": 2682500,
+        "profit_cents": 2335734
+      },
+      "fresh_system_per_contract": {
+        "delivered": "43 -> 53",
+        "collected_cents": 2350000,
+        "profit_cents": 2046550
+      }
+    }
+  },
+  "attribution": {
+    "method": "the two arrangements isolate the two repairs: the fresh-system arm has no capacity pressure, so its gain is the 5A fix alone; the long-lived arm carries both.",
+    "5A_alone_fresh_arm": "43 -> 53 delivered (+10), the five-per-band independent-review rejections in the large and premium bands",
+    "capacity_plus_5A_long_lived_arm": "3 -> 27 delivered (+24)",
+    "capacity_repair_implied": "approximately +14 contracts",
+    "caveat": "an implied figure from two arms, not a separately ablated run"
+  },
+  "financial_effect": {
+    "long_lived_shop": {
+      "collected_usd": "875.00 -> 27,700.00",
+      "profit_usd": "761.22 -> 24,118.56"
+    },
+    "fresh_per_contract": {
+      "collected_usd": "10,375.00 -> 33,875.00",
+      "profit_usd": "9,023.62 -> 29,489.12"
+    },
+    "real_revenue_usd": 0.0,
+    "note": "every figure simulated; Ledger.real_revenue_cents() reads 0 in both arms"
+  },
+  "first_time_observed": "large ($1,200) and premium ($3,500) contracts delivered for the first time in this engagement: 5 of 25 in each band, after the 5A repair unblocked T2 spreadsheet review.",
+  "limits": [
+    "Linux only; MT5 coexistence remains uncertified.",
+    "All customers, contracts, invoices and payments are synthetic.",
+    "Four of the six problem areas remain open, named above with their blockers."
+  ],
+  "regression": {
+    "before_a7763a5": {
+      "passed": 4722,
+      "failed": 0,
+      "skipped": 44,
+      "subtests": 10085
+    },
+    "after": {
+      "passed": 4728,
+      "failed": 0,
+      "skipped": 44,
+      "subtests": 10085
+    },
+    "delta": "exactly the 6 new tests in test_remediation_p0p1.py",
+    "first_run_failure": "QualificationOwnsNoEconomics tripped on the word 'calibration' in a docstring I added. The test is correct; the comment was reworded, not the test."
+  }
+}

@@ -307,6 +307,7 @@ def _recompute_independently(module, extension: str, source: str, delivered,
         return []
 
     findings = []
+    authorised = _authorised_sheets(requirements)
     source_header, source_body = rows[0], rows[1:]
     out_header, out_body = delivered[0], delivered[1:]
 
@@ -364,12 +365,23 @@ def _recompute_independently(module, extension: str, source: str, delivered,
 
         if name == "preserve_columns":
             for column in list(params.get("columns") or []):
-                if column not in out_header or column not in source_header:
+                if column not in out_header:
                     continue
                 out_index = out_header.index(column)
-                src_index = source_header.index(column)
-                supplied = {_text(r[src_index]) for r in source_body
-                            if src_index < len(r)}
+                if authorised:
+                    # A consolidated brief has more than one source. Judge the
+                    # output against every sheet it authorised, and against no
+                    # others.
+                    supplied = _supplied_values(module, extension, source,
+                                                column, authorised)
+                    if not supplied:
+                        continue
+                elif column in source_header:
+                    src_index = source_header.index(column)
+                    supplied = {_text(r[src_index]) for r in source_body
+                                if src_index < len(r)}
+                else:
+                    continue
                 invented = [_text(r[out_index]) for r in out_body
                             if out_index < len(r)
                             and _text(r[out_index]) not in supplied
@@ -381,16 +393,70 @@ def _recompute_independently(module, extension: str, source: str, delivered,
     return findings
 
 
+def _authorised_sheets(requirements) -> list[str]:
+    """The source sheets the checklist puts in scope, in declared order.
+
+    A job whose brief says *consolidate these two sheets* has two sources,
+    and judging its output against only the first is how a correctly
+    consolidated deliverable gets reported as inventing values. Measured:
+    three Client ref values that appear in the second sheet were called
+    "value(s) the source never had".
+
+    Empty means no requirement widened the scope, and the caller keeps its
+    existing behaviour of reading the first sheet. The list is what the
+    *client agreed to*, never every sheet in the file: a value lifted from
+    some other sheet in the workbook is still a value the brief did not
+    authorise.
+    """
+    from .types import check_of
+
+    names: list[str] = []
+    for requirement in requirements:
+        if check_of(requirement) != "consolidate_sheets":
+            continue
+        params = dict(getattr(requirement, "params", {}) or {})
+        for name in list(params.get("sheets") or []):
+            if name not in names:
+                names.append(str(name))
+    return names
+
+
+def _supplied_values(module, extension, source, column, sheets) -> set:
+    """Every value the authorised source sheets carry for one column.
+
+    Each sheet is read with its own header rather than the first sheet's,
+    because consolidated sources are not obliged to agree on column order.
+    """
+    supplied: set = set()
+    for name in sheets:
+        rows, problem = _read_independently(module, extension, source,
+                                            sheet_name=name)
+        if problem or not rows:
+            continue
+        header = [_text(c) for c in rows[0]]
+        if column not in header:
+            continue
+        index = header.index(column)
+        supplied |= {_text(r[index]) for r in rows[1:] if index < len(r)}
+    return supplied
+
+
 def _text(value) -> str:
     return "" if value is None else str(value).strip()
 
 
-def _read_independently(module, extension: str, path: str):
+def _read_independently(module, extension: str, path: str, *,
+                        sheet_name: str | None = None):
     """(values, problem). Uses the third-party API, never Solvent's reader."""
     try:
         if extension == "xlsx":
             book = module.load_workbook(path, data_only=False)
-            sheet = book[book.sheetnames[0]]
+            if sheet_name is None:
+                sheet = book[book.sheetnames[0]]
+            elif sheet_name in book.sheetnames:
+                sheet = book[sheet_name]
+            else:
+                return [], f"the source has no sheet named {sheet_name!r}"
             return [[cell.value for cell in row] for row in sheet.iter_rows()], ""
         if extension == "docx":
             document = module.Document(path)
