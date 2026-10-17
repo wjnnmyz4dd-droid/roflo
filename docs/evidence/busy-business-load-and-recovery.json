@@ -1,0 +1,524 @@
+{
+  "measurement": "DeskPilot under a busy-business load, with crashes and restart",
+  "date": "2026-10-17",
+  "baseline_commit": "a7763a5",
+  "production_code_changed": false,
+  "note": "Execution rules for this round permit inspection, tests, harnesses and simulation, and forbid changing production capacity. Nothing in solvent/ was modified. max_concurrent_jobs was raised only inside disposable test systems, never in shipped configuration.",
+  "one_hundred_jobs_five_skills": {
+    "jobs": 100,
+    "passed": 100,
+    "failed": 0,
+    "wall_s": 28.8,
+    "per_skill": {
+      "csv-cleanup": {
+        "jobs": 20,
+        "passed": 20,
+        "delivered": 7,
+        "invoiced_cents": 280000,
+        "operating_cost_cents": 36330,
+        "expected_mix": {
+          "DELIVER": 7,
+          "ASK": 13
+        },
+        "contribution_cents": 243670,
+        "wall_seconds": 0.211,
+        "mean_s_per_delivered": 0.0301,
+        "jobs_per_hour_one_lane": 119447
+      },
+      "data-entry": {
+        "jobs": 20,
+        "passed": 20,
+        "delivered": 20,
+        "invoiced_cents": 800000,
+        "operating_cost_cents": 103800,
+        "expected_mix": {
+          "DELIVER": 20
+        },
+        "contribution_cents": 696200,
+        "wall_seconds": 1.289,
+        "mean_s_per_delivered": 0.0644,
+        "jobs_per_hour_one_lane": 55864
+      },
+      "document-processing": {
+        "jobs": 20,
+        "passed": 20,
+        "delivered": 20,
+        "invoiced_cents": 800000,
+        "operating_cost_cents": 103800,
+        "expected_mix": {
+          "DELIVER": 20
+        },
+        "contribution_cents": 696200,
+        "wall_seconds": 0.698,
+        "mean_s_per_delivered": 0.0349,
+        "jobs_per_hour_one_lane": 103130
+      },
+      "report-builder": {
+        "jobs": 20,
+        "passed": 20,
+        "delivered": 20,
+        "invoiced_cents": 800000,
+        "operating_cost_cents": 103800,
+        "expected_mix": {
+          "DELIVER": 20
+        },
+        "contribution_cents": 696200,
+        "wall_seconds": 0.603,
+        "mean_s_per_delivered": 0.0302,
+        "jobs_per_hour_one_lane": 119356
+      },
+      "spreadsheet-automation": {
+        "jobs": 20,
+        "passed": 20,
+        "delivered": 20,
+        "invoiced_cents": 800000,
+        "operating_cost_cents": 103800,
+        "expected_mix": {
+          "DELIVER": 20
+        },
+        "contribution_cents": 696200,
+        "wall_seconds": 2.082,
+        "mean_s_per_delivered": 0.1041,
+        "jobs_per_hour_one_lane": 34580
+      }
+    },
+    "failures": [],
+    "totals": {
+      "jobs": 100,
+      "passed": 100,
+      "delivered": 87,
+      "invoiced_cents": 3480000,
+      "operating_cost_cents": 451530,
+      "contribution_cents": 3028470
+    }
+  },
+  "busy_shop_one_system": {
+    "backlog": 100,
+    "delivered": 7,
+    "wall_s": 2.5,
+    "first_capacity_refusal_at_job": 20,
+    "peak_occupying_capacity": 20,
+    "configured_max_concurrent": 20,
+    "final_census": {
+      "BLOCKED": 13,
+      "REJECTED": 80,
+      "AWAITING_PAYMENT": 7
+    },
+    "per_skill_delivered": {
+      "csv-cleanup": 7,
+      "spreadsheet-automation": 0,
+      "document-processing": 0,
+      "data-entry": 0,
+      "report-builder": 0
+    },
+    "refusal_reasons": {
+      "waiting on the client: The Order Date column con": 13,
+      "not selected: capacity is already committed else": 80
+    }
+  },
+  "replenishment": {
+    "ceiling": 4,
+    "phases": [
+      {
+        "phase": "fill",
+        "attempted": 6,
+        "delivered": 4,
+        "occupying": 4,
+        "census": {
+          "AWAITING_PAYMENT": 4,
+          "REJECTED": 2
+        }
+      },
+      {
+        "phase": "after-settle",
+        "attempted": 4,
+        "delivered": 0,
+        "occupying": 4,
+        "census": {
+          "REJECTED": 6,
+          "AWAITING_PAYMENT": 4
+        }
+      }
+    ],
+    "settlement": {
+      "settled": 0,
+      "failed_to_settle": [
+        "AWAITING_PAYMENT: FailClosed",
+        "AWAITING_PAYMENT: FailClosed",
+        "AWAITING_PAYMENT: FailClosed",
+        "AWAITING_PAYMENT: FailClosed"
+      ],
+      "occupying_after_settling": 4,
+      "census": {
+        "AWAITING_PAYMENT": 4,
+        "REJECTED": 2
+      }
+    },
+    "verdict": "no capacity returned: the shop stays seized"
+  },
+  "component_crashes": {
+    "components_crashed": 7,
+    "delivered_despite_a_crash": 0,
+    "all_audit_chains_intact": true,
+    "detail": [
+      {
+        "component": "worker (during execution)",
+        "raised": "InjectedFault",
+        "delivered_despite_the_crash": false,
+        "detection_s": 0.0387,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "census_before": {
+          "AWAITING_PAYMENT": 1
+        },
+        "census_after": {
+          "EXECUTING": 1,
+          "AWAITING_PAYMENT": 2
+        },
+        "rest_of_system_after": true
+      },
+      {
+        "component": "checker (during verification)",
+        "raised": "InjectedFault",
+        "delivered_despite_the_crash": false,
+        "detection_s": 0.0423,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "census_before": {
+          "AWAITING_PAYMENT": 1
+        },
+        "census_after": {
+          "AWAITING_PAYMENT": 2,
+          "VERIFYING": 1
+        },
+        "rest_of_system_after": true
+      },
+      {
+        "component": "brain (memory recall)",
+        "raised": "InjectedFault",
+        "delivered_despite_the_crash": false,
+        "detection_s": 0.0173,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "census_before": {
+          "AWAITING_PAYMENT": 1
+        },
+        "census_after": {
+          "AWAITING_PAYMENT": 2,
+          "QUALIFYING": 1
+        },
+        "rest_of_system_after": true
+      },
+      {
+        "component": "queue (intake)",
+        "raised": "InjectedFault",
+        "delivered_despite_the_crash": false,
+        "detection_s": 0.0063,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "census_before": {
+          "AWAITING_PAYMENT": 1
+        },
+        "census_after": {
+          "AWAITING_PAYMENT": 2
+        },
+        "rest_of_system_after": true
+      },
+      {
+        "component": "supervisor (while a job fails)",
+        "raised": "InjectedFault",
+        "delivered_despite_the_crash": false,
+        "detection_s": 0.0422,
+        "incidents": 0,
+        "panel": "FAILED",
+        "audit_chain_ok": true,
+        "census_before": {
+          "AWAITING_PAYMENT": 1
+        },
+        "census_after": {
+          "AWAITING_PAYMENT": 2,
+          "VERIFYING": 1
+        },
+        "rest_of_system_after": true
+      },
+      {
+        "component": "ledger",
+        "raised": "InjectedFault",
+        "delivered_despite_the_crash": false,
+        "detection_s": 0.0957,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "census_before": {
+          "AWAITING_PAYMENT": 1
+        },
+        "census_after": {
+          "AWAITING_PAYMENT": 3
+        },
+        "rest_of_system_after": true
+      },
+      {
+        "component": "delivery gate",
+        "raised": "InjectedFault",
+        "delivered_despite_the_crash": false,
+        "detection_s": 0.1045,
+        "incidents": 1,
+        "panel": "DEGRADED",
+        "audit_chain_ok": true,
+        "census_before": {
+          "AWAITING_PAYMENT": 1
+        },
+        "census_after": {
+          "VERIFYING": 1,
+          "AWAITING_PAYMENT": 2
+        },
+        "rest_of_system_after": true
+      }
+    ]
+  },
+  "full_application_crash_between_jobs": {
+    "killed_with_SIGKILL_after_jobs": 4,
+    "child_lines_before_kill": [
+      "DONE 0 delivered=True",
+      "DONE 1 delivered=True",
+      "DONE 2 delivered=True",
+      "DONE 3 delivered=True"
+    ],
+    "wall_to_kill_s": 6.44,
+    "restart_open_s": 0.0177,
+    "time_to_first_post_crash_delivery_s": 0.12,
+    "jobs_accounted_for_after_restart": 4,
+    "census_after_restart": {
+      "AWAITING_PAYMENT": 4
+    },
+    "settled_or_delivered": 4,
+    "paused_mid_flight": 0,
+    "lost_or_failed": 0,
+    "new_jobs_delivered_after_restart": 2,
+    "audit_chain_ok_after_restart": true,
+    "open_incidents_after_restart": 0
+  },
+  "full_application_crash_mid_cycle": {
+    "trials": 5,
+    "all_reopened": true,
+    "all_audit_chains_ok": true,
+    "total_stranded_mid_flight": 2,
+    "all_work_after_restart": false,
+    "mean_reopen_s": 0.0142,
+    "detail": [
+      {
+        "trial": 0,
+        "delay_s": 0.9,
+        "ran_s": 0.9,
+        "reopen_s": 0.0246,
+        "jobs_on_disk": 8,
+        "states": {
+          "AWAITING_PAYMENT": 7,
+          "VERIFYING": 1
+        },
+        "stranded_mid_flight": 1,
+        "stranded_states": [
+          "VERIFYING"
+        ],
+        "audit_chain_ok": true,
+        "works_after_restart": true,
+        "post_restart_stop": "invoice",
+        "post_restart_why": "no invoice can be issued: INVOICE needs contracting detail the owner has not pro",
+        "occupying_at_restart": 9
+      },
+      {
+        "trial": 1,
+        "delay_s": 1.4,
+        "ran_s": 1.4,
+        "reopen_s": 0.0103,
+        "jobs_on_disk": 11,
+        "states": {
+          "AWAITING_PAYMENT": 10,
+          "VERIFYING": 1
+        },
+        "stranded_mid_flight": 1,
+        "stranded_states": [
+          "VERIFYING"
+        ],
+        "audit_chain_ok": true,
+        "works_after_restart": true,
+        "post_restart_stop": "invoice",
+        "post_restart_why": "no invoice can be issued: INVOICE needs contracting detail the owner has not pro",
+        "occupying_at_restart": 12
+      },
+      {
+        "trial": 2,
+        "delay_s": 2.0,
+        "ran_s": 2.0,
+        "reopen_s": 0.0153,
+        "jobs_on_disk": 17,
+        "states": {
+          "AWAITING_PAYMENT": 13,
+          "REJECTED": 4
+        },
+        "stranded_mid_flight": 0,
+        "stranded_states": [],
+        "audit_chain_ok": true,
+        "works_after_restart": false,
+        "post_restart_stop": "qualify",
+        "post_restart_why": "exposure or risk beyond policy limits",
+        "occupying_at_restart": 13
+      },
+      {
+        "trial": 3,
+        "delay_s": 2.6,
+        "ran_s": 2.6,
+        "reopen_s": 0.0101,
+        "jobs_on_disk": 20,
+        "states": {
+          "AWAITING_PAYMENT": 13,
+          "REJECTED": 7
+        },
+        "stranded_mid_flight": 0,
+        "stranded_states": [],
+        "audit_chain_ok": true,
+        "works_after_restart": false,
+        "post_restart_stop": "qualify",
+        "post_restart_why": "exposure or risk beyond policy limits",
+        "occupying_at_restart": 13
+      },
+      {
+        "trial": 4,
+        "delay_s": 3.2,
+        "ran_s": 3.2,
+        "reopen_s": 0.0109,
+        "jobs_on_disk": 20,
+        "states": {
+          "AWAITING_PAYMENT": 13,
+          "REJECTED": 7
+        },
+        "stranded_mid_flight": 0,
+        "stranded_states": [],
+        "audit_chain_ok": true,
+        "works_after_restart": false,
+        "post_restart_stop": "qualify",
+        "post_restart_why": "exposure or risk beyond policy limits",
+        "occupying_at_restart": 13
+      }
+    ]
+  },
+  "brain_on_versus_off": {
+    "brain_off": {
+      "delivered": 13,
+      "from_good_client": 7,
+      "from_disputed_client": 6,
+      "wall_s": 1.06,
+      "attempted": 20
+    },
+    "brain_on": {
+      "delivered": 13,
+      "from_good_client": 7,
+      "from_disputed_client": 6,
+      "wall_s": 0.96,
+      "attempted": 20
+    },
+    "difference": {
+      "delivered": 0,
+      "good_client_share_off": 0.538,
+      "good_client_share_on": 0.538
+    }
+  },
+  "accelerated_24h": {
+    "as_shipped_24h": {
+      "ceiling": 20,
+      "offered": 100,
+      "delivered": 7,
+      "seized_after_job": 20,
+      "wall_s": 2.27,
+      "final_census": {
+        "REJECTED": 80,
+        "AWAITING_PAYMENT": 7,
+        "BLOCKED": 13
+      },
+      "jobs_in_24h": 7,
+      "note": "the shop stops for good once the ceiling fills; the rest of the day produces nothing however much work is offered",
+      "gross_if_invoiceable_usd": 2800.0
+    },
+    "if_capacity_released_24h": {
+      "offered": 100,
+      "delivered": 87,
+      "wall_s": 21.15,
+      "seconds_per_delivered": 0.243,
+      "one_lane_jobs_per_hour": 14815,
+      "note": "upper bound from a virgin shop per job -- it measures the work, not a fix, and no fix has been made",
+      "gross_if_invoiceable_usd": 34800.0
+    },
+    "pricing_assumption_cents": 40000,
+    "invoice_reality": "No invoice was issued in ANY run: policy refuses because the owner has not provided contracting details. Gross figures above are quoted amounts, not billed revenue."
+  },
+  "invoice_control": [
+    {
+      "n": 0,
+      "skill": "data-entry",
+      "delivered": true,
+      "stopped_at": "invoice",
+      "invoiced": 40000,
+      "why": "no invoice can be issued: INVOICE needs contracting detail the owner h"
+    },
+    {
+      "n": 1,
+      "skill": "data-entry",
+      "delivered": true,
+      "stopped_at": "invoice",
+      "invoiced": 40000,
+      "why": "no invoice can be issued: INVOICE needs contracting detail the owner h"
+    },
+    {
+      "n": 2,
+      "skill": "data-entry",
+      "delivered": true,
+      "stopped_at": "invoice",
+      "invoiced": 40000,
+      "why": "no invoice can be issued: INVOICE needs contracting detail the owner h"
+    },
+    {
+      "n": 3,
+      "skill": "data-entry",
+      "delivered": true,
+      "stopped_at": "invoice",
+      "invoiced": 40000,
+      "why": "no invoice can be issued: INVOICE needs contracting detail the owner h"
+    },
+    {
+      "n": 4,
+      "skill": "data-entry",
+      "delivered": true,
+      "stopped_at": "invoice",
+      "invoiced": 40000,
+      "why": "no invoice can be issued: INVOICE needs contracting detail the owner h"
+    },
+    {
+      "n": 5,
+      "skill": "data-entry",
+      "delivered": true,
+      "stopped_at": "invoice",
+      "invoiced": 40000,
+      "why": "no invoice can be issued: INVOICE needs contracting detail the owner h"
+    },
+    {
+      "n": 6,
+      "skill": "report-builder",
+      "delivered": true,
+      "stopped_at": "invoice",
+      "invoiced": 40000,
+      "why": "no invoice can be issued: INVOICE needs contracting detail the owner h"
+    },
+    {
+      "n": 7,
+      "skill": "report-builder",
+      "delivered": true,
+      "stopped_at": "invoice",
+      "invoiced": 40000,
+      "why": "no invoice can be issued: INVOICE needs contracting detail the owner h"
+    }
+  ]
+}
