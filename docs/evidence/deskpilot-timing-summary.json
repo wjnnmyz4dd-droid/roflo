@@ -1,0 +1,244 @@
+{
+  "csv-cleanup": {
+    "jobs_measured": 20,
+    "delivered": 3,
+    "worker_plan_produce_s": {
+      "n": 3,
+      "mean": 0.008847,
+      "median": 0.009288,
+      "p95": 0.010414,
+      "min": 0.006838,
+      "max": 0.010414
+    },
+    "checker_s": {
+      "n": 3,
+      "mean": 0.017333,
+      "median": 0.016888,
+      "p95": 0.021838,
+      "min": 0.013273,
+      "max": 0.021838
+    },
+    "delivery_s": {
+      "n": 3,
+      "mean": 0.001697,
+      "median": 0.001717,
+      "p95": 0.002092,
+      "min": 0.001283,
+      "max": 0.002092
+    },
+    "financial_s": {
+      "n": 3,
+      "mean": 0.002543,
+      "median": 0.002676,
+      "p95": 0.002919,
+      "min": 0.002035,
+      "max": 0.002919
+    },
+    "total_end_to_end_s": {
+      "n": 3,
+      "mean": 0.088333,
+      "median": 0.061986,
+      "p95": 0.153547,
+      "min": 0.049465,
+      "max": 0.153547
+    },
+    "revision_rate": 0.0,
+    "error_rate": 0.0,
+    "jobs_per_hour_one_lane": 40755
+  },
+  "data-entry": {
+    "jobs_measured": 20,
+    "delivered": 10,
+    "worker_plan_produce_s": {
+      "n": 10,
+      "mean": 0.009529,
+      "median": 0.009052,
+      "p95": 0.01279,
+      "min": 0.007653,
+      "max": 0.01279
+    },
+    "checker_s": {
+      "n": 10,
+      "mean": 0.04245,
+      "median": 0.041621,
+      "p95": 0.053288,
+      "min": 0.03428,
+      "max": 0.053288
+    },
+    "delivery_s": {
+      "n": 10,
+      "mean": 0.001942,
+      "median": 0.001915,
+      "p95": 0.002583,
+      "min": 0.00152,
+      "max": 0.002583
+    },
+    "financial_s": {
+      "n": 10,
+      "mean": 0.002945,
+      "median": 0.002836,
+      "p95": 0.004326,
+      "min": 0.002174,
+      "max": 0.004326
+    },
+    "total_end_to_end_s": {
+      "n": 10,
+      "mean": 0.089307,
+      "median": 0.085599,
+      "p95": 0.114789,
+      "min": 0.075506,
+      "max": 0.114789
+    },
+    "revision_rate": 0.0,
+    "error_rate": 0.0,
+    "jobs_per_hour_one_lane": 40310
+  },
+  "document-processing": {
+    "jobs_measured": 20,
+    "delivered": 10,
+    "worker_plan_produce_s": {
+      "n": 10,
+      "mean": 0.008844,
+      "median": 0.008693,
+      "p95": 0.010818,
+      "min": 0.007111,
+      "max": 0.010818
+    },
+    "checker_s": {
+      "n": 10,
+      "mean": 0.022786,
+      "median": 0.022358,
+      "p95": 0.029873,
+      "min": 0.018659,
+      "max": 0.029873
+    },
+    "delivery_s": {
+      "n": 10,
+      "mean": 0.001837,
+      "median": 0.001664,
+      "p95": 0.002732,
+      "min": 0.001329,
+      "max": 0.002732
+    },
+    "financial_s": {
+      "n": 10,
+      "mean": 0.002862,
+      "median": 0.002763,
+      "p95": 0.003892,
+      "min": 0.001961,
+      "max": 0.003892
+    },
+    "total_end_to_end_s": {
+      "n": 10,
+      "mean": 0.064995,
+      "median": 0.064691,
+      "p95": 0.073767,
+      "min": 0.055326,
+      "max": 0.073767
+    },
+    "revision_rate": 0.0,
+    "error_rate": 0.0,
+    "jobs_per_hour_one_lane": 55389
+  },
+  "report-builder": {
+    "jobs_measured": 20,
+    "delivered": 10,
+    "worker_plan_produce_s": {
+      "n": 10,
+      "mean": 0.007056,
+      "median": 0.007109,
+      "p95": 0.007948,
+      "min": 0.006101,
+      "max": 0.007948
+    },
+    "checker_s": {
+      "n": 10,
+      "mean": 0.012612,
+      "median": 0.012462,
+      "p95": 0.01484,
+      "min": 0.011384,
+      "max": 0.01484
+    },
+    "delivery_s": {
+      "n": 10,
+      "mean": 0.001586,
+      "median": 0.001579,
+      "p95": 0.001954,
+      "min": 0.001323,
+      "max": 0.001954
+    },
+    "financial_s": {
+      "n": 10,
+      "mean": 0.00251,
+      "median": 0.002452,
+      "p95": 0.003223,
+      "min": 0.001739,
+      "max": 0.003223
+    },
+    "total_end_to_end_s": {
+      "n": 10,
+      "mean": 0.051668,
+      "median": 0.05052,
+      "p95": 0.059278,
+      "min": 0.042585,
+      "max": 0.059278
+    },
+    "revision_rate": 0.0,
+    "error_rate": 0.0,
+    "jobs_per_hour_one_lane": 69676
+  },
+  "spreadsheet-automation": {
+    "jobs_measured": 20,
+    "delivered": 20,
+    "worker_plan_produce_s": {
+      "n": 20,
+      "mean": 0.007557,
+      "median": 0.00757,
+      "p95": 0.011588,
+      "min": 0.003987,
+      "max": 0.012342
+    },
+    "checker_s": {
+      "n": 20,
+      "mean": 0.073743,
+      "median": 0.073712,
+      "p95": 0.09027,
+      "min": 0.054792,
+      "max": 0.101605
+    },
+    "delivery_s": {
+      "n": 20,
+      "mean": 0.001811,
+      "median": 0.001714,
+      "p95": 0.002483,
+      "min": 0.001329,
+      "max": 0.002562
+    },
+    "financial_s": {
+      "n": 20,
+      "mean": 0.002803,
+      "median": 0.002631,
+      "p95": 0.003634,
+      "min": 0.001951,
+      "max": 0.005052
+    },
+    "total_end_to_end_s": {
+      "n": 20,
+      "mean": 0.146915,
+      "median": 0.134723,
+      "p95": 0.178389,
+      "min": 0.102695,
+      "max": 0.412445
+    },
+    "revision_rate": 0.0,
+    "error_rate": 0.0,
+    "jobs_per_hour_one_lane": 24504
+  },
+  "_method": {
+    "clock": "time.monotonic for elapsed, UTC stamp per job for correlation",
+    "worker_plan_produce_s": "the cycle's own execution_wall_seconds minus measured checker time, because that field covers plan, work AND verification together",
+    "queue_wait_s": "0 by construction: this harness runs each cycle synchronously, so no queue exists to wait in. Reported as zero rather than omitted, and it is NOT evidence that a queued deployment would have none.",
+    "delivery_s": "local simulated delivery through the Action Gate. This is NOT marketplace submission latency.",
+    "total_end_to_end_s": "wall time around the whole run_business_cycle call"
+  }
+}

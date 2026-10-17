@@ -273,5 +273,59 @@
     "not_applied": 0,
     "sources_restored_clean": true,
     "note": "unchanged from the pre-repair run; neither repair loosened a pinned control"
+  },
+  "phase_7_timing": {
+    "status": "DONE this round",
+    "raw": "docs/evidence/deskpilot-per-job-stage-timings.csv (100 rows)",
+    "summary": "docs/evidence/deskpilot-timing-summary.json",
+    "report": "docs/deskpilot-five-skill-timing-certification.md",
+    "headline": "mean total end-to-end 99.3 ms, not the 0.048 s previously reported: that field covers plan+work+verification only and excludes discovery, qualification, pricing, contract, delivery, invoicing, payment and reconciliation",
+    "checker_dominates": {
+      "report-builder": "1.79x",
+      "csv-cleanup": "1.96x",
+      "document-processing": "2.58x",
+      "data-entry": "4.45x",
+      "spreadsheet-automation": "9.76x"
+    },
+    "accounting": {
+      "delivered_jobs_timed": 53,
+      "mean_total_end_to_end_ms": 99.3,
+      "top_level_stages_ms": {
+        "discovery": 1.61,
+        "qualification": 6.76,
+        "ranking": 0.52,
+        "selection": 1.26,
+        "contract": 4.98,
+        "worker_plan_produce": 8.15,
+        "checker": 43.5,
+        "delivery": 1.79,
+        "invoice": 0.84,
+        "paymenttate": 0.97,
+        "reconcile": 0.95
+      },
+      "sum_of_top_level_ms": 71.35,
+      "unattributed_ms": 27.95,
+      "unattributed_percent": 28.1,
+      "nested_inside_a_top_level_stage_ms": {
+        "verification_record": {
+          "ms": 16.45,
+          "inside": "checker"
+        },
+        "artifact_register": {
+          "ms": 2.07,
+          "inside": "worker_plan_produce"
+        }
+      },
+      "notes": [
+        "record_verification is called INSIDE verify_against_baseline, and register_artifact inside the execution window, so both are nested and are excluded from the top-level sum. Adding them would double-count.",
+        "38% of measured checker time is the audit write that records the verification, not the checking itself.",
+        "The unattributed remainder is orchestration between stages plus the pricing/governor path, which was not given its own seam."
+      ]
+    },
+    "limits": [
+      "queue_wait is 0 by construction (synchronous harness), not measured",
+      "delivery time is the local Action Gate path, NOT marketplace latency",
+      "Linux only"
+    ]
   }
 }
