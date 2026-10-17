@@ -298,5 +298,11 @@
       "reverified": "2026-10-17"
     },
     "findings_attributable_to_either": "none"
+  },
+  "follow_up_2026_10_17": {
+    "file": "docs/evidence/incident-recording-reachability.json",
+    "supersedes": "the three 'untested' seams and the autonomy figure in the 32759b0 report",
+    "headline": "8 genuine failures, 0 incidents recorded, 8 health panels reading HEALTHY; resilience.record_incident is unreachable from production",
+    "severity": "P0"
   }
 }

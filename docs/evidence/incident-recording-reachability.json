@@ -1,0 +1,74 @@
+{
+  "measurement": "Is the resilience subsystem reachable from production code?",
+  "date": "2026-10-17",
+  "baseline_commit": "32759b0",
+  "why_this_was_run": [
+    "The master report at 32759b0 listed three fault seams as UNTESTED because",
+    "they were never invoked during a clean business cycle. 'Never invoked",
+    "during a clean cycle' is not a finding -- a clean cycle has no incident to",
+    "record. This re-ran the question properly: are they invoked when something",
+    "actually fails?"
+  ],
+  "method": "Fresh Solvent per seam; real fault injected via tests_solvent/faults.py at a real authority method; then the resilience tables and the diagnostics panel were read.",
+  "production_reachability": {
+    "resilience.record_incident": {
+      "defined_at": "solvent/resilience.py:274",
+      "only_production_caller": "solvent/harness.py:1620, inside supervised()",
+      "callers_of_supervised_in_solvent": 0,
+      "callers_of_supervised_in_tests": 6,
+      "all_in": "tests_solvent/test_crash_matrix.py",
+      "verdict": "UNREACHABLE_FROM_PRODUCTION"
+    },
+    "skillslab.record_need": {
+      "defined_at": "solvent/skillslab.py:229",
+      "production_callers": 0,
+      "verdict": "UNREACHABLE_FROM_PRODUCTION"
+    },
+    "feedback.receive": {
+      "defined_at": "solvent/feedback.py:460",
+      "production_caller": "solvent/clientrelations.py:231, from ClientRelations.handle",
+      "verdict": "REACHABLE"
+    }
+  },
+  "production_entry_point": {
+    "cli_call_site": "solvent/cli.py:161",
+    "wrapped_in_supervised": false,
+    "records_an_incident_on_failure": false
+  },
+  "delivery_path_failures": {
+    "seams_failed_for_real": 7,
+    "seams": ["intake", "requirements", "artifact_registration", "verification",
+              "delivery_gate", "delivery", "ledger"],
+    "every_seam_raised": "InjectedFault",
+    "incidents_recorded": 0,
+    "owner_escalations": 0,
+    "resilience_frames_written": 0,
+    "diagnostics_panels_reading_HEALTHY": 7
+  },
+  "customer_service_path": {
+    "clean_cycle_seam_invocations": 1,
+    "classification_of_a_complaint": "DEFECT",
+    "under_fault_raises": "InjectedFault",
+    "client_message_silently_swallowed": false,
+    "incidents_recorded": 0,
+    "panel": "HEALTHY: no open incidents"
+  },
+  "the_panel_after_failure": {
+    "diagnostics.incidents": "HEALTHY: no open incidents",
+    "diagnostics.breakers": "HEALTHY: all closed",
+    "read_sites": ["solvent/diagnostics.py:320", "solvent/diagnostics.py:336"],
+    "write_sites_reachable_from_production": 0
+  },
+  "finding": {
+    "severity": "P0",
+    "statement": "Eight distinct genuine failures were driven through real authority methods. Zero were recorded as incidents, zero escalated to the owner, and the health panel read HEALTHY after every one. The incident recorder is wired only to a context manager that no production module calls.",
+    "shape": "A check whose success does not depend on the thing it is checking. The dashboard reads an incident table that the pipeline never writes to, so it reports health by construction rather than by observation.",
+    "corrects": "The 32759b0 report's section P and final question 9, which reported '8 of 8 fired incidents handled without owner intervention'. The incidents did not fire."
+  },
+  "what_still_works": [
+    "Every one of the 7 delivery-path faults was still detected and stopped safely; nothing was delivered wrongly. Containment is sound.",
+    "The customer-service fault raises rather than swallowing the client message.",
+    "The audit log does record the failures; it is the incident/escalation layer that is unreached."
+  ],
+  "not_done": "No production file was modified. This is a reachability measurement, not a fix."
+}

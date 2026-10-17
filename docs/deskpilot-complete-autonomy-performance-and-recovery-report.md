@@ -37,8 +37,19 @@ Against that, three things stop a real dollar, and none is a defect:
 3. **No customer flow exists.** One platform permits automated reading;
    none permits submission.
 
+One technical defect does belong on this list, found by re-testing a
+gap this report's first version left open: **the incident recorder is
+not wired into the pipeline**. Eight genuine failures produced zero
+incidents and a health panel reading `HEALTHY` (section O.2). The
+failures were all contained correctly — nothing shipped wrongly — but
+nothing recorded them, so an unattended owner would see a calm
+dashboard over a system that had just failed eight times. The fix is
+wiring, not design (V.0).
+
 The honest verdict: DeskPilot is a correct, well-verified job *factory*
-with no orders on the floor. Every remaining question is commercial.
+with no orders on the floor, and a working alarm bell that is not
+connected to anything. The remaining questions are one small wiring
+job and then commercial.
 
 ---
 
@@ -279,15 +290,65 @@ Faults injected at real authority methods via `tests_solvent/faults.py`
 | delivery | yes | detected, stopped safely |
 | ledger | yes | detected, stopped safely |
 | notification | yes (2 calls) | **delivery continued, failure audited** as `notify.failed` |
-| customer_service | **0 calls** | **untested — not passed** |
-| skills_lab | **0 calls** | **untested — not passed** |
-| incident_recording | **0 calls** | **untested — not passed** |
+| customer_service | 0 on this path | **reachable; tested separately** — see below |
+| skills_lab | **0 calls** | **unreachable from production** — no caller exists |
+| incident_recording | **0 calls** | **unreachable from production** — see P0 below |
 
 **Seven of seven delivery-path faults produced zero wrong deliveries.**
 
 The notification case is correct behaviour, not a defect: `harness.py`
 records `notify.failed` with `decision="CONTINUED"`, because losing a
 verified, delivered job to a notifier outage would be worse.
+
+### O.1 — The three seams, resolved (follow-up measurement)
+
+The first pass called these three **untested**, which was honest but
+incomplete: "never invoked during a clean cycle" is not a finding,
+because a clean cycle has no incident to record. Re-run properly —
+fault injected, then the resilience tables and health panel read:
+
+- **customer_service — reachable and now tested.** On the client-message
+  path (`ClientRelations.handle`) it is invoked exactly once and
+  classified a complaint as `DEFECT`. Under fault it **raises rather
+  than swallowing the client's message**, which is the correct
+  fail-closed behaviour.
+- **skills_lab — unreachable.** `skillslab.record_need` has **zero
+  production callers**. Nothing can ever tell the skills lab that a
+  capability gap was observed.
+- **incident_recording — unreachable, and this is a P0.** Covered next.
+
+### O.2 — P0: the incident recorder is not wired in
+
+`resilience.record_incident` has exactly one production caller:
+`harness.py:1620`, inside `supervised()`. **`supervised()` has zero
+call sites in `solvent/`** — its only six callers are in
+`tests_solvent/test_crash_matrix.py`. The production entry point,
+`cli.py:161`, calls `run_business_cycle` bare.
+
+Measured, fresh system per seam:
+
+| | |
+|---|---:|
+| genuine failures driven through real authority methods | **8** |
+| incidents recorded | **0** |
+| owner escalations raised | **0** |
+| resilience frames written | **0** |
+| health panels still reading `HEALTHY` | **8** |
+
+After each real failure `diagnostics.incidents()` returns
+**`HEALTHY: no open incidents`** and `diagnostics.breakers()` returns
+**`HEALTHY: all closed`**.
+
+This is the failure shape that has recurred throughout this
+engagement, in its purest form: **the dashboard reads an incident table
+that the pipeline never writes to, so it reports health by
+construction rather than by observation.** Unreadable reads as healthy.
+
+**What this does not undermine:** containment still works. All seven
+delivery-path faults were detected and stopped safely, nothing was
+delivered wrongly, and the audit log does record the failures. It is
+the incident, escalation and correlation layer that is unreached — the
+system stops correctly but cannot tell anyone it did.
 
 **A correction to my own first pass.** My harness initially scored the
 four ancillary seams as "delivered wrongly" and three of them as
@@ -303,10 +364,13 @@ failures — or as passes — would both have been false.
 | mean detection | **0.035 s** |
 | mean time to next successful cycle | **0.193 s** |
 | wrong deliveries under fault | **0** |
-| incidents needing owner intervention | 0 of 8 fired |
+| incidents **recorded** of 8 real failures | **0 — see O.2** |
 
-Caveat stated rather than buried: "recovery" here means **the next job
-succeeds**, not that the failed job was repaired. The failed job stops
+Two caveats stated rather than buried. First, **none of these failures
+was recorded as an incident or escalated to anyone** (section O.2):
+the system contains the failure correctly and then forgets it. Second,
+"recovery" here means **the next job succeeds**, not that the failed
+job was repaired. The failed job stops
 and is escalated; it does not resume. For a job already paid for that
 distinction matters, and it is a roadmap item.
 
@@ -383,10 +447,17 @@ Run with the repository's existing framework. No replacement harness.
   requires T3, evidence mandatory).
 - **First-run failures this phase: none.** No criteria were changed.
 
-**Untested areas, named rather than omitted:** three fault seams never
-invoked on the delivery path (section O); Windows behaviour entirely;
-real-marketplace extraction; the three ancillary subsystems' failure
-handling.
+**Untested areas, named rather than omitted:** Windows behaviour
+entirely; real-marketplace extraction. The three seams previously
+listed here have since been resolved (section O.1): one is reachable
+and now tested, two are unreachable from production and that is itself
+the finding.
+
+**A gap the green suite did not catch.** 4,744 tests pass, and none of
+them notices that the incident recorder is unreachable — because
+`test_crash_matrix.py` calls `supervised()` directly, supplying the
+very wiring production lacks. A test that constructs the integration
+it is meant to verify cannot detect its absence.
 
 ## T. Mutation testing
 
@@ -426,6 +497,30 @@ Six weaknesses, each with the sixteen fields requested, compressed to a
 readable form. **No expensive addition is recommended where existing
 code suffices**, and five of six need no new dependency.
 
+### V.0 — P0: The incident recorder is unreachable from production
+Problem: eight genuine failures produced zero incidents, zero
+escalations, and a health panel reading `HEALTHY` every time. Root
+cause: `record_incident` is only called from `supervised()`, and no
+production module calls `supervised()` — `cli.py:161` runs the cycle
+bare. Component: `resilience` ↔ `harness` ↔ `diagnostics`. Evidence:
+section O.2 and `docs/evidence/incident-recording-reachability.json`.
+Business impact: the owner cannot learn that anything went wrong from
+the system itself; repeated failures never correlate into a pattern,
+breakers never trip, and the dashboard actively reassures. For an
+unattended business this is the difference between autonomy and
+silence. Correction: wrap the cycle's stages in the existing
+`supervised()` at the composition layer — the mechanism is already
+written and tested, it is simply not called. Reuse: yes, entirely.
+New dependency: no. Complexity: small — this is wiring, not design.
+Operating cost: none. Performance: negligible. Profitability:
+indirect but large; an unnoticed failure mode is an unbilled or
+refunded job. Security: positive. Regression risk: medium — incidents
+will start firing, so notification volume must be checked against the
+owner's two-immediate-notifications rule before enabling. Verify: the
+measurement in O.2, re-run — it must show 8 of 8 recorded and the
+panel no longer `HEALTHY`. **Priority P0, and ahead of the disk
+policy**: a full disk at least announces itself.
+
 ### V.1 — P0: Unbounded disk growth
 Problem: artifacts and databases accumulate at ~0.45 MB/cycle with no
 retention policy. Root cause: nothing owns deletion. Component:
@@ -454,18 +549,23 @@ the jobs that matter most. Security: must not let resume skip
 verification. Regression risk: medium. Verify: inject a fault
 mid-cycle, resume, assert the checker still runs. **P1.**
 
-### V.3 — P1: Three ancillary failure paths untested
-Problem: `customer_service`, `skills_lab` and `incident_recording` are
-never invoked on the delivery path, so their failure behaviour is
-unknown. Root cause: the fixture cycle has no client message, no skill
-gap and no incident. Evidence: 0 calls measured (section O). Impact:
-`resilience.record_incident` failing silently would mean incidents go
-unrecorded — the component whose job is noticing, not noticed.
-Correction: scenarios that actually exercise each seam. Reuse: yes, the
-fault framework exists. New dependency: no. Complexity: small. Cost:
-none. Performance: none. Profitability: indirect. Security: moderate —
-this is the "unreadable must not read as healthy" class. Regression
-risk: none, tests only. Verify: the new scenarios themselves. **P1.**
+### V.3 — P2: The skills lab cannot be told anything
+Problem: `skillslab.record_need` has zero production callers, so an
+observed capability gap (a PDF arriving, say) is never recorded for
+the lab to act on. Root cause: the writing side was never wired, same
+class of omission as V.0 but far lower consequence. Component:
+`skillslab`. Evidence: section O.1. Impact: the system cannot
+accumulate evidence about which missing capability costs it the most
+work — the input that should drive the PDF decision in V.6. Correction:
+call it from the point where an unsupported input is refused. Reuse:
+yes, the recorder exists. New dependency: no. Complexity: small. Cost:
+none. Performance: none. Profitability: indirect — it would turn V.6
+from a judgment call into a measurement. Security: none. Regression
+risk: low. Verify: refuse an unsupported file, assert a need is
+recorded. **P2.**
+
+*(The customer-service seam, previously grouped here as untested, is
+reachable and now tested — section O.1. It behaves correctly.)*
 
 ### V.4 — P2: The estimate learning loop does not close
 Problem: `estimate_accuracy` is learned and never read by an estimator.
@@ -497,12 +597,17 @@ not on work. **P3 until a customer asks for it, then P1.**
 All figures are **estimates** except where marked measured.
 
 ### Plan A — minimum cost
-Scope: V.1 (disk retention) and V.3 (ancillary scenarios). Effort: ~1
-day. New monthly cost: **$0**. Throughput change: none. Recovery
-improvement: removes the highest-consequence failure mode (disk
-exhaustion taking out MT5). Profit change: none directly; protects
-everything. Risks: low. Prerequisites: none. **Confidence: high** —
-both use existing mechanisms.
+Scope: **V.0 (wire the incident recorder)**, V.1 (disk retention) and
+V.3 (skills-lab input). Effort: ~1–2 days. New monthly cost: **$0**.
+Throughput change: none. Recovery improvement: large and
+disproportionate to the effort — failures become visible, breakers
+can trip, and the disk ceiling removes the one failure mode that
+could take MT5 down with it. Profit change: none directly; protects
+everything. Risks: low, with one to check — enabling incidents means
+notifications start firing, which must be reconciled with the owner's
+two-immediate-notification rule before it goes live. Prerequisites:
+none. **Confidence: high** — all three reuse mechanisms already
+written and tested.
 
 ### Plan B — balanced
 Scope: Plan A plus V.2 (job resume) and V.4 (estimate loop), plus the
@@ -570,10 +675,14 @@ sold, no payment received, no customer exists. The hourly profit model
 in section N is arithmetic over assumptions, and I have said so
 wherever it appears.
 
-**What should happen next:** the P0 disk policy, then the owner's
-payment and configuration decisions, then one real job. The engineering
-is further ahead than the business, and more engineering will not close
-that gap.
+**What should happen next:** wire the incident recorder, then the
+disk policy — together Plan A, one to two days, no new cost — and
+then the owner's payment and configuration decisions, then one real
+job. The engineering is further ahead than the business, and more
+engineering will not close that gap. But the one engineering item
+that genuinely must land first is V.0: an autonomous business that
+cannot report its own failures is not yet autonomous, however well it
+contains them.
 
 ---
 
@@ -600,19 +709,30 @@ that gap.
 7. **Profitability** — Contribution margin near 100% per job ($0 model
    cost measured, ~$0.0001 compute). **Actual hourly profit: $0.00**,
    and will remain so until a rail and a customer exist.
-8. **Mishap recovery** — 7 of 7 delivery-path faults detected in
-   0.035 s mean and stopped safely with zero wrong deliveries; next
-   cycle succeeds in 0.193 s mean. The failed job stops rather than
-   resumes (V.2).
-9. **Autonomy** — **8 of 8 fired incidents** were handled without
-   owner intervention. Stated honestly, that is autonomy over
-   *technical* incidents; every *commercial* decision still requires
-   the owner by design, and three seams were never exercised so are
-   excluded from the count rather than assumed good.
-10. **Improvements** — In order: P0 disk retention (an MT5 outage
-    risk), P1 job resume, P1 the three untested failure paths, P2 the
-    estimate learning loop. Explicitly **not** scaling: capacity is
-    already ~300× unused.
+8. **Mishap recovery** — Containment is genuinely good: 7 of 7
+   delivery-path faults detected in 0.035 s mean, stopped safely,
+   zero wrong deliveries, next cycle succeeding in 0.193 s mean, and
+   a client message that cannot be filed raises rather than
+   vanishing. Reporting is not: **no failure becomes a recorded
+   incident** (V.0), and the failed job stops rather than resumes
+   (V.2). DeskPilot fails safely and silently; the silence is the
+   defect.
+9. **Autonomy** — **I withdraw the figure I first gave here.** I
+   originally reported "8 of 8 incidents handled without owner
+   intervention". The follow-up measurement shows **the incidents
+   never fired at all**: 8 genuine failures, 0 recorded, 0 escalated,
+   panel `HEALTHY` throughout (section O.2). The accurate statement
+   is that DeskPilot **contained** 8 of 8 failures correctly — nothing
+   was delivered wrongly — but **resolved** none of them, because
+   nothing recorded that they happened. Autonomy over technical
+   incidents cannot be scored until V.0 is wired; every commercial
+   decision requires the owner by design.
+10. **Improvements** — In order: **P0 wire the incident recorder**
+    (V.0 — small, reuses code already written and tested, and until
+    it is done every other reliability number is unobservable in
+    production), P0 disk retention (an MT5 outage risk), P1 job
+    resume, P2 the skills-lab input, P2 the estimate learning loop.
+    Explicitly **not** scaling: capacity is already ~300× unused.
 
 ---
 
