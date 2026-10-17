@@ -1,0 +1,302 @@
+{
+  "generated": "2026-10-17",
+  "scope": "Audit, benchmark and simulation only. No production file was modified, no dependency installed, no browser automation run against a live site, no bid submitted, no contract accepted, no client contacted, no money moved, no storefront published, MT5 untouched.",
+  "environment": {
+    "os": "Linux container",
+    "python": "3.11.17",
+    "note": "NOT the Windows VPS; MT5 coexistence is therefore bounded here, not certified"
+  },
+  "phase17_end_to_end": {
+    "existing_suites_run": {
+      "files": [
+        "test_business_cycle",
+        "test_business_simulations",
+        "test_business_matrix",
+        "test_first_customer_workflow",
+        "test_lifecycle_matrix",
+        "test_billing_through_the_cycle"
+      ],
+      "passed": 148,
+      "subtests": 391
+    },
+    "load_harness": {
+      "cycles_run": 10,
+      "delivered": 10,
+      "failed": 0,
+      "wall_seconds": 7.08,
+      "seconds_per_cycle_mean": 0.049,
+      "seconds_per_cycle_min": 0.044,
+      "seconds_per_cycle_max": 0.062,
+      "cycles_per_hour_single_lane": 73469,
+      "peak_rss_mb": 33.6,
+      "rss_growth_mb": 7.0,
+      "failures": []
+    },
+    "throughput_at_realistic_sizes": [
+      {
+        "rows": 1000,
+        "source_kb": 51.4,
+        "execute_s": 0.066,
+        "verify_s": 0.059,
+        "total_s": 0.125,
+        "verify_over_execute": 0.9,
+        "checks_failed": [],
+        "jobs_per_hour_one_lane": 28718,
+        "peak_rss_mb": 20.3
+      },
+      {
+        "rows": 5000,
+        "source_kb": 256.9,
+        "execute_s": 0.283,
+        "verify_s": 0.303,
+        "total_s": 0.586,
+        "verify_over_execute": 1.07,
+        "checks_failed": [],
+        "jobs_per_hour_one_lane": 6148,
+        "peak_rss_mb": 30.1
+      },
+      {
+        "rows": 20000,
+        "source_kb": 1037.9,
+        "execute_s": 1.207,
+        "verify_s": 1.323,
+        "total_s": 2.529,
+        "verify_over_execute": 1.1,
+        "checks_failed": [],
+        "jobs_per_hour_one_lane": 1423,
+        "peak_rss_mb": 65.0
+      },
+      {
+        "rows": 50000,
+        "source_kb": 2607.9,
+        "execute_s": 2.875,
+        "verify_s": 4.289,
+        "total_s": 7.164,
+        "verify_over_execute": 1.49,
+        "checks_failed": [],
+        "jobs_per_hour_one_lane": 503,
+        "peak_rss_mb": 130.3
+      }
+    ]
+  },
+  "phase18_adversarial_and_mutation": {
+    "full_suite": {
+      "passed": 4700,
+      "skipped_in_main_run": 44,
+      "skip_cause": "egress guard blocks subprocess launch in this interpreter",
+      "skipped_suite_rerun_alone": {
+        "file": "test_installer_packaged_entrypoint.py",
+        "passed": 44,
+        "failed": 0
+      },
+      "genuinely_untested_after_rerun": 0,
+      "distinct_tests_passing": 4744
+    },
+    "mutation": {
+      "mutants": 155,
+      "killed": 155,
+      "survived": 0,
+      "not_applied": 0,
+      "sources_restored_clean": true
+    },
+    "sealed_exams": {
+      "capacity_exam": "seal intact, re-sat, passed",
+      "reading_exam": "56/56, first sitting preserved in the report that set it"
+    }
+  },
+  "phase19_resources": {
+    "load_levels": [
+      {
+        "level": "idle",
+        "cycles": 0,
+        "delivered": 0,
+        "incidents": 0,
+        "wall_s": 0.0,
+        "cpu_s": 0.0,
+        "cpu_per_cycle_s": 0.0,
+        "cores_busy": 2.5,
+        "peak_rss_mb": 26.8,
+        "disk_mb_cumulative": 0.0
+      },
+      {
+        "level": "moderate",
+        "cycles": 5,
+        "delivered": 5,
+        "incidents": 0,
+        "wall_s": 6.37,
+        "cpu_s": 5.87,
+        "cpu_per_cycle_s": 1.175,
+        "cores_busy": 0.92,
+        "peak_rss_mb": 33.8,
+        "disk_mb_cumulative": 2.3
+      },
+      {
+        "level": "full",
+        "cycles": 20,
+        "delivered": 20,
+        "incidents": 0,
+        "wall_s": 4.34,
+        "cpu_s": 2.32,
+        "cpu_per_cycle_s": 0.116,
+        "cores_busy": 0.54,
+        "peak_rss_mb": 33.8,
+        "disk_mb_cumulative": 11.3
+      },
+      {
+        "level": "full_with_mishaps",
+        "cycles": 20,
+        "delivered": 15,
+        "incidents": 5,
+        "wall_s": 4.3,
+        "cpu_s": 2.31,
+        "cpu_per_cycle_s": 0.115,
+        "cores_busy": 0.54,
+        "peak_rss_mb": 33.9,
+        "disk_mb_cumulative": 20.3
+      },
+      {
+        "level": "multi_crash_recovery",
+        "cycles": 15,
+        "delivered": 10,
+        "incidents": 10,
+        "wall_s": 2.88,
+        "cpu_s": 1.58,
+        "cpu_per_cycle_s": 0.106,
+        "cores_busy": 0.55,
+        "peak_rss_mb": 33.9,
+        "disk_mb_cumulative": 27.0
+      }
+    ],
+    "ceilings_in_code": {
+      "CERTIFIED_SKILL_COUNT": 5,
+      "JOBS_PER_AGENT_CEILING": 4,
+      "GLOBAL_COMMITTED_CEILING": 20,
+      "shipped_default_max_concurrent_jobs": 3,
+      "shipped_default_max_committed_jobs": 0,
+      "shipped_default_max_open_bids": 0
+    },
+    "browser_envelope_from_prior_audit_mb": {
+      "playwright_mcp_tree": 740.4,
+      "browser_use_tree": 1187.9
+    }
+  },
+  "mishaps_and_recovery": {
+    "seams_available": 11,
+    "seams_actually_invoked_in_the_cycle": 8,
+    "seams_not_invoked_so_untested": [
+      "customer_service",
+      "skills_lab",
+      "incident_recording"
+    ],
+    "delivery_path_faults": {
+      "injected": 7,
+      "detected": 7,
+      "stopped_safely": 7,
+      "wrong_deliveries": 0
+    },
+    "notification_fault": {
+      "delivery_continued": true,
+      "recorded_in_audit": true,
+      "event": "notify.failed",
+      "design_intent": "a failure to notify must not lose the job"
+    },
+    "raw": {
+      "incidents": 11,
+      "detected": 7,
+      "stopped_safely": 7,
+      "delivered_wrongly": 4,
+      "recovered_without_intervention": 11,
+      "autonomy_rate": 1.0,
+      "mean_detect_seconds": 0.035,
+      "mean_recovery_seconds": 0.193
+    },
+    "audited_check": [
+      {
+        "stage": "customer_service",
+        "delivered": true,
+        "audit_records_the_failure": false,
+        "events": [],
+        "audit_entries_total": 51
+      },
+      {
+        "stage": "skills_lab",
+        "delivered": true,
+        "audit_records_the_failure": false,
+        "events": [],
+        "audit_entries_total": 51
+      },
+      {
+        "stage": "notification",
+        "delivered": true,
+        "audit_records_the_failure": true,
+        "events": [
+          "notify.failed"
+        ],
+        "audit_entries_total": 51
+      },
+      {
+        "stage": "incident_recording",
+        "delivered": true,
+        "audit_records_the_failure": false,
+        "events": [],
+        "audit_entries_total": 51
+      }
+    ],
+    "seam_call_counts": {
+      "customer_service": 0,
+      "skills_lab": 0,
+      "notification": 2,
+      "incident_recording": 0
+    }
+  },
+  "brain": {
+    "inference_routes": {
+      "LOCAL": "UNCONFIGURED",
+      "CLOUD": "UNCONFIGURED",
+      "delivery_path_uses_a_model": false
+    },
+    "operational_decision_surface": "qualification._client_factor only",
+    "measured_effect": {
+      "client_paid_on_time": {
+        "without_memory": 1.0,
+        "with_memory": 1.2
+      },
+      "client_disputed": {
+        "without_memory": 1.0,
+        "with_memory": 0.4
+      },
+      "client_unknown": {
+        "without_memory": 1.0,
+        "with_memory": 1.0
+      },
+      "decisions_changed": "2 of 3",
+      "ranking_spread_introduced": "3x (1.2 vs 0.4)"
+    },
+    "learned_but_never_read_in_a_decision": [
+      "estimate_accuracy (display only, via metrics)"
+    ],
+    "write_guards": [
+      "T0 self-report refused",
+      "economic kinds require T3",
+      "evidence_ref mandatory"
+    ]
+  },
+  "advisory_phase22": {
+    "K-LEAN": {
+      "repo": "calinfaja/K-LEAN",
+      "commit": "79f3557",
+      "executed": false,
+      "reason": "archived; requires a LiteLLM proxy at localhost:4000 federating four paid providers; no credentials exist here",
+      "reverified": "2026-10-17"
+    },
+    "iFixAi": {
+      "repo": "ifixai-ai/iFixAi",
+      "commit": "1559983",
+      "executed_natively": true,
+      "against_deskpilot": false,
+      "reason": "audits a live AI assistant endpoint; DeskPilot has none, because the five skills are deterministic and inference is unconfigured",
+      "reverified": "2026-10-17"
+    },
+    "findings_attributable_to_either": "none"
+  }
+}
