@@ -1,0 +1,363 @@
+{
+  "measurement": "P0-A supervision wiring and P0-B storage: before and after",
+  "date": "2026-10-17",
+  "baseline_commit": "84f6fc4",
+  "P0_A_before": {
+    "source": "docs/evidence/incident-recording-reachability.json",
+    "genuine_failures": 8,
+    "incidents_recorded": 0,
+    "owner_escalations": 0,
+    "panels_reading_HEALTHY": 8,
+    "cause": "supervised() had zero callers in solvent/; cli.py:161 ran the cycle bare"
+  },
+  "P0_A_after": {
+    "failures": 7,
+    "all_failed_for_real": true,
+    "wrong_deliveries": 0,
+    "incidents_recorded": 7,
+    "panels_healthy": 0,
+    "audit_chain_intact": true,
+    "statuses": [
+      "DETECTED"
+    ],
+    "mean_detection_s": 0.0424,
+    "detail": [
+      {
+        "seam": "intake",
+        "1_failure_occurred": true,
+        "2_contained_no_wrong_delivery": true,
+        "3_incident_recorded": 1,
+        "4_health_changed": "DEGRADED",
+        "5_incident_status": "DETECTED",
+        "6_severity": "DEGRADED",
+        "7_owner_escalated": false,
+        "8_notifications": [
+          {
+            "severity": "ACTION_REQUIRED",
+            "dedupe": "incident:c110ed35203f50bc"
+          }
+        ],
+        "9_flight_frames": 2,
+        "10_audit_chain_ok": true,
+        "detection_s": 0.0089
+      },
+      {
+        "seam": "requirements",
+        "1_failure_occurred": true,
+        "2_contained_no_wrong_delivery": true,
+        "3_incident_recorded": 1,
+        "4_health_changed": "DEGRADED",
+        "5_incident_status": "DETECTED",
+        "6_severity": "DEGRADED",
+        "7_owner_escalated": false,
+        "8_notifications": [
+          {
+            "severity": "ACTION_REQUIRED",
+            "dedupe": "incident:194dc8c4dfb30fa2"
+          }
+        ],
+        "9_flight_frames": 2,
+        "10_audit_chain_ok": true,
+        "detection_s": 0.019
+      },
+      {
+        "seam": "artifact_registration",
+        "1_failure_occurred": true,
+        "2_contained_no_wrong_delivery": true,
+        "3_incident_recorded": 1,
+        "4_health_changed": "DEGRADED",
+        "5_incident_status": "DETECTED",
+        "6_severity": "DEGRADED",
+        "7_owner_escalated": false,
+        "8_notifications": [
+          {
+            "severity": "INFO",
+            "dedupe": "business.job_obtained:job_a3a7d7d215134882"
+          },
+          {
+            "severity": "ACTION_REQUIRED",
+            "dedupe": "incident:c87a8b18b5c3fe5f"
+          }
+        ],
+        "9_flight_frames": 2,
+        "10_audit_chain_ok": true,
+        "detection_s": 0.0269
+      },
+      {
+        "seam": "verification",
+        "1_failure_occurred": true,
+        "2_contained_no_wrong_delivery": true,
+        "3_incident_recorded": 1,
+        "4_health_changed": "DEGRADED",
+        "5_incident_status": "DETECTED",
+        "6_severity": "DEGRADED",
+        "7_owner_escalated": false,
+        "8_notifications": [
+          {
+            "severity": "INFO",
+            "dedupe": "business.job_obtained:job_ff74f2c7413b4832"
+          },
+          {
+            "severity": "ACTION_REQUIRED",
+            "dedupe": "incident:fb669b4f3411fa15"
+          }
+        ],
+        "9_flight_frames": 2,
+        "10_audit_chain_ok": true,
+        "detection_s": 0.0268
+      },
+      {
+        "seam": "delivery_gate",
+        "1_failure_occurred": true,
+        "2_contained_no_wrong_delivery": true,
+        "3_incident_recorded": 1,
+        "4_health_changed": "DEGRADED",
+        "5_incident_status": "DETECTED",
+        "6_severity": "DEGRADED",
+        "7_owner_escalated": false,
+        "8_notifications": [
+          {
+            "severity": "INFO",
+            "dedupe": "business.job_obtained:job_3455ca86ffd64b06"
+          },
+          {
+            "severity": "ACTION_REQUIRED",
+            "dedupe": "incident:23c6b4ad871de972"
+          }
+        ],
+        "9_flight_frames": 2,
+        "10_audit_chain_ok": true,
+        "detection_s": 0.0973
+      },
+      {
+        "seam": "delivery",
+        "1_failure_occurred": true,
+        "2_contained_no_wrong_delivery": true,
+        "3_incident_recorded": 1,
+        "4_health_changed": "DEGRADED",
+        "5_incident_status": "DETECTED",
+        "6_severity": "DEGRADED",
+        "7_owner_escalated": false,
+        "8_notifications": [
+          {
+            "severity": "INFO",
+            "dedupe": "business.job_obtained:job_bd414b944c854f41"
+          },
+          {
+            "severity": "ACTION_REQUIRED",
+            "dedupe": "incident:a7a166771d0c275e"
+          }
+        ],
+        "9_flight_frames": 2,
+        "10_audit_chain_ok": true,
+        "detection_s": 0.0479
+      },
+      {
+        "seam": "ledger",
+        "1_failure_occurred": true,
+        "2_contained_no_wrong_delivery": true,
+        "3_incident_recorded": 1,
+        "4_health_changed": "DEGRADED",
+        "5_incident_status": "DETECTED",
+        "6_severity": "DEGRADED",
+        "7_owner_escalated": false,
+        "8_notifications": [
+          {
+            "severity": "INFO",
+            "dedupe": "business.job_obtained:job_aac05929eb8d4c58"
+          },
+          {
+            "severity": "ACTION_REQUIRED",
+            "dedupe": "incident:7f94fa7dfd0746a2"
+          }
+        ],
+        "9_flight_frames": 2,
+        "10_audit_chain_ok": true,
+        "detection_s": 0.0699
+      }
+    ]
+  },
+  "P0_A_compound_failures": {
+    "incident_store_write_fails": {
+      "exception_reaching_caller": "InjectedFault",
+      "original_error_preserved": true,
+      "note": "the cycle must still fail loudly; a recorder that cannot write must not become the reason nobody hears about the failure"
+    },
+    "notification_sink_fails": {
+      "exception_reaching_caller": "InjectedFault",
+      "incident_still_recorded": 1,
+      "panel": "DEGRADED"
+    },
+    "worker_and_checker_both_fail": {
+      "exception_reaching_caller": "InjectedFault",
+      "incidents": 1,
+      "panel": "DEGRADED",
+      "audit_chain_ok": true
+    },
+    "repeated_transient_failure": {
+      "cycles_attempted": 6,
+      "failures": 1,
+      "incidents_open": 1,
+      "no_infinite_retry": true,
+      "note": "supervision records and re-raises; it never retries, so a repeated failure cannot become a retry storm"
+    },
+    "customer_service_fault": {
+      "exception_reaching_caller": "InjectedFault",
+      "message_silently_swallowed": false,
+      "incidents": 0,
+      "note": "not on the supervised cycle path; it raises rather than losing the client's message, but records no incident"
+    }
+  },
+  "P0_A_recorder_outage": {
+    "exception_reaching_caller": "InjectedFault",
+    "exception_chain": [
+      "InjectedFault",
+      "RecorderDown"
+    ],
+    "original_cycle_fault_visible": true,
+    "incidents_recorded": 0,
+    "panel_after_a_failure_nobody_could_record": "FAILED: the incident recorder could not be written: business-cycle failed in harness and the incident could not be recorded: RecorderDown. Nothing here can be trusted to be empty"
+  },
+  "P0_B_premise_correction": {
+    "claimed": "~0.45 MB per cycle, unbounded, ~3 GB/year at 20 jobs/day",
+    "what_that_actually_measured": "the benchmark harness built a FRESH Solvent and a fresh ~462 KB SQLite database for every cycle. 11.3 MB over 20 cycles is 20 databases, not accumulation.",
+    "measured_in_production_shape": {
+      "cycles_run": 60,
+      "cycles_delivered": 3,
+      "marks": {
+        "1": {
+          "total_bytes": 2558894,
+          "file_count": 6,
+          "by_bucket": {
+            "other": 104,
+            "invoices": 378,
+            "deliverables": 76,
+            "database": 2558336
+          }
+        },
+        "10": {
+          "total_bytes": 4645658,
+          "file_count": 8,
+          "by_bucket": {
+            "other": 104,
+            "invoices": 1134,
+            "deliverables": 76,
+            "database": 4644344
+          }
+        },
+        "20": {
+          "total_bytes": 4645658,
+          "file_count": 8,
+          "by_bucket": {
+            "other": 104,
+            "invoices": 1134,
+            "deliverables": 76,
+            "database": 4644344
+          }
+        },
+        "40": {
+          "total_bytes": 4780826,
+          "file_count": 8,
+          "by_bucket": {
+            "other": 104,
+            "invoices": 1134,
+            "deliverables": 76,
+            "database": 4779512
+          }
+        },
+        "60": {
+          "total_bytes": 4883226,
+          "file_count": 8,
+          "by_bucket": {
+            "other": 104,
+            "invoices": 1134,
+            "deliverables": 76,
+            "database": 4881912
+          }
+        }
+      },
+      "growth_per_cycle_bytes": 4751,
+      "growth_per_cycle_MB": 0.0048,
+      "files_per_cycle": 0.0
+    },
+    "endurance_500_cycles": {
+      "cycles": 500,
+      "delivered": 3,
+      "wall_s": 21.5,
+      "bytes_at": {
+        "1": 2575371,
+        "10": 4641529,
+        "60": 4879121,
+        "100": 5092113,
+        "250": 5956441,
+        "500": 7168857
+      },
+      "growth_per_cycle_bytes_60_to_500": 5204,
+      "growth_per_cycle_kb": 5.08,
+      "projection_1000_jobs_mb": 5.2,
+      "projection_20_jobs_per_day_1_year_mb": 38.0,
+      "note": "capacity ceils deliveries at max_concurrent_jobs; later cycles stop at qualify and still write discovery and audit rows, which is the production shape of a busy shop that is already full"
+    },
+    "verdict": "Real growth is ~5 KB/cycle, essentially all of it the append-only SQLite tables, projecting ~38 MB/year at 20 jobs/day rather than ~3 GB. The disk-exhaustion P0 as stated was an artefact of how it was measured."
+  },
+  "P0_B_what_is_actually_unbounded": {
+    "processed_owner_intents": "consume_owner_intents moves each handled intent into applied/ or refused/ and nothing ever removes it. Unbounded, and genuinely safe to prune because the authoritative record is the append-only owner.intent_processed audit event.",
+    "database": "audit_log, ledger_entries, payment_events, artifacts and the incident timeline are append-only by SQLite trigger: DELETE is refused by the engine. This is deliberate and must not be defeated, so the protection against a full disk is refusing work, not deleting records."
+  },
+  "performance": {
+    "notifications": {
+      "failures_driven": 5,
+      "identical_failures": 3,
+      "incident_notifications_sent": 5,
+      "distinct_conversations": 3,
+      "severities": [
+        "ACTION_REQUIRED",
+        "INFO"
+      ],
+      "note": "three identical failures share one dedupe key; distinct failures get their own"
+    },
+    "performance_full_load_20_cycles": {
+      "delivered": 20,
+      "wall_s": 3.64,
+      "cpu_s": 2.08,
+      "cpu_per_cycle_s": 0.104,
+      "cores_busy": 0.57,
+      "peak_rss_mb": 33.8,
+      "baseline_pre_fix": {
+        "cpu_per_cycle_s": 0.116,
+        "cores_busy": 0.54,
+        "peak_rss_mb": 33.8,
+        "delivered": 20
+      }
+    }
+  },
+  "limits": [
+    "All measurements are Linux. The VPS is Windows. MT5 coexistence is NOT certified.",
+    "No recovery of a failed job is attempted or claimed: 7 of 7 failures are DETECTED and contained, 0 are RECOVERED.",
+    "The customer-service path is not on the supervised cycle, so a fault there still records no incident."
+  ],
+  "regression": {
+    "baseline_before_changes": {
+      "passed": 4700,
+      "skipped": 44,
+      "subtests": 10071,
+      "seconds": 480
+    },
+    "after_changes": {
+      "passed": 4722,
+      "skipped": 44,
+      "subtests": 10085,
+      "seconds": 432
+    },
+    "delta": "exactly the 22 new tests and 14 new subtests; no regressions",
+    "skips": "the pre-existing egress-guard subprocess suite; not counted as passed, and they pass when run alone"
+  },
+  "mutation": {
+    "mutants": 155,
+    "killed": 155,
+    "survived": 0,
+    "not_applied": 0,
+    "sources_restored_clean": true,
+    "note": "unchanged from the pre-change run"
+  }
+}

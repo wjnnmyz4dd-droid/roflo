@@ -75,6 +75,21 @@ REPORT_STALE_SECONDS = 15 * 60
 DISK_WARN_PERCENT = 85
 DISK_FAIL_PERCENT = 95
 
+#: Absolute free-space floors, in bytes.
+#:
+#: A percentage on its own is the wrong instrument for a shared machine.
+#: Ten percent of a 2 TB disk is 200 GB and perfectly fine; ten percent of
+#: a 64 GB VPS is 6 GB and nearly out. The owner's VPS also runs MetaTrader
+#: 5, which needs room to write its own history and logs and is not
+#: DeskPilot's to crowd out, so the floor that matters is stated in bytes
+#: the other program can actually use rather than as a share of a total
+#: DeskPilot does not own.
+#:
+#: Whichever of the two readings is worse decides, because a disk can be
+#: dangerously full at 70% and comfortable at 90% depending on its size.
+DISK_WARN_FREE_BYTES = 5 * 1024 ** 3
+DISK_FAIL_FREE_BYTES = 2 * 1024 ** 3
+
 
 @dataclass(frozen=True, slots=True)
 class Finding:
@@ -315,8 +330,43 @@ class Diagnostics:
         return Finding("Customer service", HEALTHY,
                        "nothing is waiting on a person", OBSERVE, "clients")
 
+    def _incident_recording_broken(self) -> str:
+        """Why the recorder is untrustworthy, or '' if its last write worked.
+
+        Decided by the *most recent* of the two events rather than by whether
+        a failure ever happened, so a store that comes back works again
+        instead of latching the panel red for good.
+        """
+        last_failed = last_ok = -1
+        reason = ""
+        for event in self._s.audit.events():
+            name = event.get("event")
+            if name == "incident.record_failed":
+                last_failed = max(last_failed, int(event.get("seq") or 0))
+                reason = str(event.get("why") or "")[:160]
+            elif name == "resilience.incident":
+                last_ok = max(last_ok, int(event.get("seq") or 0))
+        return reason if last_failed > last_ok else ""
+
     @_checked("Incidents", "resilience", OWNER_ESCALATION)
     def incidents(self) -> Finding:
+        """Open incidents, and whether the recorder could be written at all.
+
+        An empty incident table has two possible meanings — nothing went
+        wrong, or nothing could be written down — and they must never render
+        the same. So the recorder's own last outcome is checked first: while
+        the most recent attempt to record an incident failed, this reports a
+        monitoring failure rather than health, however empty the table looks.
+        """
+        unrecorded = self._incident_recording_broken()
+        if unrecorded:
+            return Finding(
+                "Incidents", FAILED,
+                f"the incident recorder could not be written: {unrecorded}. "
+                "Nothing here can be trusted to be empty",
+                OWNER_ESCALATION, "resilience",
+                owner_action="check the incident store before relying on this "
+                             "panel")
         open_ = self._s.resilience.incidents(open_only=True)
         owner = [i for i in open_ if i["status"] == res.OWNER_ACTION_REQUIRED]
         if owner:
@@ -483,19 +533,24 @@ class Diagnostics:
 
     @_checked("Disk", "system", OWNER_ESCALATION)
     def disk(self) -> Finding:
+        """Two readings, and the worse of them decides.
+
+        Percentage answers "how full is this disk"; absolute free space
+        answers "is there room for MetaTrader 5 to keep working", which is
+        the question that matters on a machine DeskPilot shares. They
+        disagree often enough that taking only one is how a nearly-full
+        small disk reads as healthy.
+        """
         usage = shutil.disk_usage(self._root())
         percent = round(100 * usage.used / usage.total, 1)
         free_gb = round(usage.free / (1024 ** 3), 2)
-        if percent >= DISK_FAIL_PERCENT:
-            return Finding("Disk", FAILED,
-                           f"{percent}% used, {free_gb} GB free",
-                           BLOCK_WORKFLOW, "system",
+        detail = f"{percent}% used, {free_gb} GB free"
+        if percent >= DISK_FAIL_PERCENT or usage.free < DISK_FAIL_FREE_BYTES:
+            return Finding("Disk", FAILED, detail, BLOCK_WORKFLOW, "system",
                            owner_action="free space before accepting work")
-        if percent >= DISK_WARN_PERCENT:
-            return Finding("Disk", WARNING, f"{percent}% used, {free_gb} GB free",
-                           OWNER_ESCALATION, "system")
-        return Finding("Disk", HEALTHY, f"{percent}% used, {free_gb} GB free",
-                       OBSERVE, "system")
+        if percent >= DISK_WARN_PERCENT or usage.free < DISK_WARN_FREE_BYTES:
+            return Finding("Disk", WARNING, detail, OWNER_ESCALATION, "system")
+        return Finding("Disk", HEALTHY, detail, OBSERVE, "system")
 
     @_checked("Backups", "storage", OWNER_ESCALATION)
     def backups(self) -> Finding:

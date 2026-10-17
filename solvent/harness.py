@@ -1010,6 +1010,59 @@ def run_business_cycle(
         simulate_payment: bool = False,
         payment_rail: str = "fixture",
         external_ref: str = "") -> BusinessCycle:
+    """The supervised entry point. **Every production caller comes here.**
+
+    This exists because supervision that only the tests wire up is not
+    supervision. :func:`supervised` was written to record an incident, update
+    the flight trace and tell the owner when a step fails, and for a long time
+    nothing in ``solvent/`` called it: the CLI ran the cycle bare, so eight
+    genuine failures produced eight contained stops, zero incidents, and a
+    health panel that still read HEALTHY. The machinery was right and simply
+    unreached.
+
+    So the wrapper lives here rather than at each call site. A caller cannot
+    opt out of being supervised by forgetting to, and there is exactly one
+    place where the decision is made. The job id is passed as a callable
+    because a cycle is supervised from before it has one.
+
+    Supervision records and re-raises. It never decides anything, never
+    retries, and never converts a stop into a success, so nothing about the
+    Action Gate, the Governor or the verification tiers changes by being
+    watched.
+    """
+    cycle = BusinessCycle()
+    with supervised(s, component="harness", operation="business-cycle",
+                    job_id=lambda: cycle.job_id,
+                    checkpoint="business-cycle"):
+        return _run_business_cycle(
+            s, cycle, source_name=source_name, source_file=source_file,
+            workdir=workdir, capability=capability,
+            owner_identity=owner_identity, posting=posting,
+            agreed_requirements=agreed_requirements,
+            billing_basis=billing_basis,
+            independent_reviewer=independent_reviewer,
+            work_standard=work_standard, work_units=work_units,
+            agreed_hourly_cents=agreed_hourly_cents,
+            owner_accepts_quote=owner_accepts_quote,
+            simulate_payment=simulate_payment, payment_rail=payment_rail,
+            external_ref=external_ref)
+
+
+def _run_business_cycle(
+        s: "Solvent", cycle: BusinessCycle, *, source_name: str,
+        source_file: str, workdir: str,
+        capability: str = "csv-cleanup", owner_identity: str = OWNER,
+        posting: dict | None = None,
+        agreed_requirements: list | None = None,
+        billing_basis: "quoting.BillingBasis | None" = None,
+        independent_reviewer=None,
+        work_standard: "quoting.WorkStandard | None" = None,
+        work_units: int = 0,
+        agreed_hourly_cents: Cents = 0,
+        owner_accepts_quote: bool = False,
+        simulate_payment: bool = False,
+        payment_rail: str = "fixture",
+        external_ref: str = "") -> BusinessCycle:
     """Take one opportunity from a registered source through to profit.
 
     **Owner decisions are never supplied by this function.** Two of them bound
@@ -1046,8 +1099,11 @@ def run_business_cycle(
     Returns a :class:`BusinessCycle` describing how far it got. A cycle that
     stops is not an error: a job the Governor finds unprofitable, or one whose
     owner has not answered, has reached its correct outcome for now.
+
+    Called only by :func:`run_business_cycle`, which supervises it and owns
+    the ``cycle`` passed in — the supervisor needs the handle before the body
+    starts so it can name the job if the body never returns.
     """
-    cycle = BusinessCycle()
 
     def stop(stage: str, why: str) -> BusinessCycle:
         cycle.stopped_at = stage
@@ -1580,10 +1636,28 @@ def intent_subject(intent_id: str) -> str:
     return f"intent:{intent_id}"
 
 
+def _late(value) -> str:
+    """Resolve an identifier that may not exist yet when supervision starts.
+
+    A cycle is supervised from before it has a job id, so the id has to be
+    read at the moment of failure rather than at the moment of wrapping.
+    Passing a callable says "ask me later"; a plain string still works.
+    Resolution must never be the thing that fails while recording a failure,
+    so a callable that raises yields no id rather than replacing the original
+    exception with its own.
+    """
+    if callable(value):
+        try:
+            return str(value() or "")
+        except Exception:  # pragma: no cover - defensive
+            return ""
+    return str(value or "")
+
+
 @contextlib.contextmanager
 def supervised(s: "Solvent", *, component: str, operation: str,
-               trace_id: str = "", checkpoint: str = "", job_id: str = "",
-               client_id: str = "", severity: str = "",
+               trace_id: str = "", checkpoint: str = "", job_id="",
+               client_id="", severity: str = "",
                external_effect: str = "", notify_owner: bool = True):
     """Run one step, and remember it if it fails. **Never swallow it.**
 
@@ -1617,13 +1691,37 @@ def supervised(s: "Solvent", *, component: str, operation: str,
     except BaseException as exc:
         level = severity or (_res.S_SERIOUS if external_effect
                              else _res.S_DEGRADED)
-        incident = s.resilience.record_incident(
-            component=component, operation=operation,
-            error_class=type(exc).__name__, signature=str(exc),
-            severity=level, job_id=job_id, client_id=client_id,
-            trigger=f"{operation} raised {type(exc).__name__}",
-            symptoms=str(exc), checkpoint=s.resilience.last_checkpoint(trace),
-            external_uncertainty=external_effect, trace_id=trace)
+        try:
+            incident = s.resilience.record_incident(
+                component=component, operation=operation,
+                error_class=type(exc).__name__, signature=str(exc),
+                severity=level, job_id=_late(job_id),
+                client_id=_late(client_id),
+                trigger=f"{operation} raised {type(exc).__name__}",
+                symptoms=str(exc),
+                checkpoint=s.resilience.last_checkpoint(trace),
+                external_uncertainty=external_effect, trace_id=trace)
+        except Exception as recorder_failure:
+            # The recorder is down. Two things must not happen: the original
+            # failure must not be replaced by this one, because what broke the
+            # job matters more than what broke the notebook; and the gap must
+            # not be silent, because an unrecordable failure reading as health
+            # is the exact defect this supervision exists to close.
+            #
+            # The audit log is append-only and a different write path, so it
+            # is the right place to say that the incident store could not be
+            # written. ``Diagnostics.incidents`` reads this back and refuses
+            # to report health while the last attempt was a failure.
+            s.audit.record(
+                event="incident.record_failed", authority="resilience",
+                initiator="harness",
+                why=(f"{operation} failed in {component} and the incident "
+                     f"could not be recorded: "
+                     f"{type(recorder_failure).__name__}"),
+                job_id=_late(job_id) or None,
+                decision="UNRECORDED",
+                result=f"original failure: {type(exc).__name__}")
+            raise exc from recorder_failure
         s.resilience.frame(trace_id=trace, component=component,
                            operation=operation, state="FAILED",
                            decision=f"incident {incident}")
@@ -1878,6 +1976,113 @@ def consume_owner_intents(s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
             external_effect="owner intent from the control centre")
         results.append(record)
     return results
+
+
+#: How long a processed owner intent stays on disk after it has been applied
+#: or refused.
+#:
+#: The spool file is not the record. ``consume_owner_intents`` writes an
+#: ``owner.intent_processed`` event to the append-only audit log and *then*
+#: moves the file aside, so by the time anything here can see a file in
+#: ``applied/`` or ``refused/`` its outcome is already durable somewhere that
+#: cannot be deleted at all. What is left on disk is a convenience copy.
+#:
+#: Ninety days is long enough that an owner looking into something last
+#: quarter still has the original JSON to hand, and short enough that a drop
+#: box nobody prunes does not grow without end on a disk MetaTrader 5 shares.
+PROCESSED_INTENT_RETENTION_DAYS = 90
+
+#: Directories under the spool whose contents are eligible to be pruned.
+#: Named explicitly, because "everything except the files I recognise" is how
+#: a cleanup routine eventually deletes something nobody meant it to.
+_PRUNABLE_SPOOL_DIRS = ("applied", "refused")
+
+
+def prune_processed_intents(
+        s: "Solvent", *, spool: str = OWNER_INTENT_SPOOL,
+        older_than_days: int = PROCESSED_INTENT_RETENTION_DAYS,
+        clock=None) -> dict:
+    """Remove processed owner intents whose outcome is already on the record.
+
+    **Age is not the test.** A file is removed only when the audit log can be
+    shown to hold the ``owner.intent_processed`` event for it; being old is
+    merely the second condition. Deleting on age alone would mean a cleanup
+    bug and a recording bug combining into silent data loss, which is the
+    failure shape this whole exercise is about.
+
+    Everything here is deliberately narrow:
+
+    * only files directly inside ``applied/`` or ``refused/``,
+    * only names ending ``.intent``,
+    * only paths that still resolve to somewhere inside the spool, so a
+      crafted name cannot walk out of it,
+    * never a symlink, so a link planted in the drop box cannot make this
+      delete the thing it points at,
+    * never a directory.
+
+    Interrupted halfway, it leaves a consistent spool and the next run
+    finishes the job: each file is independent and nothing is staged.
+
+    Returns counts rather than raising. Cleanup is maintenance, and
+    maintenance that can take the business down with it is worse than a
+    spool that grows.
+    """
+    root = Path(spool)
+    try:
+        root = root.resolve(strict=True)
+    except OSError:
+        return {"removed": 0, "bytes_reclaimed": 0, "kept": 0, "failed": 0}
+
+    cutoff = (clock() if clock else time.time()) - older_than_days * 86400
+    # One pass over the audit log rather than one query per file: the whole
+    # point is that this stays cheap enough to run on every cycle.
+    recorded = {
+        str(event.get("input_ref") or "")
+        for event in s.audit.events()
+        if event.get("event") == "owner.intent_processed"
+    }
+
+    removed = reclaimed = kept = failed = 0
+    for name in _PRUNABLE_SPOOL_DIRS:
+        folder = root / name
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*.intent")):
+            try:
+                if path.is_symlink() or not path.is_file():
+                    kept += 1
+                    continue
+                # Resolved last, so the check is against where the path
+                # actually leads rather than how it is spelled.
+                if not path.resolve(strict=True).is_relative_to(folder):
+                    kept += 1
+                    continue
+                stat = path.stat()
+                if stat.st_mtime > cutoff or path.stem not in recorded:
+                    kept += 1
+                    continue
+                size = stat.st_size
+                path.unlink()
+            except OSError as exc:
+                failed += 1
+                s.audit.record(
+                    event="spool.prune_failed", authority="policy",
+                    initiator="harness",
+                    why=f"could not remove {path.name}: {type(exc).__name__}",
+                    decision="KEPT")
+                continue
+            removed += 1
+            reclaimed += size
+
+    if removed or failed:
+        s.audit.record(
+            event="spool.pruned", authority="policy", initiator="harness",
+            why=(f"removed {removed} processed intent(s) older than "
+                 f"{older_than_days} days"),
+            decision="PRUNED",
+            result=f"{reclaimed} bytes reclaimed, {kept} kept, {failed} failed")
+    return {"removed": removed, "bytes_reclaimed": reclaimed,
+            "kept": kept, "failed": failed}
 
 
 def _apply_work_preferences(s: "Solvent", params: dict, why: str) -> str:
