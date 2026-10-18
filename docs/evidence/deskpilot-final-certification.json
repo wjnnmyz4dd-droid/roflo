@@ -3,7 +3,7 @@
   "produced": "2026-10-18",
   "phase": "Phase 1 \u2014 engineering certification and profitability protection",
   "base_commit": "fcd241a",
-  "head_at_assembly": "4b24beef534794c6e4b3e20a8e35f690940febda",
+  "head_at_assembly": "f519eac9203be06c6657ae1fae77bef0551d75e3",
   "platform": "Linux x86_64, CPython 3.11.17",
   "windows_certified": false,
   "windows_note": "Every measurement is from Linux. Nothing here is a Windows or MetaTrader 5 coexistence claim.",
@@ -21,8 +21,8 @@
     "finder_py_identical_to_pre_round": true,
     "mutant_residue_scan": {
       "method": "read the Mutant tables out of both runners; for each, check whether the ORIGINAL text is absent and the REPLACEMENT present in its target file",
-      "mutants_checked": 388,
-      "originals_intact": 388,
+      "mutants_checked": 406,
+      "originals_intact": 406,
       "mutated": 0,
       "anchors_missing": 0,
       "script": "/tmp/claude-0/-home-user-roflo/25de398b-b56b-53d8-b59f-f68119ec6f42/scratchpad/cert/scan_mutants.py"
@@ -267,23 +267,23 @@
   },
   "regression": {
     "command": "python3 -I -m pytest tests_solvent -q",
-    "summary": "4927 passed, 46 skipped, 8 warnings, 10094 subtests passed in 512.15s (0:08:32)",
-    "passed": 4927,
+    "summary": "4987 passed, 46 skipped, 8 warnings, 10156 subtests passed in 498.53s (0:08:18)",
+    "passed": 4987,
     "failed": 0,
     "skipped": 46,
-    "subtests_passed": 10094,
+    "subtests_passed": 10156,
     "failures": []
   },
   "mutation": {
     "command": "python3 tools/mutate_solvent.py",
-    "summary": "204/204 killed  (0 survived, 0 not applied or harness)",
-    "killed": 204,
-    "total": 204,
+    "summary": "212/212 killed  (0 survived, 0 not applied or harness)",
+    "killed": 212,
+    "total": 212,
     "survived": [],
     "not_applied": [],
     "harness": [],
     "isolated": true,
-    "new_this_round": 10
+    "new_this_round": 18
   },
   "phase_1_acceptance": {
     "all_applicable_regression_tests_pass": true,
@@ -297,5 +297,67 @@
     "no_critical_unresolved_security_defects": true,
     "PHASE_1": "COMPLETE"
   },
-  "phase_2": "NOT STARTED \u2014 gated on Phase 1"
+  "phase_2": {
+    "gate": "Phase 1 passed, so Phase 2 began",
+    "official_integration": "PARTIAL",
+    "job_discovery": "UNVERIFIED",
+    "competition_data": "UNVERIFIED",
+    "proposal_submission": "UNVERIFIED, and treated as not permitted",
+    "owner_approval": "PASS",
+    "sms_notifications": "PASS",
+    "profitability_model": "PASS, with named gaps",
+    "simulated_acceptance": "PASS",
+    "verified_from_upwork_infrastructure": {
+      "mcp_discovery_oauth_protected_resource": 200,
+      "mcp_discovery_oauth_authorization_server": 200,
+      "mcp_resource_unauthenticated": 401,
+      "resource_name": "Upwork MCP",
+      "robots_txt": 200,
+      "llms_txt": 200
+    },
+    "refused_to_this_container_http_403": [
+      "www.upwork.com/ai/mcp",
+      "www.upwork.com/developer/documentation/graphql/api/docs/index.html",
+      "www.upwork.com/developer",
+      "www.upwork.com/ai-reference",
+      "www.upwork.com/legal",
+      "www.upwork.com/i/how-it-works/freelancer"
+    ],
+    "scraping_attempted_around_the_403s": false,
+    "authentication_attempted": false,
+    "connects_spent": 0,
+    "real_bids": 0,
+    "real_customer_messages": 0,
+    "live_submissions": 0,
+    "simulated_acceptance_detail": {
+      "harness": "simulated Upwork acceptance",
+      "real_bids": 0,
+      "real_connects_spent": 0,
+      "real_customer_messages": 0,
+      "live_submissions": 0,
+      "scenarios": 37,
+      "passed": 37,
+      "failed": 0,
+      "failures": []
+    },
+    "independent_review": {
+      "ifixai": {
+        "mode": "NATIVE EXECUTION",
+        "decision": "CLEAR",
+        "violations": 0,
+        "controls_injected": 3,
+        "controls_caught": 3,
+        "corrections_that_were_mine_not_deskpilots": [
+          "bare resource names where iFixAi matches scope:id, which produced a BLOCK on a sound trajectory",
+          "an untrusted-collector control that edited a JSON field the replay ignores, so it was never injected"
+        ]
+      },
+      "klean": {
+        "mode": "SOURCE-DERIVED",
+        "why_not_native": "quick_review, consensus_review and second_opinion all query models over HTTP through a proxy; no model-free path exists",
+        "re_checked_at_commit": "79f355756f27edc115bb87d956d756429ad3315a"
+      },
+      "confirmed_deskpilot_defects": 0
+    }
+  }
 }

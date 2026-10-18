@@ -1,135 +1,261 @@
 # DeskPilot — final engineering certification
 
-Date: 2026-10-18 · Platform: Linux x86_64 · CPython 3.13
+Date: 2026-10-18 · Platform: Linux x86_64 · CPython 3.11 · Branch
+`claude/solvent-architecture-audit-8ot9et` · Base commit `fcd241a`
 
-**No real external effect was produced in any part of this work.** Egress
-stayed `simulation_only`. No real customer action was taken, no real
-marketplace was contacted, no money moved, nothing was deployed to the
-VPS, and MetaTrader 5 was not touched. Every owner approval in every run
-was issued by a test approver holding a throwaway key, as an explicit
-synthetic test action.
+This round's certification. The previous round's is preserved as
+`deskpilot-final-engineering-certification-round-four.md` rather than
+overwritten.
+
+**No real external effect was produced at any point.** Nothing was
+deployed, no real bid was submitted, no real client was contacted, no
+real payment was processed, no Connect was spent, and no Upwork account
+was authenticated against.
 
 ---
 
-## 1. The four repairs
-
-| # | Repair | Status |
-|---|---|---|
-| 1 | Per-skill capacity pools | **VERIFIED FIXED** |
-| 2 | Independent review of `.csv` deliverables | **VERIFIED FIXED** |
-| 3 | Owner signing and delivery authorization | **VERIFIED FIXED** |
-| 4 | Startup reconciliation and automatic resumption | **VERIFIED FIXED** |
-
-Each has its own document:
-
-* `docs/deskpilot-owner-signing-final-repair.md`
-* `docs/deskpilot-automatic-recovery-certification.md`
-* `docs/deskpilot-four-repair-integration-test.md`
-* `docs/deskpilot-eleven-point-crash-matrix.md`
-* `docs/deskpilot-final-100-opportunity-acceptance.md`
-* `docs/evidence/deskpilot-final-certification.json`
-
-## 2. What integrating them found
-
-Three defects were found only by running the repairs together, and each
-is now covered by a test and a mutant:
-
-1. **Recovery recovered nothing.** `reconcile` blocks everything it
-   finds mid-flight, so running it before `resume_interrupted` — the
-   documented order — left resumption with nothing to resume. Every
-   unit test of each half passed throughout. Fixed by
-   `recover_after_restart`, which resumes first and reconciles second.
-2. **A resumed T2 job could never finish.** The independent-review step
-   lived only in the business cycle, so a resumed job above T1 was
-   refused at the delivery gate for want of a second opinion nobody had
-   asked for, and returned to `VERIFYING`. Fixed by `_review_and_deliver`,
-   shared by both paths.
-3. **Automatic resumption had no caller.** `Runtime.start` reconciled
-   and nothing else, so the whole of repair 4 would have been a function
-   production never ran. Fixed: `Runtime.start` now calls recovery, and
-   where the owner has not named a work root it says so plainly instead
-   of silently doing less.
-
-The third is the third instance this engagement has found of the same
-shape — correct machinery that nothing calls — after `supervised()` and
-`Capacity.reserve`. It is now pinned by a mutant
-(`recovery-the-runtime-never-resumes-anything`).
-
-Two further defects were found by the crash matrix:
-
-4. **A broken reviewer crashed the cycle.** Owner tooling that returned
-   something that was not an approval raised `AttributeError` out of the
-   business cycle. It is now a refusal, as a `FailClosed` already was.
-5. **A job interrupted before its source was recorded crashed on
-   resumption**, with `AttributeError: 'NoneType' object has no
-   attribute 'digest'` three functions downstream. Recovery caught it,
-   recorded an incident and escalated — nothing was lost — but a crash
-   is not a refusal. `_execute_job` now says what is missing.
-
-## 3. The gates, as measured
+## 1. Phase 1 acceptance
 
 | Gate | Result |
 |---|---|
-| Full regression suite | **4,793 passed, 44 skipped, 10,085 subtests, 0 failed** |
-| Mutation testing | **173 / 173 killed** (0 survived, 0 not applied) |
-| Eleven-point crash matrix | **11 / 11 seams reached**, 0 stranded |
-| Four-repair integration | **17 tests passing** |
-| 100-opportunity acceptance | 52 delivered, 0 unauthorized, 0 stranded |
+| All applicable regression tests pass | **PASS** — 4,987 passed, 0 failed, 46 skipped, 10,156 subtests |
+| Sealed examination: reading | **PASS** — resealed, re-set, re-sat, 56/56, seal intact |
+| Sealed examination: capacity | **PASS** — resealed, re-set, re-sat, 6/6, seal intact |
+| Profitability guard | **PASS** — restored, independently verified, and a second route past the floor closed |
+| Mutation isolation | **PASS** — isolation by default, claim with hash verification, scan, pre-commit hook |
+| The five previous repairs (A–E) | **PASS** — integrated acceptance clean after the Governor reordering |
+| No mutant survived | **PASS** — 212/212 killed |
+| No mutant unapplied | **PASS** — 0 not applied, 0 harness |
+| No critical unresolved security defect | **PASS** |
 
-The mutant count grew from 155 to 173: eighteen new ones covering the
-repaired owner-signing and recovery paths. The historical 155 were
-**not** assumed to cover the new code; every new control has a mutant
-named after it, and the table in each repair's document says which.
+**PHASE 1: COMPLETE.**
 
-Three survived on first run across this engagement. None of them meant
-unsafe behaviour; all three meant a test whose name claimed more than it
-checked, and in each case the test was strengthened and the mutant
-re-run to a kill. No acceptance criterion was changed after seeing a
-result.
+## 2. Repository integrity, verified independently
 
-## 4. The four counts the assignment asks for
+Not taken on the previous report's word. Three angles:
 
-| Count | Value | How it was measured |
-|---|---|---|
-| **Unauthorized deliveries** | **0** | 52 `delivery.completed` events against 52 `owner.approval_consumed` events in the 100-opportunity run; the set difference is empty |
-| **Duplicate invoices** | **0** | invoiced job ids vs. their distinct set, in the acceptance run and at every crash seam |
-| **Fabricated payments** | **0** | `real_revenue_cents` is 0 in every run; nothing in this work can confirm a payment |
-| **Stranded jobs** | **0** | no job in `EXECUTING`, `VERIFYING` or `READY_FOR_DELIVERY` after the acceptance run or after recovery at any of the eleven seams |
+* **The line.** `solvent/finder.py:1197` reads
+  `if econ.profit_cents is not None and econ.profit_cents <= 0:`.
+* **The net diff.** `solvent/finder.py` does not appear in
+  `git diff --name-status 4819125 fcd241a` at all;
+  `git diff 4819125 -- solvent/finder.py` is empty.
+* **A scan that knows nothing about the incident.** Reading the `Mutant`
+  tables out of both runners and asking of each target file whether the
+  *original* is gone and the *replacement* present:
 
-## 5. Remaining findings, not claimed as fixed
+```
+tools.mutate_solvent: 212 mutants
+tools.mutate_installer: 194 mutants
+406 mutants found their original anchor intact
+```
 
-1. **A crash at worker execution leaves a job in `ACCEPTED`, holding its
-   pipeline slot.** Neither resumption nor reconciliation touches it:
-   there is no partial work to repeat and nothing in doubt, but nothing
-   will start it either. Closing this means giving `ACCEPTED` a
-   start-or-escalate rule, which belongs to admission rather than to
-   recovery.
-2. **A crash during invoice creation leaves a delivered job with no
-   invoice.** Recovery does not create the missing one — it will not
-   invent a financial record — so the job sits in `AWAITING_PAYMENT`
-   with nothing owed on paper. Visible, not silent, and not money lost
-   to a double charge; still work the owner has to finish.
-3. **`.md` deliverables above T1 cannot be reviewed automatically.** No
-   independently authored Markdown reader exists in this build, so three
-   of the hundred jobs blocked on the owner for a human review. Correct
-   refusal, and a real limit on what document-processing can deliver
-   unattended at C_HIGH.
-4. **`check_preserve_columns` compares against the source's distinct
-   rows**, so two rows differing only in whitespace are distinct until
-   the worker trims them, and a brief combining trim with dedupe and
-   protected columns can fail a check the work actually satisfied. Found
-   while writing the integration fixture; not on the repair path and not
-   fixed here.
+Zero mutated, zero anchors missing. No production source is running
+under mutation instrumentation.
 
-## 6. What this certification does not say
+A sweep of every removed line in the round's diff found exactly two
+guard-shaped removals, both replaced by stricter logic: the
+`check_preserve_columns` comparison (Finding D) and the
+`resume_interrupted` state test (Finding A, which gained a
+durable-evidence requirement).
 
-* **Nothing here is a Windows or MetaTrader 5 claim.** Every number was
-  measured on Linux x86_64, CPython 3.11.
-* **Nothing here is a revenue result.** Real revenue recorded across
-  every run: 0 cents. The 52 deliveries are synthetic contracts inside a
-  sandbox.
-* **Nothing here is evidence that a person approved anything.** Every
-  owner approval was issued by a test approver holding a throwaway key.
-* **Nothing was deployed.** The VPS was not touched, MT5 was not
-  touched, and no live customer acquisition, payment or marketplace
-  action was enabled.
+## 3. Defect F — an approval door above the floor
+
+**Found by** tracing the bypass list against `FinancialGovernor._evaluate`
+rather than reading the restored guard in isolation.
+
+The ordered checks put the per-job cost ceiling *above* the margin
+floor. Both return before the other is reached, so a job tripping both
+came back `REQUIRES_APPROVAL` with its margin never computed:
+
+```
+margin_floor 0.30   max_job_spend_cents 25000
+direct cost 26000 → effective cost 43332   revenue 28888
+true margin −50.0%  (a loss of $144.44 on $288.88)
+verdict before: REQUIRES_APPROVAL      verdict after: MARGIN_TOO_LOW
+```
+
+The owner was being asked to approve a job that loses money, as an
+ordinary approval, with their own floor never evaluated.
+
+**Repaired** by moving the floor above both approval doors and below the
+exposure cap:
+
+```
+conformance → jurisdiction → preliminary → mode → revenue > 0
+  → exposure cap (HIGH_RISK)
+  → MARGIN FLOOR (MARGIN_TOO_LOW)
+  → per-job cost ceiling (REQUIRES_APPROVAL)
+  → owner-approval threshold (REQUIRES_APPROVAL)
+  → PROFITABLE
+```
+
+Risk deliberately still outranks price: a job breaching the
+committed-but-unverified cap is refused as *risk*, which is the reason
+the owner needs to read. A test pins that, so the order cannot drift
+either way.
+
+24 tests in `test_profitability_guard.py`; five mutants, all killed.
+Full record: `deskpilot-profitability-certification.md`.
+
+## 4. Mutation isolation
+
+A mutation run owns the files it patches, and nothing enforced that
+until now. Three defences, because each covers a case the others miss:
+isolation (both runners patch a copy of the working tree by default), a
+claim (pre-run hashes that must be checked back, with the claim left on
+disk if they are not), and a scan (original-absent-and-replacement-
+present, needing no cooperation from the runner). A pre-commit hook
+reads the **index**, not the working tree, because the index is what
+captured the last one.
+
+It was proven in anger during this round: a battery was killed at a
+harness time limit, with no chance to run its `finally`, and the working
+tree came back clean — no claim, no mutant. It did leak its temporary
+copy, which is now reaped.
+
+22 tests; five mutants, all killed. Full record:
+`deskpilot-mutation-isolation-certification.md`.
+
+## 5. The sealed examinations
+
+Both resealed and sat by the procedure the exams document. Before any
+digest moved, each paper that had been set was re-marked against the
+changed source — reading 56/56 identical to the first sitting, capacity
+6/6 with every delivered count identical to the seventh. Then the freeze
+moved, so the seed moved, so both are new papers.
+
+| Exam | Digest moved | New sitting | Seal |
+|---|---|---|---|
+| reading | `solvent/csvverify.py` | 56/56, seed 3726124977 | intact |
+| capacity | `solvent/store.py` | 6/6, seed 3726124977 | intact |
+
+All seven earlier capacity sittings untouched. The reading exam's first
+sitting is preserved twice — in the module and as
+`docs/evidence/reading-exam-first-sitting.json` — because it previously
+lived only in a file each sitting overwrites. No test case changed, no
+assertion weakened, no expected result altered; four new tests enforce
+the preservation. Full record:
+`deskpilot-sealed-examination-resolution.md`.
+
+## 6. The five previous repairs, re-verified
+
+Integrated acceptance re-run after the Governor reordering:
+
+| | |
+|---|---|
+| Offered / delivered | 100 / 52 |
+| Crashes injected | 5 — worker execution, verification, delivery ack, invoice creation, recovery |
+| Stranded jobs | 0 |
+| Delivered but unbilled | 0 |
+| Duplicate invoices | 0 |
+| Fabricated payments | 0 |
+| Unauthorized deliveries | 0 (53 delivery events, 53 consumed owner approvals) |
+| Skills delivering nothing | none |
+| Audit chain | intact |
+
+Identical to the pre-change run, which is the result: the reordering
+changed nothing for work that clears the floor.
+
+## 7. Phase 2 — Upwork integration preparation
+
+| Item | Status |
+|---|---|
+| Official integration | **PARTIAL** — the MCP server is verified to exist; its capabilities are not |
+| Job discovery | **UNVERIFIED** |
+| Competition data | **UNVERIFIED** |
+| Proposal submission | **UNVERIFIED**, and treated as not permitted |
+| Owner approval | **PASS** |
+| SMS notifications | **PASS** |
+| Profitability model | **PASS**, with named gaps |
+| Simulated acceptance | **PASS** — 37/37 |
+| iFixAi review | **NATIVE EXECUTION** — CLEAR, 0 violations, 3/3 controls caught |
+| K-LEAN review | **SOURCE-DERIVED** |
+
+Verified from Upwork's own infrastructure: `mcp.upwork.com` publishes
+the MCP OAuth discovery documents unauthenticated, names the resource
+`Upwork MCP`, and returns 401 on the resource. Verified from
+`robots.txt`: automated browsing of job search is disallowed.
+Everything else is UNVERIFIED because every Upwork documentation page
+returns 403 to this container, and the brief said not to scrape
+restricted pages.
+
+So the implementation is built on what is verified: no submission path
+exists, five of the inputs the brief asks for are reported
+`UNAVAILABLE`, and an unknown cost makes the contribution unknown
+rather than larger. Records:
+`deskpilot-upwork-official-integration-review.md`,
+`deskpilot-upwork-approval-architecture.md`,
+`deskpilot-upwork-bid-economics.md`,
+`deskpilot-upwork-simulated-acceptance.md`,
+`deskpilot-ifixai-klean-final-review.md`.
+
+## 8. Regression and mutation
+
+```
+python3 -I -m pytest tests_solvent -q
+4987 passed, 46 skipped, 8 warnings, 10156 subtests passed in 498.53s
+
+python3 tools/mutate_solvent.py
+isolated: patching a copy of the working tree
+212/212 killed  (0 survived, 0 not applied or harness)
+```
+
+The 46 skips are counted as skips. Mutation coverage added this round:
+five for the financial admission control, five for mutation isolation,
+eight for the Upwork bidding module — eighteen in all, every one run
+against the code as committed. No historical coverage is claimed for
+anything written this round.
+
+Three mutants survived a first run and each was killed by strengthening
+a test, never by weakening a mutant:
+
+* `preserve-forgives-any-difference-it-cannot-explain` (earlier round)
+* `invoice-recovery-trusts-the-job-state-alone` (earlier round)
+* `upwork-the-ranking-floats-unknowns-to-the-top` — bound to a test the
+  sibling sort keys already satisfied; re-pointed at the case where the
+  rule and the other keys disagree
+
+Two were `NOT_APPLIED` in an earlier run because this engagement's own
+new code made their anchors ambiguous. A mutant that cannot be placed is
+a coverage gap, not a pass: both were re-anchored and the new sites got
+mutants of their own.
+
+## 9. Remaining findings, not claimed as fixed
+
+1. **The Finder's profitability triage is not reachable from the
+   business cycle.** It is constructed only in `cli.py:503` for a
+   readiness report; nothing in `harness.py` or `runtime.py` calls
+   `assess`, `rank` or `next_to_qualify`. The authority that admits work
+   — `FinancialGovernor.decide` — is properly wired, so this is not a
+   hole in admission today. It becomes material in Phase 2, where
+   recommending work is exactly the Finder's job. Reported rather than
+   repaired: wiring a second economic opinion into the cycle is an
+   architectural change nobody asked for.
+2. **Connects cost and the Upwork service fee are not modelled cost
+   categories**, so an Upwork opportunity's net contribution is
+   `UNAVAILABLE` by construction.
+3. **No monthly acquisition budget is tracked across contracts**, so
+   per-contract and portfolio-level acquisition costs are only partly
+   distinguishable.
+4. **`BidBudget` is not persisted.** A table would have to go in
+   `solvent/store.py`, which is under seal; resealing to store figures
+   for a channel that cannot be used is the wrong trade today.
+5. **`.md` deliverables whose brief has nothing recomputable** still
+   block on the owner. The correct refusal, and a real limit.
+6. **An hourly job delivered by recovery still needs a person.**
+7. **Omission cannot be established for a converted document** from
+   flattened source text; only provenance can.
+8. **openpyxl would share expat with DeskPilot's own reader if lxml were
+   absent.** lxml is present here.
+9. **`budget_grants.revoked` is never set.**
+
+## 10. What this certification does not say
+
+* **Not production readiness.** Passing synthetic tests is a different
+  claim, and nothing here was deployed.
+* **Not permission to use Upwork.** Nobody has read Upwork's terms or
+  its MCP tool list, and that is the blocker — not engineering.
+* **Not a revenue result.** 0 cents of real revenue.
+* **Not evidence a person approved anything.** Every owner approval came
+  from a test approver with a throwaway key.
+* **Not a Windows or MetaTrader 5 claim.** Linux x86_64, CPython 3.11.
