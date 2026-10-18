@@ -432,7 +432,7 @@ class Runtime:
             problems = "; ".join(f"{c.name}: {c.detail}" for c in self.started.fatal)
             raise FailClosed(f"refusing to start: {problems}")
 
-        notes = reconcile(self.solvent)
+        notes = self._recover()
         for note in notes:
             self._say(f"recovery: {note}")
 
@@ -441,6 +441,38 @@ class Runtime:
             why=f"{self.mode.value} runtime start", decision="STARTED",
             result=f"health={health(self.solvent, started=self.started)[0].value}")
         return self.started
+
+    def _recover(self) -> list[str]:
+        """Resume what is safely recoverable, then reconcile the rest.
+
+        ``reconcile`` on its own is the safety net: it escalates
+        everything it finds mid-flight. That is the right floor and the
+        wrong ceiling -- work that stopped during a recompute can simply
+        be re-run, and a shop that escalates every interrupted job to a
+        person after every restart is a shop that stops.
+
+        Resumption re-runs a worker, so it needs somewhere to write the
+        deliverable. The owner names that place, as ``recovery.work_root``
+        in policy. Until they do, this reconciles only, and says so where
+        it can be read: a runtime that invented a directory to write
+        client deliverables into would be worse than one that asks.
+        """
+        from .harness import recover_after_restart
+
+        root = self.solvent.policy.get("recovery", "work_root", default="")
+        interrupted = [job for job in self.solvent.orchestrator.jobs()
+                       if job.state in _INTERRUPTED]
+        if not root:
+            if interrupted:
+                self._say(
+                    f"automatic resumption is not configured, so "
+                    f"{len(interrupted)} interrupted job(s) go to the owner "
+                    f"instead; set recovery.work_root to have them re-run")
+            return reconcile(self.solvent)
+        outcome = recover_after_restart(self.solvent, workdir=str(root),
+                                        initiator=RUNTIME)
+        return ([f"{r['job_id']} found in {r['found_in']}: {r['outcome']}"
+                 for r in outcome["resumed"]] + outcome["reconciled"])
 
     def stop(self, reason: str = "requested") -> None:
         """Ask the loop to finish its current tick and come back."""

@@ -15,6 +15,7 @@ import unittest
 from solvent import independent, xlsx
 from solvent.types import (Criticality, JobState, Requirement,
                            RequirementSource)
+from tests_solvent.test_business_cycle import CSV_POSTING, Cycle
 
 
 def req(rid, check, params=None):
@@ -461,6 +462,186 @@ class StartupReconciliation(unittest.TestCase):
         self.assertEqual(
             self.s.capacity.jobs_in_flight("data-entry"), 1,
             "a job that is still owed work lost its slot")
+
+
+class AutomaticResumption(Cycle):
+    """Repair 4, second half: safely recoverable work resumes itself."""
+
+    def interrupted_job(self):
+        """A real job walked to VERIFYING, as a crash would leave it."""
+        from solvent.types import JobState
+        cycle = self.runCycle()
+        self.s.orchestrator._transition(
+            cycle.job_id, JobState.REVISION_REQUESTED,
+            why="pretend the client reopened it", initiator="test")
+        self.s.orchestrator._transition(
+            cycle.job_id, JobState.EXECUTING, why="work restarted",
+            initiator="test")
+        self.s.orchestrator._transition(
+            cycle.job_id, JobState.VERIFYING, why="crash point",
+            initiator="test")
+        return cycle
+
+    def resume(self, cycle, **kwargs):
+        from solvent.harness import resume_interrupted
+        defaults = dict(source=str(self.source), workdir=self.box.name,
+                        capability=self.capability)
+        return resume_interrupted(self.s, **{**defaults, **kwargs})
+
+    def test_an_interrupted_job_is_picked_up(self):
+        cycle = self.interrupted_job()
+        records = self.resume(cycle)
+        self.assertTrue(records, "a job left in VERIFYING was not resumed")
+        self.assertEqual(records[0]["job_id"], cycle.job_id)
+        self.assertEqual(records[0]["found_in"], "VERIFYING")
+
+    def test_resumption_runs_the_checker_again(self):
+        """It must not shortcut to delivery on the strength of old evidence."""
+        cycle = self.interrupted_job()
+        before = len(self.s.store.raw_readonly(
+            "SELECT * FROM verification_evidence"))
+        self.resume(cycle)
+        after = len(self.s.store.raw_readonly(
+            "SELECT * FROM verification_evidence"))
+        self.assertGreater(after, before,
+                           "resumption delivered without re-verifying")
+
+    def test_attempts_are_bounded_and_survive_a_restart(self):
+        """The count lives in the append-only log, not in memory."""
+        from solvent.harness import MAX_RESUME_ATTEMPTS, RESUME_EVENT
+        cycle = self.interrupted_job()
+        for _ in range(MAX_RESUME_ATTEMPTS):
+            self.s.audit.record(
+                event=RESUME_EVENT, authority="orchestrator",
+                initiator="test", why="earlier attempt", job_id=cycle.job_id,
+                decision="RESUMED")
+        records = self.resume(cycle)
+        self.assertEqual(records[0]["outcome"], "ESCALATED",
+                         "a job past its attempt limit was tried again")
+
+    def test_an_exhausted_job_is_blocked_not_discarded(self):
+        from solvent.types import BlockedOn, JobState
+        from solvent.harness import MAX_RESUME_ATTEMPTS, RESUME_EVENT
+        cycle = self.interrupted_job()
+        for _ in range(MAX_RESUME_ATTEMPTS):
+            self.s.audit.record(
+                event=RESUME_EVENT, authority="orchestrator",
+                initiator="test", why="earlier attempt", job_id=cycle.job_id,
+                decision="RESUMED")
+        self.resume(cycle)
+        job = self.s.orchestrator.job(cycle.job_id)
+        self.assertEqual(job.state, JobState.BLOCKED)
+        self.assertEqual(job.blocked_on, BlockedOn.OWNER,
+                         "capacity was freed by discarding the work")
+
+    def test_a_job_ready_for_delivery_is_not_resumed(self):
+        """Its next step is an external effect, so it is not ours to repeat."""
+        from solvent.harness import RESUMABLE
+        from solvent.types import JobState
+        self.assertNotIn(JobState.READY_FOR_DELIVERY, RESUMABLE)
+
+    def test_a_healthy_shop_resumes_nothing(self):
+        self.runCycle()
+        self.assertEqual(self.resume(None), [])
+
+    def test_a_job_whose_source_was_never_recorded_is_refused(self):
+        """A crash inside the call that records the source leaves this.
+
+        Found by the crash matrix: resumption raised ``AttributeError:
+        'NoneType' object has no attribute 'digest'`` three functions
+        downstream. Recovery caught it, recorded an incident and
+        escalated, so nothing was lost -- but a crash is not a refusal,
+        and a job that cannot say what it was given should say that.
+        """
+        from solvent.types import BlockedOn, JobState, LocationSignals
+        # A job walked to VERIFYING through legal transitions and never
+        # given a source artifact. The artifacts table is append-only --
+        # a DELETE is refused by a trigger -- so the state is reached
+        # the way a crash reaches it, by never recording one.
+        job_id = self.s.orchestrator.intake(
+            title="interrupted before its source was recorded",
+            client_id="c", quoted_cents=5000,
+            signals=LocationSignals(), initiator="test")
+        for step in (JobState.QUALIFYING, JobState.ACCEPTED,
+                     JobState.EXECUTING, JobState.VERIFYING):
+            self.s.orchestrator._transition(job_id, step, why="crash point",
+                                            initiator="test")
+        records = self.resume(None)
+        mine = [r for r in records if r["job_id"] == job_id]
+        self.assertTrue(mine, f"the job was not considered: {records}")
+        self.assertEqual(mine[0]["outcome"], "HELD",
+                         f"expected a refusal, got {mine[0]}")
+        self.assertIn("no source artifact", mine[0].get("detail", ""))
+        job = self.s.orchestrator.job(job_id)
+        self.assertEqual(job.state, JobState.BLOCKED)
+        self.assertEqual(job.blocked_on, BlockedOn.OWNER)
+
+    def test_a_job_is_resumed_as_the_work_it_actually_is(self):
+        """Not as whatever skill the caller happened to name.
+
+        A shop running five skills has five kinds of interrupted job.
+        Resuming them all under one capability would run the wrong
+        worker against the wrong file, and the deliverable that came
+        back would be nonsense the checker then had to catch.
+        """
+        cycle = self.interrupted_job()
+        records = self.resume(cycle, capability="report-builder")
+        self.assertEqual(records[0]["capability"], "csv-cleanup",
+                         "the job was resumed as the caller's default "
+                         "rather than as its own work")
+
+
+class AnUnavailableReviewDoesNotStrandTheJob(Cycle):
+    """A job above T1 whose second opinion never arrives must not go quiet.
+
+    The cycle leaves the job in VERIFYING while it asks for an independent
+    review. When the review could not be obtained the cycle used to simply
+    return, which left the job exactly there: holding its pipeline slot, in
+    a state nothing polls, with no incident and no question for anyone. That
+    is the permanent silent VERIFYING the recovery work exists to prevent.
+    """
+
+    #: $1,500 puts the job in C_HIGH, which is the consequence tier that
+    #: demands T2 and therefore the only one that asks for a review at all.
+    posting = {**CSV_POSTING, "ref": "review-unavailable",
+               "quoted_cents": 150_000, "platform_fee_cents": 15_000}
+
+    def refusing_reviewer(self, **_kwargs):
+        """Owner tooling that hands back something that will not verify."""
+        return object()
+
+    def run_with_a_failed_review(self):
+        cycle = self.runCycle(independent_reviewer=self.refusing_reviewer)
+        self.assertEqual(cycle.stopped_at, "independent-review",
+                         f"the cycle stopped at {cycle.stopped_at!r} instead")
+        return cycle
+
+    def test_the_job_is_not_left_in_verifying(self):
+        from solvent.types import JobState
+        cycle = self.run_with_a_failed_review()
+        state = self.s.orchestrator.job(cycle.job_id).state
+        self.assertNotEqual(state, JobState.VERIFYING,
+                            "the job was abandoned in VERIFYING")
+
+    def test_the_job_is_blocked_on_the_owner(self):
+        from solvent.types import BlockedOn, JobState
+        cycle = self.run_with_a_failed_review()
+        job = self.s.orchestrator.job(cycle.job_id)
+        self.assertEqual(job.state, JobState.BLOCKED)
+        self.assertEqual(job.blocked_on, BlockedOn.OWNER,
+                         "nobody was asked for the review that is missing")
+
+    def test_an_incident_is_recorded(self):
+        self.run_with_a_failed_review()
+        incidents = self.s.resilience.incidents()
+        self.assertTrue(
+            any(i["operation"] == "independent-review" for i in incidents),
+            "a job stopped dead and nothing was recorded as a failure")
+
+    def test_nothing_was_delivered(self):
+        cycle = self.run_with_a_failed_review()
+        self.assertFalse(cycle.delivered,
+                         "unreviewed work was delivered anyway")
 
 
 if __name__ == "__main__":  # pragma: no cover

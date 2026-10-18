@@ -1158,6 +1158,250 @@ MUTANTS: tuple[Mutant, ...] = (
         "two callers holding one single-use approval both proceed, because "
         "the loser of the claim is never told it lost"),
 
+    # ---- owner signing on the delivery path ---------------------------
+    # The measured defect was that a configured key made every delivery
+    # impossible, because the cycle offered the Action Gate nothing but an
+    # unsigned stand-in. These mutants break the repair in the two
+    # directions that matter: ignoring the owner's real approval, and
+    # treating a failure to ask the owner as a yes.
+
+    Mutant(
+        "signing-the-owners-approver-is-ignored",
+        "solvent/harness.py",
+        "    if approver is None:\n"
+        "        return approval(owner_identity=OWNER, job_id=job_id,",
+        "    if True:\n"
+        "        return approval(owner_identity=OWNER, job_id=job_id,",
+        "tests_solvent.test_owner_signing_delivery"
+        ".AConfiguredKeyMustNotBlockRoutineWork"
+        ".test_a_signed_approval_lets_delivery_through",
+        "the owner's signed approval is thrown away and the unsigned "
+        "stand-in offered in its place, which is the original defect"),
+
+    Mutant(
+        "signing-a-broken-approver-becomes-consent",
+        "solvent/harness.py",
+        "            job_id=job_id, decision=\"REFUSED\")\n"
+        "        return None",
+        "            job_id=job_id, decision=\"REFUSED\")\n"
+        "        return approval(owner_identity=OWNER, job_id=job_id,\n"
+        "                        action_class=ActionClass"
+        ".C2_EXTERNAL_COMMUNICATION,\n"
+        "                        max_cents=0)",
+        "tests_solvent.test_owner_signing_delivery"
+        ".TheApprovalContractItself"
+        ".test_a_failed_ask_yields_no_approval_at_all",
+        "the owner's tooling failing is read as the owner saying yes. "
+        "Bound to the unit test rather than the cycle test: with a key "
+        "configured the gate refuses the stand-in too, so the end-to-end "
+        "test passed with this control removed"),
+
+    Mutant(
+        "signing-an-approval-is-not-scoped-to-its-job",
+        "solvent/owner.py",
+        "        if approval.job_id and approval.job_id != job_id:",
+        "        if False:",
+        "tests_solvent.test_owner_signing_delivery"
+        ".AnInvalidApprovalFailsClosed.test_an_approval_for_a_different_job",
+        "one job's approval delivers a different job's file"),
+
+    Mutant(
+        "signing-an-approval-is-not-scoped-to-its-action",
+        "solvent/owner.py",
+        "        if approval.action_class is not action_class:",
+        "        if False:",
+        "tests_solvent.test_owner_signing_delivery"
+        ".AnInvalidApprovalFailsClosed"
+        ".test_an_approval_for_a_different_action",
+        "consent to read a file internally authorises sending it out"),
+
+    Mutant(
+        "signing-an-expired-approval-still-works",
+        "solvent/owner.py",
+        "        if datetime.fromisoformat(approval.expires_at) "
+        "< datetime.now(timezone.utc):",
+        "        if False:",
+        "tests_solvent.test_owner_signing_delivery"
+        ".AnInvalidApprovalFailsClosed.test_an_expired_approval",
+        "an approval left lying around never stops working"),
+
+    Mutant(
+        "signing-a-forged-signature-is-accepted",
+        "solvent/owner.py",
+        "        if not hmac.compare_digest(expected, approval.signature or \"\"):",
+        "        if False:",
+        "tests_solvent.test_owner_signing_delivery"
+        ".AnInvalidApprovalFailsClosed.test_a_forged_signature",
+        "anything shaped like an approval is one, so the key proves nothing"),
+
+    Mutant(
+        "signing-verify-ignores-an-approval-already-used",
+        "solvent/owner.py",
+        "        if row[\"used_at\"]:",
+        "        if False:",
+        "tests_solvent.test_owner_signing_delivery"
+        ".TheApprovalContractItself"
+        ".test_verify_itself_reports_an_approval_already_used",
+        "verify stops reporting a spent approval. The delivery is still "
+        "refused, because consume claims the nonce atomically -- which is "
+        "why the replay cycle test passed with this control removed"),
+
+    # ---- automatic resumption after an interruption -------------------
+    # Recovery is the part of the system most able to cause the harm it
+    # exists to prevent: it repeats work. Each mutant below removes one
+    # of the four things that keep a repeat safe.
+
+    Mutant(
+        "recovery-resumes-work-that-has-an-external-effect-pending",
+        "solvent/harness.py",
+        "RESUMABLE = (JobState.EXECUTING, JobState.VERIFYING)",
+        "RESUMABLE = (JobState.EXECUTING, JobState.VERIFYING,\n"
+        "             JobState.READY_FOR_DELIVERY)",
+        "tests_solvent.test_remediation_p0p1.AutomaticResumption"
+        ".test_a_job_ready_for_delivery_is_not_resumed",
+        "a restart re-sends a delivery whose first attempt may have "
+        "arrived, which is the duplicate-delivery failure"),
+
+    Mutant(
+        "recovery-attempts-are-unbounded",
+        "solvent/harness.py",
+        "        if attempts >= MAX_RESUME_ATTEMPTS:",
+        "        if False:",
+        "tests_solvent.test_remediation_p0p1.AutomaticResumption"
+        ".test_attempts_are_bounded_and_survive_a_restart",
+        "a job that fails the same way for ever is retried for ever"),
+
+    Mutant(
+        "recovery-attempts-are-counted-in-memory",
+        "solvent/harness.py",
+        "        attempts = sum(\n"
+        "            1 for event in s.audit.events(job.id)\n"
+        "            if event.get(\"event\") == RESUME_EVENT)",
+        "        attempts = 0",
+        "tests_solvent.test_remediation_p0p1.AutomaticResumption"
+        ".test_attempts_are_bounded_and_survive_a_restart",
+        "the retry limit resets on every restart, so a crash loop is "
+        "unbounded in exactly the case the limit exists for"),
+
+    Mutant(
+        "recovery-exhausted-work-is-discarded",
+        "solvent/harness.py",
+        "            s.orchestrator.block(\n"
+        "                job_id=job.id, blocked_on=BlockedOn.OWNER, "
+        "initiator=initiator,\n"
+        "                why=(f\"resumed {attempts} times and still "
+        "interrupted; a \"\n"
+        "                     \"person should look before it is tried "
+        "again\"))\n"
+        "            record[\"outcome\"] = \"ESCALATED\"",
+        "            record[\"outcome\"] = \"ESCALATED\"",
+        "tests_solvent.test_remediation_p0p1.AutomaticResumption"
+        ".test_an_exhausted_job_is_blocked_not_discarded",
+        "capacity is freed by quietly dropping the work nobody could "
+        "finish, which is the silent-loss failure"),
+
+    Mutant(
+        "recovery-an-unreviewable-job-is-left-in-verifying",
+        "solvent/harness.py",
+        "            s.orchestrator.block(\n"
+        "                job_id=cycle.job_id, blocked_on=BlockedOn.OWNER,\n"
+        "                initiator=\"business-cycle\",\n"
+        "                why=f\"independent review unavailable: {why}\"[:400])",
+        "            pass",
+        "tests_solvent.test_remediation_p0p1"
+        ".AnUnavailableReviewDoesNotStrandTheJob"
+        ".test_the_job_is_blocked_on_the_owner",
+        "a job whose second opinion never arrived sits in VERIFYING for "
+        "ever, holding its slot, with nobody asked for the review"),
+
+    Mutant(
+        "recovery-an-unreviewable-job-records-no-incident",
+        "solvent/harness.py",
+        "            s.resilience.record_incident(\n"
+        "                component=\"harness\", "
+        "operation=\"independent-review\",",
+        "            _unrecorded = dict(\n"
+        "                component=\"harness\", "
+        "operation=\"independent-review\",",
+        "tests_solvent.test_remediation_p0p1"
+        ".AnUnavailableReviewDoesNotStrandTheJob"
+        ".test_an_incident_is_recorded",
+        "the job stops dead and nothing appears where failures are read"),
+
+    Mutant(
+        "recovery-resumes-every-job-as-the-callers-default-skill",
+        "solvent/harness.py",
+        "        skill = (held.get(job.id) or "
+        "s.orchestrator.capability_of(job.id)\n"
+        "                 or capability)",
+        "        skill = capability",
+        "tests_solvent.test_remediation_p0p1.AutomaticResumption"
+        ".test_a_job_is_resumed_as_the_work_it_actually_is",
+        "every interrupted job in a five-skill shop is resumed as one "
+        "skill, so the wrong worker runs against the wrong file"),
+
+    Mutant(
+        "recovery-a-job-with-no-recorded-source-crashes-instead",
+        "solvent/harness.py",
+        "    if src is None:\n"
+        "        # A job with no SOURCE artifact cannot say what it was "
+        "given, and",
+        "    if False:\n"
+        "        # A job with no SOURCE artifact cannot say what it was "
+        "given, and",
+        "tests_solvent.test_remediation_p0p1.AutomaticResumption"
+        ".test_a_job_whose_source_was_never_recorded_is_refused",
+        "a job interrupted before its source was recorded raises an "
+        "AttributeError three functions downstream instead of saying "
+        "what is missing"),
+
+    Mutant(
+        "recovery-the-runtime-never-resumes-anything",
+        "solvent/runtime.py",
+        "        notes = self._recover()",
+        "        notes = reconcile(self.solvent)",
+        "tests_solvent.test_four_repair_integration"
+        ".TheRuntimeActuallyCallsRecovery"
+        ".test_a_restart_resumes_when_the_owner_has_named_a_work_root",
+        "automatic resumption becomes a function with no caller, and "
+        "every restart escalates every interrupted job to a person"),
+
+    Mutant(
+        "recovery-reconciliation-runs-before-resumption",
+        "solvent/harness.py",
+        "    resumed = resume_interrupted(\n"
+        "        s, source=source, workdir=workdir, capability=capability,\n"
+        "        delivery_approver=delivery_approver,\n"
+        "        independent_reviewer=independent_reviewer, "
+        "initiator=initiator)\n"
+        "    return {\"resumed\": resumed, "
+        "\"reconciled\": _runtime.reconcile(s)}",
+        "    reconciled = _runtime.reconcile(s)\n"
+        "    resumed = resume_interrupted(\n"
+        "        s, source=source, workdir=workdir, capability=capability,\n"
+        "        delivery_approver=delivery_approver,\n"
+        "        independent_reviewer=independent_reviewer, "
+        "initiator=initiator)\n"
+        "    return {\"resumed\": resumed, \"reconciled\": reconciled}",
+        "tests_solvent.test_four_repair_integration"
+        ".AnInterruptionIsRecoveredWithAllFourInPlace"
+        ".test_the_interrupted_job_is_picked_up_and_finishes",
+        "reconciliation blocks every mid-flight job on the owner first, so "
+        "resumption finds nothing and automatic recovery never recovers "
+        "anything -- while every test of each half separately still passes"),
+
+    Mutant(
+        "recovery-a-resumed-job-skips-the-review-it-owes",
+        "solvent/harness.py",
+        "    if s.orchestrator.required_tier(job_id).rank <= 1:\n"
+        "        return",
+        "    if True:\n"
+        "        return",
+        "tests_solvent.test_four_repair_integration"
+        ".AnInterruptionIsRecoveredWithAllFourInPlace"
+        ".test_the_resumed_job_obtained_its_own_second_opinion",
+        "a resumed job above T1 never asks for its second opinion"),
+
     # ---- inference routing -------------------------------------------
     # A router that decides whether prompts leave the machine, and whether
     # a paid endpoint gets called, is a security boundary.

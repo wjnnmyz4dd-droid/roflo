@@ -940,8 +940,15 @@ def _obtain_independent_review(s: "Solvent", cycle, *, reviewer) -> str:
     consequence = s.orchestrator.job(cycle.job_id).consequence
 
     if reviewer is not None:
-        approval = reviewer(job_id=cycle.job_id, artifact=artifact)
+        # Broad on purpose. ``reviewer`` is the owner's own tooling and
+        # anything can come back from it: a timeout, a stub, an object
+        # that is not an approval at all. A FailClosed is the verifier
+        # saying no; a TypeError is the tooling being broken. Both mean
+        # the same thing here -- there is no second opinion -- and only
+        # one of them used to be handled, so broken tooling took the
+        # whole cycle down with it instead of leaving a refusal.
         try:
+            approval = reviewer(job_id=cycle.job_id, artifact=artifact)
             independent.owner_review(
                 s.audit, job_id=cycle.job_id, approval=approval,
                 owner_channel=s.owner,
@@ -950,6 +957,10 @@ def _obtain_independent_review(s: "Solvent", cycle, *, reviewer) -> str:
                 consequence=consequence)
         except FailClosed as refusal:
             cycle.tier_detail = str(refusal)
+            return ""
+        except Exception as broken:
+            cycle.tier_detail = (f"the reviewer could not be asked: "
+                                 f"{type(broken).__name__}: {broken}")[:300]
             return ""
         return f"owner review by {getattr(approval, 'owner_identity', OWNER)}"
 
@@ -969,7 +980,43 @@ def _obtain_independent_review(s: "Solvent", cycle, *, reviewer) -> str:
     return "differential review by an independently authored reader"
 
 
-def _deliver_now(s: "Solvent", job_id: str, report) -> bool:
+def _delivery_approval(s: "Solvent", job_id: str, artifact, approver):
+    """The owner's consent for this one delivery, or the unsigned stand-in.
+
+    **DeskPilot cannot sign for itself.** The key is the owner's, so the
+    signed approval has to come from whatever the owner actually touches,
+    which is what ``approver`` is -- their tooling, handed in by the
+    caller exactly as ``independent_reviewer`` is.
+
+    Where no approver is supplied the unsigned development approval is
+    used, and the Action Gate decides what that is worth: it accepts one
+    while nothing can leave the machine and refuses it the moment an
+    Owner Channel exists or real execution is enabled. That refusal is
+    the correct answer, not a bug to route around -- the defect was that
+    the cycle offered the gate *nothing else*, so a configured key made
+    every delivery impossible including routine T1 work.
+
+    An owner who does not want to sign each routine delivery sets a
+    bounded ``preauthorization`` for the class instead; the gate checks
+    that first and never reaches here.
+    """
+    if approver is None:
+        return approval(owner_identity=OWNER, job_id=job_id,
+                        action_class=ActionClass.C2_EXTERNAL_COMMUNICATION,
+                        max_cents=0)
+    try:
+        return approver(job_id=job_id, artifact=artifact)
+    except Exception as refusal:
+        # The owner's tooling failing is not the owner consenting.
+        s.audit.record(
+            event="delivery.approval_unavailable", authority="gate",
+            initiator="harness",
+            why=f"{type(refusal).__name__}: {str(refusal)[:160]}",
+            job_id=job_id, decision="REFUSED")
+        return None
+
+
+def _deliver_now(s: "Solvent", job_id: str, report, approver=None) -> bool:
     """Ask the delivery gate again, after a review has been recorded.
 
     Extracted rather than duplicated: this is the same sequence
@@ -986,9 +1033,8 @@ def _deliver_now(s: "Solvent", job_id: str, report) -> bool:
         action_class=ActionClass.C2_EXTERNAL_COMMUNICATION,
         destination="client.example.com", privacy=PrivacyClass.CLIENT_CONFIDENTIAL,
         purpose="deliver the reviewed file", job_id=job_id,
-        approval=approval(owner_identity=OWNER, job_id=job_id,
-                          action_class=ActionClass.C2_EXTERNAL_COMMUNICATION,
-                          max_cents=0))
+        approval=_delivery_approval(
+            s, job_id, s.orchestrator.current_deliverable(job_id), approver))
     if not delivery.allowed:
         report.escalated = f"action gate refused delivery: {delivery.reason}"
         return False
@@ -1004,6 +1050,7 @@ def run_business_cycle(
         agreed_requirements: list | None = None,
         billing_basis: "quoting.BillingBasis | None" = None,
         independent_reviewer=None,
+        delivery_approver=None,
         work_standard: "quoting.WorkStandard | None" = None,
         work_units: int = 0,
         agreed_hourly_cents: Cents = 0,
@@ -1042,6 +1089,7 @@ def run_business_cycle(
             agreed_requirements=agreed_requirements,
             billing_basis=billing_basis,
             independent_reviewer=independent_reviewer,
+            delivery_approver=delivery_approver,
             work_standard=work_standard, work_units=work_units,
             agreed_hourly_cents=agreed_hourly_cents,
             owner_accepts_quote=owner_accepts_quote,
@@ -1057,6 +1105,7 @@ def _run_business_cycle(
         agreed_requirements: list | None = None,
         billing_basis: "quoting.BillingBasis | None" = None,
         independent_reviewer=None,
+        delivery_approver=None,
         work_standard: "quoting.WorkStandard | None" = None,
         work_units: int = 0,
         agreed_hourly_cents: Cents = 0,
@@ -1336,7 +1385,8 @@ def _run_business_cycle(
                                      path=source_file, initiator="business-cycle")
     started, started_cpu = time.monotonic(), time.process_time()
     report = _execute_job(s, job_id=cycle.job_id, source=source_file,
-                          workdir=workdir, capability=capability)
+                          workdir=workdir, capability=capability,
+                          delivery_approver=delivery_approver)
     # Measured across plan, work and verification, because all three are work
     # DeskPilot did on this job. Nothing sleeps in that path -- there is no
     # artificial delay between a deliverable passing verification and the
@@ -1367,14 +1417,36 @@ def _run_business_cycle(
         cycle.independent_review = _obtain_independent_review(
             s, cycle, reviewer=independent_reviewer)
         if not cycle.independent_review:
-            return stop("independent-review", cycle.tier_detail
-                        or "no independent review was obtained")
+            # The job is in VERIFYING and the second opinion did not arrive.
+            # Returning here used to leave it exactly there: holding its
+            # pipeline slot, in a state nothing polls, with no incident and
+            # no question for anyone -- a job silently lost rather than
+            # refused. The tier was reachable at admission, so this is not
+            # "no route exists" (which fails the job above); it is a
+            # reviewer that did not answer for this artifact, and a person
+            # can still give one. Block on the owner so the job is visible,
+            # countable and resumable, and record the incident so it shows
+            # up where failures are read.
+            from . import resilience as _res
+
+            why = cycle.tier_detail or "no independent review was obtained"
+            s.resilience.record_incident(
+                component="harness", operation="independent-review",
+                error_class="ReviewUnavailable", severity=_res.S_DEGRADED,
+                job_id=cycle.job_id, checkpoint="independent-review",
+                symptoms=why, trigger="verification tier above T1")
+            s.orchestrator.block(
+                job_id=cycle.job_id, blocked_on=BlockedOn.OWNER,
+                initiator="business-cycle",
+                why=f"independent review unavailable: {why}"[:400])
+            return stop("independent-review", why)
         cycle.stages.append("independent-review")
         # The gate is asked again, because the review is what may have
         # changed its answer. Both the report and the cycle carry the
         # outcome: reading a flag set before the review would report the
         # answer to the earlier question.
-        report.delivered = _deliver_now(s, cycle.job_id, report)
+        report.delivered = _deliver_now(s, cycle.job_id, report,
+                                        delivery_approver)
         cycle.delivered = report.delivered
         if report.artifacts:
             cycle.deliverable_path = report.artifacts[-1].path
@@ -2102,6 +2174,198 @@ def prune_processed_intents(
             result=f"{reclaimed} bytes reclaimed, {kept} kept, {failed} failed")
     return {"removed": removed, "bytes_reclaimed": reclaimed,
             "kept": kept, "failed": failed}
+
+
+#: How many times a job may be resumed after an interruption before it
+#: stops being a transient failure and becomes something a person should
+#: look at. Three, because a job that dies on the same step three times
+#: is not unlucky.
+MAX_RESUME_ATTEMPTS = 3
+
+#: The audit event each resumption writes. Counting these is how the
+#: attempt limit survives a restart: the count lives in the append-only
+#: log rather than in memory, so a crash loop cannot reset it.
+RESUME_EVENT = "recovery.resumed"
+
+#: States whose next step is a pure recompute with no external effect, so
+#: repeating it cannot send anything twice.
+#:
+#: EXECUTING and VERIFYING both re-run the worker and the checker against
+#: the committed checklist. That is the same code a first attempt runs,
+#: it writes the deliverable to the same path, and it approves nothing --
+#: the checker still has to pass before the delivery gate is even asked.
+#:
+#: READY_FOR_DELIVERY is deliberately absent. Its next step is an external
+#: effect, and "ready" does not prove nothing was already sent. Those jobs
+#: belong to :func:`solvent.runtime.reconcile`, which runs straight after
+#: this and blocks them on the owner rather than guessing.
+RESUMABLE = (JobState.EXECUTING, JobState.VERIFYING)
+
+
+def resume_interrupted(s: "Solvent", *, source: str = "", workdir: str = "",
+                       capability: str = "csv-cleanup",
+                       delivery_approver=None, independent_reviewer=None,
+                       initiator: str = "recovery") -> list[dict]:
+    """Re-run the work for jobs a crash interrupted, where that is safe.
+
+    Called **before** :func:`solvent.runtime.reconcile`, by
+    :func:`recover_after_restart`, which is the only order that works:
+    reconciliation blocks everything it finds mid-flight, so running it
+    first would leave this with nothing to resume. This takes the work
+    that stopped mid-recompute, which can be repeated; reconciliation
+    then escalates whatever is left, this function's failures included.
+
+    Four things keep this from becoming a way to launder unverified work
+    into a delivery:
+
+    * only :data:`RESUMABLE` states are touched, and neither of them has
+      sent anything;
+    * resumption calls the same ``_execute_job`` a first attempt calls,
+      so the checker runs again and the delivery gate is asked again;
+    * the attempt count lives in the append-only audit log, so a crash
+      loop cannot reset it and the fourth attempt is refused;
+    * a job that exhausts its attempts is blocked on the owner, not
+      dropped, because freeing capacity by discarding work is the
+      failure this whole exercise is about.
+
+    Returns one record per job considered, so a restart is never silent.
+    """
+    reviewer = independent_reviewer
+    held = {r.job_id: r.capability for r in s.capacity.outstanding()
+            if r.job_id and r.capability}
+    out: list[dict] = []
+    for job in list(s.orchestrator.jobs()):
+        if job.state not in RESUMABLE:
+            continue
+        # Each job is resumed as the work it actually is. ``capability``
+        # and ``source`` are fallbacks for a caller that knows better,
+        # not a declaration that every interrupted job in the shop is the
+        # same kind of work: a shop running five skills would otherwise
+        # resume a csv job as a data-entry one and produce nonsense that
+        # the checker then has to catch.
+        skill = (held.get(job.id) or s.orchestrator.capability_of(job.id)
+                 or capability)
+        supplied = next(iter(s.orchestrator.artifacts(job.id, role="SOURCE")),
+                        None)
+        origin = supplied.path if supplied else source
+        attempts = sum(
+            1 for event in s.audit.events(job.id)
+            if event.get("event") == RESUME_EVENT)
+        record = {"job_id": job.id, "found_in": job.state.value,
+                  "attempts_before": attempts, "capability": skill}
+        if attempts >= MAX_RESUME_ATTEMPTS:
+            s.orchestrator.block(
+                job_id=job.id, blocked_on=BlockedOn.OWNER, initiator=initiator,
+                why=(f"resumed {attempts} times and still interrupted; a "
+                     "person should look before it is tried again"))
+            record["outcome"] = "ESCALATED"
+            out.append(record)
+            continue
+        s.audit.record(
+            event=RESUME_EVENT, authority="orchestrator", initiator=initiator,
+            why=f"resuming a job found in {job.state.value} after a restart",
+            job_id=job.id, decision="RESUMED",
+            result=f"attempt {attempts + 1} of {MAX_RESUME_ATTEMPTS}")
+        try:
+            report = _execute_job(
+                s, job_id=job.id, source=origin, workdir=workdir,
+                capability=skill, delivery_approver=delivery_approver)
+            if not report.delivered:
+                # A job above T1 owes an independent review before the
+                # gate will let anything out, and that step lives in the
+                # business cycle rather than in ``_execute_job``. Without
+                # it a resumed T2 job re-verified, was refused at the
+                # gate for want of a second opinion nobody had asked for,
+                # and went back to VERIFYING -- a resumption that
+                # reliably achieved nothing. Ask for the review here too.
+                _review_and_deliver(
+                    s, job_id=job.id, report=report, reviewer=reviewer,
+                    approver=delivery_approver, record=record)
+            record["outcome"] = "DELIVERED" if report.delivered else "HELD"
+            record["detail"] = (record.get("detail")
+                                or (report.escalated or ""))[:160]
+        except Exception as failure:
+            record["outcome"] = "FAILED"
+            record["detail"] = f"{type(failure).__name__}: {failure}"[:160]
+            s.resilience.record_incident(
+                component="recovery", operation="resume-interrupted",
+                error_class=type(failure).__name__, signature=str(failure),
+                severity=_resilience_severity(), job_id=job.id,
+                trigger="resumption after a restart", symptoms=str(failure))
+        out.append(record)
+    return out
+
+
+@dataclass
+class _ReviewTarget:
+    """The two fields :func:`_obtain_independent_review` reads and writes.
+
+    Resumption is not a business cycle and has no ``BusinessCycle`` to
+    hand it. Rather than copy the review step into a second place --
+    where it would drift, and where the copy is the one that would stop
+    asking -- this carries the job id in and the reason back out.
+    """
+
+    job_id: str
+    tier_detail: str = ""
+
+
+def _review_and_deliver(s: "Solvent", *, job_id: str, report, reviewer,
+                        approver, record: dict) -> None:
+    """Obtain the second opinion a job above T1 owes, then ask the gate.
+
+    Mutates ``report.delivered`` exactly as the business cycle does, so a
+    resumed job and a first attempt reach delivery through the same two
+    steps in the same order. Where the review cannot be obtained the job
+    is left for :func:`solvent.runtime.reconcile` to escalate: nothing
+    here decides that unreviewed work may ship.
+    """
+    if s.orchestrator.required_tier(job_id).rank <= 1:
+        return
+    target = _ReviewTarget(job_id=job_id)
+    if not _obtain_independent_review(s, target, reviewer=reviewer):
+        record["detail"] = (target.tier_detail
+                            or "no independent review was obtained")[:160]
+        return
+    record["independent_review"] = True
+    report.delivered = _deliver_now(s, job_id, report, approver)
+
+
+def recover_after_restart(s: "Solvent", *, source: str = "",
+                          workdir: str = "", capability: str = "csv-cleanup",
+                          delivery_approver=None, independent_reviewer=None,
+                          initiator: str = "recovery") -> dict:
+    """The whole restart path, in the one order that is coherent.
+
+    The two halves of recovery contradict each other if run the other way
+    round. :func:`solvent.runtime.reconcile` blocks *everything* found
+    mid-flight on the owner, which is right as a safety net and would
+    leave :func:`resume_interrupted` with nothing to resume. So:
+
+    1. **Resume** what is safely recoverable -- work that stopped during a
+       recompute, where repeating the recompute sends nothing and changes
+       nothing outside the machine.
+    2. **Reconcile** everything else: a job whose next step is an external
+       effect, a job a resumption could not finish, and any pipeline slot
+       held by work that has settled. These are blocked on the owner with
+       an incident, never discarded and never guessed at.
+
+    After this returns, no job is left in EXECUTING, VERIFYING or
+    READY_FOR_DELIVERY: each has either moved on or become a question
+    somebody can see.
+    """
+    from . import runtime as _runtime
+
+    resumed = resume_interrupted(
+        s, source=source, workdir=workdir, capability=capability,
+        delivery_approver=delivery_approver,
+        independent_reviewer=independent_reviewer, initiator=initiator)
+    return {"resumed": resumed, "reconciled": _runtime.reconcile(s)}
+
+
+def _resilience_severity() -> str:
+    from . import resilience as _res
+    return _res.S_SERIOUS
 
 
 def _apply_work_preferences(s: "Solvent", params: dict, why: str) -> str:
@@ -3362,6 +3626,7 @@ def run_csv_job(*, source: str, requirements: list, workdir: str,
 
 def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
                  capability: str = "csv-cleanup", sabotage=None,
+                 delivery_approver=None,
                  report: "ServiceReport | None" = None) -> "ServiceReport":
     """Plan, produce, verify, gate. Shared by a first attempt and a resumption.
 
@@ -3376,6 +3641,22 @@ def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
         report.job_id = job_id
         report.committed = s.orchestrator.effective_baseline(job_id)
     src = next((a for a in s.orchestrator.artifacts(job_id, role="SOURCE")), None)
+    if src is None:
+        # A job with no SOURCE artifact cannot say what it was given, and
+        # a resumption that registered one from a path its caller handed
+        # in would be asserting a provenance nobody recorded. This is
+        # reachable: a crash inside the very call that records the source
+        # leaves exactly this state, and it used to surface three
+        # functions later as ``AttributeError: 'NoneType' object has no
+        # attribute 'digest'`` -- a crash where a refusal belongs.
+        report.escalated = (
+            "no source artifact is on record for this job, so there is "
+            "nothing whose provenance can be checked; the work was "
+            "interrupted before its source was recorded")
+        s.orchestrator.block(job_id=job_id, blocked_on=BlockedOn.OWNER,
+                             initiator="execution", why=report.escalated)
+        report.final_state = s.orchestrator.job(job_id).state.value
+        return report
 
     # What the worker is *instructed* to do is the subset of the committed
     # checklist that names a check. A requirement with no check is scope -- the
@@ -3509,9 +3790,9 @@ def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
         action_class=ActionClass.C2_EXTERNAL_COMMUNICATION,
         destination="client.example.com", privacy=PrivacyClass.CLIENT_CONFIDENTIAL,
         purpose="deliver the cleaned file", job_id=job_id,
-        approval=approval(owner_identity=OWNER, job_id=job_id,
-                          action_class=ActionClass.C2_EXTERNAL_COMMUNICATION,
-                          max_cents=0))
+        approval=_delivery_approval(
+            s, job_id, s.orchestrator.current_deliverable(job_id),
+            delivery_approver))
     if delivery.allowed:
         s.orchestrator.record_delivery(job_id=job_id, initiator="execution",
                                        gate_request_id=delivery.request_id)

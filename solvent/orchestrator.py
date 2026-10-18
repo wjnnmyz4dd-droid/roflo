@@ -680,6 +680,21 @@ class JobOrchestrator:
     def required_tier(self, job_id: str) -> VerificationTier:
         return REQUIRED_TIER[self.job(job_id).consequence]
 
+    def capability_of(self, job_id: str) -> str:
+        """Which skill last worked this job, or ``""``.
+
+        Read from the execution measurements, which are written on every
+        execution and never deleted. A job does not carry its capability
+        as a field -- the opportunity's ``needs`` decides it at
+        admission and the record of what actually ran is here -- so this
+        is how a restart finds out what kind of work it is looking at
+        rather than assuming.
+        """
+        row = self._db.query_one(
+            "SELECT capability FROM execution_measurements WHERE job_id = ? "
+            "ORDER BY id DESC LIMIT 1", (job_id,))
+        return (row["capability"] if row else "") or ""
+
     def record_execution(self, job_id: str, *, capability: str,
                          wall_seconds: float, cpu_seconds: float = 0.0,
                          units: int = 0, outcome: str = "") -> str:
