@@ -168,5 +168,198 @@ class CompletedJobsReleaseTheirSlot(unittest.TestCase):
                          qualification.OCCUPIES_CAPACITY)
 
 
+class PerSkillPoolsAreEnforced(unittest.TestCase):
+    """Repair 1: one skill must not consume another skill's inventory.
+
+    Measured before this: offering a backlog grouped by skill let
+    csv-cleanup take every global slot and four of five skills delivered
+    nothing. The capacity controller already counted reservations per
+    capability and enforced a per-pipeline limit; nothing called it.
+    """
+
+    def setUp(self):
+        from solvent.harness import Solvent
+        self.s = Solvent(":memory:")
+        self.addCleanup(self.s.store.close)
+
+    def budget(self, **overrides):
+        base = {"max_owed_seconds": 20 * 3600, "max_concurrent_jobs": 4,
+                "pipeline_target": 4, "replenish_at": 2,
+                "max_committed_jobs": 20,
+                # Required: the validator refuses a budget that claims the
+                # whole machine, because MetaTrader 5 shares it.
+                "cpu_share": 0.5,
+                "max_execution_workers": 5,
+                "max_verification_workers": 5}
+        base.update(overrides)
+        self.s.policy.amend({"capacity": base}, "owner:demo", "test")
+
+    def reserve(self, job_id, capability):
+        return self.s.capacity.reserve(
+            3600.0, kind="EXECUTE", job_id=job_id, capability=capability,
+            idempotency_key=f"commit:{job_id}", why="test")
+
+    def test_a_pipeline_fills_at_its_own_ceiling(self):
+        self.budget()
+        for n in range(4):
+            self.assertTrue(self.reserve(f"job_a{n}", "csv-cleanup").allowed)
+        self.assertFalse(
+            self.reserve("job_a4", "csv-cleanup").allowed,
+            "a fifth job entered a pipeline whose ceiling is four")
+
+    def test_a_full_pipeline_does_not_block_another_skill(self):
+        """The starvation the repair exists to prevent."""
+        self.budget()
+        for n in range(4):
+            self.reserve(f"job_a{n}", "csv-cleanup")
+        self.assertTrue(
+            self.reserve("job_b0", "data-entry").allowed,
+            "a full csv-cleanup pipeline blocked data-entry, which is the "
+            "cross-skill starvation this repair removes")
+
+    def test_the_same_acceptance_twice_takes_one_slot(self):
+        self.budget()
+        self.reserve("job_dup", "data-entry")
+        self.reserve("job_dup", "data-entry")
+        self.assertEqual(self.s.capacity.jobs_in_flight("data-entry"), 1,
+                         "a replayed acceptance took a second slot")
+
+    def test_a_settled_job_gives_its_slot_back(self):
+        self.budget()
+        self.reserve("job_done", "report-builder")
+        self.assertEqual(self.s.capacity.jobs_in_flight("report-builder"), 1)
+        self.assertEqual(self.s.capacity.release_job("job_done"), 1)
+        self.assertEqual(self.s.capacity.jobs_in_flight("report-builder"), 0)
+
+    def test_releasing_twice_is_harmless(self):
+        """Both the cycle and startup reconciliation may try."""
+        self.budget()
+        self.reserve("job_twice", "data-entry")
+        self.assertEqual(self.s.capacity.release_job("job_twice"), 1)
+        self.assertEqual(self.s.capacity.release_job("job_twice"), 0)
+
+    def test_an_unconfigured_budget_does_not_stop_the_shop(self):
+        """No budget set is not the same sentence as 'this pipeline is full'."""
+        verdict = self.reserve("job_nobudget", "data-entry")
+        self.assertFalse(verdict.allowed)
+        self.assertEqual(verdict.refusal.name, "NOT_CONFIGURED",
+                         "an unset budget must be distinguishable from a full "
+                         "pipeline, or qualification cannot tell them apart")
+
+
+class IndependentCsvReview(unittest.TestCase):
+    """Repair 2: a second opinion on a .csv that is genuinely second.
+
+    The worker parses with the standard library's ``csv``. A checker
+    using ``csv`` would be Solvent reading its own output twice, which
+    is why the reviewer refused .csv outright and 34 of 100 contracts
+    stopped at verification-eligibility. CleverCSV parses with its own
+    C parser.
+    """
+
+    HEADER = ("Item", "Client ref", "Units")
+
+    def setUp(self):
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.dir = pathlib.Path(self.box.name)
+
+    def csv_file(self, name: str, text: str) -> pathlib.Path:
+        path = self.dir / name
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def read(self, path):
+        import clevercsv
+        return independent._read_independently(clevercsv, "csv", str(path))
+
+    def findings(self, source, delivered, requirements):
+        import clevercsv
+        return independent._recompute_independently(
+            clevercsv, "csv", str(source), delivered, requirements)
+
+    # ---------------------------------------------------------- the reader
+    def test_a_plain_file_is_read(self):
+        path = self.csv_file("plain.csv",
+                             "Item,Client ref,Units\nAudit,CR-1,3\n")
+        rows, problem = self.read(path)
+        self.assertEqual(problem, "")
+        self.assertEqual(rows[0], ["Item", "Client ref", "Units"])
+        self.assertEqual(rows[1], ["Audit", "CR-1", "3"])
+
+    def test_a_quoted_delimiter_does_not_split_a_field(self):
+        path = self.csv_file(
+            "quoted.csv",
+            'Item,Client ref,Units\n"Audit, phase two",CR-1,3\n')
+        rows, problem = self.read(path)
+        self.assertEqual(problem, "")
+        self.assertEqual(rows[1][0], "Audit, phase two")
+        self.assertEqual(len(rows[1]), 3, f"the row split wrongly: {rows[1]}")
+
+    def test_an_embedded_newline_stays_in_its_field(self):
+        path = self.csv_file(
+            "newline.csv",
+            'Item,Client ref,Units\n"Audit\nphase two",CR-1,3\n')
+        rows, problem = self.read(path)
+        self.assertEqual(problem, "")
+        self.assertEqual(len(rows), 2, f"the record split across lines: {rows}")
+        self.assertIn("\n", rows[1][0])
+
+    def test_a_semicolon_dialect_is_worked_out_not_assumed(self):
+        path = self.csv_file("semi.csv",
+                             "Item;Client ref;Units\nAudit;CR-1;3\n")
+        rows, problem = self.read(path)
+        self.assertEqual(problem, "")
+        self.assertEqual(len(rows[0]), 3,
+                         "the reader was not told the delimiter and did not "
+                         f"work it out: {rows[0]}")
+
+    def test_empty_fields_survive(self):
+        path = self.csv_file("empty.csv",
+                             "Item,Client ref,Units\nAudit,,3\n")
+        rows, _ = self.read(path)
+        self.assertEqual(rows[1], ["Audit", "", "3"])
+
+    # ------------------------------------------------- what it must catch
+    def requirement(self):
+        return [req("r1", "preserve_columns", {"columns": ["Client ref"]})]
+
+    def test_a_correct_deliverable_passes(self):
+        source = self.csv_file(
+            "src.csv", "Item,Client ref,Units\nA,CR-1,3\nB,CR-2,4\n")
+        delivered = [["Item", "Client ref"], ["A", "CR-1"], ["B", "CR-2"]]
+        found = [f for f in self.findings(source, delivered, self.requirement())
+                 if "came from the source" in f[0]]
+        self.assertTrue(found, "the provenance check did not run on a .csv")
+        self.assertTrue(found[0][1], found[0][2])
+
+    def test_a_fabricated_value_is_caught(self):
+        source = self.csv_file(
+            "src2.csv", "Item,Client ref,Units\nA,CR-1,3\n")
+        delivered = [["Item", "Client ref"], ["A", "CR-1"], ["Ghost", "CR-999"]]
+        found = [f for f in self.findings(source, delivered, self.requirement())
+                 if "came from the source" in f[0]]
+        self.assertTrue(found)
+        self.assertFalse(found[0][1],
+                         "a value the source never had was accepted")
+
+    def test_an_altered_value_is_caught(self):
+        """A changed reference is a value the source never had."""
+        source = self.csv_file(
+            "src3.csv", "Item,Client ref,Units\nA,CR-1,3\n")
+        delivered = [["Item", "Client ref"], ["A", "CR-7"]]
+        found = [f for f in self.findings(source, delivered, self.requirement())
+                 if "came from the source" in f[0]]
+        self.assertTrue(found)
+        self.assertFalse(found[0][1], "an altered value was accepted")
+
+    def test_an_unreadable_file_refuses_rather_than_passing(self):
+        path = self.dir / "gone.csv"
+        rows, problem = self.read(path)
+        self.assertEqual(rows, [])
+        self.assertTrue(problem, "an unreadable file produced no complaint, "
+                                 "which would read as agreement")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

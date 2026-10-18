@@ -58,12 +58,27 @@ _DIFFERENTIAL_READERS = {
                          "this project"),
     "docx": ("docx", "python-docx, written and maintained independently of "
                      "this project"),
+    # CSV was the hard one, and for a real reason: the worker parses with
+    # the standard library's ``csv``, so a checker using ``csv`` would be
+    # Solvent reading its own output twice. CleverCSV parses with its own
+    # C parser -- it imports ``csv`` only to interoperate with dialect
+    # objects, never to read a file -- which is what makes the second
+    # opinion a second opinion.
+    "csv": ("clevercsv", "CleverCSV, written and maintained independently of "
+                         "this project, parsing with its own implementation "
+                         "rather than the standard library's csv module"),
 }
 
 #: The subject line a review approval must carry. The digest is in it so an
 #: approval cannot be reused for a different file: the signature covers the
 #: subject, so changing the digest invalidates it.
 REVIEW_SUBJECT = "independent review of artifact {digest}"
+
+#: How much of a CSV the independent reader looks at to work out its
+#: dialect. Enough to see quoting and embedded newlines in a real file,
+#: bounded so a hostile multi-gigabyte deliverable cannot be read into
+#: memory by the thing that is supposed to be checking it.
+_CSV_SNIFF_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,7 +315,7 @@ def _recompute_independently(module, extension: str, source: str, delivered,
     """
     from .types import check_of
 
-    if extension != "xlsx" or not source:
+    if extension not in ("xlsx", "csv") or not source:
         return []
     rows, problem = _read_independently(module, extension, source)
     if problem or not rows:
@@ -461,6 +476,18 @@ def _read_independently(module, extension: str, path: str, *,
         if extension == "docx":
             document = module.Document(path)
             return [p.text for p in document.paragraphs], ""
+        if extension == "csv":
+            # Let the reader work out the dialect itself. Being told the
+            # delimiter by the side under review would make the second
+            # opinion agree by construction on exactly the question --
+            # how this file is punctuated -- that a delimiter bug gets
+            # wrong.
+            with open(path, newline="", encoding="utf-8",
+                      errors="replace") as handle:
+                sample = handle.read(_CSV_SNIFF_BYTES)
+                handle.seek(0)
+                dialect = module.Sniffer().sniff(sample)
+                return [list(row) for row in module.reader(handle, dialect)], ""
     except Exception as problem:   # a third-party reader may raise anything
         return [], f"{type(problem).__name__}: {problem}"
     return [], f"no independent reader is wired for .{extension}"

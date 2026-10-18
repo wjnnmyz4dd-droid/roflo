@@ -226,7 +226,8 @@ class Solvent:
             self.orchestrator, gate=self.gate, memory=self.memory)
         self.qualification = Qualification(
             self.store, self.audit, self.policy, self.governor, self.capability,
-            self.orchestrator, self.discovery, self.memory, self.ledger)
+            self.orchestrator, self.discovery, self.memory, self.ledger,
+            self.capacity)
 
     def project(self, job_id: str):
         return project(job_id=job_id, orchestrator=self.orchestrator,
@@ -1304,6 +1305,18 @@ def _run_business_cycle(
     cycle.tier_reachable, cycle.tier_detail = s.orchestrator.tier_is_reachable(
         cycle.job_id, extension=extension, owner_channel=s.owner)
     if not cycle.tier_reachable:
+        # Unreachable is not "not yet": no route to this tier exists in this
+        # build, so waiting changes nothing and the job would sit in ACCEPTED
+        # for ever, holding its pipeline slot. Fail it explicitly instead --
+        # which escalates, releases the slot, and leaves a reason on the
+        # record. Failing is the opposite of approving: nothing unverified
+        # ships because of this.
+        s.orchestrator.fail(job_id=cycle.job_id,
+                            reason=f"verification unreachable: "
+                                   f"{cycle.tier_detail}"[:300],
+                            initiator="business-cycle")
+        s.capacity.release_job(
+            cycle.job_id, why="verification tier unreachable; job failed")
         return stop("verification-eligibility", cycle.tier_detail)
     cycle.stages.append("verification-eligibility")
 
@@ -1482,6 +1495,12 @@ def _run_business_cycle(
 
     # --- reconcile ---------------------------------------------------------
     s.orchestrator.complete(job_id=cycle.job_id, initiator="business-cycle")
+    # The work is done, so the pipeline slot goes back. Done here at the
+    # composition layer rather than inside the Orchestrator, which must not
+    # depend on the capacity controller: the thing that decides whether work
+    # may ship and the thing that counts how much is owed are separate
+    # authorities, and coupling them is how one starts overruling the other.
+    s.capacity.release_job(cycle.job_id, why="job completed and reconciled")
     cycle.collected_cents = s.ledger.collected_for(cycle.job_id)
     profit = s.ledger.actual_profit(cycle.job_id)
     cycle.actual_profit_cents = profit["actual_profit_cents"]

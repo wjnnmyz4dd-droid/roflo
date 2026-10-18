@@ -165,7 +165,8 @@ class Qualification:
     """The one accept/reject/escalate authority. It owns no economics."""
 
     def __init__(self, store: Store, audit: AuditLog, policy, governor, capability,
-                 orchestrator, discovery, memory=None, ledger=None) -> None:
+                 orchestrator, discovery, memory=None, ledger=None,
+                 capacity=None) -> None:
         self._db = store.for_authority("qualification")
         self._audit = audit
         self._policy = policy
@@ -175,6 +176,11 @@ class Qualification:
         self._discovery = discovery
         self._memory = memory
         self._ledger = ledger
+        #: The capacity controller, which owns per-skill accounting. It is
+        #: optional only so an older caller still constructs; where it is
+        #: absent the global ceiling still applies and a warning-free
+        #: fallback would be wrong, so `_reserve_slot` says so in the audit.
+        self._capacity = capacity
 
     # ---------------------------------------------------------------- triage
 
@@ -416,6 +422,100 @@ class Qualification:
             decision=verdict.value)
         return decision
 
+    def _reserve_slot(self, decision) -> bool:
+        """Take this candidate's slot in its own skill's pipeline.
+
+        The capacity controller already knows how to do this: it counts
+        reservations per ``capability``, enforces the per-pipeline limit and
+        the global ceiling separately, and keys each reservation with an
+        idempotency key so the same acceptance delivered twice takes one
+        slot. None of it was reachable, because nothing called
+        :meth:`Capacity.reserve`. This is that call.
+
+        Returns False when the pipeline is full, which defers the candidate
+        rather than rejecting it: a skill being busy is opportunity cost,
+        not a fault in the work.
+        """
+        if self._capacity is None:
+            return True
+        skill = self._skill_of(decision)
+        job_id = decision.job_id or ""
+        if not job_id:
+            return True
+        try:
+            verdict = self._capacity.reserve(
+                self._expected_seconds(decision), kind="EXECUTE",
+                job_id=job_id, capability=skill,
+                # One key per job, so a retried or replayed acceptance
+                # resolves to the reservation already held.
+                idempotency_key=f"commit:{job_id}",
+                why=f"committed by qualification for {skill or 'no pipeline'}")
+        except Exception as refusal:      # the controller fails closed
+            self._audit.record(
+                event="capacity.reserve_failed", authority="qualification",
+                initiator="qualification",
+                why=f"{type(refusal).__name__}: {str(refusal)[:160]}",
+                job_id=job_id, decision="DEFERRED")
+            return False
+        if not getattr(verdict, "allowed", False):
+            if getattr(getattr(verdict, "refusal", None), "name",
+                       "") == "NOT_CONFIGURED":
+                # The owner has not set a capacity budget, so there is no
+                # per-skill number to hold this against. That is a different
+                # sentence from "this pipeline is full", and treating it as a
+                # refusal would stop every installation that has not opted
+                # into capacity accounting from taking any work at all.
+                #
+                # This is NOT overriding a deliberate shutdown: an owner who
+                # wants DeskPilot to stop sets operating_mode, which
+                # Orchestrator.intake refuses against before anything reaches
+                # here. Per-skill pools are a feature a budget turns on.
+                self._audit.record(
+                    event="capacity.unconfigured", authority="qualification",
+                    initiator="qualification",
+                    why=("no capacity budget is set, so per-skill pools are "
+                         "not enforced; the global ceiling still applies"),
+                    job_id=job_id, decision="ADMITTED")
+                return True
+            self._audit.record(
+                event="capacity.pipeline_full", authority="qualification",
+                initiator="qualification",
+                why=str(getattr(verdict, "why", ""))[:200],
+                job_id=job_id, decision="DEFERRED")
+            return False
+        return True
+
+    @staticmethod
+    def _skill_of(decision) -> str:
+        """Which pipeline this candidate belongs to, or '' if unstated.
+
+        An unattributable candidate goes to the empty pipeline, which the
+        controller already treats as a real pipeline with its own limit.
+        Guessing a skill for it would put work in a queue nobody chose.
+        """
+        opportunity = getattr(decision, "opportunity", None)
+        needs = list(getattr(opportunity, "needs", None) or [])
+        return str(needs[0]) if needs else ""
+
+    @staticmethod
+    def _expected_seconds(decision) -> float:
+        """What this job is expected to cost in worker time.
+
+        Capacity is denominated in seconds of expected work, so a
+        reservation needs one. Falls back to a nominal hour rather than
+        zero: a reservation for no time would take a slot while telling
+        the seconds ceiling nothing, which is how a shop overcommits
+        without any single limit being breached.
+        """
+        for attribute in ("expected_seconds", "estimated_seconds"):
+            value = getattr(decision, attribute, None)
+            if value:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    pass
+        return 3600.0
+
     def _committed_count(self) -> int:
         """Jobs that actually consume a processing slot.
 
@@ -547,7 +647,12 @@ class Qualification:
         limit = int(self._policy.get("qualification", "max_concurrent_jobs",
                                      default=3))
         room = max(0, limit - self._committed_count())
-        selected, deferred = ranked[:room], ranked[room:]
+        selected, deferred = [], []
+        for decision in ranked:
+            if len(selected) >= room or not self._reserve_slot(decision):
+                deferred.append(decision)
+                continue
+            selected.append(decision)
         for decision in selected:
             # Commitment happens here, and only here: after every candidate has
             # been judged and compared.

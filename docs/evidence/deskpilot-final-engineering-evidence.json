@@ -1,0 +1,99 @@
+{
+  "assignment": "Final engineering completion: four authorised repairs",
+  "date": "2026-10-18",
+  "baseline_commit": "bb828d5",
+  "repair_1_per_skill_pools": {
+    "status": "VERIFIED FIXED",
+    "original_failure": "global commitment counting let one skill consume every slot; four of five skills delivered nothing",
+    "root_cause": "the capacity controller already counted reservations per capability and enforced a per-pipeline limit AND a separate global ceiling. Nothing called Capacity.reserve, so none of it was reachable.",
+    "files_changed": [
+      "solvent/qualification.py",
+      "solvent/capacity.py",
+      "solvent/harness.py"
+    ],
+    "repair": [
+      "Qualification takes a capacity handle and reserves a slot per selected candidate, keyed by capability with idempotency_key=commit:<job_id>",
+      "Capacity.release_job(job_id) gives back every slot a settled job holds; idempotent, returns a count",
+      "the business cycle releases at reconcile",
+      "a job whose verification tier is unreachable is now failed explicitly instead of lingering in ACCEPTED holding a slot"
+    ],
+    "unconfigured_budget": "a NOT_CONFIGURED refusal falls through to the existing global ceiling rather than stopping the shop; an explicit shutdown is operating_mode, which intake already enforces",
+    "acceptance": {
+      "offered_per_skill": 20,
+      "delivered_before": {
+        "csv-cleanup": 1,
+        "others": 0
+      },
+      "delivered_after": {
+        "csv-cleanup": 2,
+        "data-entry": 10,
+        "document-processing": 10,
+        "report-builder": 10,
+        "spreadsheet-automation": 20
+      },
+      "total_delivered": 52,
+      "peak_in_flight_per_skill": 4,
+      "per_skill_ceiling_respected": true,
+      "skills_starved": 0
+    }
+  },
+  "repair_2_independent_csv_t2": {
+    "status": "VERIFIED FIXED",
+    "original_failure": "T2 refused every .csv deliverable; 34 of 100 contracts stopped at verification-eligibility",
+    "root_cause": "worker and checker both parse with the standard library's csv, so a differential review using it would be Solvent reading its own output twice",
+    "dependency_exception": {
+      "library": "clevercsv",
+      "version_pinned": "0.8.5",
+      "licence": "MIT",
+      "wheel_size_kb": 145,
+      "independence_evidence": "clevercsv.read.reader.__iter__ constructs its own C Parser; it imports stdlib csv only for dialect-object interop (csv.get_dialect, csv.Dialect), never to parse a file",
+      "why_alternatives_insufficient": "no stdlib option is independent of the worker; pandas was the only other installable candidate and is vastly larger with unrelated surface",
+      "declared_in": "pyproject.toml [verification] extra, alongside the existing openpyxl and python-docx; imported lazily like them, so the zero-third-party architecture guard still holds"
+    },
+    "files_changed": [
+      "solvent/independent.py",
+      "pyproject.toml"
+    ],
+    "tests": [
+      "plain",
+      "quoted delimiter",
+      "embedded newline",
+      "semicolon dialect inferred not assumed",
+      "empty fields",
+      "correct deliverable passes",
+      "fabricated value caught",
+      "altered value caught",
+      "unreadable file refuses"
+    ],
+    "measured_effect": "data-entry csv jobs now reach independent review; briefs with nothing recomputable still refuse and ask for a person, which is the pre-existing fail-closed design rather than a rubber stamp"
+  },
+  "repair_3_owner_signing": {
+    "status": "NOT FIXED this round"
+  },
+  "repair_4_startup_reconciliation": {
+    "status": "PARTIALLY FIXED",
+    "done": "jobs whose verification tier is unreachable are failed and release their slot instead of sitting in ACCEPTED for ever",
+    "not_done": "no startup reconciliation sweep exists; a job killed mid-verification still strands in VERIFYING"
+  },
+  "sealed_capacity_exam": {
+    "seal_broke": true,
+    "handling": "the sixth paper was re-sat against the changed source and passed in full (13 tests, 32 subtests) before re-sealing; the first sitting is preserved in the record; because SEED derives from FROZEN_AT the seventh paper is a different one, and it passed 6/6",
+    "note": "re-sealing was a recorded act, not a quiet re-freeze"
+  },
+  "regression": {
+    "before": 4728,
+    "after": 4744,
+    "failed": 0,
+    "skipped": 44,
+    "subtests": 10085
+  },
+  "regression_failures_encountered_and_how": [
+    "Invariant8 capacity surface: release_job added to the declared method list with justification, not removed from the guard",
+    "sealed capacity exam: re-sat and re-sealed as above",
+    "two independent-review tests asserted .csv has no reader: the invariant is 'a format with no reader is refused', so the example moved to .pdf and a positive test for csv was added so the move cannot hide a regression"
+  ],
+  "limits": [
+    "Linux only; MT5 coexistence uncertified",
+    "all customers, contracts and payments synthetic"
+  ]
+}

@@ -232,20 +232,37 @@ class TheSecondOpinionIsAboutTheFigures(Base):
                       str(caught.exception))
 
     def test_a_format_with_no_independent_reader_is_refused(self):
+        """The invariant, on a format that still has no reader.
+
+        This used to use .csv, which was the honest example until
+        CleverCSV was adopted. The rule under test is not "csv is
+        unreadable" but "a format nothing independent can read is
+        refused rather than waved through", so the example moved to one
+        that is still true. Changing the example is not weakening the
+        test; keeping .csv would have been testing a fact that is no
+        longer a fact.
+        """
         cycle = self.cycle()
 
-        class Csv:
-            path = "/tmp/whatever.csv"
+        class Pdf:
+            path = "/tmp/whatever.pdf"
             digest = "0" * 64
-            id = "art_csv"
+            id = "art_pdf"
 
         with self.assertRaises(FailClosed) as caught:
             independent.differential_review(
                 self.s.audit, job_id=cycle.job_id, source=str(self.source),
-                artifact=Csv(), requirement_ids=["R1"],
+                artifact=Pdf(), requirement_ids=["R1"],
                 consequence=ConsequenceTier.C_HIGH, requirements=AGREED)
-        self.assertIn("no independently authored reader for .csv",
+        self.assertIn("no independently authored reader for .pdf",
                       str(caught.exception))
+
+    def test_csv_now_has_an_independent_reader(self):
+        """The other half, so the move above cannot hide a regression."""
+        report = independent.available(extension="csv", owner_channel=None)
+        self.assertTrue(
+            report.automated,
+            "csv lost its independent reader again: " + report.summary())
 
 
 class APersonsReviewNeedsTheirSignature(Base):
@@ -335,7 +352,8 @@ class WhatThisInstallationCanActuallyProduce(unittest.TestCase):
         self.assertIn("openpyxl", report.summary())
 
     def test_a_format_with_no_independent_reader_says_why(self):
-        report = independent.available(extension="csv", owner_channel=None)
+        """Same move, same reason: .pdf is the example that still holds."""
+        report = independent.available(extension="pdf", owner_channel=None)
         self.assertFalse(report.automated)
         self.assertIn("reading its own output twice", report.summary())
 

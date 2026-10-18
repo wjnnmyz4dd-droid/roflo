@@ -909,6 +909,29 @@ class Capacity:
         """The work happened. The room is given back."""
         self._finish(reservation_id, CONSUMED, why)
 
+    def release_job(self, job_id: str, *, why: str = "the job settled") -> int:
+        """Give back every slot this job still holds. Returns how many.
+
+        Idempotent by construction: a reservation already finished is not
+        outstanding, so a second call releases nothing and says so with a
+        zero. That matters because the two callers are the business cycle,
+        which releases when a job settles, and startup reconciliation,
+        which releases what a crash left behind -- and after a crash
+        mid-settle both of them are right to try.
+
+        Releasing a slot is a statement about *capacity*, never about the
+        money: the invoice, the payment row and the audit trail are
+        untouched by this and outlive the reservation.
+        """
+        if not job_id:
+            return 0
+        released = 0
+        for reservation in self.outstanding():
+            if reservation.job_id == job_id:
+                self.release(reservation.id, why)
+                released += 1
+        return released
+
     def release(self, reservation_id: str, why: str = "no longer owed") -> None:
         """The obligation went away -- a bid lost, a job cancelled."""
         self._finish(reservation_id, RELEASED, why)

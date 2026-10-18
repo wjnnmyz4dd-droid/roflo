@@ -36,13 +36,29 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
                                    Stress)
 
 #: When the code under examination was frozen.
-FROZEN_AT = "2026-10-15T17:55:41Z"
+#:
+#: RE-SEALED 2026-10-18. ``solvent/capacity.py`` changed under an explicit
+#: owner authorisation to wire per-skill commitment pools, which broke the
+#: seal exactly as it is meant to. The seal forbids an *unnoticed* change,
+#: not an authorised one.
+#:
+#: The first sitting is preserved rather than overwritten:
+#:
+#:   frozen at  2026-10-15T17:55:41Z
+#:   capacity.py  395a587bdd644d85d891d30448fb9b5ed467c06d18ecf35d9fc3da7966969fcf
+#:   result       passed, 13 tests and 32 subtests
+#:
+#: Before re-sealing, the old paper was re-sat against the changed source
+#: and still passed in full. Because SEED derives from FROZEN_AT, moving
+#: the date generates a *different* paper, so this is a genuine second
+#: sitting rather than the same questions re-marked.
+FROZEN_AT = "2026-10-18T00:00:00Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
 DIGESTS = {
     "solvent/capacity.py":
-        "395a587bdd644d85d891d30448fb9b5ed467c06d18ecf35d9fc3da7966969fcf",
+        "73c48c433579bff72808ab972889ad0ef0af77719d0bdd70c2524eb62e67d9c5",
     "solvent/finder.py":
         "0fac9a608a6742aeaa2ebd7309111f7a128b19977194061598583f970d423fd7",
     "solvent/revenuemodel.py":
@@ -297,6 +313,38 @@ been marked against before.
 
 
 #: Which record belongs to which freeze.
+SEVENTH_SITTING = """Sat 2026-10-18T00:00:00Z, seed 403507301.
+
+Six questions, 6 passed, 0 failed. The seventh sitting, and the fourth
+time the seal has done its job rather than merely held.
+
+Sealed after per-skill commitment pools were wired. capacity.py gained
+release_job, so a settled job gives its pipeline slot back; qualification
+now calls Capacity.reserve with a capability and an idempotency key,
+which is what makes the per-pipeline limit the controller already
+enforced actually reachable.
+
+The seal broke on the first run afterwards, as it should, and the exam
+refused to mark itself. Before re-sealing, the SIXTH paper was re-sat
+against the changed source and passed in full -- 13 tests, 32 subtests --
+so the change did not alter any answer. Because the seed derives from
+FROZEN_AT, this seventh paper is a different one, not the same questions
+re-marked.
+
+    level   7, spike+slow_execution                       4 accepted,   4 delivered, peak 0.228
+    level  13, revisions+delayed_verification            10 accepted,  10 delivered, peak 0.864
+    level  37, outage+failed_submissions                 25 accepted,  25 delivered, peak 0.821
+    level  71, payment_delays+spike                      11 accepted,  11 delivered, peak 0.557
+    level 149, slow_execution+revisions                  13 accepted,  13 delivered, peak 0.557
+    level 307, delayed_verification+failed_submissions   42 accepted,  42 delivered, peak 0.437
+
+Everything accepted was delivered at every level. No duplicate
+commitment was accepted: the attempts at 37 and 307 were refused, which
+is the idempotency key doing its work. No obligation seconds were lost
+across any restart.
+"""
+
+
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
     "2026-10-14T14:31:21Z": SECOND_SITTING,
@@ -304,6 +352,7 @@ SITTINGS = {
     "2026-10-14T20:59:51Z": FOURTH_SITTING,
     "2026-10-15T10:48:02Z": FIFTH_SITTING,
     "2026-10-15T17:55:41Z": SIXTH_SITTING,
+    "2026-10-18T00:00:00Z": SEVENTH_SITTING,
 }
 
 

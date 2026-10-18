@@ -250,6 +250,14 @@ class Invariant8_NoGateIsBypassed(Base):
              "effective_workers", "deadline_problem",
              "has_obligations", "room_for", "reserve", "admit",
              "reservation_for", "start", "consume", "release",
+             # release_job is release, by job rather than by reservation
+             # id. It answers no new question: a settled job gives back
+             # whatever it still holds, and the caller does not have to
+             # have kept the ids. It decides nothing -- the business
+             # cycle and startup reconciliation decide *when* a job has
+             # settled, and both may say so about the same job after a
+             # crash, so it is idempotent and returns a count.
+             "release_job",
              "pressure", "report"})
 
     def test_capacity_cannot_approve_permit_or_price(self):

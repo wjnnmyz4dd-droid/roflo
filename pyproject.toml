@@ -25,7 +25,7 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 # `solvent.independent.available()` reports what this host can actually
 # produce, and the business cycle declines such a job while it is still a
 # quote rather than discovering it at delivery.
-verification = ["openpyxl>=3.1.5", "python-docx>=1.1.2"]
+verification = ["openpyxl>=3.1.5", "python-docx>=1.1.2", "clevercsv==0.8.5"]
 
 [project.scripts]
 roflo = "roflo.cli:main"
