@@ -94,6 +94,40 @@ class TheRunnersIsolateByDefault(unittest.TestCase):
             path = work
         self.assertFalse(path.exists())
 
+    def test_a_copy_a_killed_run_left_behind_is_reaped(self):
+        """SIGKILL cannot be caught, so the finally does not always run.
+
+        Observed: a battery hit a harness time limit mid-run. The working
+        tree was clean and no claim was left -- the isolation did its job
+        -- but the copy stayed in /tmp. Tidiness rather than a control,
+        and kept honest by a test because an untested cleanup is a
+        comment.
+        """
+        import os
+        import tempfile
+        import time
+
+        parent = pathlib.Path(tempfile.gettempdir())
+        abandoned = pathlib.Path(
+            tempfile.mkdtemp(prefix="deskpilot-mutation-", dir=parent))
+        (abandoned / "leftover.py").write_text("x = 1\n", encoding="utf-8")
+        old = time.time() - mutation_guard._ABANDONED_AFTER_SECONDS - 60
+        os.utime(abandoned, (old, old))
+
+        fresh = pathlib.Path(
+            tempfile.mkdtemp(prefix="deskpilot-mutation-", dir=parent))
+        try:
+            reaped = mutation_guard._reap_abandoned_copies()
+            self.assertIn(str(abandoned), reaped)
+            self.assertFalse(abandoned.exists())
+            self.assertTrue(fresh.exists(),
+                            "a running battery's own copy must survive")
+        finally:
+            import shutil
+
+            shutil.rmtree(abandoned, ignore_errors=True)
+            shutil.rmtree(fresh, ignore_errors=True)
+
 
 class TheClaimProvesRestoration(unittest.TestCase):
     """For the in-place mode, which still exists and still needs cover."""

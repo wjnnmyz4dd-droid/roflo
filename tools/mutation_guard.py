@@ -157,6 +157,37 @@ def tracked_files(root: pathlib.Path = ROOT) -> list[str]:
     return [name for name in out.split("\0") if name]
 
 
+#: A copy older than this was left by a run that is not coming back. Long
+#: enough that a slow battery's own copy is never reaped underneath it: the
+#: full solvent set takes about twenty minutes.
+_ABANDONED_AFTER_SECONDS = 6 * 60 * 60
+
+
+def _reap_abandoned_copies() -> list[str]:
+    """Delete isolated copies a killed run could not clean up itself.
+
+    ``SIGKILL`` cannot be caught, so the ``finally`` that removes the copy
+    does not always get to run -- which is exactly what happens when a
+    battery hits a harness time limit. The copies are in the system
+    temporary directory rather than the repository, so this is tidiness
+    and not a correctness control; it is here so that a machine running
+    the battery nightly does not accumulate a copy of the tree per run.
+    """
+    import time
+
+    reaped = []
+    parent = pathlib.Path(tempfile.gettempdir())
+    cutoff = time.time() - _ABANDONED_AFTER_SECONDS
+    for stale in parent.glob("deskpilot-mutation-*"):
+        try:
+            if stale.is_dir() and stale.stat().st_mtime < cutoff:
+                shutil.rmtree(stale, ignore_errors=True)
+                reaped.append(str(stale))
+        except OSError:                      # someone else's, or already gone
+            continue
+    return reaped
+
+
 @contextlib.contextmanager
 def isolated_tree(root: pathlib.Path = ROOT, names=None):
     """A throwaway copy of the working tree, for a run to patch instead.
@@ -170,6 +201,7 @@ def isolated_tree(root: pathlib.Path = ROOT, names=None):
     guard denies ``subprocess.Popen`` process-wide once any test has
     installed it, and a test that cannot run is not coverage.
     """
+    _reap_abandoned_copies()
     workspace = pathlib.Path(tempfile.mkdtemp(prefix="deskpilot-mutation-"))
     try:
         for name in (tracked_files(root) if names is None else names):
