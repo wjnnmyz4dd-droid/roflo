@@ -23,7 +23,7 @@ from .audit import AuditLog, new_id, now
 from .errors import FailClosed
 from .store import Store
 from .payments import EventKind, VerifiedPaymentEvent
-from .types import Cents, CostCategory, PaymentState, PayoutState
+from .types import Cents, CostCategory, PaymentState, PayoutState, fmt
 
 #: Cost sources Solvent trusts. A heuristic token count is not among them:
 #: roflo's ``len(text)/4`` estimator must never reach the books.
@@ -154,6 +154,60 @@ class Ledger:
             why="quote recorded", job_id=job_id, input_ref=payment_id,
             result=PaymentState.ESTIMATED.value)
         return payment_id
+
+    # ------------------------------------------------ the billing obligation
+
+    def record_billing_obligation(self, *, job_id: str, amount_cents: Cents,
+                                  rail: str, currency: str = "usd",
+                                  external_ref: str = "", basis: str = "",
+                                  client_ref: str = "") -> None:
+        """Write down what a delivered job is owed for, before invoicing it.
+
+        The invoice is the second of two writes, and a process that stops
+        between them used to leave work delivered with nothing on paper
+        saying it was owed for. This is the first write: the figure the
+        cycle computed, the rail it chose and the terms it used, committed
+        before the payment row exists so a restart can finish the job
+        instead of guessing at it or quietly dropping the money.
+
+        ``job_id`` is the primary key, so this is the durable idempotency
+        key as well as the record: a second obligation for the same job is
+        refused by the database rather than by a check that could race. The
+        table is append-only, which is what makes a recovered invoice worth
+        anything -- the figure it copies cannot have moved since.
+        """
+        self._db.execute(
+            "INSERT INTO billing_obligations(job_id,ts,amount_cents,rail,"
+            "currency,external_ref,basis,client_ref) VALUES(?,?,?,?,?,?,?,?)",
+            (job_id, now(), amount_cents, rail, currency.lower(),
+             external_ref, basis, client_ref))
+        self._db.commit()
+        self._audit.record(
+            event="billing.obligation_recorded", authority="ledger",
+            initiator="ledger", why="work delivered; this is what is owed",
+            job_id=job_id, financial_authorization=fmt(amount_cents),
+            result=basis or "FIXED_PRICE")
+
+    def obligation_for(self, job_id: str) -> dict | None:
+        row = self._db.query_one(
+            "SELECT * FROM billing_obligations WHERE job_id = ?", (job_id,))
+        return dict(row) if row else None
+
+    def unbilled_obligations(self) -> list[dict]:
+        """Obligations with no payment row. The work of restart reconciliation.
+
+        A left join rather than two reads, so the answer cannot change
+        between them.
+        """
+        return [dict(r) for r in self._db.query(
+            "SELECT o.* FROM billing_obligations o "
+            "LEFT JOIN payments p ON p.job_id = o.job_id "
+            "WHERE p.id IS NULL ORDER BY o.ts")]
+
+    def payment_rows(self) -> list[dict]:
+        """Every payment row. For counting, and for the payment monitor."""
+        return [dict(r) for r in self._db.query(
+            "SELECT * FROM payments ORDER BY updated_at DESC")]
 
     def set_payment_state(self, payment_id: str, state: PaymentState, *,
                           collected_cents: Cents = 0, verification_method: str = "") -> None:

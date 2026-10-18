@@ -381,6 +381,19 @@ class FinancialGovernor:
             result=fmt(authorized_cents))
         return grant_id
 
+    def grant_for(self, job_id: str) -> str:
+        """The live budget grant for this job, or ``""``.
+
+        Read-only, and deliberately narrow. Recovery needs to tell a job whose
+        work was authorised and then interrupted from one that never got that
+        far, and a grant is the durable record of the moment the Governor said
+        yes. A revoked grant is not a yes.
+        """
+        row = self._db.query_one(
+            "SELECT id FROM budget_grants WHERE job_id = ? AND revoked = 0 "
+            "ORDER BY ts DESC LIMIT 1", (job_id,))
+        return (row["id"] if row else "") or ""
+
     def authorize_spend(self, *, grant_id: str, amount_cents: Cents, what: str,
                         job_id: str | None = None) -> tuple[bool, str]:
         """Checked before **every** spend — this is chokepoint one of two.

@@ -113,6 +113,11 @@ MIGRATIONS = (
 #: rewriting a client's words is never a correction.
 APPEND_ONLY = (
     "audit_log", "verification_evidence", "ledger_entries",
+    # What a delivered job is owed for, written before the invoice is opened
+    # so a crash between the two has something to reconcile against. Editable
+    # it would be worse than useless: a recovered invoice is only trustworthy
+    # because the figure it copies cannot have been changed since.
+    "billing_obligations",
     "governor_decisions", "action_requests", "price_estimates", "policy_versions",
     "qualification_verdicts", "payment_events", "artifacts",
     # What a job actually took. One row per execution: a second attempt is a
@@ -155,6 +160,7 @@ TABLE_OWNER = {
     "job_clarifications": "orchestrator",
     "artifacts": "orchestrator",
     "execution_measurements": "orchestrator",
+    "billing_obligations": "ledger",
     "client_feedback": "feedback",
     "client_responses": "relations",
     "capability_assessments": "capability",
@@ -260,6 +266,12 @@ CREATE TABLE IF NOT EXISTS payments (
   currency TEXT NOT NULL DEFAULT 'usd', external_ref TEXT NOT NULL DEFAULT '',
   refunded_cents INTEGER NOT NULL DEFAULT 0,
   payout_state TEXT NOT NULL DEFAULT 'NOT_APPLICABLE', payout_verified_at TEXT
+);
+CREATE TABLE IF NOT EXISTS billing_obligations (
+  job_id TEXT PRIMARY KEY, ts TEXT NOT NULL, amount_cents INTEGER NOT NULL,
+  rail TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'usd',
+  external_ref TEXT NOT NULL DEFAULT '', basis TEXT NOT NULL DEFAULT '',
+  client_ref TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS payment_events (
   event_id TEXT PRIMARY KEY, ts TEXT NOT NULL, rail TEXT NOT NULL,

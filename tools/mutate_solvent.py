@@ -950,12 +950,35 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "t2-any-reader-will-do",
         "solvent/independent.py",
+        "    module, description = _reader_for(extension)\n"
         "    if module is None:",
+        "    module, description = _reader_for(extension)\n"
         "    if False:",
         "tests_solvent.test_independent_review.TheSecondOpinionIsAboutTheFigures"
         ".test_a_format_with_no_independent_reader_is_refused",
         "a format with no independently authored reader would fall back to "
         "Solvent reading its own output twice"),
+
+    Mutant(
+        "t2-converted-provenance-invents-nothing",
+        "solvent/independent.py",
+        "    invented = [value for value in checkable if value not in blob]",
+        "    invented = []",
+        "tests_solvent.test_markdown_t2.TheCaseThatWasBlockedInAcceptance"
+        ".test_a_fabricated_table_row_is_caught",
+        "a Markdown document converted from a client's .docx could state "
+        "values the client's file never contained"),
+
+    Mutant(
+        "t2-converted-provenance-skips-the-table",
+        "solvent/independent.py",
+        "            stated.extend(cell for row in block[\"rows\"][1:] "
+        "for cell in row)",
+        "            stated.extend([])",
+        "tests_solvent.test_markdown_t2.TheCaseThatWasBlockedInAcceptance"
+        ".test_a_changed_amount_is_caught",
+        "a tampered figure in the converted document's table would never be "
+        "compared against the source"),
 
     Mutant(
         "t2-eligibility-never-blocks",
@@ -1401,6 +1424,207 @@ MUTANTS: tuple[Mutant, ...] = (
         ".AnInterruptionIsRecoveredWithAllFourInPlace"
         ".test_the_resumed_job_obtained_its_own_second_opinion",
         "a resumed job above T1 never asks for its second opinion"),
+
+    # ---- the transformation-order repair (finding D) ------------------
+    # "Preserved" had to stop meaning byte-for-byte, because the worker
+    # trims before it dedupes. These mutants are the fence around that
+    # widening: each one makes the check accept something it must not.
+
+    Mutant(
+        "preserve-normalisation-is-not-scoped-to-its-column",
+        "solvent/csvverify.py",
+        "        if check in _NORMALISERS and (not named or column in named):",
+        "        if check in _NORMALISERS:",
+        "tests_solvent.test_transform_order.ProtectedColumns"
+        ".test_trimming_a_column_the_trim_requirement_did_not_name_fails",
+        "authorising a trim on one column licenses trimming every other "
+        "protected column in the job"),
+
+    Mutant(
+        "preserve-accepts-padding-changes-with-no-brief-to-read",
+        "solvent/csvverify.py",
+        "        if explained and not _brief(params):\n"
+        "            return CheckOutcome(\n"
+        "                CheckResult.UNVERIFIABLE,",
+        "        if explained and not _brief(params):\n"
+        "            return CheckOutcome(\n"
+        "                CheckResult.PASS,",
+        "tests_solvent.test_transform_order.ProtectedColumns"
+        ".test_without_a_brief_a_padding_only_difference_is_unverifiable",
+        "not knowing whether a change was authorised becomes a pass"),
+
+    Mutant(
+        "preserve-ignores-a-brief-that-contradicts-itself",
+        "solvent/csvverify.py",
+        "        if conflict:\n"
+        "            return CheckOutcome(CheckResult.UNVERIFIABLE, conflict, computed)",
+        "        if False:\n"
+        "            return CheckOutcome(CheckResult.UNVERIFIABLE, conflict, computed)",
+        "tests_solvent.test_transform_order.ProtectedColumns"
+        ".test_a_protected_column_that_is_also_rewritten_is_unverifiable",
+        "a column the brief both protects and rewrites is reported as a "
+        "lost value rather than as a question for the client"),
+
+    Mutant(
+        "preserve-forgives-any-difference-it-cannot-explain",
+        "solvent/csvverify.py",
+        "        if normalisers and _apply(expected, normalisers) == _apply(out_values,\n"
+        "                                                                   normalisers):",
+        "        if normalisers:",
+        "tests_solvent.test_transform_order.ProtectedColumns"
+        ".test_a_changed_value_in_the_trimmed_column_is_still_caught",
+        "any brief that authorises trimming on a column turns the "
+        "protected-value check off for that column entirely"),
+
+    # ---- resuming an interrupted ACCEPTED job (finding A) --------------
+
+    Mutant(
+        "recovery-never-looks-at-an-accepted-job",
+        "solvent/harness.py",
+        "CONSIDERED = RESUMABLE + RESUMABLE_ON_EVIDENCE",
+        "CONSIDERED = RESUMABLE",
+        "tests_solvent.test_accepted_recovery.AcceptedJobs"
+        ".test_an_interrupted_accepted_job_is_picked_up",
+        "a crash at the first line of the work leaves the job in ACCEPTED "
+        "holding its slot, with nothing that will start it"),
+
+    Mutant(
+        "recovery-starts-work-the-governor-never-funded",
+        "solvent/harness.py",
+        "    if not s.governor.grant_for(job_id):",
+        "    if False:",
+        "tests_solvent.test_accepted_recovery.AcceptedJobs"
+        ".test_an_accepted_job_the_governor_never_funded_is_escalated",
+        "a restart spends compute on a job no budget was ever granted for"),
+
+    Mutant(
+        "recovery-starts-work-whose-source-nobody-recorded",
+        "solvent/harness.py",
+        "    if next(iter(s.orchestrator.artifacts(job_id, role=\"SOURCE\")), None) is None:",
+        "    if False:",
+        "tests_solvent.test_accepted_recovery.AcceptedJobs"
+        ".test_an_accepted_job_with_no_source_on_record_is_escalated",
+        "a job that cannot say which file it was given is redone anyway"),
+
+    Mutant(
+        "recovery-counts-a-revoked-grant-as-authorisation",
+        "solvent/governor.py",
+        "            \"SELECT id FROM budget_grants WHERE job_id = ? AND revoked = 0 \"",
+        "            \"SELECT id FROM budget_grants WHERE job_id = ? \"",
+        "tests_solvent.test_governor_grant_lookup.GrantLookup"
+        ".test_a_revoked_grant_is_not_authorisation",
+        "work the Governor withdrew funding from is restarted after a crash"),
+
+    # ---- finishing a half-written invoice (finding B) ------------------
+
+    Mutant(
+        "invoice-recovery-trusts-the-job-state-alone",
+        "solvent/runtime.py",
+        "        if job.state not in _BILLABLE or job_id not in delivered:",
+        "        if job.state not in _BILLABLE:",
+        "tests_solvent.test_invoice_recovery.DeliveredJobs"
+        ".test_a_billable_state_without_a_delivery_event_is_not_invoiced",
+        "a job moved into a delivered state by anything other than a real "
+        "delivery is invoiced for work that never went out"),
+
+    Mutant(
+        "invoice-recovery-marks-the-recovered-invoice-paid",
+        "solvent/runtime.py",
+        "        ledger.set_payment_state(payment_id, PaymentState.INVOICED)",
+        "        ledger.set_payment_state(payment_id, PaymentState.ESTIMATED)",
+        "tests_solvent.test_invoice_recovery.DeliveredJobs"
+        ".test_the_recovered_invoice_is_billed_not_collected",
+        "a recovered invoice does not say the client owes anything"),
+
+    Mutant(
+        "invoice-recovery-reinvoices-what-is-already-billed",
+        "solvent/ledger.py",
+        "            \"LEFT JOIN payments p ON p.job_id = o.job_id \"\n"
+        "            \"WHERE p.id IS NULL ORDER BY o.ts\")]",
+        "            \"LEFT JOIN payments p ON p.job_id = o.job_id \"\n"
+        "            \"ORDER BY o.ts\")]",
+        "tests_solvent.test_invoice_recovery.DeliveredJobs"
+        ".test_repeated_restarts_still_leave_exactly_one_invoice",
+        "every restart writes the client another invoice for the same job"),
+
+    Mutant(
+        "recovery-prices-an-hourly-job-from-its-quote",
+        "solvent/runtime.py",
+        "        if basis == \"FIXED_PRICE\" and int(getattr(job, \"quoted_cents\", 0)) > 0:",
+        "        if int(getattr(job, \"quoted_cents\", 0)) > 0:",
+        "tests_solvent.test_invoice_recovery.DeliveredJobs"
+        ".test_an_hourly_job_delivered_by_recovery_is_escalated",
+        "an hourly job is billed the quote instead of the hours, which is "
+        "a figure nobody agreed to"),
+
+    Mutant(
+        "the-agreed-basis-is-never-written-down",
+        "solvent/harness.py",
+        "    s.audit.record(\n"
+        "        event=\"billing.terms_agreed\", authority=\"ledger\", "
+        "initiator=\"harness\",",
+        "    _unrecorded_terms = dict(\n"
+        "        event=\"billing.terms_agreed\", authority=\"ledger\", "
+        "initiator=\"harness\",",
+        "tests_solvent.test_invoice_recovery_through_the_cycle"
+        ".TheCycleWritesTheObligation.test_the_agreed_basis_is_on_file",
+        "recovery cannot tell a fixed-price job from an hourly one, so "
+        "every delivery it completes has to go to a person"),
+
+    Mutant(
+        "the-obligation-is-never-written-down",
+        "solvent/harness.py",
+        "    if s.ledger.obligation_for(cycle.job_id) is None:\n"
+        "        s.ledger.record_billing_obligation(",
+        "    if False:\n"
+        "        s.ledger.record_billing_obligation(",
+        "tests_solvent.test_invoice_recovery_through_the_cycle"
+        ".TheCycleWritesTheObligation"
+        ".test_a_delivered_cycle_leaves_an_obligation_on_file",
+        "a crash between the delivery and the invoice leaves nothing to "
+        "reconcile against, so the money is simply lost"),
+
+    # ---- the independent Markdown reader (finding C) -------------------
+
+    Mutant(
+        "markdown-has-no-independent-reader-again",
+        "solvent/independent.py",
+        "    \"md\": (\"markdown_it\",",
+        "    \"md-disabled\": (\"markdown_it\",",
+        "tests_solvent.test_markdown_t2.TheReaderIsAvailableAndIndependent"
+        ".test_markdown_has_an_independent_reader",
+        "every Markdown deliverable above T1 blocks on the owner again"),
+
+    Mutant(
+        "markdown-review-accepts-values-the-source-never-had",
+        "solvent/independent.py",
+        "    invented = [value for value in checkable if value not in blob]",
+        "    invented = []",
+        "tests_solvent.test_markdown_t2.TheCaseThatWasBlockedInAcceptance"
+        ".test_a_fabricated_table_row_is_caught",
+        "a line item nobody was charged for passes the second opinion"),
+
+    Mutant(
+        "markdown-review-treats-every-value-as-boilerplate",
+        "solvent/independent.py",
+        "def _is_structural(value: str) -> bool:\n"
+        "    return value.strip().lower() in _STRUCTURAL",
+        "def _is_structural(value: str) -> bool:\n"
+        "    return True",
+        "tests_solvent.test_markdown_t2.TheCaseThatWasBlockedInAcceptance"
+        ".test_a_corrupted_field_value_is_caught",
+        "nothing in the document is checked, and the review reports that "
+        "it checked the document"),
+
+    Mutant(
+        "markdown-totals-are-not-recomputed",
+        "solvent/independent.py",
+        "                said is not None and abs(said - total) < 0.005,",
+        "                True,",
+        "tests_solvent.test_markdown_t2.ItChecksTheDocumentNotJustTheSyntax"
+        ".test_a_wrong_total_is_caught",
+        "a report states a total nobody added up and the second opinion "
+        "agrees with it"),
 
     # ---- inference routing -------------------------------------------
     # A router that decides whether prompts leave the machine, and whether

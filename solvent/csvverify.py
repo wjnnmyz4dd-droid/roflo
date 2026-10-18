@@ -451,13 +451,90 @@ def check_normalise_dates(source, output, params) -> CheckOutcome:
                         computed)
 
 
+#: Transformations this check can model: an authorised change whose effect on
+#: a protected value it can reproduce exactly, so that "preserved" can still
+#: mean something after the work was done. Deliberately one entry long.
+#: ``trim_whitespace`` removes leading and trailing padding and nothing else,
+#: which is what the worker's own operation list promises.
+_NORMALISERS = {"trim_whitespace": str.strip}
+
+#: Authorised operations that *rewrite* a value rather than normalise it. A
+#: column that is both protected and rewritten is a contradiction in the brief,
+#: not a defect in the deliverable, and this check says so instead of reporting
+#: the rewrite as a loss.
+_REWRITERS = ("normalise_dates", "map_values", "compute_column", "number_format")
+
+
+def _brief(params: dict) -> list:
+    """The committed requirements travelling with this check, or ``[]``."""
+    return list((params or {}).get("requirements") or [])
+
+
+def _columns_of(requirement) -> list[str]:
+    said = dict(getattr(requirement, "params", {}) or {})
+    named = said.get("columns") or said.get("column") or []
+    if isinstance(named, str):
+        named = [named]
+    return [str(c) for c in named]
+
+
+def _authorised_for(column: str, brief: list) -> tuple[list, str]:
+    """``(normalisers, conflict)`` for one protected column.
+
+    A trim requirement that names no columns covers every column, which is how
+    the worker reads it too. Authorisation is per column: trimming ``Email``
+    does not license trimming ``Name``.
+    """
+    from .types import check_of
+
+    normalisers, conflict = [], ""
+    for requirement in brief:
+        check = check_of(requirement)
+        named = _columns_of(requirement)
+        if check in _NORMALISERS and (not named or column in named):
+            normalisers.append(_NORMALISERS[check])
+        if check in _REWRITERS and column in named:
+            conflict = (f"the brief both protects {column!r} and asks "
+                        f"{check} to rewrite it; those cannot both be "
+                        "checked, so the client has to say which they meant")
+    return normalisers, conflict
+
+
+def _apply(values: list[str], normalisers: list) -> list[str]:
+    out = []
+    for value in values:
+        for normalise in normalisers:
+            value = normalise(value)
+        out.append(value)
+    return sorted(out)
+
+
 def check_preserve_columns(source, output, params) -> CheckOutcome:
-    """Protected values must survive byte-for-byte, as a multiset.
+    """Protected values must survive, as a multiset, allowing for the
+    normalisation the same brief authorised.
 
     Compared as a multiset rather than row by row because deduplication and
-    sorting legitimately move rows about. What may never change is the collection
-    of values itself — so an amount that was altered, dropped or added shows up
-    even if the rows were reordered.
+    sorting legitimately move rows about. What may never change is the
+    collection of values itself — so an amount that was altered, dropped or
+    added shows up even if the rows were reordered.
+
+    **Byte-for-byte was too strong.** The worker trims before it dedupes, by a
+    fixed operation order, so a brief that says "trim Name" and "preserve
+    Name" leaves the protected values legitimately changed by the time the
+    duplicates go. Comparing them against the values as they *arrived* failed
+    correct work. Comparing them against the values as the *authorised*
+    transformations leave them is the question the client actually asked.
+
+    The widening is deliberately narrow, and it costs nothing:
+
+    * values that match exactly still pass without consulting the brief;
+    * a difference is re-tested only under the normalisations this brief
+      authorised **for that column**, and only ones whose effect can be
+      reproduced exactly;
+    * a difference that survives that is a genuine loss, addition or
+      alteration, and still fails;
+    * a padding-only difference with no brief to read is UNVERIFIABLE, which
+      blocks delivery exactly as a FAIL does. Not knowing is not a pass.
     """
     src_header, src_body, p1 = _read_source(source)
     out_header, out_body, p2 = _read(output)
@@ -496,13 +573,43 @@ def check_preserve_columns(source, output, params) -> CheckOutcome:
         expected = sorted(r[si] for r in distinct if si < len(r))
         computed[name] = {"source": len(src_values), "expected": len(expected),
                           "output": len(out_values)}
-        if out_values != expected:
-            lost = _difference(expected, out_values)
-            added = _difference(out_values, expected)
-            problems.append(
-                f"{name!r} changed: {len(lost)} value(s) lost or altered"
-                + (f" (e.g. {lost[:3]})" if lost else "")
-                + (f", {len(added)} appeared (e.g. {added[:3]})" if added else ""))
+        if out_values == expected:
+            continue
+
+        # Only now is the brief worth reading: an exact match needed no
+        # permission, and a difference the normalisations cannot explain will
+        # fail whatever the brief says.
+        normalisers, conflict = _authorised_for(name, _brief(params))
+        if conflict:
+            return CheckOutcome(CheckResult.UNVERIFIABLE, conflict, computed)
+        # Two separate questions, kept separate on purpose. "Does the brief
+        # let this column change this way?" is what grants a pass, and only
+        # the normalisers authorised for *this* column answer it. "Could any
+        # normalisation explain the difference?" is a diagnostic, and it only
+        # ever decides how to describe a difference that is not authorised.
+        if normalisers and _apply(expected, normalisers) == _apply(out_values,
+                                                                   normalisers):
+            computed[name]["normalised_by"] = sorted(
+                check for check, fn in _NORMALISERS.items() if fn in normalisers)
+            continue
+        explained = (_apply(expected, list(_NORMALISERS.values()))
+                     == _apply(out_values, list(_NORMALISERS.values())))
+        if explained and not _brief(params):
+            return CheckOutcome(
+                CheckResult.UNVERIFIABLE,
+                f"{name!r} differs from the source only by padding, and this "
+                "call carried no committed requirements, so whether trimming "
+                "was authorised cannot be established here",
+                computed)
+        lost = _difference(expected, out_values)
+        added = _difference(out_values, expected)
+        why = (" (padding was removed from a column the brief did not "
+               "authorise trimming)" if explained else "")
+        problems.append(
+            f"{name!r} changed: {len(lost)} value(s) lost or altered"
+            + (f" (e.g. {lost[:3]})" if lost else "")
+            + (f", {len(added)} appeared (e.g. {added[:3]})" if added else "")
+            + why)
     if problems:
         return CheckOutcome(CheckResult.FAIL, "; ".join(problems), computed)
     return CheckOutcome(CheckResult.PASS,

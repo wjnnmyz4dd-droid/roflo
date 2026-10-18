@@ -25,7 +25,14 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 # `solvent.independent.available()` reports what this host can actually
 # produce, and the business cycle declines such a job while it is still a
 # quote rather than discovering it at delivery.
-verification = ["openpyxl>=3.1.5", "python-docx>=1.1.2", "clevercsv==0.8.5"]
+verification = ["openpyxl>=3.1.5", "python-docx>=1.1.2", "clevercsv==0.8.5",
+                # markdown-it-py: MIT, pure Python, one runtime
+                # dependency (mdurl, MIT). A CommonMark parser, not a
+                # renderer: it reads, and does not import os, socket,
+                # subprocess or urllib, or call eval or exec. Pinned
+                # because a second opinion that changes under you is
+                # not a second opinion.
+                "markdown-it-py==3.0.0"]
 
 [project.scripts]
 roflo = "roflo.cli:main"

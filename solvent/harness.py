@@ -1377,6 +1377,25 @@ def _run_business_cycle(
                                    initiator="business-cycle")
     cycle.stages.append("budget")
 
+    # The billing terms, written before the first line of work rather than
+    # beside the invoice. A job delivered by *recovery* never reaches the
+    # invoice step at all, and the acceptance run proved it: a crash during
+    # verification was resumed all the way to delivery, and the money then
+    # had to go to a person because nothing on file said what the job was
+    # billed on. Recorded here, a fixed-price job can be billed from the
+    # quote it was accepted on; an hourly one still cannot, and still goes
+    # to the owner, because its figure depends on hours no restart can
+    # reconstruct.
+    basis = billing_basis or quoting.BillingBasis.FIXED_PRICE
+    s.audit.record(
+        event="billing.terms_agreed", authority="ledger", initiator="harness",
+        why="the basis this job is billed on", job_id=cycle.job_id,
+        decision=basis.value,
+        financial_authorization=fmt(cycle.quoted_cents),
+        result=(f"hourly {agreed_hourly_cents}"
+                if basis is quoting.BillingBasis.HOURLY
+                else "fixed price as quoted"))
+
     # --- execute, verify, deliver -----------------------------------------
     # One call, because these three are one decision: nothing is delivered that
     # has not been recomputed from the artifact about to leave. Splitting them
@@ -1465,7 +1484,6 @@ def _run_business_cycle(
     # else. `refuse_fabricated_hours` is called on the figure before it
     # reaches an invoice, because the commonest way to pad an hourly bill is
     # to reach for the human-equivalent number sitting right beside it.
-    basis = billing_basis or quoting.BillingBasis.FIXED_PRICE
     cycle.billing_basis = basis.value
     measurement = quoting.ExecutionMeasurement(
         wall_seconds=cycle.execution_wall_seconds,
@@ -1505,9 +1523,19 @@ def _run_business_cycle(
     else:
         cycle.invoiced_cents = cycle.quoted_cents
 
+    # Written before the invoice, not after. Opening the payment row is the
+    # second of two writes, and a process that stops between them leaves work
+    # delivered with nothing on paper saying it was owed for. This is the
+    # first write, and it is what a restart reconciles against.
+    if s.ledger.obligation_for(cycle.job_id) is None:
+        s.ledger.record_billing_obligation(
+            job_id=cycle.job_id, amount_cents=cycle.invoiced_cents,
+            rail=payment_rail, external_ref=external_ref, basis=basis.value,
+            client_ref=cycle.client_ref or "")
     payment_id = s.ledger.open_payment(
         job_id=cycle.job_id, amount_cents=cycle.invoiced_cents,
-        rail=payment_rail, external_ref=external_ref)
+        rail=payment_rail, external_ref=external_ref,
+        client_ref=cycle.client_ref or "")
 
     # What the job actually cost to run, recorded against the job so the
     # Ledger -- not this function -- remains the authority on money spent.
@@ -2201,6 +2229,42 @@ RESUME_EVENT = "recovery.resumed"
 #: this and blocks them on the owner rather than guessing.
 RESUMABLE = (JobState.EXECUTING, JobState.VERIFYING)
 
+#: States that are resumable only once durable records say work had really
+#: begun. ACCEPTED is weaker than the two above: a job reaches it by being
+#: admitted and committed, which happens whether or not anything was then
+#: attempted. A crash inside ``begin_execution`` leaves exactly this -- the
+#: slot taken, nothing started, and nothing that will ever start it, because
+#: reconciliation does not count ACCEPTED as mid-flight and the state timeout
+#: only escalates, two hours later.
+#:
+#: So the evidence is asked for explicitly (:func:`_why_not_startable`) rather
+#: than assumed from the state, and a job that cannot produce it is escalated
+#: to the owner instead of being guessed at in either direction.
+RESUMABLE_ON_EVIDENCE = (JobState.ACCEPTED,)
+
+#: Every state resumption will look at.
+CONSIDERED = RESUMABLE + RESUMABLE_ON_EVIDENCE
+
+
+def _why_not_startable(s: "Solvent", job_id: str) -> str:
+    """Why this admitted job must not simply be started, or ``""``.
+
+    Two records, and both have to be there. The grant is the Governor's own
+    note that it authorised this work; without it, resuming would spend
+    compute on a job nobody budgeted, which is the one thing the Governor
+    exists to prevent. The source artifact is what makes the work
+    reproducible; without it the job cannot say which file it was given, and
+    a resumption that took the path from its caller would be asserting a
+    provenance nobody recorded.
+    """
+    if not s.governor.grant_for(job_id):
+        return ("no Governor budget grant is on record, so this job's work "
+                "had not been authorised when the process stopped")
+    if next(iter(s.orchestrator.artifacts(job_id, role="SOURCE")), None) is None:
+        return ("no source artifact is on record, so there is no way to say "
+                "which file this job was given")
+    return ""
+
 
 def resume_interrupted(s: "Solvent", *, source: str = "", workdir: str = "",
                        capability: str = "csv-cleanup",
@@ -2218,8 +2282,10 @@ def resume_interrupted(s: "Solvent", *, source: str = "", workdir: str = "",
     Four things keep this from becoming a way to launder unverified work
     into a delivery:
 
-    * only :data:`RESUMABLE` states are touched, and neither of them has
-      sent anything;
+    * only :data:`CONSIDERED` states are touched, and none of them has sent
+      anything: the two in :data:`RESUMABLE` are recomputes already under
+      way, and the one in :data:`RESUMABLE_ON_EVIDENCE` is work that had not
+      begun, resumed only where durable records say it should have;
     * resumption calls the same ``_execute_job`` a first attempt calls,
       so the checker runs again and the delivery gate is asked again;
     * the attempt count lives in the append-only audit log, so a crash
@@ -2235,7 +2301,7 @@ def resume_interrupted(s: "Solvent", *, source: str = "", workdir: str = "",
             if r.job_id and r.capability}
     out: list[dict] = []
     for job in list(s.orchestrator.jobs()):
-        if job.state not in RESUMABLE:
+        if job.state not in CONSIDERED:
             continue
         # Each job is resumed as the work it actually is. ``capability``
         # and ``source`` are fallbacks for a caller that knows better,
@@ -2261,6 +2327,21 @@ def resume_interrupted(s: "Solvent", *, source: str = "", workdir: str = "",
             record["outcome"] = "ESCALATED"
             out.append(record)
             continue
+        if job.state in RESUMABLE_ON_EVIDENCE:
+            # Checked before the attempt is recorded: a job that is escalated
+            # for want of evidence has not been tried, and must not burn one
+            # of the three attempts a genuinely recoverable job gets.
+            missing = _why_not_startable(s, job.id)
+            if missing:
+                s.orchestrator.block(
+                    job_id=job.id, blocked_on=BlockedOn.OWNER,
+                    initiator=initiator,
+                    why=f"found in {job.state.value} after a restart but "
+                        f"{missing}"[:400])
+                record["outcome"] = "ESCALATED"
+                record["detail"] = missing
+                out.append(record)
+                continue
         s.audit.record(
             event=RESUME_EVENT, authority="orchestrator", initiator=initiator,
             why=f"resuming a job found in {job.state.value} after a restart",
@@ -2350,7 +2431,7 @@ def recover_after_restart(s: "Solvent", *, source: str = "",
        held by work that has settled. These are blocked on the owner with
        an incident, never discarded and never guessed at.
 
-    After this returns, no job is left in EXECUTING, VERIFYING or
+    After this returns, no job is left in ACCEPTED, EXECUTING, VERIFYING or
     READY_FOR_DELIVERY: each has either moved on or become a question
     somebody can see.
     """

@@ -34,7 +34,7 @@ from typing import Callable
 from .audit import new_id
 from .errors import FailClosed
 from . import resilience as _res
-from .types import BlockedOn, JobState, OperatingMode
+from .types import BlockedOn, JobState, OperatingMode, PaymentState
 
 #: Where a production database lives when nothing says otherwise. A 24/7 service
 #: whose store defaults to ``:memory:`` would lose the ledger on every restart.
@@ -203,12 +203,147 @@ def reconcile(solvent, *, initiator: str = RUNTIME) -> list[str]:
         notes.append(f"{note}; blocked {job_id} on the owner")
 
     notes.extend(_reconcile_stranded_jobs(solvent, initiator=initiator))
+    notes.extend(_reconcile_invoices(solvent, initiator=initiator))
     notes.extend(_reconcile_capacity(solvent, initiator=initiator))
 
     solvent.audit.record(
         event="runtime.reconciled", authority="orchestrator", initiator=initiator,
         why="restart reconciliation", decision="RECONCILED",
         result="; ".join(notes) if notes else "nothing outstanding")
+    return notes
+
+
+#: States in which a job has been delivered and the money is still owed.
+#: COMPLETE is here too: a crash can leave a job marked complete on a payment
+#: that was simulated, and an invoice missing is an invoice missing.
+_BILLABLE = (JobState.AWAITING_PAYMENT, JobState.COMPLETE)
+
+
+#: The rail a recovered invoice is opened on. Named rather than inherited
+#: from anywhere, because the cycle that would have chosen one never ran.
+_DEFAULT_RAIL = "recovered"
+
+
+def _agreed_basis(solvent, job_id: str) -> str:
+    """What this job was agreed to be billed on, from the audit log.
+
+    Written by the business cycle before the work starts, so it survives a
+    crash at any later point. Absent for a job that never got that far,
+    and the caller treats absence as "ask the owner" rather than as a
+    default.
+    """
+    for event in reversed(solvent.audit.events(job_id)):
+        if event.get("event") == "billing.terms_agreed":
+            return str(event.get("decision") or "")
+    return ""
+
+
+def _reconcile_invoices(solvent, *, initiator: str) -> list[str]:
+    """Finish the invoices a crash left half-written, and no others.
+
+    Opening a payment row is the second of two writes. The first is the
+    billing obligation, which the cycle commits the moment it knows what the
+    delivered work is owed for. A process that stops between them leaves the
+    work delivered and unbilled, and nothing used to notice.
+
+    Three things have to be true before an invoice is written here, and each
+    is a separate durable record written by a different authority:
+
+    * the **Ledger** holds an obligation for the job, so the amount, rail and
+      terms are the ones the cycle computed and not a figure invented now;
+    * the **orchestrator** has the job in a delivered state;
+    * the **audit log** carries this job's ``delivery.completed`` event, which
+      is the Action Gate's own record that the work actually went out.
+
+    The state alone is not enough. A job can be moved by a repair, a replay or
+    a test; the delivery event is written once, by the code that performed the
+    delivery, and it is append-only. Requiring both is what keeps this from
+    becoming a way to invoice work nobody delivered.
+
+    Nothing here collects money. The recovered row is INVOICED -- billed, not
+    paid -- and ``real_revenue_cents`` is untouched, because nothing in this
+    process is entitled to say a client paid.
+    """
+    notes: list[str] = []
+    ledger = getattr(solvent, "ledger", None)
+    if ledger is None:
+        return notes
+
+    delivered = {event.get("job_id") for event in solvent.audit.events()
+                 if event.get("event") == "delivery.completed"
+                 and event.get("job_id")}
+
+    for obligation in ledger.unbilled_obligations():
+        job_id = obligation["job_id"]
+        try:
+            job = solvent.orchestrator.job(job_id)
+        except Exception:  # noqa: BLE001 - an obligation with no job is a fault
+            notes.append(f"billing obligation for unknown job {job_id}; "
+                         "left for the owner")
+            continue
+        if job.state not in _BILLABLE or job_id not in delivered:
+            # Not a missing invoice: an obligation for work that has not been
+            # delivered. Invoicing it would be billing for nothing.
+            continue
+        payment_id = ledger.open_payment(
+            job_id=job_id, amount_cents=int(obligation["amount_cents"]),
+            rail=obligation["rail"], currency=obligation["currency"],
+            external_ref=obligation["external_ref"],
+            client_ref=obligation["client_ref"])
+        ledger.set_payment_state(payment_id, PaymentState.INVOICED)
+        notes.append(f"{job_id} was delivered and unbilled; invoice "
+                     f"{payment_id} written from the recorded obligation")
+
+    # A delivered job with no obligation at all is the other half of the same
+    # crash window, and it is the half that cannot be repaired automatically:
+    # nobody wrote down what the work was worth, and this is not the place to
+    # decide. It is escalated rather than guessed at or left quiet.
+    for job in solvent.orchestrator.jobs():
+        if job.state not in _BILLABLE or job.id not in delivered:
+            continue
+        if ledger.payment_for(job.id) or ledger.obligation_for(job.id):
+            continue
+        # A job delivered by recovery rather than by the business cycle
+        # never reached the step that prices it. Where the agreed terms are
+        # on file and they are a fixed price, the amount is not in doubt --
+        # it is the quote the job was accepted on -- so the obligation is
+        # written from that and the invoice follows on the next pass.
+        # An hourly job is a different matter: its figure depends on hours
+        # this process cannot reconstruct, and inventing one would be the
+        # fabrication this whole exercise is about.
+        basis = _agreed_basis(solvent, job.id)
+        if basis == "FIXED_PRICE" and int(getattr(job, "quoted_cents", 0)) > 0:
+            ledger.record_billing_obligation(
+                job_id=job.id, amount_cents=int(job.quoted_cents),
+                rail=_DEFAULT_RAIL, basis="FIXED_PRICE",
+                client_ref=getattr(job, "client_id", "") or "")
+            payment_id = ledger.open_payment(
+                job_id=job.id, amount_cents=int(job.quoted_cents),
+                rail=_DEFAULT_RAIL,
+                client_ref=getattr(job, "client_id", "") or "")
+            ledger.set_payment_state(payment_id, PaymentState.INVOICED)
+            notes.append(
+                f"{job.id} was delivered by recovery and never priced; "
+                f"invoiced {payment_id} at the agreed fixed price")
+            continue
+        why = ("delivered, but no billing obligation and no invoice were "
+               "recorded, so what the client owes is not on file and only "
+               "the owner can say what it should be"
+               + (f" (agreed basis {basis}, which cannot be recomputed here)"
+                  if basis else " (no agreed basis is on file either)"))
+        try:
+            solvent.resilience.record_incident(
+                component="runtime", operation="invoice-reconciliation",
+                error_class="UnbilledDelivery", signature=why,
+                severity=_res.S_SERIOUS, job_id=job.id,
+                trigger="a restart found a delivery with nothing owed on file",
+                symptoms=why)
+        except Exception:  # pragma: no cover - the recorder is best effort
+            pass
+        solvent.orchestrator.block(job_id=job.id, blocked_on=BlockedOn.OWNER,
+                                   initiator=initiator, why=why)
+        notes.append(f"{job.id} was delivered with nothing owed on file; "
+                     "blocked on the owner")
     return notes
 
 

@@ -36,15 +36,14 @@ class FourRepairs(Cycle):
         self.addCleanup(os.environ.pop, "SOLVENT_OWNER_KEY", None)
         super().setUp()
         self.assertTrue(self.s.owner.available)
-        # Exact duplicates rather than the suite's whitespace ones: the
-        # protected-value check compares against the source's *distinct*
-        # rows, and two rows that differ only in whitespace are distinct
-        # until the worker trims them. That interaction is a separate
-        # question from the four repairs, and this file is not the place
-        # to answer it.
+        # Duplicates that are duplicates only *after* trimming, which is the
+        # order the worker actually runs in. This fixture used to avoid that
+        # interaction, because the protected-value check compared against the
+        # source's untrimmed values and failed correct work; it is kept here
+        # now as the end-to-end proof that it no longer does.
         self.source.write_text(
             "Name,Email,Amount\n"
-            "Acme Ltd,a@acme.test,100.00\n"
+            "  Acme Ltd ,a@acme.test,100.00\n"
             "Acme Ltd,a@acme.test,100.00\n"
             "Beta Co,b@beta.test,250.50\n", encoding="utf-8")
         self.s.policy.amend({"capacity": {
