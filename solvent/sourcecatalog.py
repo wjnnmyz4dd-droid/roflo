@@ -242,10 +242,30 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
                  "of the intended use, and a documented daily cap of 40,000 "
                  "requests. Whether a given automated use is permitted is "
                  "in the API terms for the owner's own account and was not "
-                 "established here.",
+                 "established here. "
+                 "Re-verified 2026-10-18: Upwork now also operates an official "
+                 "MCP server. Its two discovery documents, which the MCP "
+                 "specification requires a server to publish unauthenticated, "
+                 "answer HTTP 200: "
+                 "mcp.upwork.com/.well-known/oauth-protected-resource names "
+                 "the resource \"Upwork MCP\" at mcp.upwork.com/mcp, and "
+                 "/.well-known/oauth-authorization-server gives OAuth 2.0 "
+                 "authorization code with PKCE (S256), refresh tokens, an "
+                 "authorization endpoint on www.upwork.com, and support for "
+                 "public clients. A bare GET to the resource returns 401, so "
+                 "the endpoint is real and closed. What tools it exposes was "
+                 "NOT established: that needs an authenticated session, and "
+                 "every Upwork documentation page -- /ai/mcp, /developer, "
+                 "/ai-reference and /legal -- returns 403 to an automated "
+                 "fetch.",
         notes="An API demonstrably exists, which is not the same as permission "
               "to use it this way. Left manual-only until the owner registers "
-              "an application and records what their terms allow.",
+              "an application and records what their terms allow. The official "
+              "MCP server does not change that: it changes *how* the owner "
+              "would grant access -- by signing in to Upwork and approving a "
+              "client there -- not whether the intended use is permitted. Its "
+              "capability list, Connects cost, fee data and commercial terms "
+              "are all unread.",
         terms=(
             _robots("upwork.com", TERMS_FORBIDDEN,
                     "Disallow: /jobs/ , /*/jobs/search* , /o/jobs/job/* and "

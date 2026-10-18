@@ -1,355 +1,228 @@
 {
   "document": "DeskPilot final engineering certification evidence",
   "produced": "2026-10-18",
+  "phase": "Phase 1 \u2014 engineering certification and profitability protection",
+  "base_commit": "fcd241a",
+  "head_at_assembly": "4b24beef534794c6e4b3e20a8e35f690940febda",
   "platform": "Linux x86_64, CPython 3.11.17",
   "windows_certified": false,
-  "windows_note": "Every measurement here was taken on Linux. Nothing in this file is a Windows or MetaTrader 5 coexistence claim.",
-  "real_external_effects": "none; egress simulation_only, no real customer action, no real payment, no deployment",
-  "head_at_assembly": "fa71709bdefc5df53c660f53e749ed99ebd12c2b",
-  "regression": {
-    "command": "python3 -I -m pytest tests_solvent -q",
-    "summary": "4793 passed, 44 skipped, 9 warnings, 10085 subtests passed in 383.37s (0:06:23)",
-    "failed": 0,
-    "passed": 4793,
-    "skipped": 44
+  "windows_note": "Every measurement is from Linux. Nothing here is a Windows or MetaTrader 5 coexistence claim.",
+  "real_external_effects": "none; no deployment, no real bid, no real client contact, no real payment",
+  "repository_integrity": {
+    "repository": "wjnnmyz4dd-droid/roflo",
+    "branch": "claude/solvent-architecture-audit-8ot9et",
+    "commits_inspected": [
+      "de94386",
+      "8f5c94f",
+      "df34ca6",
+      "fcd241a"
+    ],
+    "finder_py_in_net_diff_4819125_to_fcd241a": false,
+    "finder_py_identical_to_pre_round": true,
+    "mutant_residue_scan": {
+      "method": "read the Mutant tables out of both runners; for each, check whether the ORIGINAL text is absent and the REPLACEMENT present in its target file",
+      "mutants_checked": 388,
+      "originals_intact": 388,
+      "mutated": 0,
+      "anchors_missing": 0,
+      "script": "/tmp/claude-0/-home-user-roflo/25de398b-b56b-53d8-b59f-f68119ec6f42/scratchpad/cert/scan_mutants.py"
+    },
+    "guard_shaped_removals_in_the_round": [
+      "csvverify.check_preserve_columns: `if out_values != expected:` replaced by a four-branch comparison that still FAILs a real change and UNVERIFIABLEs what it cannot authorise",
+      "harness.resume_interrupted: `if job.state not in RESUMABLE:` replaced by CONSIDERED plus a durable-evidence requirement (_why_not_startable) that escalates rather than resumes"
+    ],
+    "production_under_mutation_instrumentation": false
   },
-  "mutation": {
-    "command": "python3 tools/mutate_solvent.py",
-    "summary": "173/173 killed  (0 survived, 0 not applied or harness)",
-    "killed": 173,
-    "total": 173,
-    "survived": [],
-    "not_applied_or_harness": []
+  "defect_F_owner_approval_above_the_floor": {
+    "status": "VERIFIED FIXED",
+    "found_by": "tracing the bypass list against FinancialGovernor._evaluate rather than reading the guard in isolation",
+    "root_cause": "the per-job cost ceiling was checked above the margin floor; both return before the other is reached, so a job tripping both came back REQUIRES_APPROVAL with its margin never computed",
+    "reproduction": {
+      "margin_floor": 0.3,
+      "max_job_spend_cents": 25000,
+      "direct_cost_cents": 26000,
+      "effective_cost_cents": 43332,
+      "revenue_cents": 28888,
+      "true_margin": "-50.0% (a loss of $144.44 on $288.88)",
+      "verdict_before": "REQUIRES_APPROVAL",
+      "verdict_after": "MARGIN_TOO_LOW",
+      "script": "/tmp/claude-0/-home-user-roflo/25de398b-b56b-53d8-b59f-f68119ec6f42/scratchpad/cert/probe_margin_order.py"
+    },
+    "repair": "the margin floor now sits above both approval doors and below the exposure cap; risk still outranks price",
+    "order_now": [
+      "conformance",
+      "pricing jurisdiction",
+      "preliminary estimate",
+      "operating mode",
+      "revenue > 0",
+      "exposure cap (HIGH_RISK)",
+      "MARGIN FLOOR (MARGIN_TOO_LOW)",
+      "per-job cost ceiling (REQUIRES_APPROVAL)",
+      "owner-approval value threshold (REQUIRES_APPROVAL)",
+      "PROFITABLE"
+    ],
+    "tests": "tests_solvent/test_profitability_guard.py (24)"
   },
-  "crash_matrix": {
-    "seams": 11,
-    "seams_reached_and_tested": 11,
-    "seams_not_reached": [],
-    "resumed": 3,
-    "safely_refused": 7,
-    "nothing_to_recover": 1,
-    "stranded": 0,
-    "all_databases_reopened": true,
-    "all_audit_chains_ok": true,
-    "stranded_after_recovery": 0,
-    "duplicate_invoices": 0,
-    "fabricated_payments": 0,
-    "mean_restart_s": 0.0127,
-    "mean_recovery_s": 0.0138
+  "profitability_guard": {
+    "authority": "FinancialGovernor.decide",
+    "wired_into_production": true,
+    "call_sites": [
+      "solvent/harness.py:332",
+      "solvent/orchestrator.py:589",
+      "solvent/orchestrator.py:622"
+    ],
+    "qualification_owns_no_economics": true,
+    "finder_triage_reachable_from_the_cycle": false,
+    "finder_note": "Finder is constructed only in cli.py:503 for a readiness report; nothing in the business cycle calls assess/rank/next_to_qualify. Reported, not repaired: wiring a second economic opinion into the cycle is an architectural change nobody asked for. Material in Phase 2, where recommending work is the Finder's job.",
+    "cost_model_gaps": [
+      "per-proposal Connects cost is not a modelled cost category",
+      "the Upwork freelancer service fee is not a modelled cost category",
+      "no monthly acquisition budget is tracked across contracts, so per-contract and portfolio-level acquisition costs are only partly distinguishable"
+    ],
+    "sunk_proposal_fees": "enter as opportunity.upfront_cost_cents, charged against the job, never credited back as recoverable",
+    "status": "PASS"
   },
-  "crash_matrix_detail": [
-    {
-      "seam": "admission",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0181,
-      "source_found": true,
-      "recovery_s": 0.0093,
-      "jobs_before": {},
-      "jobs_after": {},
-      "jobs_accounted_for": 0,
-      "reconcile_notes": 0,
-      "resumed": [],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 0,
-      "result": "NOTHING TO RECOVER"
+  "mutation_isolation": {
+    "module": "tools/mutation_guard.py",
+    "defences": {
+      "isolation": "both runners patch a copy of the working tree by default; --in-place is opt-in",
+      "claim": ".mutation-claim.json records pre-run SHA-256 of every owned file and is removed only after each hashes back; RestorationUnproven is raised and the claim kept if not",
+      "scan": "original-absent-and-replacement-present, needing no cooperation from the runner"
     },
-    {
-      "seam": "worker_execution",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0137,
-      "source_found": true,
-      "recovery_s": 0.0005,
-      "jobs_before": {
-        "job_fad38703d4b64d40": "ACCEPTED"
+    "hook": ".githooks/pre-commit via core.hooksPath, reading the INDEX rather than the working tree",
+    "tests": "tests_solvent/test_mutation_isolation.py (22, 1 skipped under the egress guard)",
+    "coverage_preserved": true,
+    "status": "PASS"
+  },
+  "sealed_examinations": {
+    "resealing_mechanism": "no tool exists; the authorized procedure is the one documented in the exam modules and demonstrated four times in capacityexam.SITTINGS",
+    "reading": {
+      "module": "tests_solvent/readingexam.py",
+      "digest_changed": "solvent/csvverify.py",
+      "digest_before": "6f3432939ef77d65cc981cdb284d74b9714cb45db3cf29d8511b36aad30d8413",
+      "digest_after": "5d52279c2f961ad99755a68ec5fd30cd95a45acce7c643cfd5c76a9e7d468a48",
+      "frozen_before": "2026-10-16T05:01:03Z",
+      "seed_before": 2994720811,
+      "frozen_after": "2026-10-18T16:40:00Z",
+      "seed_after": 3726124977,
+      "old_paper_re_marked_against_new_source": {
+        "questions": 56,
+        "correct": 56,
+        "wrong": 0,
+        "identical_to_first_sitting": true
       },
-      "jobs_after": {
-        "job_fad38703d4b64d40": "ACCEPTED"
+      "new_sitting": {
+        "questions": 56,
+        "correct": 56,
+        "wrong": 0,
+        "readable": 24,
+        "damaged": 32
       },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 0,
-      "resumed": [],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "SAFELY REFUSED"
-    },
-    {
-      "seam": "output_persistence",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0137,
-      "source_found": true,
-      "recovery_s": 0.0024,
-      "jobs_before": {
-        "job_8952150213244678": "EXECUTING"
-      },
-      "jobs_after": {
-        "job_8952150213244678": "BLOCKED"
-      },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 0,
-      "resumed": [
-        "HELD"
+      "seal_intact": true,
+      "first_sitting_preserved_in": [
+        "readingexam.FIRST_SITTING",
+        "docs/evidence/reading-exam-first-sitting.json"
       ],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "SAFELY REFUSED"
+      "status": "PASS"
     },
-    {
-      "seam": "checker_execution",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0106,
-      "source_found": true,
-      "recovery_s": 0.0429,
-      "jobs_before": {
-        "job_95a8306425974eb6": "EXECUTING"
+    "capacity": {
+      "module": "tests_solvent/capacityexam.py",
+      "digest_changed": "solvent/store.py",
+      "digest_before": "fa72817a7ed0b1377a1e02c247675207a46e4d5c4c931c20e8d7ab474a77f3b9",
+      "digest_after": "ff99fcb1a19356fc6665f52a390872d4bf4893dac26e3c2e2f779eeb1ed70e5a",
+      "frozen_before": "2026-10-18T00:00:00Z",
+      "seed_before": 403507301,
+      "frozen_after": "2026-10-18T16:40:00Z",
+      "seed_after": 3726124977,
+      "old_paper_re_sat_against_new_source": {
+        "questions": 6,
+        "passed": 6,
+        "failed": 0,
+        "every_delivered_count_identical_to_the_seventh_sitting": true
       },
-      "jobs_after": {
-        "job_95a8306425974eb6": "AWAITING_PAYMENT"
+      "new_sitting": {
+        "questions": 6,
+        "passed": 6,
+        "failed": 0
       },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 0,
-      "resumed": [
-        "DELIVERED"
-      ],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "RESUMED"
+      "seal_intact": true,
+      "earlier_sittings_preserved": 7,
+      "status": "PASS"
     },
-    {
-      "seam": "verification_persist",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0113,
-      "source_found": true,
-      "recovery_s": 0.0431,
-      "jobs_before": {
-        "job_f160c0f9aff44ce6": "VERIFYING"
-      },
-      "jobs_after": {
-        "job_f160c0f9aff44ce6": "AWAITING_PAYMENT"
-      },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 0,
-      "resumed": [
-        "DELIVERED"
-      ],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "RESUMED"
-    },
-    {
-      "seam": "approval_signing",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0117,
-      "source_found": true,
-      "recovery_s": 0.0031,
-      "jobs_before": {
-        "job_39ef1757b4014761": "READY_FOR_DELIVERY"
-      },
-      "jobs_after": {
-        "job_39ef1757b4014761": "BLOCKED"
-      },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 1,
-      "resumed": [],
-      "stranded_after": [],
-      "incidents": 1,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "SAFELY REFUSED"
-    },
-    {
-      "seam": "delivery_preparation",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0113,
-      "source_found": true,
-      "recovery_s": 0.0457,
-      "jobs_before": {
-        "job_a14e1431337148c0": "VERIFYING"
-      },
-      "jobs_after": {
-        "job_a14e1431337148c0": "AWAITING_PAYMENT"
-      },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 0,
-      "resumed": [
-        "DELIVERED"
-      ],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "RESUMED"
-    },
-    {
-      "seam": "delivery_ack",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.017,
-      "source_found": true,
-      "recovery_s": 0.0031,
-      "jobs_before": {
-        "job_db7f8c74b3994617": "READY_FOR_DELIVERY"
-      },
-      "jobs_after": {
-        "job_db7f8c74b3994617": "BLOCKED"
-      },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 1,
-      "resumed": [],
-      "stranded_after": [],
-      "incidents": 1,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "SAFELY REFUSED"
-    },
-    {
-      "seam": "invoice_creation",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0109,
-      "source_found": true,
-      "recovery_s": 0.0005,
-      "jobs_before": {
-        "job_c86877ae3a8b4698": "AWAITING_PAYMENT"
-      },
-      "jobs_after": {
-        "job_c86877ae3a8b4698": "AWAITING_PAYMENT"
-      },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 0,
-      "resumed": [],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "SAFELY REFUSED"
-    },
-    {
-      "seam": "payment_reconciliation",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0106,
-      "source_found": true,
-      "recovery_s": 0.0005,
-      "jobs_before": {
-        "job_baada6b74a864857": "AWAITING_PAYMENT"
-      },
-      "jobs_after": {
-        "job_baada6b74a864857": "AWAITING_PAYMENT"
-      },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 0,
-      "resumed": [],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 1,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 1,
-      "result": "SAFELY REFUSED"
-    },
-    {
-      "seam": "queue_replenishment",
-      "seam_reached": true,
-      "child_exit_code": 137,
-      "child_said": "",
-      "restart_s": 0.0111,
-      "source_found": true,
-      "recovery_s": 0.0005,
-      "jobs_before": {
-        "job_fdc151c646b14202": "QUALIFYING"
-      },
-      "jobs_after": {
-        "job_fdc151c646b14202": "QUALIFYING"
-      },
-      "jobs_accounted_for": 1,
-      "reconcile_notes": 0,
-      "resumed": [],
-      "stranded_after": [],
-      "incidents": 0,
-      "audit_chain_ok": true,
-      "payment_events": 0,
-      "invoiced_job_ids": 0,
-      "duplicate_invoices": 0,
-      "real_revenue_cents": 0,
-      "capacity_in_flight": 0,
-      "result": "SAFELY REFUSED"
-    }
-  ],
-  "acceptance_100": {
+    "nothing_bypassed": true,
+    "no_digest_updated_silently": true,
+    "no_examination_disabled": true,
+    "no_expected_result_altered": true,
+    "no_test_case_changed": true,
+    "tests_added_to_enforce_preservation": 4
+  },
+  "five_previous_repairs": {
+    "A_accepted_crash": "PASS",
+    "B_invoice_recovery": "PASS",
+    "C_markdown_t2": "PASS",
+    "D_transformation_order": "PASS",
+    "E_recovery_delivery_never_priced": "PASS",
+    "evidence": "the integrated acceptance below, re-run after the Governor reordering"
+  },
+  "integrated_acceptance": {
     "offered": 100,
     "offered_per_skill": 20,
+    "crashes_injected": 5,
+    "crash_points": [
+      "worker execution",
+      "verification",
+      "delivery ack",
+      "invoice creation",
+      "recovery"
+    ],
+    "crashes_observed": [
+      {
+        "job_index": 29,
+        "point": "verification",
+        "raised": "Injected"
+      }
+    ],
+    "recoveries": [
+      {
+        "job_index": 11,
+        "point": "worker execution",
+        "resumed": [],
+        "reconciled": 0
+      },
+      {
+        "job_index": 29,
+        "point": "verification",
+        "resumed": [
+          "DELIVERED"
+        ],
+        "reconciled": 1
+      },
+      {
+        "job_index": 47,
+        "point": "delivery ack",
+        "resumed": [],
+        "reconciled": 0
+      },
+      {
+        "job_index": 63,
+        "point": "invoice creation",
+        "resumed": [],
+        "reconciled": 0
+      },
+      {
+        "job_index": 88,
+        "point": "recovery",
+        "resumed": [],
+        "reconciled": 0
+      }
+    ],
     "delivered_total": 52,
     "delivered_per_skill": {
       "csv-cleanup": 2,
       "data-entry": 10,
-      "document-processing": 10,
+      "document-processing": 11,
       "report-builder": 10,
-      "spreadsheet-automation": 20
+      "spreadsheet-automation": 19
     },
     "skills_delivering_nothing": [],
     "peak_in_flight_per_skill": {
@@ -357,43 +230,72 @@
       "data-entry": 0,
       "document-processing": 3,
       "report-builder": 0,
-      "spreadsheet-automation": 0
+      "spreadsheet-automation": 1
     },
     "per_skill_ceiling": 4,
     "ceiling_respected": true,
+    "cross_skill_starvation": [],
     "stops": {
       "csv-cleanup:contract": 4,
       "csv-cleanup:qualify": 14,
       "data-entry:qualify": 10,
       "document-processing:independent-review": 3,
-      "document-processing:qualify": 7,
+      "document-processing:qualify": 6,
       "report-builder:qualify": 10
     },
-    "stop_reasons": {
-      "csv-cleanup:contract": "waiting on the client: The Order Date column contains dates such as 04/06/2026, which could mean either 2026-04-06 or 2026-06-04 depending on the convention. Should ambiguous dates be read as MM/DD/YYYY or DD/MM/YYYY?",
-      "csv-cleanup:qualify": "not selected: capacity is already committed elsewhere",
-      "data-entry:qualify": "exposure or risk beyond policy limits",
-      "document-processing:independent-review": "no independently authored reader for .md is available here (none is known to this build), so a second automated opinion is not possible",
-      "document-processing:qualify": "exposure or risk beyond policy limits",
-      "report-builder:qualify": "exposure or risk beyond policy limits"
-    },
-    "raised": {},
+    "unexpected_exceptions": {},
     "job_census": {
-      "BLOCKED": 7,
       "COMPLETE": 52,
-      "REJECTED": 41
+      "REJECTED": 40,
+      "BLOCKED": 7,
+      "AWAITING_PAYMENT": 1
     },
-    "stranded": [],
-    "delivery_events": 52,
-    "deliveries_with_a_consumed_owner_approval": 52,
+    "stranded_jobs": [],
+    "delivery_events": 53,
+    "deliveries_with_a_consumed_owner_approval": 53,
     "unauthorized_deliveries": 0,
-    "unauthorized_delivery_job_ids": [],
-    "invoiced_job_ids": 52,
+    "delivered_but_unbilled": [],
+    "unbilled_disposition": [],
+    "invoices": 53,
     "duplicate_invoices": 0,
+    "fabricated_payments": 0,
     "real_revenue_cents": 0,
     "audit_chain_ok": true,
-    "open_incidents": 3,
-    "wall_s": 6.7,
+    "open_incidents": 4,
+    "wall_s": 8.6,
     "owner_signing": "configured; one explicit synthetic approval per delivery"
-  }
+  },
+  "regression": {
+    "command": "python3 -I -m pytest tests_solvent -q",
+    "summary": "4927 passed, 46 skipped, 8 warnings, 10094 subtests passed in 512.15s (0:08:32)",
+    "passed": 4927,
+    "failed": 0,
+    "skipped": 46,
+    "subtests_passed": 10094,
+    "failures": []
+  },
+  "mutation": {
+    "command": "python3 tools/mutate_solvent.py",
+    "summary": "204/204 killed  (0 survived, 0 not applied or harness)",
+    "killed": 204,
+    "total": 204,
+    "survived": [],
+    "not_applied": [],
+    "harness": [],
+    "isolated": true,
+    "new_this_round": 10
+  },
+  "phase_1_acceptance": {
+    "all_applicable_regression_tests_pass": true,
+    "sealed_examination_reading_certified": true,
+    "sealed_examination_capacity_certified": true,
+    "profitability_guard_passes": true,
+    "mutation_isolation_passes": true,
+    "five_previous_repairs_pass": true,
+    "no_mutant_survived": true,
+    "no_mutant_unapplied": true,
+    "no_critical_unresolved_security_defects": true,
+    "PHASE_1": "COMPLETE"
+  },
+  "phase_2": "NOT STARTED \u2014 gated on Phase 1"
 }

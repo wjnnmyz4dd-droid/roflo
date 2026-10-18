@@ -507,6 +507,16 @@ class UpworkProposalClient(ProhibitedSubmissionClient):
     Third-party services advertise doing this anyway. That is precisely what
     DeskPilot will not do: it would risk the owner's account, which is the
     acquisition channel itself.
+
+    **The official MCP server does not reopen this.** Upwork began operating
+    one at ``mcp.upwork.com`` after the finding above was recorded, and it is
+    real: its discovery documents answer unauthenticated and the resource
+    itself returns 401. Whether it exposes proposal submission is *unknown* --
+    reading the tool list needs an authenticated session, and every Upwork
+    page that would describe it returns 403 to an automated fetch. Unknown is
+    not permission. A capability nobody has read is the weakest possible
+    ground for spending the owner's Connects and risking their account, so
+    this stays prohibited until somebody has actually read it.
     """
 
     def __init__(self) -> None:
@@ -514,12 +524,20 @@ class UpworkProposalClient(ProhibitedSubmissionClient):
             "upwork",
             why=("Upwork's public GraphQL API exposes no proposal-submission "
                  "mutation, and automated proposal submission -- including via "
-                 "browser automation -- is prohibited by its terms"),
-            verified_on="2026-09-29",
+                 "browser automation -- is prohibited by its terms. Whether "
+                 "the official MCP server exposes submission is unverified, "
+                 "and unverified is not permitted"),
+            verified_on="2026-10-18",
             evidence=("upwork.com/developer GraphQL documentation and Upwork's "
                       "own community guidance, read 2026-09-29: job search is "
                       "documented, proposal submission is not exposed; "
-                      "automated submission is prohibited"))
+                      "automated submission is prohibited. Re-verified "
+                      "2026-10-18: mcp.upwork.com publishes MCP OAuth "
+                      "discovery metadata naming \"Upwork MCP\" and returns "
+                      "401 on the resource, so an official agent route now "
+                      "exists; its tool list could not be read without "
+                      "authenticating, and /ai/mcp, /developer, /ai-reference "
+                      "and /legal all return 403 to an automated fetch"))
 
 
 class SamGovResponseClient(ManualSubmissionClient):
