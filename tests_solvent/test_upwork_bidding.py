@@ -212,6 +212,28 @@ class TheRankingDoesNotFloatUnknownsToTheTop(unittest.TestCase):
         order = [r.opportunity_id for r in ub.rank([dear, cheap])]
         self.assertEqual(order[0], "cheap")
 
+    def test_even_a_loss_making_priced_job_outranks_an_unpriceable_one(self):
+        """The invariant is "unknown sorts last", whatever else is true.
+
+        Added because the first version of this class passed with the
+        rule deleted: in the ordinary case the sibling keys already put
+        the priced one first, so nothing was testing the rule itself. A
+        priced job that loses money is the case where the two disagree,
+        and the ranking must still prefer it -- not because losing money
+        is good, but because the owner can see that it loses money,
+        which is the whole difference between the two.
+        """
+        losing = recommendation(opportunity_id="losing",
+                                bid_cents=money(5))
+        self.assertTrue(losing.net_contribution.known)
+        self.assertLess(losing.net_contribution.value, 0)
+        unpriceable = recommendation(
+            opportunity_id="unpriceable", bid_cents=money(5000),
+            service_fee_cents=ub.unavailable("no fee data"))
+        self.assertFalse(unpriceable.net_contribution.known)
+        order = [r.opportunity_id for r in ub.rank([unpriceable, losing])]
+        self.assertEqual(order, ["losing", "unpriceable"])
+
     def test_the_ranking_is_stable_for_identical_inputs(self):
         batch = [recommendation(opportunity_id=f"O{i}") for i in range(5)]
         self.assertEqual([r.opportunity_id for r in ub.rank(batch)],

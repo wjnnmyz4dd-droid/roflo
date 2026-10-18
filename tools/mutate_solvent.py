@@ -1019,6 +1019,96 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_a_zero_profit_posting_is_declined",
         "a posting that earns exactly what it costs is recommended as work"),
 
+    # ---- bidding on Upwork, and the figures the owner is shown ---------
+
+    Mutant(
+        "upwork-an-unknown-cost-is-treated-as-zero",
+        "solvent/upworkbid.py",
+        "        return all(p.known for p in (",
+        "        return True or all(p.known for p in (",
+        "tests_solvent.test_upwork_bidding.AnUnknownCostIsNotAZeroCost"
+        ".test_a_missing_fee_makes_the_contribution_unavailable",
+        "a cost nobody could obtain is summed as zero, so the owner is "
+        "shown a contribution larger than the evidence supports"),
+
+    Mutant(
+        "upwork-a-figure-may-claim-a-source-it-has-not-got",
+        "solvent/upworkbid.py",
+        '            raise FailClosed(\n'
+        '                f"a figure with no value is marked '
+        '{self.provenance.value}; "',
+        '            pass\n'
+        '        if False:\n'
+        '            raise FailClosed(\n'
+        '                f"a figure with no value is marked '
+        '{self.provenance.value}; "',
+        "tests_solvent.test_upwork_bidding.AFigureCarriesItsProvenance"
+        ".test_a_figure_with_no_value_may_not_claim_a_source",
+        "an absent number can be labelled a MODEL ESTIMATE, which is how an "
+        "estimate becomes a fact"),
+
+    Mutant(
+        "upwork-the-bid-may-go-below-the-floor",
+        "solvent/upworkbid.py",
+        "    if aimed < floor_cents:",
+        "    if False:",
+        "tests_solvent.test_upwork_bidding.TheBidCompetesButNeverAtALoss"
+        ".test_the_floor_outranks_the_competition",
+        "undercutting the competition can price the work below what it "
+        "costs to do"),
+
+    Mutant(
+        "upwork-a-thin-history-yields-a-win-rate",
+        "solvent/upworkbid.py",
+        "    if outcomes < MINIMUM_OUTCOMES_FOR_A_RATE:",
+        "    if outcomes < 0:",
+        "tests_solvent.test_upwork_bidding.TheWinProbabilityIsNeverInvented"
+        ".test_thin_history_yields_insufficient_data",
+        "a win probability is quoted off two or three outcomes, which is a "
+        "fabricated probability with arithmetic in front of it"),
+
+    Mutant(
+        "upwork-the-approval-is-not-bound-to-the-recommendation",
+        "solvent/upworkbid.py",
+        "    if approval.subject != wanted:",
+        "    if False:",
+        "tests_solvent.test_upwork_bidding.TheApprovalIsBoundToWhatWasApproved"
+        ".test_a_changed_bid_invalidates_the_approval",
+        "an approval given for one bid authorises another, so a material "
+        "detail can change after the owner has answered"),
+
+    Mutant(
+        "upwork-an-unrecognised-budget-event-is-counted-as-nothing",
+        "solvent/upworkbid.py",
+        "        if event.kind not in EVENT_KINDS:",
+        "        if False:",
+        "tests_solvent.test_upwork_bidding.TheBudgetCountsWhatHappened"
+        ".test_an_unrecognised_event_kind_is_refused",
+        "a mistyped event kind is silently counted as nothing, so a cost "
+        "disappears from the acquisition budget"),
+
+    Mutant(
+        "upwork-the-ranking-floats-unknowns-to-the-top",
+        "solvent/upworkbid.py",
+        "            0 if not net.known else 1,",
+        "            1,",
+        "tests_solvent.test_upwork_bidding.TheRankingDoesNotFloatUnknownsToTheTop"
+        ".test_even_a_loss_making_priced_job_outranks_an_unpriceable_one",
+        "an opportunity nobody can price outranks one that is priced, so "
+        "Connects are spent on the unknown"),
+
+    Mutant(
+        "upwork-an-approved-proposal-becomes-submittable",
+        "solvent/upworkbid.py",
+        '    return False, (\n'
+        '        "approved, and eligible for you to submit.',
+        '    return True, (\n'
+        '        "approved, and eligible for you to submit.',
+        "tests_solvent.test_upwork_bidding.NothingIsSubmitted"
+        ".test_an_approved_proposal_is_still_not_submitted_by_deskpilot",
+        "DeskPilot reports itself allowed to submit a proposal to Upwork, "
+        "where submission is prohibited and the official route unverified"),
+
     # ---- keeping a mutation run's defects out of the repository ---------
 
     Mutant(
