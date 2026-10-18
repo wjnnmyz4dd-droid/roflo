@@ -49,7 +49,29 @@ from solvent import tabular  # noqa: E402
 from solvent.types import Criticality, Requirement, RequirementSource  # noqa: E402
 
 #: When the code under examination was frozen.
-FROZEN_AT = "2026-10-16T05:01:03Z"
+#:
+#: RE-SEALED 2026-10-18. ``solvent/csvverify.py`` changed under an explicit
+#: owner authorisation: ``check_preserve_columns`` compared protected values
+#: against the source as it *arrived*, so a brief that authorised trimming
+#: and protection on the same column failed correct work. The seal broke on
+#: the next run, which is what it is for. The seal forbids an *unnoticed*
+#: change, not an authorised one.
+#:
+#: Before re-sealing, the first paper was re-marked against the changed
+#: source and every answer was the same -- 56 questions, 56 correct, 24
+#: readable, 32 damaged, none wrong. The change is to a *verification*
+#: check and this paper examines *reading*, so answer-neutrality was the
+#: expected result; it was measured rather than assumed.
+#:
+#: The first sitting is preserved rather than overwritten: in
+#: :data:`FIRST_SITTING` below, and in
+#: ``docs/evidence/reading-exam-first-sitting.json``, which is the original
+#: evidence file kept under its own name.
+#:
+#: Because SEED derives from FROZEN_AT, moving the date generates a
+#: *different* paper, so what follows is a genuine second sitting rather
+#: than the same questions re-marked.
+FROZEN_AT = "2026-10-18T16:40:00Z"
 
 #: SHA-256 of each module at the freeze.
 DIGESTS = {
@@ -58,7 +80,7 @@ DIGESTS = {
     "solvent/csvwork.py":
         "82b6ab3ec2f073ed7dde38acd544395bd90671a711a7784df9a67d5a8200e00b",
     "solvent/csvverify.py":
-        "6f3432939ef77d65cc981cdb284d74b9714cb45db3cf29d8511b36aad30d8413",
+        "5d52279c2f961ad99755a68ec5fd30cd95a45acce7c643cfd5c76a9e7d468a48",
     "solvent/entrywork.py":
         "80fc61d604eb459ce0be87eebeef9f5e6e70420f0386ead1d190d4562aeff4e0",
     "solvent/entryverify.py":
@@ -73,6 +95,45 @@ DIGESTS = {
 
 #: Derived from the freeze, never from the environment.
 SEED = int(hashlib.sha256(FROZEN_AT.encode()).hexdigest()[:8], 16)
+
+#: Every sitting, keyed by the freeze it was sat against. Preserved, never
+#: refreshed: a first run that gets rewritten is not a first run. The
+#: capacity exam has kept its sittings this way since its own seal first
+#: broke, and this one now does the same rather than leaving the record to
+#: a single JSON file that each new sitting overwrites.
+FIRST_SITTING = """Sat 2026-10-16T05:01:03Z, seed 2994720811.
+
+56 questions, 56 correct, 0 wrong. 24 readable papers and 32 damaged
+ones, so neither answer could score full marks on its own.
+
+Recorded at the time in docs/evidence/reading-exam.json, and kept under
+docs/evidence/reading-exam-first-sitting.json once a second sitting
+needed the original name.
+"""
+
+SECOND_SITTING = """Sat 2026-10-18T16:40:00Z, seed 3726124977.
+
+56 questions, 56 correct, 0 wrong. 24 readable, 32 damaged.
+
+The second sitting, and the first time this seal has done its job rather
+than merely held. solvent/csvverify.py changed under an explicit owner
+authorisation -- check_preserve_columns was comparing protected values
+against the source as it arrived, which failed correct trim-then-dedupe
+work -- and the digests stopped matching, so the exam refused to mark
+itself.
+
+Before re-sealing, the first paper was re-marked against the changed
+source and every answer was the same: 56 correct, none wrong. That the
+change is to a verification check while this paper examines reading made
+answer-neutrality the expected result, but it was measured rather than
+assumed. Because SEED derives from FROZEN_AT, moving the freeze made this
+a different paper and not a re-mark of the first.
+"""
+
+SITTINGS = {
+    "2026-10-16T05:01:03Z": FIRST_SITTING,
+    "2026-10-18T16:40:00Z": SECOND_SITTING,
+}
 
 #: Scripts development never used. Latin-1 accents are deliberately
 #: absent: those are the cases the sweep was built against.

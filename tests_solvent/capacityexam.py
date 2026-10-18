@@ -52,7 +52,17 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
 #: and still passed in full. Because SEED derives from FROZEN_AT, moving
 #: the date generates a *different* paper, so this is a genuine second
 #: sitting rather than the same questions re-marked.
-FROZEN_AT = "2026-10-18T00:00:00Z"
+#: RE-SEALED again, later the same day. ``solvent/store.py`` gained the
+#: ``billing_obligations`` table so that a crash between delivery and
+#: invoicing leaves a durable record of what is owed. Additive, and under
+#: an explicit owner authorisation -- but it is a sealed module, so the
+#: seal broke on the next run exactly as it should.
+#:
+#: Before re-sealing, the seventh paper was re-sat against the changed
+#: source: 6 questions, 6 passed, and every level's delivered count
+#: identical to the recorded seventh sitting. The new table changed no
+#: answer this paper asks about.
+FROZEN_AT = "2026-10-18T16:40:00Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
@@ -64,7 +74,7 @@ DIGESTS = {
     "solvent/revenuemodel.py":
         "2c36183d9ce87c93e029bee036b2490173e47501f607173f56c34faef73a72a3",
     "solvent/store.py":
-        "fa72817a7ed0b1377a1e02c247675207a46e4d5c4c931c20e8d7ab474a77f3b9",
+        "ff99fcb1a19356fc6665f52a390872d4bf4893dac26e3c2e2f779eeb1ed70e5a",
 }
 
 #: The scoring criteria, fixed before the first run. Identical to the
@@ -345,6 +355,37 @@ across any restart.
 """
 
 
+EIGHTH_SITTING = """Sat 2026-10-18T16:40:00Z, seed 3726124977.
+
+Six questions, 6 passed, 0 failed. The eighth sitting, and the fifth time
+the seal has done its job rather than merely held.
+
+Sealed after store.py gained the billing_obligations table, which is what
+lets a crash between delivery and invoicing leave a durable record of what
+is owed instead of a delivered job nobody bills. The change is additive and
+authorised; the seal broke anyway, because that is what an unreviewed
+change to a sealed module looks like from the outside and the exam cannot
+tell the two apart without a person.
+
+Before re-sealing, the SEVENTH paper was re-sat against the changed source:
+6 passed, and every level's delivered count identical to the record below.
+The new table changed no answer this paper asks about. Moving the freeze
+moved the seed, so this is an eighth paper and not a re-mark of the seventh.
+
+    level   7, spike+slow_execution                            5 accepted,   5 delivered, peak 0.88
+    level  13, delayed_verification+revisions                  8 accepted,   8 delivered, peak 0.963
+    level  37, failed_submissions+outage                      16 accepted,  16 delivered, peak 0.308
+    level  71, spike+payment_delays                           11 accepted,  11 delivered, peak 0.292
+    level 149, slow_execution+revisions                       15 accepted,  15 delivered, peak 0.411
+    level 307, delayed_verification+failed_submissions       160 accepted, 160 delivered, peak 0.888
+
+No criterion was tripped at any question: nothing accepted went
+undelivered, no budget was exceeded, no duplicate commitment was created,
+no deadline was missed, no obligation was lost across a restart, no
+reservation leaked, and concurrency stayed inside the limit throughout.
+"""
+
+
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
     "2026-10-14T14:31:21Z": SECOND_SITTING,
@@ -353,6 +394,7 @@ SITTINGS = {
     "2026-10-15T10:48:02Z": FIFTH_SITTING,
     "2026-10-15T17:55:41Z": SIXTH_SITTING,
     "2026-10-18T00:00:00Z": SEVENTH_SITTING,
+    "2026-10-18T16:40:00Z": EIGHTH_SITTING,
 }
 
 

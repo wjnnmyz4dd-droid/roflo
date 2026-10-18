@@ -349,16 +349,27 @@ class FinancialGovernor:
                     f"committed-but-unverified exposure {fmt(exposure)} + "
                     f"{fmt(estimate.effective_cost_cents)} exceeds cap {fmt(cap)}")
 
+        # The floor before either approval door, and the order is the point.
+        # Both doors below return REQUIRES_APPROVAL, which asks the owner a
+        # question; the floor is not a question. Checked after them, a job
+        # that tripped the per-job ceiling was put to the owner as an
+        # ordinary approval and its margin was never evaluated at all -- so
+        # a job that loses money could be admitted by saying yes to it. The
+        # owner may always decide to take a bad job, but not by being shown
+        # one with their own floor skipped. Exposure stays above this: a job
+        # refused for breaching the shop's committed-but-unverified cap is
+        # refused as risk, and that is the reason the owner needs to read.
+        margin = (revenue - estimate.effective_cost_cents) / revenue
+        if margin < floor:
+            return (GovernorVerdict.MARGIN_TOO_LOW,
+                    f"margin {margin:.1%} below floor {floor:.0%} at K={estimate.calibration:.2f}")
+
         max_job = int(self._policy.get("financial", "max_job_spend_cents", default=25_000))
         if estimate.effective_cost_cents > max_job:
             return (GovernorVerdict.REQUIRES_APPROVAL,
                     f"estimated cost {fmt(estimate.effective_cost_cents)} exceeds "
                     f"per-job ceiling {fmt(max_job)}")
 
-        margin = (revenue - estimate.effective_cost_cents) / revenue
-        if margin < floor:
-            return (GovernorVerdict.MARGIN_TOO_LOW,
-                    f"margin {margin:.1%} below floor {floor:.0%} at K={estimate.calibration:.2f}")
         if revenue >= approval_above:
             return (GovernorVerdict.REQUIRES_APPROVAL,
                     f"value {fmt(revenue)} at or above owner-approval threshold "

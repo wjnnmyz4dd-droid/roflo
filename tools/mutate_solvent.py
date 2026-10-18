@@ -28,6 +28,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import os
 import pathlib
@@ -35,6 +36,9 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from tools import mutation_guard  # noqa: E402
 
 
 @dataclasses.dataclass(frozen=True)
@@ -958,6 +962,115 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_a_format_with_no_independent_reader_is_refused",
         "a format with no independently authored reader would fall back to "
         "Solvent reading its own output twice"),
+
+    # ---- the financial admission control, and the two approval doors ---
+    # Added after a mutation run's own defect reached origin and a review
+    # of the guard it disabled found a second way past the owner's floor.
+
+    Mutant(
+        "governor-the-margin-floor-is-not-applied",
+        "solvent/governor.py",
+        "        if margin < floor:",
+        "        if False:",
+        "tests_solvent.test_profitability_guard.TheGovernorIsTheAuthority"
+        ".test_a_marginally_profitable_job_below_the_floor_is_declined",
+        "work below the owner's margin floor is admitted automatically"),
+
+    Mutant(
+        "governor-the-floor-sits-below-the-approval-door",
+        "solvent/governor.py",
+        "        margin = (revenue - estimate.effective_cost_cents) / revenue\n"
+        "        if margin < floor:\n"
+        "            return (GovernorVerdict.MARGIN_TOO_LOW,",
+        "        margin = (revenue - estimate.effective_cost_cents) / revenue\n"
+        "        if margin < floor and False:\n"
+        "            return (GovernorVerdict.MARGIN_TOO_LOW,",
+        "tests_solvent.test_profitability_guard.TheGovernorIsTheAuthority"
+        ".test_a_costly_job_under_the_floor_is_declined_not_escalated",
+        "a loss-making job whose cost also trips the per-job ceiling is put "
+        "to the owner as an ordinary approval, with the floor never "
+        "evaluated -- the defect this ordering was changed to close"),
+
+    Mutant(
+        "governor-no-stated-revenue-is-priced-as-free",
+        "solvent/governor.py",
+        "        if revenue <= 0:",
+        "        if revenue < 0:",
+        "tests_solvent.test_profitability_guard.TheGovernorIsTheAuthority"
+        ".test_no_revenue_is_not_a_free_job",
+        "a job with no revenue established is priced rather than queried, "
+        "and a zero divisor decides the margin"),
+
+    Mutant(
+        "governor-the-exposure-cap-is-advisory",
+        "solvent/governor.py",
+        "        if exposure + estimate.effective_cost_cents > cap:",
+        "        if False:",
+        "tests_solvent.test_profitability_guard.TheGovernorIsTheAuthority"
+        ".test_the_exposure_cap_still_outranks_the_floor",
+        "the shop can commit past its own committed-but-unverified ceiling"),
+
+    Mutant(
+        "finder-clearing-cost-by-nothing-is-worth-recommending",
+        "solvent/finder.py",
+        "        if econ.profit_cents is not None and econ.profit_cents <= 0:",
+        "        if econ.profit_cents is not None and econ.profit_cents < 0:",
+        "tests_solvent.test_profitability_guard.TheFinderTriagesOnTheSameFloor"
+        ".test_a_zero_profit_posting_is_declined",
+        "a posting that earns exactly what it costs is recommended as work"),
+
+    # ---- keeping a mutation run's defects out of the repository ---------
+
+    Mutant(
+        "mutation-isolation-the-runner-patches-production",
+        "tools/mutate_solvent.py",
+        "            where = stack.enter_context("
+        "mutation_guard.isolated_tree(ROOT))",
+        "            where = ROOT",
+        "tests_solvent.test_mutation_isolation.TheRunnersIsolateByDefault"
+        ".test_the_solvent_runner_defaults_to_a_copy",
+        "a run patches real source again, so a commit taken during one can "
+        "capture a mutant -- which is how a disabled profit guard reached "
+        "origin"),
+
+    Mutant(
+        "mutation-isolation-a-claim-never-checks-the-hashes",
+        "tools/mutation_guard.py",
+        "        if moved:",
+        "        if False:",
+        "tests_solvent.test_mutation_isolation.TheClaimProvesRestoration"
+        ".test_a_run_that_does_not_restore_raises_and_keeps_the_claim",
+        "an in-place run reports success without showing it put the source "
+        "back"),
+
+    Mutant(
+        "mutation-isolation-a-dead-claim-reads-as-clear",
+        "tools/mutation_guard.py",
+        '    held["stale"] = not _alive(int(held.get("pid") or 0))',
+        '    held["stale"] = False',
+        "tests_solvent.test_mutation_isolation.TheClaimProvesRestoration"
+        ".test_a_claim_from_a_dead_process_reads_as_interrupted",
+        "a claim left by a killed run reads as a live one, so the "
+        "interrupted-mid-patch case is never reported as interrupted"),
+
+    Mutant(
+        "mutation-isolation-the-scan-reads-only-the-replacement",
+        "tools/mutation_guard.py",
+        "        if old not in body and new and new in body:",
+        "        if new and new in body:",
+        "tests_solvent.test_mutation_isolation.TheScanFindsAnAppliedMutant"
+        ".test_a_replacement_whose_original_is_still_there_is_not_a_hit",
+        "the scan calls legitimate code mutated, so every commit is refused "
+        "and the check gets turned off"),
+
+    Mutant(
+        "mutation-isolation-the-hook-ignores-a-live-claim",
+        "tools/precommit_mutation_check.py",
+        "    if held is not None:",
+        "    if False:",
+        "tests_solvent.test_mutation_isolation.ThePreCommitHookIsReal"
+        ".test_the_checker_refuses_while_a_claim_is_held",
+        "a commit is allowed from underneath a running mutation process"),
 
     Mutant(
         "t2-converted-provenance-invents-nothing",
@@ -2281,7 +2394,7 @@ MUTANTS: tuple[Mutant, ...] = (
 )
 
 
-def _drop_bytecode() -> None:
+def _drop_bytecode(where: pathlib.Path = ROOT) -> None:
     """Delete every __pycache__ before running.
 
     This is load-bearing, not hygiene. CPython decides a .pyc is current by
@@ -2297,17 +2410,17 @@ def _drop_bytecode() -> None:
     because the restored source was never recompiled. Both were observed
     here before this existed.
     """
-    for cache in ROOT.rglob("__pycache__"):
+    for cache in where.rglob("__pycache__"):
         for pyc in cache.glob("*.pyc"):
             pyc.unlink(missing_ok=True)
 
 
-def run(test: str) -> tuple[bool, str]:
-    _drop_bytecode()
+def run(test: str, where: pathlib.Path = ROOT) -> tuple[bool, str]:
+    _drop_bytecode(where)
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     done = subprocess.run(
         [sys.executable, "-B", "-m", "unittest", test, "-v"],
-        cwd=ROOT, capture_output=True, text=True, timeout=1800, env=env)
+        cwd=where, capture_output=True, text=True, timeout=1800, env=env)
     return done.returncode == 0, (done.stdout + done.stderr)[-400:]
 
 
@@ -2315,6 +2428,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument(
+        "--in-place", action="store_true",
+        help="patch the real source instead of a throwaway copy of it. The "
+             "default copies the working tree first, so a commit taken "
+             "during a run cannot capture a mutant -- which is how a "
+             "disabled profit guard once reached origin. In-place runs "
+             "announce what they own in .mutation-claim.json and are "
+             "refused a clean exit unless every file hashes back.")
     args = ap.parse_args()
 
     chosen = [m for m in MUTANTS if args.only in m.name]
@@ -2323,9 +2444,25 @@ def main() -> int:
             print(f"{m.name:40s} {m.module}")
         return 0
 
+    with contextlib.ExitStack() as stack:
+        if args.in_place:
+            where = ROOT
+            stack.enter_context(mutation_guard.Claim(
+                sorted({m.module for m in chosen}), root=ROOT,
+                reason=f"mutate_solvent --in-place --only {args.only!r}"))
+            print(f"in-place: {len(chosen)} mutant(s) claimed in "
+                  f"{mutation_guard.CLAIM.name}; do not commit from this "
+                  "tree until the run finishes")
+        else:
+            where = stack.enter_context(mutation_guard.isolated_tree(ROOT))
+            print(f"isolated: patching a copy of the working tree at {where}")
+        return _battery(chosen, where)
+
+
+def _battery(chosen, where: pathlib.Path) -> int:
     results = []
     for mutant in chosen:
-        path = ROOT / mutant.module
+        path = where / mutant.module
         original = path.read_text()
 
         if original.count(mutant.old) != 1:
@@ -2335,7 +2472,7 @@ def main() -> int:
             results.append((mutant, "NOT_APPLIED", ""))
             continue
 
-        green, _ = run(mutant.test)
+        green, _ = run(mutant.test, where)
         if not green:
             print(f"HARNESS      {mutant.name}  "
                   f"(baseline is not green; nothing to prove)")
@@ -2344,11 +2481,11 @@ def main() -> int:
 
         path.write_text(original.replace(mutant.old, mutant.new))
         try:
-            still_green, tail = run(mutant.test)
+            still_green, tail = run(mutant.test, where)
         finally:
             path.write_text(original)
 
-        back_green, _ = run(mutant.test)
+        back_green, _ = run(mutant.test, where)
         if not back_green:
             print(f"HARNESS      {mutant.name}  (did not recover on revert)")
             results.append((mutant, "HARNESS", ""))

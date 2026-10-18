@@ -27,6 +27,7 @@ with the suite still green, ``NOT_APPLIED`` when the mutant is stale, and
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import os
 import pathlib
@@ -35,6 +36,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 INSTALLER = ROOT / "windows" / "installer"
+sys.path.insert(0, str(ROOT))
+
+from tools import mutation_guard  # noqa: E402
 PACKAGE = INSTALLER / "deskpilot_installer"
 
 
@@ -1559,7 +1563,7 @@ _LIBRARY_MUTANTS: tuple[Mutant, ...] = (
 
 MUTANTS = MUTANTS + _LIBRARY_MUTANTS
 
-def purge_bytecode() -> None:
+def purge_bytecode(where: pathlib.Path = ROOT) -> None:
     """Delete cached bytecode for the package under mutation.
 
     Not housekeeping -- correctness. CPython validates a ``.pyc`` against the
@@ -1573,23 +1577,28 @@ def purge_bytecode() -> None:
     guarded, and a stale cache after the restore reports a failure that cannot
     be reproduced. Purging before every run removes the whole class.
     """
-    for cache in PACKAGE.rglob("__pycache__"):
+    for cache in (where / "windows" / "installer").rglob("__pycache__"):
         for compiled in cache.glob("*.pyc"):
             compiled.unlink(missing_ok=True)
 
 
-def run_tests(target: str) -> tuple[bool, str]:
-    purge_bytecode()
+def run_tests(target: str, where: pathlib.Path = ROOT) -> tuple[bool, str]:
+    purge_bytecode(where)
     result = subprocess.run(
         [sys.executable, "-m", "unittest", target],
-        cwd=ROOT, capture_output=True, text=True,
+        cwd=where, capture_output=True, text=True,
         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
     return result.returncode == 0, (result.stdout + result.stderr)[-3000:]
 
 
-def apply_mutation(mutant: Mutant) -> tuple[bool, str]:
+def _in(where: pathlib.Path, mutant: Mutant) -> pathlib.Path:
+    """The mutant's file, inside whichever tree is being patched."""
+    return where / source_path(mutant.module).relative_to(ROOT)
+
+
+def apply_mutation(mutant: Mutant, where: pathlib.Path = ROOT) -> tuple[bool, str]:
     """Replace the source. Returns ``(applied, original_text)``."""
-    path = source_path(mutant.module)
+    path = _in(where, mutant)
     original = path.read_text()
     occurrences = original.count(mutant.old)
     if occurrences != 1:
@@ -1598,13 +1607,17 @@ def apply_mutation(mutant: Mutant) -> tuple[bool, str]:
     return path.read_text() != original, original
 
 
-def restore(mutant: Mutant, original: str) -> None:
-    source_path(mutant.module).write_text(original)
+def restore(mutant: Mutant, original: str, where: pathlib.Path = ROOT) -> None:
+    _in(where, mutant).write_text(original)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", default="", help="run one mutant by name")
+    parser.add_argument(
+        "--in-place", action="store_true",
+        help="patch the real source instead of a throwaway copy of it; see "
+             "tools/mutation_guard.py for why the copy is the default")
     args = parser.parse_args()
 
     selected = [m for m in MUTANTS
@@ -1613,12 +1626,28 @@ def main() -> int:
         print(f"no mutant named {args.only!r}")
         return 2
 
+    with contextlib.ExitStack() as stack:
+        if args.in_place:
+            where = ROOT
+            stack.enter_context(mutation_guard.Claim(
+                sorted({str(source_path(m.module).relative_to(ROOT))
+                        for m in selected}),
+                root=ROOT, reason="mutate_installer --in-place"))
+            print(f"in-place: claimed in {mutation_guard.CLAIM.name}; "
+                  "do not commit from this tree until the run finishes")
+        else:
+            where = stack.enter_context(mutation_guard.isolated_tree(ROOT))
+            print(f"isolated: patching a copy of the working tree at {where}")
+        return _battery(selected, where)
+
+
+def _battery(selected, where: pathlib.Path) -> int:
     verdicts: list[tuple[str, str, str]] = []
     for index, mutant in enumerate(selected, 1):
         print(f"[{index}/{len(selected)}] {mutant.name} "
               f"({mutant.module}) ... ", end="", flush=True)
 
-        baseline_ok, baseline_out = run_tests(mutant.designated)
+        baseline_ok, baseline_out = run_tests(mutant.designated, where)
         if not baseline_ok:
             print("HARNESS_ERROR (baseline not green)")
             verdicts.append((mutant.name, "HARNESS_ERROR",
@@ -1626,20 +1655,20 @@ def main() -> int:
                              "mutation: " + baseline_out.strip()[-300:]))
             continue
 
-        applied, original = apply_mutation(mutant)
+        applied, original = apply_mutation(mutant, where)
         if not applied:
             print("NOT_APPLIED (pattern did not match exactly once)")
             verdicts.append((mutant.name, "NOT_APPLIED",
                              f"the pattern appears "
                              f"{original.count(mutant.old)} times in "
                              f"{mutant.module}; the mutant is stale"))
-            restore(mutant, original)
+            restore(mutant, original, where)
             continue
 
         try:
-            mutated_ok, mutated_out = run_tests(mutant.designated)
+            mutated_ok, mutated_out = run_tests(mutant.designated, where)
         finally:
-            restore(mutant, original)
+            restore(mutant, original, where)
 
         if mutated_ok:
             print("SURVIVED")
@@ -1648,7 +1677,7 @@ def main() -> int:
                              f"{mutant.designated} still green"))
             continue
 
-        restored_ok, _ = run_tests(mutant.designated)
+        restored_ok, _ = run_tests(mutant.designated, where)
         if not restored_ok:
             print("HARNESS_ERROR (did not recover)")
             verdicts.append((mutant.name, "HARNESS_ERROR",

@@ -70,6 +70,39 @@ class TheSitting(unittest.TestCase):
         self.assertEqual(recorded["questions"], self.result["questions"])
         self.assertEqual(recorded["correct"], self.result["correct"])
 
+    def test_the_current_seal_has_a_recorded_sitting(self):
+        self.assertIn(readingexam.FROZEN_AT, readingexam.SITTINGS)
+
+
+class EarlierSittingsAreKept(unittest.TestCase):
+    """A first run that gets rewritten is not a first run.
+
+    The evidence file carries one sitting and each new one overwrites it,
+    so the record of the earlier papers lives in the module and in a file
+    of its own. Both are checked, because the point of keeping them is
+    that somebody can still read what the first paper scored.
+    """
+
+    def test_two_sittings_are_recorded_because_the_seal_broke_once(self):
+        self.assertGreaterEqual(len(readingexam.SITTINGS), 2)
+        self.assertIn("56 correct", readingexam.FIRST_SITTING)
+        self.assertIn("2026-10-16T05:01:03Z", readingexam.SITTINGS)
+
+    def test_the_first_sittings_own_evidence_file_still_exists(self):
+        original = json.loads(
+            pathlib.Path(
+                "docs/evidence/reading-exam-first-sitting.json").read_text(
+                    encoding="utf-8"))
+        self.assertEqual(original["frozen_at"], "2026-10-16T05:01:03Z")
+        self.assertEqual(original["seed"], 2994720811)
+        self.assertEqual(original["correct"], 56)
+        self.assertEqual(original["wrong"], [])
+
+    def test_the_second_paper_is_not_the_first_paper(self):
+        """Moving the freeze must move the seed, or it is a re-mark."""
+        self.assertNotEqual(readingexam.FROZEN_AT, "2026-10-16T05:01:03Z")
+        self.assertNotEqual(readingexam.SEED, 2994720811)
+
 
 if __name__ == "__main__":
     unittest.main()

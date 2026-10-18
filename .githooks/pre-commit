@@ -1,0 +1,12 @@
+#!/bin/sh
+# Refuse a commit taken from underneath a mutation run.
+#
+# This exists because one got through. `de94386` was staged with
+# `git add -A` while a run held solvent/finder.py patched, and two pushed
+# commits carried a disabled profitability guard as a result.
+#
+# Install once per clone:   git config core.hooksPath .githooks
+#
+# The check is in Python because it has to read the mutant tables; see
+# tools/mutation_guard.py for what it asks and why.
+exec python3 tools/precommit_mutation_check.py
