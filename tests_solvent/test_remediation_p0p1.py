@@ -361,5 +361,107 @@ class IndependentCsvReview(unittest.TestCase):
                                  "which would read as agreement")
 
 
+class StartupReconciliation(unittest.TestCase):
+    """Repair 4: nothing stays silently mid-flight across a restart.
+
+    Measured before this: a job killed during verification sat in
+    VERIFYING for ever -- nothing resumed it, timed it out or escalated
+    it -- and it kept its pipeline slot, so every crash permanently
+    shrank the shop.
+    """
+
+    def setUp(self):
+        from solvent.harness import Solvent
+        self.s = Solvent(":memory:")
+        self.addCleanup(self.s.store.close)
+        from solvent import runtime
+        self.runtime = runtime
+
+    def a_job_in_verifying(self) -> str:
+        """A real job walked to VERIFYING through legal transitions.
+
+        Not a row poked into the table: the state machine refuses
+        INTAKE -> VERIFYING, and a test that bypassed it would be
+        reconciling a state production cannot reach.
+        """
+        from solvent.types import JobState, LocationSignals
+        job_id = self.s.orchestrator.intake(
+            title="t", client_id="c", quoted_cents=5000,
+            signals=LocationSignals(), initiator="test")
+        for step in (JobState.QUALIFYING, JobState.ACCEPTED,
+                     JobState.EXECUTING, JobState.VERIFYING):
+            self.s.orchestrator._transition(
+                job_id, step, why="walking to the crash point",
+                initiator="test")
+        return job_id
+
+    def test_a_job_stranded_in_verifying_is_surfaced(self):
+        from solvent.types import JobState
+        job_id = self.a_job_in_verifying()
+        notes = self.runtime.reconcile(self.s)
+        self.assertTrue(any(job_id in n for n in notes),
+                        f"a stranded job was not surfaced: {notes}")
+        self.assertEqual(self.s.orchestrator.job(job_id).state,
+                         JobState.BLOCKED,
+                         "a job interrupted mid-verification stayed in a "
+                         "state nothing will move it out of")
+
+    def test_it_is_blocked_on_the_owner_not_quietly_resumed(self):
+        from solvent.types import BlockedOn, JobState
+        job_id = self.a_job_in_verifying()
+        self.runtime.reconcile(self.s)
+        job = self.s.orchestrator.job(job_id)
+        self.assertEqual(job.blocked_on, BlockedOn.OWNER,
+                         "reconciliation decided for the owner instead of "
+                         "asking; resuming paid-for work is their call")
+
+    def test_reconciling_twice_changes_nothing_the_second_time(self):
+        from solvent.types import JobState
+        job_id = self.a_job_in_verifying()
+        first = self.runtime.reconcile(self.s)
+        second = self.runtime.reconcile(self.s)
+        self.assertTrue(any(job_id in n for n in first))
+        self.assertFalse(any(job_id in n for n in second),
+                         "a double restart reported the same job twice")
+
+    def test_a_settled_job_gets_its_slot_back_at_reconciliation(self):
+        """A crash between settling and releasing leaves a slot held."""
+        self.s.policy.amend({"capacity": {
+            "max_owed_seconds": 20 * 3600, "max_concurrent_jobs": 4,
+            "pipeline_target": 4, "replenish_at": 2,
+            "max_committed_jobs": 20, "cpu_share": 0.5,
+            "max_execution_workers": 5, "max_verification_workers": 5}},
+            "owner:demo", "test")
+        self.s.capacity.reserve(
+            3600.0, kind="EXECUTE", job_id="job_ghost",
+            capability="data-entry", idempotency_key="commit:job_ghost",
+            why="test")
+        self.assertEqual(self.s.capacity.jobs_in_flight("data-entry"), 1)
+        notes = self.runtime.reconcile(self.s)
+        self.assertEqual(
+            self.s.capacity.jobs_in_flight("data-entry"), 0,
+            f"a slot held by a job that does not exist was kept: {notes}")
+
+    def test_a_job_still_owed_work_keeps_its_slot(self):
+        """The inverse, so reconciliation cannot pass by releasing all."""
+        from solvent.types import JobState, LocationSignals
+        self.s.policy.amend({"capacity": {
+            "max_owed_seconds": 20 * 3600, "max_concurrent_jobs": 4,
+            "pipeline_target": 4, "replenish_at": 2,
+            "max_committed_jobs": 20, "cpu_share": 0.5,
+            "max_execution_workers": 5, "max_verification_workers": 5}},
+            "owner:demo", "test")
+        job_id = self.s.orchestrator.intake(
+            title="t", client_id="c", quoted_cents=5000,
+            signals=LocationSignals(), initiator="test")
+        self.s.capacity.reserve(
+            3600.0, kind="EXECUTE", job_id=job_id, capability="data-entry",
+            idempotency_key=f"commit:{job_id}", why="test")
+        self.runtime.reconcile(self.s)
+        self.assertEqual(
+            self.s.capacity.jobs_in_flight("data-entry"), 1,
+            "a job that is still owed work lost its slot")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

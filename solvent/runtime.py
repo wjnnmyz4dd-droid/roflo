@@ -33,6 +33,7 @@ from typing import Callable
 
 from .audit import new_id
 from .errors import FailClosed
+from . import resilience as _res
 from .types import BlockedOn, JobState, OperatingMode
 
 #: Where a production database lives when nothing says otherwise. A 24/7 service
@@ -201,10 +202,96 @@ def reconcile(solvent, *, initiator: str = RUNTIME) -> list[str]:
             why=f"{note}; the owner must confirm before anything is repeated")
         notes.append(f"{note}; blocked {job_id} on the owner")
 
+    notes.extend(_reconcile_stranded_jobs(solvent, initiator=initiator))
+    notes.extend(_reconcile_capacity(solvent, initiator=initiator))
+
     solvent.audit.record(
         event="runtime.reconciled", authority="orchestrator", initiator=initiator,
         why="restart reconciliation", decision="RECONCILED",
         result="; ".join(notes) if notes else "nothing outstanding")
+    return notes
+
+
+#: States a crash can strand a job in: work was under way and the process
+#: went away before anything moved it on. None of them is a resting place,
+#: so a job found here after a restart was interrupted.
+_INTERRUPTED = (JobState.EXECUTING, JobState.VERIFYING,
+                JobState.READY_FOR_DELIVERY)
+
+
+def _reconcile_stranded_jobs(solvent, *, initiator: str) -> list[str]:
+    """Nothing stays silently mid-flight across a restart.
+
+    Measured before this existed: a job killed during verification sat in
+    VERIFYING for ever. Nothing resumed it, nothing timed it out, nothing
+    escalated it, and it kept its pipeline slot, so every crash
+    permanently shrank the shop.
+
+    It is **not** resumed here, and that is deliberate. Re-running a
+    checker is safe in itself, but a job interrupted mid-flight may also
+    have had an external effect nobody wrote down -- the loop above is
+    what knows about those -- and deciding to carry on is a judgement
+    about work already paid for. So this surfaces rather than guesses:
+    the job is blocked on the owner with the state it was found in, which
+    authorises nothing and cannot be mistaken for progress.
+
+    Idempotent: a job already BLOCKED is left alone, so running this
+    twice after a double restart changes nothing the second time.
+    """
+    notes: list[str] = []
+    for job in solvent.orchestrator.jobs():
+        if job.state not in _INTERRUPTED:
+            continue
+        why = (f"found in {job.state.value} after a restart, so it was "
+               "interrupted; the owner decides whether the work resumes")
+        try:
+            solvent.resilience.record_incident(
+                component="runtime", operation="restart-reconciliation",
+                error_class="InterruptedJob", signature=why,
+                severity=_res.S_SERIOUS, job_id=job.id,
+                trigger="a restart found this job mid-flight", symptoms=why)
+        except Exception:  # pragma: no cover - the recorder is best effort
+            pass
+        solvent.orchestrator.block(
+            job_id=job.id, blocked_on=BlockedOn.OWNER, initiator=initiator,
+            why=why)
+        notes.append(f"{job.id} was stranded in {job.state.value}; "
+                     "blocked on the owner")
+    return notes
+
+
+def _reconcile_capacity(solvent, *, initiator: str) -> list[str]:
+    """Give back pipeline slots held by jobs that are no longer owed work.
+
+    A crash between settling a job and releasing its reservation leaves
+    the slot held by a job nobody is working on. Releasing by job id is
+    idempotent, so this and the business cycle may both decide the same
+    job has settled without the slot being released twice.
+
+    Only settled jobs are touched. A job still owed work keeps its slot,
+    and this never looks at an invoice: the debt outlives the slot.
+    """
+    notes: list[str] = []
+    capacity = getattr(solvent, "capacity", None)
+    if capacity is None:
+        return notes
+    for reservation in capacity.outstanding():
+        job_id = reservation.job_id
+        if not job_id:
+            continue
+        try:
+            job = solvent.orchestrator.job(job_id)
+        except Exception:  # noqa: BLE001 - a reservation for a job that is
+            # not there is itself worth saying, and worth releasing
+            capacity.release_job(job_id, why="no such job at reconciliation")
+            notes.append(f"released a slot held by unknown job {job_id}")
+            continue
+        if job.state.is_terminal or job.state is JobState.COMPLETE:
+            released = capacity.release_job(
+                job_id, why=f"job is {job.state.value} at reconciliation")
+            if released:
+                notes.append(f"released {released} slot(s) held by "
+                             f"{job_id}, which is {job.state.value}")
     return notes
 
 

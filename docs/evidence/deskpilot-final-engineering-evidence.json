@@ -68,12 +68,30 @@
     "measured_effect": "data-entry csv jobs now reach independent review; briefs with nothing recomputable still refuse and ask for a person, which is the pre-existing fail-closed design rather than a rubber stamp"
   },
   "repair_3_owner_signing": {
-    "status": "NOT FIXED this round"
+    "status": "NOT FIXED",
+    "note": "not attempted this round. The defect stands as measured at 3c7d6d0: harness.py mints an unsigned approval for the C2 delivery effect, so an Owner Channel makes the gate refuse every delivery including T1 work (0 of 100 with a key set). It needs a focused change to Action Gate authorisation plus the twelve-case acceptance matrix."
   },
   "repair_4_startup_reconciliation": {
     "status": "PARTIALLY FIXED",
-    "done": "jobs whose verification tier is unreachable are failed and release their slot instead of sitting in ACCEPTED for ever",
-    "not_done": "no startup reconciliation sweep exists; a job killed mid-verification still strands in VERIFYING"
+    "original_failure": "a job killed during verification sat in VERIFYING for ever; nothing resumed, timed out or escalated it, and it kept its pipeline slot, so every crash permanently shrank the shop",
+    "existing_machinery_reused": "runtime.reconcile already handled the hardest case -- an external action started and never settled is neither retried nor assumed successful, and the job is blocked on the owner. Extended rather than duplicated.",
+    "files_changed": [
+      "solvent/runtime.py"
+    ],
+    "added": [
+      "a sweep for jobs found in EXECUTING, VERIFYING or READY_FOR_DELIVERY after a restart: each is recorded as an incident and blocked on the owner",
+      "a sweep releasing pipeline slots held by jobs that are terminal, COMPLETE, or gone"
+    ],
+    "deliberately_not_done": "no automatic resume. Re-running a checker is safe in itself, but an interrupted job may also have had an external effect nobody wrote down, and carrying on with work already paid for is a judgement. This surfaces rather than guesses.",
+    "idempotent": "a job already BLOCKED is left alone; a double restart reports nothing the second time",
+    "tests": [
+      "stranded VERIFYING job is surfaced",
+      "blocked on the owner rather than quietly resumed",
+      "reconciling twice changes nothing the second time",
+      "a settled job's slot is returned",
+      "a job still owed work keeps its slot"
+    ],
+    "why_not_verified": "the brief asks for interrupted verification to be restored where safe and for crash tests at eleven named lifecycle points; neither was done"
   },
   "sealed_capacity_exam": {
     "seal_broke": true,
@@ -82,7 +100,7 @@
   },
   "regression": {
     "before": 4728,
-    "after": 4744,
+    "after": 4749,
     "failed": 0,
     "skipped": 44,
     "subtests": 10085
@@ -90,10 +108,19 @@
   "regression_failures_encountered_and_how": [
     "Invariant8 capacity surface: release_job added to the declared method list with justification, not removed from the guard",
     "sealed capacity exam: re-sat and re-sealed as above",
-    "two independent-review tests asserted .csv has no reader: the invariant is 'a format with no reader is refused', so the example moved to .pdf and a positive test for csv was added so the move cannot hide a regression"
+    "two independent-review tests asserted .csv has no reader: the invariant is 'a format with no reader is refused', so the example moved to .pdf and a positive test for csv was added so the move cannot hide a regression",
+    "TheRuntimeIsNotAnAuthority scans runtime.py for the word 'approve'; my docstring used it. Reworded the comment, not the test. Second time a prose guard caught my own writing -- the capacity suite uses an AST for this reason, the runtime one still scans text."
   ],
   "limits": [
     "Linux only; MT5 coexistence uncertified",
     "all customers, contracts and payments synthetic"
+  ],
+  "engineering_status": "INCOMPLETE: 3 of 4 repairs; repair 3 not attempted, repair 4 stops short of resume",
+  "not_done": [
+    "repair 3 entirely",
+    "automatic resume of interrupted verification",
+    "the eleven-point crash matrix",
+    "the integrated 100-opportunity acceptance run after all four",
+    "mutation testing after these changes"
   ]
 }
