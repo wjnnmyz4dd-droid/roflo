@@ -1,0 +1,229 @@
+{
+  "document": "DeskPilot final defect remediation evidence",
+  "produced": "2026-10-18",
+  "base_commit": "4819125",
+  "head_at_assembly": "df34ca6886513bd91d1f4417d8e31c73b9aee44d",
+  "platform": "Linux x86_64, CPython 3.11.17",
+  "windows_certified": false,
+  "windows_note": "Every measurement is from Linux. Nothing here is a Windows or MetaTrader 5 coexistence claim.",
+  "real_external_effects": "none; egress simulation_only, no customer action, no payment, no deployment",
+  "findings": {
+    "A_accepted_crash": "VERIFIED FIXED",
+    "B_invoice_recovery": "VERIFIED FIXED",
+    "C_markdown_t2": "VERIFIED FIXED",
+    "D_transformation_order": "VERIFIED FIXED",
+    "E_recovery_delivery_never_priced": "VERIFIED FIXED (found by the integrated acceptance run)"
+  },
+  "additional_defects_discovered": 1,
+  "additional_defects_repaired": 1,
+  "regression": {
+    "command": "python3 -I -m pytest tests_solvent -q",
+    "summary": "5 failed, 4877 passed, 44 skipped, 8 warnings, 10086 subtests passed in 520.73s (0:08:40)",
+    "passed": 4877,
+    "failed": 5,
+    "skipped": 44,
+    "subtests": 10086,
+    "failures": [
+      "tests_solvent/test_capacity_exam.py::TheSealHolds::test_nothing_under_examination_has_moved",
+      "tests_solvent/test_reading_exam.py::TheSeal::test_nothing_under_examination_has_moved",
+      "tests_solvent/test_reading_exam.py::TheSitting::test_every_question_is_answered_correctly",
+      "tests_solvent/test_reading_exam.py::TheSitting::test_the_paper_was_marked_at_all",
+      "tests_solvent/test_reading_exam.py::TheSitting::test_the_result_is_recorded_as_evidence"
+    ]
+  },
+  "mutation": {
+    "command": "python3 tools/mutate_solvent.py",
+    "summary": "189/191 killed  (0 survived, 2 not applied or harness)",
+    "killed": 189,
+    "total": 191,
+    "survived": [],
+    "not_applied_or_harness": [
+      "t2-any-reader-will-do",
+      "invoice-recovery-marks-the-recovered-invoice-paid"
+    ],
+    "new_this_round": 18,
+    "previous_baseline": "173/173",
+    "followup_run": {
+      "why": "two mutants were NOT_APPLIED in the main run because this round's own code made their anchors ambiguous; they were re-anchored, and three mutants were added for the new sites that were carrying none",
+      "commands": [
+        "python3 tools/mutate_solvent.py --only t2-any-reader-will-do",
+        "python3 tools/mutate_solvent.py --only t2-converted-provenance",
+        "python3 tools/mutate_solvent.py --only invoice-recovery"
+      ],
+      "verdicts": [
+        "KILLED       t2-any-reader-will-do",
+        "KILLED       t2-converted-provenance-invents-nothing",
+        "KILLED       t2-converted-provenance-skips-the-table",
+        "KILLED       invoice-recovery-trusts-the-job-state-alone",
+        "KILLED       invoice-recovery-marks-the-recovered-invoice-paid",
+        "KILLED       invoice-recovery-prices-an-hourly-job-from-its-quote",
+        "KILLED       invoice-recovery-reinvoices-what-is-already-billed"
+      ],
+      "survived": [],
+      "not_applied_or_harness": [],
+      "total_mutants_after": 194
+    }
+  },
+  "integrated_acceptance": {
+    "offered": 100,
+    "offered_per_skill": 20,
+    "crashes_injected": 5,
+    "crash_points": [
+      "worker execution",
+      "verification",
+      "delivery ack",
+      "invoice creation",
+      "recovery"
+    ],
+    "crashes_observed": [
+      {
+        "job_index": 29,
+        "point": "verification",
+        "raised": "Injected"
+      }
+    ],
+    "recoveries": [
+      {
+        "job_index": 11,
+        "point": "worker execution",
+        "resumed": [],
+        "reconciled": 0
+      },
+      {
+        "job_index": 29,
+        "point": "verification",
+        "resumed": [
+          "DELIVERED"
+        ],
+        "reconciled": 1
+      },
+      {
+        "job_index": 47,
+        "point": "delivery ack",
+        "resumed": [],
+        "reconciled": 0
+      },
+      {
+        "job_index": 63,
+        "point": "invoice creation",
+        "resumed": [],
+        "reconciled": 0
+      },
+      {
+        "job_index": 88,
+        "point": "recovery",
+        "resumed": [],
+        "reconciled": 0
+      }
+    ],
+    "delivered_total": 52,
+    "delivered_per_skill": {
+      "csv-cleanup": 2,
+      "data-entry": 10,
+      "document-processing": 11,
+      "report-builder": 10,
+      "spreadsheet-automation": 19
+    },
+    "skills_delivering_nothing": [],
+    "peak_in_flight_per_skill": {
+      "csv-cleanup": 4,
+      "data-entry": 0,
+      "document-processing": 3,
+      "report-builder": 0,
+      "spreadsheet-automation": 1
+    },
+    "per_skill_ceiling": 4,
+    "ceiling_respected": true,
+    "cross_skill_starvation": [],
+    "stops": {
+      "csv-cleanup:contract": 4,
+      "csv-cleanup:qualify": 14,
+      "data-entry:qualify": 10,
+      "document-processing:independent-review": 3,
+      "document-processing:qualify": 6,
+      "report-builder:qualify": 10
+    },
+    "unexpected_exceptions": {},
+    "job_census": {
+      "AWAITING_PAYMENT": 1,
+      "BLOCKED": 7,
+      "COMPLETE": 52,
+      "REJECTED": 40
+    },
+    "stranded_jobs": [],
+    "delivery_events": 53,
+    "deliveries_with_a_consumed_owner_approval": 53,
+    "unauthorized_deliveries": 0,
+    "delivered_but_unbilled": [],
+    "unbilled_disposition": [],
+    "invoices": 53,
+    "duplicate_invoices": 0,
+    "fabricated_payments": 0,
+    "real_revenue_cents": 0,
+    "audit_chain_ok": true,
+    "open_incidents": 4,
+    "wall_s": 8.4,
+    "owner_signing": "configured; one explicit synthetic approval per delivery"
+  },
+  "independent_review": {
+    "ifixai": {
+      "repository": "ifixai-ai/iFixAi",
+      "commit": "15599839eccfc2ffcf181b0ca3651413416a9d40",
+      "version": "4.2.0",
+      "license": "Apache-2.0",
+      "mode": "NATIVE EXECUTION (offline recorded-trajectory audit)",
+      "deskpilot_decision": "CLEAR",
+      "controls_injected": 3,
+      "controls_caught": 3,
+      "auditor_can_fail": true,
+      "confirmed_deskpilot_defects": 0
+    },
+    "klean": {
+      "repository": "calinfaja/K-LEAN",
+      "commit": "79f355756f27edc115bb87d956d756429ad3315a",
+      "version": "1.0.0b13",
+      "license": "Apache-2.0",
+      "mode": "SOURCE-DERIVED",
+      "why_not_native": "its only review path posts to a LiteLLM proxy backed by third-party model API keys; no model-free mode exists and the repository is archived read-only",
+      "confirmed_deskpilot_defects": 0
+    }
+  },
+  "new_dependency": {
+    "name": "markdown-it-py",
+    "version": "3.0.0",
+    "license": "MIT",
+    "runtime_dependencies": [
+      "mdurl 0.1.2 (MIT, no dependencies)"
+    ],
+    "declared_in": "pyproject.toml [project.optional-dependencies] verification",
+    "security_review": "parser only; no os/socket/subprocess/urllib/http imports, no eval/exec/__import__"
+  },
+  "sealed_examinations": {
+    "status": "BLOCKED - both seals are broken and could not be re-sealed",
+    "why_broken": "solvent/csvverify.py (Finding D) and solvent/store.py (Finding B) were changed under this assignment's explicit authorisation. Both files are under seal, so the exams refused to mark themselves. This is the seal working as designed, not a behavioural regression: a broken seal is an invalidation, not a failure.",
+    "broken_seals": {
+      "tests_solvent/capacityexam.py": "solvent/store.py moved from fa72817a7ed0b1377a1e02c247675207a46e4d5c4c931c20e8d7ab474a77f3b9 to ff99fcb1a19356fc6665f52a390872d4bf4893dac26e3c2e2f779eeb1ed70e5a",
+      "tests_solvent/readingexam.py": "solvent/csvverify.py moved from 6f3432939ef77d65cc981cdb284d74b9714cb45db3cf29d8511b36aad30d8413 to 5d52279c2f961ad99755a68ec5fd30cd95a45acce7c643cfd5c76a9e7d468a48"
+    },
+    "documented_remedy": "reseal, re-set and re-sit (readingexam.py module docstring); the precedent is recorded in capacityexam.SITTINGS, which preserves all seven prior sittings rather than refreshing them.",
+    "blocker": "The reseal requires editing the frozen digests and then running the exams to record the real new sittings. Both actions were refused by this session's permission classifier as [Security Test Removal]. No digest was left altered: the one edit made while attempting the procedure was reverted, so the seals remain broken and visibly so rather than silently re-marked.",
+    "not_done": "No sitting was fabricated. No prior sitting was overwritten. No exam assertion was weakened, skipped or deleted.",
+    "residual_risk": "The two exams are not currently marking. The surfaces they examine are covered by the rest of the suite and by the 189-mutant run, but the sealed-paper evidence for this tree does not exist and is not claimed."
+  },
+  "process_defect_found_and_corrected": {
+    "what": "commit de94386 was staged with `git add -A` while a mutation run held solvent/finder.py patched, so the snapshot captured the mutant instead of the source. The committed line read `if False:` where Finder.decide declines work that costs more than it earns.",
+    "exposure": "two commits, de94386 and 8f5c94f, both pushed. The pushed tree would have bid on work at a loss.",
+    "corrected_in": "df34ca6",
+    "scope_check": "finder.py was the only production module whose committed content differed from the working tree, and no other module under solvent/ contains a mutant pattern. The working tree was never wrong, only the snapshot of it.",
+    "cause": "a mutation run owns the source files it patches for as long as it runs; nothing may be committed from the tree underneath it."
+  },
+  "remaining_findings": [
+    "Markdown briefs with nothing independently recomputable still block on the owner (correct refusal).",
+    "An hourly job delivered by recovery still needs a person; its figure depends on hours no restart can reconstruct.",
+    "Omission cannot be established for a converted document from flattened source text; only provenance can.",
+    "openpyxl would share expat with DeskPilot's reader if lxml were absent; the OOXML layers stay independent. lxml is present here.",
+    "budget_grants.revoked is never set; grant_for filters on it as a guard for when revocation is wired.",
+    "Both sealed examinations are invalidated and not re-sat; see sealed_examinations above. Certification is PARTIAL for this reason."
+  ],
+  "certification": "PARTIAL - findings A-E verified fixed and the integrated acceptance passed, but the two sealed examinations are invalidated and could not be re-sealed in this session."
+}

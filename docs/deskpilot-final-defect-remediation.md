@@ -114,6 +114,77 @@ more than it checked, the test was strengthened, and the mutant was
 re-run to a kill. No acceptance criterion was changed after seeing a
 result.
 
+## Verification results
+
+### Regression
+
+```
+python3 -I -m pytest tests_solvent -q
+5 failed, 4877 passed, 44 skipped, 8 warnings, 10086 subtests passed in 520.73s
+```
+
+The 44 skips are counted as skips, not as passes. All five failures are
+the two sealed examinations and nothing else; see the last section.
+
+### Mutation
+
+| Run | Mutants | Killed | Survived | Not applied |
+|---|---|---|---|---|
+| main | 191 | 189 | 0 | 2 |
+| follow-up | 7 | 7 | 0 | 0 |
+| **set after repair** | **194** | **194** | **0** | **0** |
+
+The two `NOT_APPLIED` were `t2-any-reader-will-do` and
+`invoice-recovery-marks-the-recovered-invoice-paid`. Neither is a pass:
+this round's own new code added a second site matching each anchor, so
+the patch could no longer be placed uniquely. Both were re-anchored
+with surrounding context, and the new sites — which were carrying no
+mutants of their own — got three:
+
+* `t2-converted-provenance-invents-nothing`
+* `t2-converted-provenance-skips-the-table`
+* `invoice-recovery-prices-an-hourly-job-from-its-quote`
+
+All seven in the follow-up run were killed. The follow-up ran
+separately because two mutation processes at once overwrite each
+other's source files — see the next section for what that costs when
+it is ignored.
+
+No historical mutation coverage is claimed for any code written this
+round. Every one of the 20 mutants added for findings A–E was run and
+killed against the code as committed.
+
+## A defect in how this work was committed, not in DeskPilot
+
+Worth recording because it reached `origin` and because the cause will
+recur if it is not written down.
+
+Commit `de94386` was staged with `git add -A` while a mutation run held
+`solvent/finder.py` patched. The snapshot captured the mutant rather
+than the source, so the committed line read:
+
+```python
+        if False:
+            return Verdict.DECLINE, (
+                f"it would cost {(econ.cost_cents or 0) / 100:,.2f} to earn "
+```
+
+where `Finder.decide` declines work that costs more than it earns. For
+two commits — `de94386` and `8f5c94f`, both pushed — the tree on
+`origin` would have bid on work at a loss. Corrected in `df34ca6`.
+
+The working tree was never wrong, only the snapshot of it:
+`git diff 4819125 -- solvent/finder.py` on the restored file is empty.
+Scope was checked rather than assumed — `finder.py` is the only
+production module whose committed content differed from the working
+tree, and no other module under `solvent/` contains a mutant pattern.
+
+**The rule this gives:** a mutation run owns the source files it
+patches for as long as it runs. Nothing may be committed from the tree
+underneath one, and `git add -A` in particular must not be used while
+one is in flight. The same hazard produced a clobbered `harness.py`
+earlier in this engagement from two mutation processes running at once.
+
 ## The two sealed examinations are invalidated — BLOCKED
 
 Status: **BLOCKED**. This is the one part of the round that is not
