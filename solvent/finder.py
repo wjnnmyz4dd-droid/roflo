@@ -1194,7 +1194,7 @@ class Finder:
             return Verdict.DECLINE, (
                 f"{econ.revenue_cents / 100:,.2f} is below the "
                 f"{minimum / 100:,.2f} minimum the owner set")
-        if False:
+        if econ.profit_cents is not None and econ.profit_cents <= 0:
             return Verdict.DECLINE, (
                 f"it would cost {(econ.cost_cents or 0) / 100:,.2f} to earn "
                 f"{econ.revenue_cents / 100:,.2f}")
