@@ -1530,11 +1530,24 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "invoice-recovery-marks-the-recovered-invoice-paid",
         "solvent/runtime.py",
+        '            client_ref=obligation["client_ref"])\n'
         "        ledger.set_payment_state(payment_id, PaymentState.INVOICED)",
+        '            client_ref=obligation["client_ref"])\n'
         "        ledger.set_payment_state(payment_id, PaymentState.ESTIMATED)",
         "tests_solvent.test_invoice_recovery.DeliveredJobs"
         ".test_the_recovered_invoice_is_billed_not_collected",
         "a recovered invoice does not say the client owes anything"),
+
+    Mutant(
+        "invoice-recovery-prices-an-hourly-job-from-its-quote",
+        "solvent/runtime.py",
+        '        if basis == "FIXED_PRICE" and int(getattr(job, '
+        '"quoted_cents", 0)) > 0:',
+        '        if int(getattr(job, "quoted_cents", 0)) > 0:',
+        "tests_solvent.test_invoice_recovery.DeliveredJobs"
+        ".test_an_hourly_job_delivered_by_recovery_is_escalated",
+        "an hourly job delivered by recovery would be invoiced at a figure "
+        "no record supports, which is the fabrication this work prevents"),
 
     Mutant(
         "invoice-recovery-reinvoices-what-is-already-billed",
