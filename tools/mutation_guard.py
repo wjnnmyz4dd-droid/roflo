@@ -158,16 +158,21 @@ def tracked_files(root: pathlib.Path = ROOT) -> list[str]:
 
 
 @contextlib.contextmanager
-def isolated_tree(root: pathlib.Path = ROOT):
+def isolated_tree(root: pathlib.Path = ROOT, names=None):
     """A throwaway copy of the working tree, for a run to patch instead.
 
     Copies the *working tree*, not a commit: mutation testing is almost
     always run against uncommitted work, and a ``git worktree`` of HEAD
     would quietly test different code from the one being certified.
+
+    ``names`` supplies the file list instead of asking git for it. The
+    runners never pass it; the tests do, because DeskPilot's own egress
+    guard denies ``subprocess.Popen`` process-wide once any test has
+    installed it, and a test that cannot run is not coverage.
     """
     workspace = pathlib.Path(tempfile.mkdtemp(prefix="deskpilot-mutation-"))
     try:
-        for name in tracked_files(root):
+        for name in (tracked_files(root) if names is None else names):
             source = root / name
             if not source.is_file():          # a submodule or a dead link
                 continue

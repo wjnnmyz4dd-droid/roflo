@@ -44,7 +44,14 @@ def staged_text() -> dict[str, str]:
     return staged
 
 
-def main() -> int:
+def main(staged=None) -> int:
+    """``staged`` supplies the index contents instead of asking git.
+
+    The hook never passes it. The tests do: DeskPilot's egress guard
+    denies ``subprocess.Popen`` process-wide once any test installs it,
+    and a check that can only be tested by spawning git is a check that
+    goes untested in the suite that matters.
+    """
     held = mutation_guard.active_claim()
     if held is not None:
         state = "still running" if not held.get("stale") else (
@@ -58,7 +65,8 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    applied = mutation_guard.mutated_files(staged_text())
+    applied = mutation_guard.mutated_files(
+        staged_text() if staged is None else staged)
     if applied:
         print("refused: the staged content contains mutation-test defects.",
               file=sys.stderr)

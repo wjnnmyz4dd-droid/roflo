@@ -50,7 +50,8 @@ class TheRunnersIsolateByDefault(unittest.TestCase):
         scratch = ROOT / "_isolation_probe.tmp"
         scratch.write_text("uncommitted\n", encoding="utf-8")
         try:
-            with mutation_guard.isolated_tree(ROOT) as work:
+            with mutation_guard.isolated_tree(
+                    ROOT, names=[scratch.name, "solvent/finder.py"]) as work:
                 copied = work / scratch.name
                 self.assertTrue(copied.is_file(),
                                 "untracked working-tree files must be copied")
@@ -60,17 +61,36 @@ class TheRunnersIsolateByDefault(unittest.TestCase):
         finally:
             scratch.unlink(missing_ok=True)
 
+    def test_git_supplies_the_file_list_when_nothing_else_does(self):
+        """The list the runners actually use, which needs the git CLI.
+
+        Skipped once the egress guard is armed, because it denies
+        subprocess for the whole interpreter and that is the Action Gate
+        doing its job rather than anything wrong here. Reported as a skip,
+        never as a pass.
+        """
+        from solvent import egress
+
+        if egress.is_installed():
+            self.skipTest("the egress guard denies subprocess process-wide; "
+                          "run this module on its own to exercise the git path")
+        names = mutation_guard.tracked_files(ROOT)
+        self.assertIn("solvent/finder.py", names)
+        self.assertIn("tools/mutation_guard.py", names)
+
     def test_patching_the_copy_leaves_the_original_alone(self):
         target = ROOT / "solvent" / "finder.py"
         before = target.read_text(encoding="utf-8")
-        with mutation_guard.isolated_tree(ROOT) as work:
+        with mutation_guard.isolated_tree(
+                ROOT, names=["solvent/finder.py"]) as work:
             (work / "solvent" / "finder.py").write_text("mutated\n",
                                                         encoding="utf-8")
             self.assertEqual(target.read_text(encoding="utf-8"), before)
         self.assertEqual(target.read_text(encoding="utf-8"), before)
 
     def test_the_copy_is_removed_afterwards(self):
-        with mutation_guard.isolated_tree(ROOT) as work:
+        with mutation_guard.isolated_tree(
+                ROOT, names=["solvent/finder.py"]) as work:
             path = work
         self.assertFalse(path.exists())
 
@@ -182,42 +202,78 @@ class TheScanFindsAnAppliedMutant(unittest.TestCase):
 
 
 class ThePreCommitHookIsReal(unittest.TestCase):
-    """A hook nobody installed protects nothing."""
+    """A hook nobody installed protects nothing.
+
+    The checks run in-process against supplied index contents rather than
+    by spawning the script. Once any test installs DeskPilot's egress
+    guard it denies subprocess for the whole interpreter, so a test that
+    shells out passes alone and fails in the suite -- which is the only
+    run that counts.
+    """
 
     def test_the_hook_exists_and_is_executable(self):
         hook = ROOT / ".githooks" / "pre-commit"
         self.assertTrue(hook.is_file())
         self.assertTrue(os.access(hook, os.X_OK), "the hook must be runnable")
+        self.assertIn("precommit_mutation_check",
+                      hook.read_text(encoding="utf-8"))
 
     def test_the_repository_points_at_the_hook_directory(self):
-        configured = subprocess.run(
-            ["git", "config", "--get", "core.hooksPath"], cwd=ROOT,
-            capture_output=True, text=True).stdout.strip()
-        self.assertEqual(configured, ".githooks",
-                         "run: git config core.hooksPath .githooks")
+        """Read from .git/config rather than asked of the git CLI."""
+        config = (ROOT / ".git" / "config")
+        if not config.is_file():                      # a worktree or a submodule
+            self.skipTest("no .git/config here to read")
+        body = config.read_text(encoding="utf-8", errors="replace")
+        self.assertIn("hooksPath = .githooks", body,
+                      "run: git config core.hooksPath .githooks")
 
-    def test_the_checker_passes_on_the_tree_as_it_stands(self):
-        done = subprocess.run(
-            [sys.executable, "tools/precommit_mutation_check.py"], cwd=ROOT,
-            capture_output=True, text=True)
-        self.assertEqual(done.returncode, 0, done.stderr)
+    def test_the_checker_passes_on_a_clean_index(self):
+        from tools import precommit_mutation_check as hook
+
+        clean = {str(ROOT / "solvent" / "finder.py"):
+                 (ROOT / "solvent" / "finder.py").read_text(encoding="utf-8")}
+        self.assertEqual(hook.main(staged=clean), 0)
+
+    def test_the_checker_refuses_a_mutant_in_the_index(self):
+        """The incident, through the real entry point.
+
+        The file on disk is correct; only the index holds the defect.
+        That is exactly the state that put a disabled profit guard on
+        origin, so it is the state the hook has to catch.
+        """
+        from tools import precommit_mutation_check as hook
+
+        real = (ROOT / "solvent" / "finder.py").read_text(encoding="utf-8")
+        mutated = real.replace(
+            "        if econ.profit_cents is not None and econ.profit_cents <= 0:",
+            "        if False:")
+        self.assertNotEqual(mutated, real, "the anchor must still be there")
+        staged = {str(ROOT / "solvent" / "finder.py"): mutated}
+        self.assertEqual(hook.main(staged=staged), 1)
 
     def test_the_checker_refuses_while_a_claim_is_held(self):
-        """The concurrent-commit case, end to end through the real script."""
+        """The concurrent-commit case, through the real entry point."""
+        from tools import precommit_mutation_check as hook
+
         claim = mutation_guard.CLAIM
         self.assertFalse(claim.exists(), "a real run is in progress; not now")
         claim.write_text(json.dumps(
             {"pid": os.getpid(), "reason": "test",
              "files": {"solvent/finder.py": "0" * 64}}), encoding="utf-8")
         try:
-            done = subprocess.run(
-                [sys.executable, "tools/precommit_mutation_check.py"],
-                cwd=ROOT, capture_output=True, text=True)
-            self.assertEqual(done.returncode, 1)
-            self.assertIn("claims this tree", done.stderr)
-            self.assertIn("solvent/finder.py", done.stderr)
+            self.assertEqual(hook.main(staged={}), 1)
         finally:
             claim.unlink(missing_ok=True)
+
+    def test_the_hook_reads_the_index_not_the_working_tree(self):
+        """Stated as a test, because the distinction is the whole incident."""
+        import inspect
+
+        from tools import precommit_mutation_check as hook
+
+        source = inspect.getsource(hook.staged_text)
+        self.assertIn("--cached", source)
+        self.assertIn("git", source)
 
 
 if __name__ == "__main__":
