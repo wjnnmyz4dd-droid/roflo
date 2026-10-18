@@ -3641,23 +3641,6 @@ def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
         report.job_id = job_id
         report.committed = s.orchestrator.effective_baseline(job_id)
     src = next((a for a in s.orchestrator.artifacts(job_id, role="SOURCE")), None)
-    if src is None:
-        # A job with no SOURCE artifact cannot say what it was given, and
-        # a resumption that registered one from a path its caller handed
-        # in would be asserting a provenance nobody recorded. This is
-        # reachable: a crash inside the very call that records the source
-        # leaves exactly this state, and it used to surface three
-        # functions later as ``AttributeError: 'NoneType' object has no
-        # attribute 'digest'`` -- a crash where a refusal belongs.
-        report.escalated = (
-            "no source artifact is on record for this job, so there is "
-            "nothing whose provenance can be checked; the work was "
-            "interrupted before its source was recorded")
-        s.orchestrator.block(job_id=job_id, blocked_on=BlockedOn.OWNER,
-                             initiator="execution", why=report.escalated)
-        report.final_state = s.orchestrator.job(job_id).state.value
-        return report
-
     # What the worker is *instructed* to do is the subset of the committed
     # checklist that names a check. A requirement with no check is scope -- the
     # service the client asked for, recorded with the job -- and there is
@@ -3719,6 +3702,30 @@ def _execute_job(s: "Solvent", *, job_id: str, source: str, workdir: str,
             continue
         s.orchestrator._transition(job_id, target, why="service pipeline",
                                    initiator="execution")
+
+    if src is None:
+        # A job with no SOURCE artifact cannot say what it was given, and
+        # a resumption that registered one from a path its caller handed
+        # in would be asserting a provenance nobody recorded. This is
+        # reachable: a crash inside the very call that records the source
+        # leaves exactly this state, and it used to surface three
+        # functions later as ``AttributeError: 'NoneType' object has no
+        # attribute 'digest'`` -- a crash where a refusal belongs.
+        #
+        # Checked here rather than at the top of the function. A job
+        # waiting on its owner has no source artifact either, and the
+        # refusal it is owed is the stronger one above: the pipeline may
+        # not answer a question that was put to a person. Blocking it
+        # here instead would have been this function quietly disposing of
+        # that job on its own.
+        report.escalated = (
+            "no source artifact is on record for this job, so there is "
+            "nothing whose provenance can be checked; the work was "
+            "interrupted before its source was recorded")
+        s.orchestrator.block(job_id=job_id, blocked_on=BlockedOn.OWNER,
+                             initiator="execution", why=report.escalated)
+        report.final_state = s.orchestrator.job(job_id).state.value
+        return report
 
     limit = int(s.policy.get("execution", "max_correction_attempts",
                              default=DEFAULT_MAX_CORRECTIONS))

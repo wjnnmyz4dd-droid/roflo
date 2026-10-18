@@ -63,8 +63,8 @@ invoices, the payments, the pipeline slots and the open incidents.
 | Duplicate invoices | **0** |
 | Fabricated payments | **0** |
 | Real revenue recorded | **0 cents** |
-| Mean restart time | 0.0133 s |
-| Mean recovery time | 0.0144 s |
+| Mean restart time | 0.0127 s |
+| Mean recovery time | 0.0138 s |
 
 ## 3. Seam by seam
 

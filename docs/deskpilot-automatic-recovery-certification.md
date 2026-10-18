@@ -97,7 +97,25 @@ KILLED).
 | Recovery runs before reconciliation | `recover_after_restart` | `recovery-reconciliation-runs-before-resumption` | KILLED |
 | A resumed T2 job re-earns its review | `_review_and_deliver` | `recovery-a-resumed-job-skips-the-review-it-owes` | KILLED |
 
-**8/8 killed, 0 survived, 0 not applied.**
+Plus three more added while wiring recovery into the runtime:
+
+| Safeguard | Mechanism | Mutant | Verdict |
+|---|---|---|---|
+| The runtime actually calls recovery | `Runtime.start` → `_recover` | `recovery-the-runtime-never-resumes-anything` | KILLED |
+| Each job is resumed as its own work | capacity reservation, then `capability_of` | `recovery-resumes-every-job-as-the-callers-default-skill` | KILLED |
+| A job with no recorded source is refused, not crashed into | `_execute_job` source check | `recovery-a-job-with-no-recorded-source-crashes-instead` | KILLED |
+
+**11/11 killed, 0 survived, 0 not applied.**
+
+One of these survived its first run, and the finding was about the test
+rather than the code. `recovery-the-runtime-never-resumes-anything`
+removes resumption from `Runtime.start`, leaving reconciliation alone —
+and the test passed, because reconciliation *also* moves the job out of
+`VERIFYING` and *also* names it in the log. The two outcomes are not
+the same thing and the test could not tell them apart. It now asserts
+what only a resumption produces: fresh verification evidence and a
+`recovery.resumed` event. The mutant is KILLED. The acceptance criteria
+were not changed; the test was made to check what its name claimed.
 
 ## 6. Idempotency and duplication
 

@@ -216,16 +216,41 @@ class TheRuntimeActuallyCallsRecovery(FourRepairs):
         return runtime
 
     def test_a_restart_resumes_when_the_owner_has_named_a_work_root(self):
+        """The job is *re-run*, not merely moved out of VERIFYING.
+
+        An earlier version of this test asserted only that the job had
+        left VERIFYING and that the log named it. Mutation testing
+        showed that passes with resumption removed entirely, because
+        reconciliation also moves the job and also names it. What
+        separates the two is that resumption re-runs the checker and
+        writes a resume event; that is what is asserted here.
+        """
+        from solvent.harness import RESUME_EVENT
+
         cycle = self.interrupt()
+        # The runtime has no owner tooling to call, so the gate needs a
+        # bounded standing grant for the resumed job to finish rather
+        # than stop one step short of delivery.
+        self.s.policy.amend({"preauthorizations": [
+            {"action_class": ActionClass.C2_EXTERNAL_COMMUNICATION.value,
+             "max_cents": 0}]}, OWNER, "test: routine delivery preauthorised")
         self.s.policy.amend({"recovery": {"work_root": self.box.name}},
                             OWNER, "test: resumption may write here")
-        runtime = self.start_runtime()
-        self.assertNotEqual(
-            self.s.orchestrator.job(cycle.job_id).state, JobState.VERIFYING,
-            "the runtime started and left the interrupted job where it was")
+        before = len(self.s.store.raw_readonly(
+            "SELECT * FROM verification_evidence"))
+        self.start_runtime()
+        self.assertGreater(
+            len(self.s.store.raw_readonly(
+                "SELECT * FROM verification_evidence")), before,
+            "the restart escalated the job instead of re-running the work")
         self.assertTrue(
-            any(cycle.job_id in line for line in runtime.log),
-            f"the restart said nothing about the job: {runtime.log}")
+            any(e.get("event") == RESUME_EVENT
+                for e in self.s.audit.events(cycle.job_id)),
+            "nothing recorded that this job was resumed")
+        self.assertNotIn(
+            self.s.orchestrator.job(cycle.job_id).state,
+            (JobState.VERIFYING, JobState.BLOCKED),
+            "the resumed job did not get anywhere")
 
     def test_without_a_work_root_the_runtime_says_so_rather_than_guessing(self):
         cycle = self.interrupt()

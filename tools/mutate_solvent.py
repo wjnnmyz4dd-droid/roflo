@@ -1346,7 +1346,7 @@ MUTANTS: tuple[Mutant, ...] = (
         "    if src is None:\n"
         "        # A job with no SOURCE artifact cannot say what it was "
         "given, and",
-        "    if False:\n"
+        "    if src is None and False:\n"
         "        # A job with no SOURCE artifact cannot say what it was "
         "given, and",
         "tests_solvent.test_remediation_p0p1.AutomaticResumption"

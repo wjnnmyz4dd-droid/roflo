@@ -1,0 +1,399 @@
+{
+  "document": "DeskPilot final engineering certification evidence",
+  "produced": "2026-10-18",
+  "platform": "Linux x86_64, CPython 3.11.17",
+  "windows_certified": false,
+  "windows_note": "Every measurement here was taken on Linux. Nothing in this file is a Windows or MetaTrader 5 coexistence claim.",
+  "real_external_effects": "none; egress simulation_only, no real customer action, no real payment, no deployment",
+  "head_at_assembly": "fa71709bdefc5df53c660f53e749ed99ebd12c2b",
+  "regression": {
+    "command": "python3 -I -m pytest tests_solvent -q",
+    "summary": "4793 passed, 44 skipped, 9 warnings, 10085 subtests passed in 383.37s (0:06:23)",
+    "failed": 0,
+    "passed": 4793,
+    "skipped": 44
+  },
+  "mutation": {
+    "command": "python3 tools/mutate_solvent.py",
+    "summary": "173/173 killed  (0 survived, 0 not applied or harness)",
+    "killed": 173,
+    "total": 173,
+    "survived": [],
+    "not_applied_or_harness": []
+  },
+  "crash_matrix": {
+    "seams": 11,
+    "seams_reached_and_tested": 11,
+    "seams_not_reached": [],
+    "resumed": 3,
+    "safely_refused": 7,
+    "nothing_to_recover": 1,
+    "stranded": 0,
+    "all_databases_reopened": true,
+    "all_audit_chains_ok": true,
+    "stranded_after_recovery": 0,
+    "duplicate_invoices": 0,
+    "fabricated_payments": 0,
+    "mean_restart_s": 0.0127,
+    "mean_recovery_s": 0.0138
+  },
+  "crash_matrix_detail": [
+    {
+      "seam": "admission",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0181,
+      "source_found": true,
+      "recovery_s": 0.0093,
+      "jobs_before": {},
+      "jobs_after": {},
+      "jobs_accounted_for": 0,
+      "reconcile_notes": 0,
+      "resumed": [],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 0,
+      "result": "NOTHING TO RECOVER"
+    },
+    {
+      "seam": "worker_execution",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0137,
+      "source_found": true,
+      "recovery_s": 0.0005,
+      "jobs_before": {
+        "job_fad38703d4b64d40": "ACCEPTED"
+      },
+      "jobs_after": {
+        "job_fad38703d4b64d40": "ACCEPTED"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 0,
+      "resumed": [],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "SAFELY REFUSED"
+    },
+    {
+      "seam": "output_persistence",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0137,
+      "source_found": true,
+      "recovery_s": 0.0024,
+      "jobs_before": {
+        "job_8952150213244678": "EXECUTING"
+      },
+      "jobs_after": {
+        "job_8952150213244678": "BLOCKED"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 0,
+      "resumed": [
+        "HELD"
+      ],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "SAFELY REFUSED"
+    },
+    {
+      "seam": "checker_execution",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0106,
+      "source_found": true,
+      "recovery_s": 0.0429,
+      "jobs_before": {
+        "job_95a8306425974eb6": "EXECUTING"
+      },
+      "jobs_after": {
+        "job_95a8306425974eb6": "AWAITING_PAYMENT"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 0,
+      "resumed": [
+        "DELIVERED"
+      ],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "RESUMED"
+    },
+    {
+      "seam": "verification_persist",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0113,
+      "source_found": true,
+      "recovery_s": 0.0431,
+      "jobs_before": {
+        "job_f160c0f9aff44ce6": "VERIFYING"
+      },
+      "jobs_after": {
+        "job_f160c0f9aff44ce6": "AWAITING_PAYMENT"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 0,
+      "resumed": [
+        "DELIVERED"
+      ],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "RESUMED"
+    },
+    {
+      "seam": "approval_signing",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0117,
+      "source_found": true,
+      "recovery_s": 0.0031,
+      "jobs_before": {
+        "job_39ef1757b4014761": "READY_FOR_DELIVERY"
+      },
+      "jobs_after": {
+        "job_39ef1757b4014761": "BLOCKED"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 1,
+      "resumed": [],
+      "stranded_after": [],
+      "incidents": 1,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "SAFELY REFUSED"
+    },
+    {
+      "seam": "delivery_preparation",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0113,
+      "source_found": true,
+      "recovery_s": 0.0457,
+      "jobs_before": {
+        "job_a14e1431337148c0": "VERIFYING"
+      },
+      "jobs_after": {
+        "job_a14e1431337148c0": "AWAITING_PAYMENT"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 0,
+      "resumed": [
+        "DELIVERED"
+      ],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "RESUMED"
+    },
+    {
+      "seam": "delivery_ack",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.017,
+      "source_found": true,
+      "recovery_s": 0.0031,
+      "jobs_before": {
+        "job_db7f8c74b3994617": "READY_FOR_DELIVERY"
+      },
+      "jobs_after": {
+        "job_db7f8c74b3994617": "BLOCKED"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 1,
+      "resumed": [],
+      "stranded_after": [],
+      "incidents": 1,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "SAFELY REFUSED"
+    },
+    {
+      "seam": "invoice_creation",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0109,
+      "source_found": true,
+      "recovery_s": 0.0005,
+      "jobs_before": {
+        "job_c86877ae3a8b4698": "AWAITING_PAYMENT"
+      },
+      "jobs_after": {
+        "job_c86877ae3a8b4698": "AWAITING_PAYMENT"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 0,
+      "resumed": [],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "SAFELY REFUSED"
+    },
+    {
+      "seam": "payment_reconciliation",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0106,
+      "source_found": true,
+      "recovery_s": 0.0005,
+      "jobs_before": {
+        "job_baada6b74a864857": "AWAITING_PAYMENT"
+      },
+      "jobs_after": {
+        "job_baada6b74a864857": "AWAITING_PAYMENT"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 0,
+      "resumed": [],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 1,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 1,
+      "result": "SAFELY REFUSED"
+    },
+    {
+      "seam": "queue_replenishment",
+      "seam_reached": true,
+      "child_exit_code": 137,
+      "child_said": "",
+      "restart_s": 0.0111,
+      "source_found": true,
+      "recovery_s": 0.0005,
+      "jobs_before": {
+        "job_fdc151c646b14202": "QUALIFYING"
+      },
+      "jobs_after": {
+        "job_fdc151c646b14202": "QUALIFYING"
+      },
+      "jobs_accounted_for": 1,
+      "reconcile_notes": 0,
+      "resumed": [],
+      "stranded_after": [],
+      "incidents": 0,
+      "audit_chain_ok": true,
+      "payment_events": 0,
+      "invoiced_job_ids": 0,
+      "duplicate_invoices": 0,
+      "real_revenue_cents": 0,
+      "capacity_in_flight": 0,
+      "result": "SAFELY REFUSED"
+    }
+  ],
+  "acceptance_100": {
+    "offered": 100,
+    "offered_per_skill": 20,
+    "delivered_total": 52,
+    "delivered_per_skill": {
+      "csv-cleanup": 2,
+      "data-entry": 10,
+      "document-processing": 10,
+      "report-builder": 10,
+      "spreadsheet-automation": 20
+    },
+    "skills_delivering_nothing": [],
+    "peak_in_flight_per_skill": {
+      "csv-cleanup": 4,
+      "data-entry": 0,
+      "document-processing": 3,
+      "report-builder": 0,
+      "spreadsheet-automation": 0
+    },
+    "per_skill_ceiling": 4,
+    "ceiling_respected": true,
+    "stops": {
+      "csv-cleanup:contract": 4,
+      "csv-cleanup:qualify": 14,
+      "data-entry:qualify": 10,
+      "document-processing:independent-review": 3,
+      "document-processing:qualify": 7,
+      "report-builder:qualify": 10
+    },
+    "stop_reasons": {
+      "csv-cleanup:contract": "waiting on the client: The Order Date column contains dates such as 04/06/2026, which could mean either 2026-04-06 or 2026-06-04 depending on the convention. Should ambiguous dates be read as MM/DD/YYYY or DD/MM/YYYY?",
+      "csv-cleanup:qualify": "not selected: capacity is already committed elsewhere",
+      "data-entry:qualify": "exposure or risk beyond policy limits",
+      "document-processing:independent-review": "no independently authored reader for .md is available here (none is known to this build), so a second automated opinion is not possible",
+      "document-processing:qualify": "exposure or risk beyond policy limits",
+      "report-builder:qualify": "exposure or risk beyond policy limits"
+    },
+    "raised": {},
+    "job_census": {
+      "BLOCKED": 7,
+      "COMPLETE": 52,
+      "REJECTED": 41
+    },
+    "stranded": [],
+    "delivery_events": 52,
+    "deliveries_with_a_consumed_owner_approval": 52,
+    "unauthorized_deliveries": 0,
+    "unauthorized_delivery_job_ids": [],
+    "invoiced_job_ids": 52,
+    "duplicate_invoices": 0,
+    "real_revenue_cents": 0,
+    "audit_chain_ok": true,
+    "open_incidents": 3,
+    "wall_s": 6.7,
+    "owner_signing": "configured; one explicit synthetic approval per delivery"
+  }
+}
