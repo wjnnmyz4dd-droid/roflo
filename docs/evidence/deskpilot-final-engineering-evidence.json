@@ -122,5 +122,13 @@
     "the eleven-point crash matrix",
     "the integrated 100-opportunity acceptance run after all four",
     "mutation testing after these changes"
-  ]
+  ],
+  "mutation": {
+    "mutants": 155,
+    "killed": 155,
+    "survived": 0,
+    "not_applied": 0,
+    "sources_restored_byte_identical": true,
+    "note": "run after all three repairs; unchanged from the pre-repair run. No mutant survived on the controls that changed -- the capacity reservation path, release-on-settle, or the CSV provenance check."
+  }
 }

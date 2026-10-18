@@ -188,6 +188,19 @@ scans text.
 The 44 skips are the pre-existing egress-guard subprocess suite and are
 **not counted as passed**.
 
+## Mutation
+
+**155 mutants, 155 killed, 0 survived, 0 NOT_APPLIED.** Run after all
+three repairs, sequentially, with no other harness running; sources
+verified byte-identical to the commit afterwards.
+
+Unchanged from the pre-repair run, and that is what it needs to say:
+no mutant survived on anything the repairs touched — the capacity
+reservation path, release-on-settle, or the CSV provenance check. A
+survivor there would have meant my own tests were not pinning the new
+code, and would have been a gap to fix rather than a number to
+report.
+
 ## What remains
 
 1. **Repair 3**, untouched.
@@ -195,6 +208,6 @@ The 44 skips are the pre-existing egress-guard subprocess suite and are
    half).
 3. **The eleven-point crash matrix** and the integrated 100-opportunity
    acceptance run after all four repairs.
-4. **Mutation testing** after these changes — not yet re-run.
+4. ~~Mutation testing after these changes~~ — **done: 155/155 killed.**
 
 MT5 coexistence remains **uncertified**: everything here is Linux.
