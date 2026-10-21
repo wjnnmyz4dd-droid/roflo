@@ -35,13 +35,37 @@ from .audit import new_id
 from .errors import FailClosed
 from . import resilience as _res
 from .types import (BlockedOn, JobState, OperatingMode, PaymentState,
-                    default_state_path)
+                    default_state_path, fmt)
 
 #: Where a production database lives when nothing says otherwise. A 24/7 service
 #: whose store defaults to ``:memory:`` would lose the ledger on every restart.
 DEFAULT_DB = default_state_path("solvent.db")
 
 RUNTIME = "runtime"
+
+#: The business executor's lease, as audit events. Append-only and durable
+#: already, which is what a lease that must survive the process holding it
+#: needs to be.
+BUSINESS_LEASE_TAKEN = "runtime.business_lease_taken"
+BUSINESS_LEASE_RELEASED = "runtime.business_lease_released"
+
+
+def _age_seconds(stamp) -> float | None:
+    """How long ago, or ``None`` when the stamp cannot be read.
+
+    ``None`` rather than zero: an unreadable timestamp must not read as
+    "just now", which would make every lease look fresh and the staleness
+    check do nothing.
+    """
+    from datetime import datetime, timezone
+
+    try:
+        when = datetime.fromisoformat(str(stamp))
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - when).total_seconds()
 
 
 #: Where the liveness heartbeat is written. Read by deploy/solvent-watchdog.sh
@@ -518,6 +542,10 @@ DEFAULT_INTERVALS = {
     # the control centre's report fresh with margin to spare -- and a system
     # that has stopped crosses into "stale" quickly enough to be noticed.
     "diagnostics": 300.0,
+    # The business cycle. Unhurried on purpose: a job takes hours, the
+    # Operator's own bounds cap how many it does per run, and a tighter
+    # loop on a $5 host next to MetaTrader 5 is cost with no benefit.
+    "business": 600.0,
 }
 
 #: Used when a task is registered with no cadence anywhere. That is a
@@ -559,6 +587,15 @@ class Runtime:
         #: visible in ``self.log`` instead of being inferred from a task
         #: ticking at a rate nobody chose.
         self.unscheduled: list[str] = []
+        #: This process's claim on being the business executor. Random per
+        #: process, so a second process cannot mistake another's lease for
+        #: its own and run a second business loop against one database.
+        self._lease_id = f"{RUNTIME}:{new_id('lease')}"
+        #: The last bounded business run, for the control centre. Empty
+        #: until one has happened -- which is itself the answer to "is the
+        #: business cycle running?" and must not be confused with zero
+        #: jobs completed.
+        self._business: dict = {}
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> Startup:
@@ -665,6 +702,9 @@ class Runtime:
         self.add_task("owner_intents", self._tick_owner_intents)
         self.add_task("owner_briefing", self._tick_owner_briefing)
         self.add_task("supervision", self._tick_supervision)
+        # Last, and deliberately after supervision: a tick that takes work
+        # on should run behind the one that notices work already stuck.
+        self.add_task("business", self._tick_business)
 
     def _tick_heartbeat(self) -> str:
         """Touch a file so something outside Solvent can tell it is working.
@@ -903,6 +943,138 @@ class Runtime:
                 break
             self._sleep(tick_s)
         return self.stop_reason or "loop finished"
+
+    # -------------------------------------------------------- the business
+    #: A lease older than this belonged to a process that is gone. Long
+    #: enough that a legitimately slow run is never evicted underneath
+    #: itself: the Operator's own ``max_run_seconds`` defaults to 300 and
+    #: the owner's policy can only narrow it.
+    BUSINESS_LEASE_SECONDS = 3600.0
+
+    def _tick_business(self) -> str:
+        """Do some business, inside the bounds the owner set.
+
+        **This does not decide anything.** It owns no Finder, no Governor,
+        no Action Gate and no admission rule; it calls
+        ``run_business_cycle``, which asks every existing authority in
+        order, through ``operation.Operator``, which is where the owner's
+        limits already live. Adding a second engine here is precisely the
+        thing that would make "what decides whether DeskPilot takes a
+        job?" a question with two answers.
+
+        Four conditions, each refusing on its own:
+
+        * **Simulation.** Refused unless ``egress.simulation_only`` is on.
+          The authorisation for this loop is explicitly simulation-only,
+          and a loop that keeps running when somebody turns simulation off
+          is a loop that went live without being asked to.
+        * **Opt-in.** ``Operator.permitted`` is false unless the owner set
+          ``operations.continuous_enabled``. Off is the default, so wiring
+          this in changes nothing until the owner says so.
+        * **The halt.** Checked by the Operator before every job, not
+          after.
+        * **One executor.** The lease below.
+
+        ``Task`` never overlaps with *itself*, but that is one process.
+        The lease is what stops a second process -- a hand-run ``solvent
+        serve``, a scheduled task that fired twice, an operator debugging
+        beside the service -- from running a second business loop against
+        the same database.
+        """
+        from .operation import Operator, StopReason
+
+        if not self.solvent.policy.get("egress", "simulation_only",
+                                       default=True):
+            return ("not run: this loop is authorised for simulation only "
+                    "and egress.simulation_only is off")
+
+        operator = Operator(self.solvent)
+        allowed, why = operator.permitted()
+        if not allowed:
+            return f"not run: {why}"
+
+        lease = self._take_business_lease()
+        if lease is None:
+            return "not run: another executor holds the business lease"
+        try:
+            report = operator.run(self._one_business_job)
+        finally:
+            self._release_business_lease(lease)
+
+        summary = report.summary()
+        self.solvent.audit.record(
+            event="runtime.business_ran", authority="orchestrator",
+            initiator=RUNTIME,
+            why=f"bounded business run: {summary['why']}",
+            decision=summary["stopped"],
+            result=f"{summary['completed']} of {summary['attempted']} "
+                   f"completed, {fmt(summary['committed_cents'])} committed")
+        self._business = {**summary, "finished_at": self._clock()}
+        if report.stopped is StopReason.NOTHING_TO_DO:
+            return "no eligible opportunity"
+        return (f"{summary['completed']}/{summary['attempted']} completed; "
+                f"stopped: {summary['stopped']}")
+
+    def _one_business_job(self):
+        """One job, through the one business cycle that already exists.
+
+        Separate from the tick so the loop above has nothing to do with
+        how a job is run, and so a test can drive the Operator with a
+        stand-in without reaching into the runtime.
+        """
+        from .harness import run_business_cycle
+
+        return run_business_cycle(self.solvent, source_name="",
+                                  owner_identity=self.solvent.policy.owner)
+
+    def _take_business_lease(self) -> str | None:
+        """Claim the right to be the only business executor, or ``None``.
+
+        Recorded in the audit log rather than in a file: the log is
+        append-only, already durable, already replicated by whatever backs
+        up the database, and a lease that outlives the process holding it
+        is exactly the stale-lease case this has to survive.
+        """
+        held = self._business_lease_holder()
+        if held and held != self._lease_id:
+            return None
+        self.solvent.audit.record(
+            event=BUSINESS_LEASE_TAKEN, authority="orchestrator",
+            initiator=RUNTIME, why="one business executor at a time",
+            decision=self._lease_id, result="held")
+        return self._lease_id
+
+    def _release_business_lease(self, lease: str) -> None:
+        self.solvent.audit.record(
+            event=BUSINESS_LEASE_RELEASED, authority="orchestrator",
+            initiator=RUNTIME, why="business run finished",
+            decision=lease, result="released")
+
+    def _business_lease_holder(self) -> str:
+        """Who holds the lease, or ``""``. A stale lease holds nothing.
+
+        A process killed mid-run leaves a TAKEN with no RELEASED. That
+        must not lock the business out for ever, so a lease older than
+        :data:`BUSINESS_LEASE_SECONDS` is treated as abandoned -- and
+        saying so in the log beats a silent takeover.
+        """
+        for event in reversed(self.solvent.audit.events()):
+            name = event.get("event")
+            if name not in (BUSINESS_LEASE_TAKEN, BUSINESS_LEASE_RELEASED):
+                continue
+            if name == BUSINESS_LEASE_RELEASED:
+                return ""
+            age = _age_seconds(event.get("ts"))
+            if age is not None and age > self.BUSINESS_LEASE_SECONDS:
+                self.solvent.audit.record(
+                    event="runtime.business_lease_expired",
+                    authority="orchestrator", initiator=RUNTIME,
+                    why=f"held for {age:.0f}s with no release",
+                    decision=str(event.get("decision") or ""),
+                    result="treated as abandoned")
+                return ""
+            return str(event.get("decision") or "")
+        return ""
 
     def _say(self, line: str) -> None:
         # Bounded in memory on purpose: a process that runs for months must not
