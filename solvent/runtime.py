@@ -171,6 +171,38 @@ def startup_checks(solvent, *, mode: Mode = Mode.LOCAL) -> Startup:
     version = solvent.policy.version
     add(Check("policy", version > 0, f"version {version}", fatal=True))
 
+    # Which deliverable formats this machine can give a second opinion on.
+    #
+    # Not fatal, and deliberately so: DeskPilot runs perfectly well with no
+    # differential reader and declines a job needing one while it is still
+    # a quote, which is the correct fail-closed behaviour and is already
+    # tested. What was missing is that the owner only discovered it one
+    # job at a time. A fresh Windows install has none of these -- the
+    # installer runs no pip by design -- so saying which formats are
+    # covered at boot is the difference between a known limitation and a
+    # surprise.
+    #
+    # It never downgrades anything. T2 stays T2; this only reports what
+    # can produce it.
+    from . import independent
+
+    covered, missing = [], []
+    for extension in sorted(independent._DIFFERENTIAL_READERS):
+        report_for = independent.available(extension=extension)
+        usable = any(p.usable and not p.needs_a_person
+                     for p in report_for.producers)
+        (covered if usable else missing).append(extension)
+    add(Check(
+        "independent (T2) readers",
+        not missing,
+        (f"{len(covered)} format(s) covered: {', '.join(covered)}"
+         if covered else "none installed")
+        + (f"; no reader for {', '.join(missing)} — a job above C_HIGH in "
+           "those formats will be declined while it is still a quote, not "
+           "delivered unverified. Install the 'verification' extra into "
+           "DeskPilot's environment to cover them." if missing else ""),
+        fatal=False))
+
     op = solvent.policy.operating_mode
     add(Check("operating mode", op is OperatingMode.NORMAL,
               f"{op.value}" + ("" if op is OperatingMode.NORMAL
@@ -371,6 +403,12 @@ def _reconcile_invoices(solvent, *, initiator: str) -> list[str]:
                      "blocked on the owner")
     return notes
 
+
+#: Work admitted and not yet finished. Queue depth is a figure the owner
+#: reads to decide whether the shop is keeping up, so it counts what is
+#: waiting rather than what exists.
+_QUEUED = (JobState.ACCEPTED, JobState.QUALIFYING,
+           JobState.AWAITING_OWNER_APPROVAL)
 
 #: States a crash can strand a job in: work was under way and the process
 #: went away before anything moved it on. None of them is a resting place,
@@ -943,6 +981,94 @@ class Runtime:
                 break
             self._sleep(tick_s)
         return self.stop_reason or "loop finished"
+
+    # ------------------------------------------------- what is actually true
+    #: The states the control centre has to be able to tell apart. A
+    #: heartbeat distinguishes none of them: a process can be alive, its
+    #: scheduler running, and its business cycle switched off, and
+    #: reporting that as "operational" is the specific lie this exists to
+    #: prevent.
+    BUSINESS_STATES = (
+        "SERVICE_RUNNING", "SCHEDULER_RUNNING", "SCHEDULER_PAUSED",
+        "CYCLE_EXECUTING", "NO_ELIGIBLE_OPPORTUNITIES", "WORKER_FAILURE",
+        "RECOVERY_REQUIRED", "HALTED", "SIMULATION", "EXTERNAL_DISABLED",
+    )
+
+    def business_status(self) -> dict:
+        """What the business cycle is actually doing, for the dashboard.
+
+        Every field is read from state that already exists -- policy, the
+        audit log, the scheduler's own task record. Nothing here decides
+        anything, and nothing here is allowed to say "operational": it
+        reports the parts, and whoever renders them says what they add up
+        to. A single cheerful boolean is how a disconnected business cycle
+        went unnoticed in the first place.
+        """
+        from .operation import Operator
+
+        task = next((t for t in self.tasks if t.name == "business"), None)
+        simulation = bool(self.solvent.policy.get(
+            "egress", "simulation_only", default=True))
+        enabled = bool(self.solvent.policy.get(
+            "operations", "continuous_enabled", default=False))
+        halted = bool(self.solvent.policy.get(
+            "operations", "halted", default=False))
+        allowed, why = Operator(self.solvent).permitted()
+        last = dict(self._business or {})
+
+        states = {
+            "SERVICE_RUNNING": self.started is not None and not self.stopping,
+            "SCHEDULER_RUNNING": task is not None and not self.stopping,
+            "SCHEDULER_PAUSED": task is None or not enabled or self.stopping,
+            "CYCLE_EXECUTING": bool(self._business_lease_holder()),
+            "NO_ELIGIBLE_OPPORTUNITIES":
+                last.get("stopped") == "NOTHING_TO_DO",
+            "WORKER_FAILURE": bool(task and task.failures),
+            "RECOVERY_REQUIRED": bool(self._stranded_job_ids()),
+            "HALTED": halted,
+            "SIMULATION": simulation,
+            "EXTERNAL_DISABLED": simulation,
+        }
+        return {
+            "states": states,
+            "business_cycle_connected": task is not None,
+            "business_cycle_enabled": enabled,
+            "may_run_now": allowed,
+            "why_not": "" if allowed else why,
+            "last_cycle_started": last.get("started_at", ""),
+            "last_cycle_completed": last.get("finished_at", ""),
+            "last_successful_cycle": last.get("finished_at", "")
+                                     if last.get("completed") else "",
+            "last_failure": last.get("why", "") if task and task.failures
+                            else "",
+            "consecutive_task_failures": task.failures if task else 0,
+            "queue_depth": self._queue_depth(),
+            "active_workers": self._active_workers(),
+            "executor_lease": self._business_lease_holder() or "free",
+            "interval_seconds": task.interval_s if task else None,
+        }
+
+    def _stranded_job_ids(self) -> list:
+        """Jobs sitting where only a crash leaves them."""
+        try:
+            return [j.id for j in self.solvent.orchestrator.jobs()
+                    if j.state in _INTERRUPTED]
+        except Exception:                       # a read must not break a page
+            return []
+
+    def _queue_depth(self) -> int:
+        try:
+            return sum(1 for j in self.solvent.orchestrator.jobs()
+                       if j.state in _QUEUED)
+        except Exception:
+            return 0
+
+    def _active_workers(self) -> int:
+        try:
+            return sum(1 for j in self.solvent.orchestrator.jobs()
+                       if j.state is JobState.EXECUTING)
+        except Exception:
+            return 0
 
     # -------------------------------------------------------- the business
     #: A lease older than this belonged to a process that is gone. Long

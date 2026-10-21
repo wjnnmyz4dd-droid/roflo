@@ -292,6 +292,150 @@ class TheTickActuallyRuns(unittest.TestCase):
         self.assertIn("completed", self.runtime._business)
 
 
+class TheStatusReportDistinguishesTheStates(unittest.TestCase):
+    """A heartbeat says the process is alive. That is all it says.
+
+    A process can be alive, its scheduler running, and its business
+    cycle switched off -- which is exactly the state DeskPilot shipped
+    in, unnoticed, because nothing distinguished it from working.
+    """
+
+    def setUp(self):
+        self.rig = Rig()
+        self.runtime = runtime_module.Runtime(self.rig)
+        self.runtime.started = object()        # start() needs an owner key
+        self.runtime.default_tasks()
+
+    def test_every_declared_state_is_reported(self):
+        states = self.runtime.business_status()["states"]
+        for name in runtime_module.Runtime.BUSINESS_STATES:
+            with self.subTest(state=name):
+                self.assertIn(name, states)
+
+    def test_connected_but_disabled_is_not_running(self):
+        """The distinction a single boolean cannot carry."""
+        status = self.runtime.business_status()
+        self.assertTrue(status["business_cycle_connected"])
+        self.assertFalse(status["business_cycle_enabled"])
+        self.assertFalse(status["may_run_now"])
+        self.assertTrue(status["states"]["SCHEDULER_PAUSED"])
+        self.assertIn("continuous_enabled", status["why_not"])
+
+    def test_enabling_it_clears_the_pause(self):
+        self.rig.policy.amend({"operations": {"continuous_enabled": True}},
+                              OWNER, "test: on")
+        status = self.runtime.business_status()
+        self.assertTrue(status["may_run_now"])
+        self.assertFalse(status["states"]["SCHEDULER_PAUSED"])
+
+    def test_the_halt_shows_as_halted_and_stops_it_running(self):
+        self.rig.policy.amend(
+            {"operations": {"continuous_enabled": True, "halted": True}},
+            OWNER, "test: halted")
+        status = self.runtime.business_status()
+        self.assertTrue(status["states"]["HALTED"])
+        self.assertFalse(status["may_run_now"])
+
+    def test_simulation_is_reported_and_external_actions_are_disabled(self):
+        status = self.runtime.business_status()
+        self.assertTrue(status["states"]["SIMULATION"])
+        self.assertTrue(status["states"]["EXTERNAL_DISABLED"])
+
+    def test_it_reports_the_seven_figures(self):
+        status = self.runtime.business_status()
+        for field in ("last_cycle_started", "last_cycle_completed",
+                      "last_successful_cycle", "last_failure",
+                      "queue_depth", "active_workers", "executor_lease"):
+            with self.subTest(field=field):
+                self.assertIn(field, status)
+
+    def test_the_lease_shows_free_before_any_run(self):
+        self.assertEqual(self.runtime.business_status()["executor_lease"],
+                         "free")
+
+    def test_it_never_claims_to_be_operational(self):
+        """It reports parts; whoever renders them says what they total."""
+        status = self.runtime.business_status()
+        self.assertNotIn("operational", status)
+        self.assertNotIn("healthy", status)
+
+    def test_a_read_failure_does_not_break_the_page(self):
+        """A status call is a page render, not a transaction."""
+        broken = runtime_module.Runtime(self.rig)
+        broken.started = object()
+        broken.default_tasks()
+        broken.solvent = type("Gone", (), {
+            "policy": self.rig.policy,
+            "orchestrator": property(lambda _: (_ for _ in ()).throw(
+                RuntimeError("database gone"))),
+            "audit": self.rig.audit})()
+        self.assertEqual(broken._queue_depth(), 0)
+        self.assertEqual(broken._active_workers(), 0)
+        self.assertEqual(broken._stranded_job_ids(), [])
+
+
+class StartupSaysWhichFormatsItCanVerify(unittest.TestCase):
+    """W3: the T2 prerequisite, surfaced at boot instead of per job.
+
+    A fresh Windows install has no differential reader, because the
+    installer runs no pip by design. DeskPilot already fails closed --
+    a job needing a second opinion nobody can give is declined while it
+    is still a quote. What was missing is that the owner found that out
+    one job at a time.
+
+    Not fatal, deliberately. Refusing to start over a missing optional
+    reader would make a usable T1 installation impossible to bring up.
+    """
+
+    def _check(self, startup):
+        found = [c for c in startup.checks if "T2" in c.name]
+        self.assertEqual(len(found), 1, "exactly one T2 readiness check")
+        return found[0]
+
+    def test_the_check_exists_and_names_the_formats(self):
+        import inspect
+
+        source = inspect.getsource(runtime_module.startup_checks)
+        self.assertIn("independent (T2) readers", source)
+        self.assertIn("_DIFFERENTIAL_READERS", source)
+
+    def test_it_is_not_fatal(self):
+        import inspect
+
+        source = inspect.getsource(runtime_module.startup_checks)
+        block = source[source.index("independent (T2) readers"):]
+        self.assertIn("fatal=False", block[:900])
+
+    def test_a_missing_reader_names_the_remedy_and_the_consequence(self):
+        """The owner must be able to tell a limitation from a fault."""
+        import inspect
+
+        source = inspect.getsource(runtime_module.startup_checks)
+        self.assertIn("declined while it is still a quote", source)
+        self.assertIn("verification", source)
+
+    def test_it_never_downgrades_t2_to_t1(self):
+        """It reports what can produce T2. It does not lower the bar."""
+        import inspect
+
+        source = inspect.getsource(runtime_module.startup_checks)
+        block = source[source.index("independent (T2) readers"):]
+        for forbidden in ("REQUIRED_TIER", "T1", "downgrade"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, block[:900])
+
+    def test_a_person_signing_by_hand_does_not_count_as_a_reader(self):
+        """Owner review is a T2 producer, but it is not a reader.
+
+        Counting it would report every format as covered on a machine
+        with no reader at all, which is the opposite of the point.
+        """
+        import inspect
+
+        source = inspect.getsource(runtime_module.startup_checks)
+        self.assertIn("not p.needs_a_person", source)
+
+
 class TheOtherTwoDormantModulesAreStillDormantOnPurpose(unittest.TestCase):
 
     def test_the_marketplace_adapter_declares_that_it_does_not_run(self):
