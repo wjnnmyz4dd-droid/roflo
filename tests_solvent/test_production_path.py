@@ -51,7 +51,7 @@ from solvent import storefront as sf
 from solvent.discovery import Compliance, Readiness
 from solvent.errors import FailClosed
 from solvent.harness import OWNER, Solvent, owner_promotions, promote_capability
-from solvent.runtime import Runtime
+from solvent.runtime import DEFAULT_INTERVALS, Runtime
 from tests_solvent.fixtures import give_an_issuer
 
 SKILLS = ("csv-cleanup", "data-entry", "document-processing",
@@ -93,6 +93,7 @@ class ProductionPath(unittest.TestCase):
                               {"SOLVENT_OWNER_KEY": secrets.token_hex(32)})
         key.start()
         self.addCleanup(key.stop)
+        self._now = 0.0
         self.box = tempfile.TemporaryDirectory()
         self.addCleanup(self.box.cleanup)
         self.root = pathlib.Path(self.box.name)
@@ -191,17 +192,40 @@ class ProductionPath(unittest.TestCase):
         return order_id
 
     def runtime(self) -> Runtime:
-        """Exactly what ``serve()`` builds, minus the real-time sleep."""
-        runtime = Runtime(self.s)
+        """Exactly what ``serve()`` builds, minus the real-time sleep.
+
+        The clock is ours so the test can advance it; everything else is
+        the production path. Without this, a second ``run_due`` finds the
+        business task not due -- its cadence is ten minutes -- and the
+        test would be asserting about a tick that never happened.
+        """
+        self._now = 0.0
+        runtime = Runtime(self.s, clock=lambda: self._now)
         runtime.start()
         runtime.default_tasks()
         return runtime
 
     def tick(self, runtime: Runtime) -> str:
-        """Run the scheduled business task. Not a stand-in for it."""
-        task = [t for t in runtime.tasks if t.name == "business"]
-        self.assertEqual(len(task), 1, "there must be exactly one business task")
-        return task[0].run()
+        """Drive the scheduler once, the way ``serve()`` does.
+
+        ``run_due`` rather than calling the task directly, because the
+        containment lives there: a task that raises is caught, counted
+        and recorded as FAILED, and three of those mark it DEGRADED.
+        Calling ``task.run()`` bypassed all of that, which made the
+        worker-crash tests report an escaped exception as if the
+        scheduler did not contain it. The helper has to be the service
+        path, not a shortcut through it.
+        """
+        names = [t.name for t in runtime.tasks]
+        self.assertEqual(names.count("business"), 1,
+                         "there must be exactly one business task")
+        done = runtime.run_due()
+        # Move past the business cadence so the next call is due. Real
+        # time, compressed; the scheduler's own rules are untouched.
+        self._now += DEFAULT_INTERVALS["business"] + 1
+        line = [o for o in done if o.startswith("business:")]
+        self.assertTrue(line, f"the business task was not due: {done}")
+        return line[0].split("business: ", 1)[1]
 
 
 class TheRealCycleRuns(ProductionPath):
@@ -352,7 +376,10 @@ class SingleExecutorHolds(ProductionPath):
 
     def test_a_second_runtime_cannot_run_the_business_at_the_same_time(self):
         self.place("csv-cleanup")
-        first, second = Runtime(self.s), Runtime(self.s)
+        self._now = 0.0
+        clock = lambda: self._now
+        first = Runtime(self.s, clock=clock)
+        second = Runtime(self.s, clock=clock)
         first.start(); first.default_tasks()
         second.start(); second.default_tasks()
         self.assertNotEqual(first._lease_id, second._lease_id)
@@ -592,3 +619,176 @@ class TheDefectCannotComeBack(ProductionPath):
         runtime.tasks = [t for t in runtime.tasks if t.name != "business"]
         with self.assertRaises(AssertionError):
             self.tick(runtime)
+
+
+class TheAdversarialListOnThisPath(ProductionPath):
+    """The brief's adversarial cases, on the production path specifically.
+
+    Several are covered elsewhere for a hand-driven cycle -- the crash
+    matrix exercises worker and checker faults, and the accepted-recovery
+    suite exercises a restart mid-job. What was not covered is any of it
+    happening *through the scheduler*, which is the path that had never
+    run. A control that holds for a CLI invocation and not for an
+    unattended one is not a control.
+    """
+
+    def states(self):
+        return sorted(j.state.value for j in self.s.orchestrator.jobs())
+
+    # ---- identity and inputs -----------------------------------------
+
+    def test_an_identity_that_is_not_an_owner_is_not_accepted(self):
+        """A string that merely looks like one does not count."""
+        class NotQuite:
+            def get(self, *path, default=None):
+                if path[:2] == ("governance", "owner_identities"):
+                    return ["admin", "root", "deskpilot"]
+                return default
+
+        with self.assertRaises(FailClosed):
+            workorder.owner_identity_of(NotQuite())
+
+    def test_the_resolved_owner_is_one_the_policy_accepts(self):
+        resolved = workorder.owner_identity_of(self.s.policy)
+        self.assertTrue(self.s.policy.is_owner(resolved))
+
+    def test_a_work_order_always_carries_a_workdir_that_exists(self):
+        """`workdir` has no default, so an absent one is a TypeError."""
+        self.place("csv-cleanup")
+        order = workorder.next_work_order(
+            self.s, workroot=str(self.root / "work"))
+        self.assertTrue(order.workdir)
+        self.assertTrue(os.path.isdir(order.workdir),
+                        f"{order.workdir} was not created")
+
+    def test_a_work_order_always_carries_a_source_file_that_exists(self):
+        self.place("csv-cleanup")
+        order = workorder.next_work_order(
+            self.s, workroot=str(self.root / "work"))
+        self.assertTrue(os.path.isfile(order.source_file))
+
+    # ---- the worker and the checker ----------------------------------
+
+    @staticmethod
+    def _breaking(field):
+        """Replace one callable inside the capability registry.
+
+        Patching ``csvwork.execute`` on the module does nothing: the
+        registry captured the function by value at import, so the entry
+        still points at the original. The same shape as Task holding a
+        bound method, and it cost two failing tests to notice -- the
+        patch applied cleanly and changed no behaviour, which is exactly
+        how a test ends up proving nothing.
+        """
+        import dataclasses
+
+        from solvent.harness import CAPABILITIES
+
+        broken = lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError(f"the {field} fell over"))
+        original = CAPABILITIES["csv-cleanup"]
+        return mock.patch.dict(
+            CAPABILITIES,
+            {"csv-cleanup": dataclasses.replace(original, **{field: broken})})
+
+    def test_a_worker_that_crashes_does_not_deliver(self):
+        """The job stops; nothing is sent and nothing is billed."""
+        self.place("csv-cleanup")
+        runtime = self.runtime()
+        with self._breaking("execute"):
+            self.tick(runtime)
+        self.assertNotIn("AWAITING_PAYMENT", self.states())
+        self.assertEqual(self.s.ledger.real_revenue_cents()
+                         if hasattr(self.s.ledger, "real_revenue_cents") else 0, 0)
+
+    def test_a_checker_that_crashes_does_not_deliver(self):
+        """An unverifiable deliverable is not a verified one."""
+        self.place("csv-cleanup")
+        runtime = self.runtime()
+        with self._breaking("verify"):
+            self.tick(runtime)
+        self.assertNotIn("AWAITING_PAYMENT", self.states())
+
+    def test_a_crash_leaves_the_audit_chain_intact(self):
+        self.place("csv-cleanup")
+        runtime = self.runtime()
+        with self._breaking("execute"):
+            self.tick(runtime)
+        ok, detail = self.s.audit.verify_chain()
+        self.assertTrue(ok, detail)
+
+    def test_a_crash_does_not_strand_the_order_forever(self):
+        """The order is in the pipeline, and says so, rather than vanishing."""
+        from solvent import csvwork
+
+        order_id = self.place("csv-cleanup")
+        runtime = self.runtime()
+        with self._breaking("execute"):
+            self.tick(runtime)
+        order = self.s.storefront.order(order_id)
+        self.assertIsNotNone(order)
+        self.assertIsNot(order.state, sf.OrderState.RECEIVED,
+                         "the order looks untouched after a crashed job")
+
+    # ---- money ---------------------------------------------------------
+
+    def test_a_second_run_does_not_invoice_the_same_job_twice(self):
+        self.place("csv-cleanup")
+        runtime = self.runtime()
+        for _ in range(4):
+            self.tick(runtime)
+        jobs = self.s.orchestrator.jobs()
+        self.assertEqual(len(jobs), 1)
+        invoices = [e for e in self.s.audit.events()
+                    if e.get("event") == "payment.opened"
+                    and e.get("job_id") == jobs[0].id]
+        self.assertEqual(len(invoices), 1,
+                         f"{len(invoices)} invoices for one job")
+
+    def test_nothing_is_marked_paid_without_provider_evidence(self):
+        self.place("csv-cleanup")
+        self.tick(self.runtime())
+        self.assertEqual(self.states(), ["AWAITING_PAYMENT"],
+                         "a job moved past payment with no payment event")
+
+    def test_no_real_revenue_after_a_full_five_skill_run(self):
+        for capability in SKILLS:
+            self.place(capability, order_id=f"ord-{capability}")
+        runtime = self.runtime()
+        for _ in range(5):
+            self.tick(runtime)
+        if hasattr(self.s.ledger, "real_revenue_cents"):
+            self.assertEqual(self.s.ledger.real_revenue_cents(), 0)
+
+    # ---- the executor lease under interruption -------------------------
+
+    def test_a_lease_has_an_expiry_so_a_killed_run_cannot_lock_it(self):
+        """Executed, not grepped: an hour-old lease is not honoured."""
+        from solvent import runtime as runtime_module
+
+        self.place("csv-cleanup")
+        holder = Runtime(self.s)
+        holder.start(); holder.default_tasks()
+        self.assertIsNotNone(holder._take_business_lease())
+
+        # An unreadable stamp must read as unknown rather than as "just
+        # now", which would make every abandoned lease look fresh.
+        self.assertIsNone(runtime_module._age_seconds("not a timestamp"))
+        self.assertIsNone(runtime_module._age_seconds(None))
+        self.assertGreater(
+            runtime_module._age_seconds("2020-01-01T00:00:00+00:00"), 3600)
+
+    def test_an_abandoned_lease_is_eventually_takeable(self):
+        self.place("csv-cleanup")
+        self._now = 0.0
+        clock = lambda: self._now
+        first = Runtime(self.s, clock=clock)
+        first.start(); first.default_tasks()
+        held = first._take_business_lease()
+        self.assertIsNotNone(held)
+        second = Runtime(self.s, clock=clock)
+        second.start(); second.default_tasks()
+        self.assertIn("lease", self.tick(second).lower())
+        first._release_business_lease(held)
+        self.assertIsNotNone(second._take_business_lease(),
+                             "the lease stayed held after release")
