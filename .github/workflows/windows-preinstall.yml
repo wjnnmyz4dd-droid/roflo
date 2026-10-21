@@ -70,8 +70,16 @@ jobs:
                         '|', producer.why)
           "@
 
+      # Tee'd, so the summary can be reprinted at the end of the job.
+      # The log runs to about 2,500 lines and the suite's own summary
+      # sits in the middle of it, which made every Windows failure
+      # expensive to diagnose from outside.
       - name: Full suite
-        run: python -I -m pytest tests_solvent -q
+        shell: pwsh
+        run: |
+          python -I -m pytest tests_solvent -q --tb=no 2>&1 |
+            Tee-Object -FilePath suite.txt
+          exit $LASTEXITCODE
 
       # Every step below runs even when the suite fails. A single red
       # test must not hide the Windows-only answers this workflow is
@@ -174,6 +182,19 @@ jobs:
         if: always()
         run: python -I -m pytest tests_solvent/test_production_path.py -q
 
+      # Last, so a tail of the job log always reaches it.
+      - name: What failed in the full suite
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path suite.txt) {
+            Write-Output "----- full suite, failures and summary -----"
+            Select-String -Path suite.txt -Pattern '^(FAILED|ERROR)|passed|failed' |
+              Select-Object -ExpandProperty Line -Last 40
+          } else {
+            Write-Output "the full suite produced no output file"
+          }
+
       - name: Upload the evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -181,4 +202,5 @@ jobs:
           name: windows-preinstall-${{ matrix.python }}
           path: |
             docs/evidence/**
+            suite.txt
           if-no-files-found: ignore
