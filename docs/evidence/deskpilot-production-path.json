@@ -1,0 +1,237 @@
+{
+  "document": "DeskPilot production execution path evidence",
+  "produced": "2026-10-21",
+  "repository": "wjnnmyz4dd-droid/roflo",
+  "branch": "claude/solvent-architecture-audit-8ot9et",
+  "from_commit": "eef18ad",
+  "head_at_assembly": "365aea64bee182b19815dc83297a9ee31f85aea6",
+  "working_tree": "clean",
+  "environment": {
+    "os": "Linux x86_64",
+    "python": "3.11.17"
+  },
+  "root_cause": {
+    "file": "solvent/runtime.py",
+    "function": "Runtime._one_business_job",
+    "shipped_call": "run_business_cycle(self.solvent, source_name='', owner_identity=self.solvent.policy.owner)",
+    "faults": [
+      "PolicyStore has no attribute 'owner'; ownership is the list governance.owner_identities that is_owner checks -> AttributeError",
+      "run_business_cycle declares source_file and workdir keyword-only with no defaults -> TypeError"
+    ],
+    "times_executed_before_repair": 0,
+    "why_it_was_certified": "every test exercising the business tick replaced the method, including the 100-opportunity acceptance run, whose docstring states the replacement explicitly"
+  },
+  "repair": {
+    "owner_identity": "governance.owner_identities; raises NoOwnerRegistered rather than defaulting",
+    "source_file": "the customer's attached file, existence-checked before admission",
+    "workdir": "one per order under a configurable work root",
+    "empty_shop": "returns None, which Operator.run needs for NOTHING_TO_DO",
+    "new_module": "solvent/workorder.py, kept out of operation.py because a test pins that module's imports to errors and types",
+    "second_authority_created": false,
+    "authorities_reused": [
+      "Qualification",
+      "FinancialGovernor",
+      "ActionGate",
+      "Capacity",
+      "OwnerChannel",
+      "Operator",
+      "run_business_cycle",
+      "Discovery"
+    ]
+  },
+  "further_defects_found_by_running": [
+    {
+      "what": "Operator._policy_halt read operations.halted, a boolean nothing else consults, while the documented kill switch is operating_mode",
+      "effect": "an owner pulling the halt stopped the Action Gate and the orchestrator but not the business loop, which met the halt as a FailClosed inside each job and ended the run as a malfunction",
+      "repair": "both are read, the mode first"
+    },
+    {
+      "what": "the loop judged progress by BusinessCycle.completed, which means the cycle reached payment",
+      "effect": "an unattended loop must not fabricate payments, so every correctly-run job stopped at AWAITING_PAYMENT, counted as a failure, and three in a row shut the business down",
+      "repair": "progress means delivered and invoiced; unpaid exposure stays bounded by the Governor's max_committed_unverified_cents"
+    },
+    {
+      "what": "a run that did three jobs and then emptied the queue reported 'no eligible opportunity'",
+      "repair": "only reported when nothing was attempted"
+    },
+    {
+      "what": "WinError 32 on real Windows: a file still open cannot be deleted, so a temporary database could not be removed",
+      "found_by": "the first windows-latest execution of the suite",
+      "repair": "Store registers itself while open and is a context manager, Solvent can close, and a conftest fixture closes what each test opened, snapshotting first",
+      "not_done": "ignore_cleanup_errors, which would have masked it"
+    }
+  ],
+  "things_that_existed_but_were_never_built": [
+    "Solvent constructed no Storefront, so the inbound channel was reachable only from a test",
+    "a published ServiceOffer carried no verifiable terms, so an unattended run had nothing legitimate to check a deliverable against"
+  ],
+  "acceptance_through_the_production_path": {
+    "actions_exported": 15,
+    "audit_chain_ok": true,
+    "driven_by": "Runtime.start -> default_tasks -> business task",
+    "manual_cycle_calls": 0,
+    "scheduler_ticks": 5,
+    "job_states": [
+      "AWAITING_PAYMENT",
+      "AWAITING_PAYMENT",
+      "AWAITING_PAYMENT",
+      "AWAITING_PAYMENT",
+      "AWAITING_PAYMENT"
+    ],
+    "simulation_only": true
+  },
+  "five_skills": {
+    "csv-cleanup": "delivered and invoiced",
+    "data-entry": "delivered and invoiced",
+    "document-processing": "delivered and invoiced",
+    "report-builder": "delivered and invoiced",
+    "spreadsheet-automation": "delivered and invoiced"
+  },
+  "defect_injection": {
+    "suite": "tests_solvent.test_production_path.TheDefectCannotComeBack",
+    "control_test_present": true,
+    "injections": [
+      "the policy.owner read",
+      "omitted source_file and workdir",
+      "a no-op _one_business_job",
+      "a disconnected tick",
+      "a removed business task"
+    ],
+    "all_caught": true,
+    "own_mistake": "the tick injection initially injected nothing, because Task holds the bound method it was given; it now replaces before registration"
+  },
+  "independent_review": {
+    "ifixai": {
+      "repository": "ifixai-ai/iFixAi",
+      "mode": "NATIVE EXECUTION",
+      "trajectory": "exported from the production path, not a hand-driven cycle",
+      "decision": "CLEAR",
+      "violations": 0,
+      "controls_injected": 3,
+      "controls_caught": 3
+    },
+    "klean": {
+      "repository": "calinfaja/K-LEAN",
+      "mode": "SOURCE-DERIVED",
+      "why": "every review path is async and queries models over HTTP; there is no offline or dry-run path"
+    },
+    "confirmed_deskpilot_defects": 0
+  },
+  "sealed_examination": {
+    "exam": "tests_solvent/capacityexam.py",
+    "broke_because": "solvent/store.py is under seal and changed",
+    "re_sat_before_resealing": "the eighth paper, 13 tests and 32 subtests, every level's delivered count unchanged",
+    "new_freeze": "2026-10-21T18:20:00Z",
+    "sittings_recorded": 9,
+    "prior_sittings_preserved": true,
+    "bypassed": false
+  },
+  "regression": {
+    "summary": "5111 passed, 46 skipped, 8 warnings, 10355 subtests passed in 561.05s (0:09:21)",
+    "passed": 5111,
+    "failed": 0,
+    "skipped": 46,
+    "subtests_passed": 10355,
+    "failures": [],
+    "run_against": "365aea6, clean tree, after the reseal",
+    "note": "an earlier run showed one failure, the capacity exam's seal detecting that solvent/store.py had changed. That is the seal working; it was resolved by re-sitting and re-sealing, not by being switched off."
+  },
+  "mutation": {
+    "killed": 220,
+    "total": 220,
+    "survived": [],
+    "not_applied": [],
+    "harness": [],
+    "isolated": true,
+    "runs": [
+      "mut_pp.txt",
+      "mut_new.txt"
+    ],
+    "note": "the eight production-path mutants were added after the main battery had loaded its list, so they were run separately rather than being silently absent"
+  },
+  "windows": {
+    "execution": "REAL windows-latest runners, GitHub Actions",
+    "runs": [
+      {
+        "run_id": 39619497767,
+        "commit": "1a0bc3e",
+        "conclusion": "failure",
+        "cause": "No module named pytest; every later step skipped"
+      },
+      {
+        "run_id": 39626646395,
+        "commit": "c9d10d7",
+        "conclusion": "failure",
+        "cause": "No module named pytest"
+      },
+      {
+        "run_id": 39627158451,
+        "commit": "b0a8c06",
+        "conclusion": "failure",
+        "cause": "No module named pytest"
+      },
+      {
+        "run_id": 39642157724,
+        "commit": "eef18ad",
+        "conclusion": "failure",
+        "cause": "WinError 32 in the full suite and the five-skill library; all other Windows-only steps passed for the first time"
+      },
+      {
+        "run_id": 39651253779,
+        "commit": "a520d6e",
+        "conclusion": "failure",
+        "python": [
+          "3.11",
+          "3.13"
+        ],
+        "cause": "the same six WinError 32 failures, unchanged: the Store and Solvent close work was necessary but not sufficient, because the leak is ReadModel and a pytest fixture cannot run before unittest's addCleanup deletes the directory"
+      }
+    ],
+    "passing_on_windows_at_run_5": [
+      "verification extras and pytest install",
+      "independent (T2) readers available",
+      "Windows invariants suite",
+      "the installer's own suite",
+      "state paths resolve to a drive",
+      "Python discovery against the real machine",
+      "control centre answers on loopback",
+      "the business scheduler ticks"
+    ],
+    "failing_on_windows_at_run_5": [
+      "full suite (WinError 32)",
+      "five-skill library, 6 of 46 (WinError 32)"
+    ],
+    "t2_wheels": {
+      "resolved_from_published_windows_x64_wheels": true,
+      "compiler_required": false,
+      "python": [
+        "3.11",
+        "3.13"
+      ],
+      "observed": [
+        "lxml-6.1.3-cp311-cp311-win_amd64.whl",
+        "clevercsv-0.8.5",
+        "chardet-7.7.0",
+        "regex-2026.9.29",
+        "openpyxl-3.1.5",
+        "python-docx-1.2.0",
+        "markdown-it-py-3.0.0",
+        "mdurl-0.1.2"
+      ],
+      "correction": "an earlier dependency audit said clevercsv brings pandas and numpy. The Windows install resolved neither; that claim overstated the footprint.",
+      "arm64": "still unverified; the runners are x64"
+    },
+    "status_at_assembly": "WINDOWS RUNTIME: PARTIAL. Eight of ten Windows-only checks pass on real runners. The two failures share one cause and the repair for it is pushed but not yet confirmed by a run."
+  },
+  "constraints_honoured": [
+    "simulation_only true throughout and asserted",
+    "continuous_enabled off by default",
+    "no marketplace contacted",
+    "no client contacted",
+    "no proposal submitted",
+    "no payment processed",
+    "no real delivery",
+    "not deployed to the owner's laptop",
+    "0 cents of real revenue"
+  ]
+}

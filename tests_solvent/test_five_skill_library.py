@@ -719,7 +719,8 @@ class TheControlCentreSaysWhereEachSkillStands(unittest.TestCase):
     def library(self):
         from solvent.web.readmodel import ReadModel
 
-        return {row["name"]: row for row in ReadModel(str(self.path)).library()}
+        with ReadModel(str(self.path)) as model:
+            return {row["name"]: row for row in model.library()}
 
     def test_every_capability_in_the_build_appears(self):
         self.assertEqual(sorted(self.library()), sorted(LIBRARY))
@@ -763,7 +764,8 @@ class TheControlCentreSaysWhereEachSkillStands(unittest.TestCase):
             owner_identity=OWNER,
             why="TEST-ONLY: certified and not cleared for client delivery")
         s.store.close()
-        row = {r["name"]: r for r in ReadModel(str(held)).library()}["data-entry"]
+        with ReadModel(str(held)) as model:
+            row = {r["name"]: r for r in model.library()}["data-entry"]
         self.assertEqual(row["stance"], "LIMITED")
         self.assertFalse(row["deliverable"], "certified is not cleared")
         self.assertIn("not cleared", row["note"])
@@ -776,7 +778,8 @@ class TheControlCentreSaysWhereEachSkillStands(unittest.TestCase):
         s = Solvent(str(fresh))
         ensure_verifier_certified(s, "data-entry")
         s.store.close()
-        rows = {r["name"]: r for r in ReadModel(str(fresh)).library()}
+        with ReadModel(str(fresh)) as model:
+            rows = {r["name"]: r for r in model.library()}
         self.assertEqual(rows["data-entry"]["stance"], "NO DECISION")
         self.assertIn("has not answered", rows["data-entry"]["note"])
         self.assertEqual(rows["csv-cleanup"]["state"], "UNTESTED")

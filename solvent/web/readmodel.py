@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import weakref
 
 #: Columns that must never reach a page. Read as a belt-and-braces check rather
 #: than a claim that secrets are in the database — they are not — so that a
@@ -24,11 +25,24 @@ NEVER_RENDER = ("signature", "key_id", "secret", "password", "token",
                 "api_key", "webhook_secret")
 
 
+#: Every ReadModel still holding its connection. Weak, so being listed
+#: never keeps one alive. Same reason as ``solvent.store._OPEN``:
+#: Windows cannot delete a file something has open, so whatever has to
+#: delete it needs a way to find out what that is.
+_OPEN: "weakref.WeakSet[ReadModel]" = weakref.WeakSet()
+
+
+def open_readmodels() -> list["ReadModel"]:
+    """Every read-only window still open."""
+    return [m for m in _OPEN]
+
+
 class ReadModel:
     """A read-only window on Solvent's database."""
 
     def __init__(self, path: str) -> None:
         self.path = path
+        _OPEN.add(self)
         # mode=ro fails if the file does not exist, which is the honest outcome:
         # a control centre with no Solvent behind it should say so, not create
         # an empty database and describe it as the business.
@@ -146,6 +160,24 @@ class ReadModel:
 
     def close(self) -> None:
         self._conn.close()
+        _OPEN.discard(self)
+
+    def __enter__(self) -> "ReadModel":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        """Let go of the file.
+
+        A read-only connection still holds the database open, and on
+        Windows an open file cannot be deleted -- so a caller that opens
+        one of these per page render and relies on the garbage collector
+        is relying on something that behaves differently per platform
+        and per interpreter. Six Windows tests failed on exactly this
+        while passing on Linux. The long-running control centre keeps
+        one open for its lifetime, which is correct; everything short of
+        that should say when it is finished.
+        """
+        self.close()
 
     # ------------------------------------------------------------------ query
     def rows(self, sql: str, params: tuple = ()) -> list[dict]:
