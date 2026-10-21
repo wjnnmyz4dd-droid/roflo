@@ -70,16 +70,23 @@ jobs:
                         '|', producer.why)
           "@
 
-      # Tee'd, so the summary can be reprinted at the end of the job.
-      # The log runs to about 2,500 lines and the suite's own summary
-      # sits in the middle of it, which made every Windows failure
-      # expensive to diagnose from outside.
+      # Redirected rather than tee'd, and deliberately silent here. The
+      # tee'd version lost the end of the run: the uploaded file stopped
+      # at 60% and the step's console output never reached the archived
+      # log either, so three attempts to find out which Windows tests
+      # fail all came back with nothing. A plain redirect produces a
+      # complete file, and the short step below prints the part that
+      # matters.
+      #
+      # -rf lists every failure by name at the end, so the tail is the
+      # answer rather than a sample of it.
       - name: Full suite
         shell: pwsh
         run: |
-          python -I -m pytest tests_solvent -q --tb=no 2>&1 |
-            Tee-Object -FilePath suite.txt
-          exit $LASTEXITCODE
+          python -I -m pytest tests_solvent -q --tb=line -rf > suite.txt 2>&1
+          $code = $LASTEXITCODE
+          Write-Output "pytest exit code: $code"
+          exit $code
 
       # Every step below runs even when the suite fails. A single red
       # test must not hide the Windows-only answers this workflow is
@@ -188,9 +195,9 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path suite.txt) {
-            Write-Output "----- full suite, failures and summary -----"
-            Select-String -Path suite.txt -Pattern '^(FAILED|ERROR)|passed|failed' |
-              Select-Object -ExpandProperty Line -Last 40
+            $lines = (Get-Content suite.txt).Count
+            Write-Output "----- suite.txt has $lines line(s); last 60 -----"
+            Get-Content suite.txt -Tail 60
           } else {
             Write-Output "the full suite produced no output file"
           }
