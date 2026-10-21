@@ -464,14 +464,38 @@ class RefusalsAreReal(ProductionPath):
         self.assertNotIn("return OWNER", source)
 
     def test_the_halt_stops_new_work(self):
+        """Refused *before* a job is attempted, not caught downstream.
+
+        Checking only that no job exists is not enough, and mutation
+        proved it: with the Operator's halt check removed the loop
+        still created no job, because the orchestrator refuses a
+        transition while halted and raises. Defence in depth doing its
+        work -- but the Operator's halt is a distinct control, and a
+        test that cannot tell which one stopped the job cannot tell
+        that one of them is gone. The mutant survived until this
+        assertion was added.
+
+        The difference is visible in what the tick says:
+
+            control present   not run: the emergency halt is engaged
+            control removed   FAILED (1): operating_mode=HALT blocks ...
+
+        One refused; the other took the work and was caught.
+        """
         from solvent.types import OperatingMode
 
         self.place("csv-cleanup")
         self.s.policy.set_operating_mode(OperatingMode.HALT, OWNER,
                                          "test: the owner pulled the halt")
-        self.tick(self.runtime())
+        line = self.tick(self.runtime())
         self.assertEqual(self.s.orchestrator.jobs(), [],
                          "a job started while halted")
+        self.assertTrue(line.startswith("not run:"),
+                        f"the loop attempted work while halted: {line}")
+        self.assertIn("halt", line.lower())
+        self.assertNotIn("FAILED", line,
+                         "the halt was discovered by raising inside a job "
+                         "rather than refused before one started")
 
     def test_an_unprofitable_order_is_not_delivered(self):
         """The margin floor binds on the production path.
