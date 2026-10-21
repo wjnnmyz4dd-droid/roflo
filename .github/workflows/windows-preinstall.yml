@@ -1,0 +1,116 @@
+# DeskPilot on Windows: the tests that cannot be run from Linux.
+#
+# Everything in `docs/deskpilot-windows-compatibility.md` marked
+# UNVERIFIED ON WINDOWS is unverified because this workflow has never
+# run. It exists so that the gap closes by being executed rather than by
+# being argued about.
+#
+# It installs nothing on anybody's laptop and contacts no marketplace:
+# the runner is disposable, egress stays simulated, and no credential is
+# supplied to it.
+name: windows-preinstall
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'windows/**'
+      - 'solvent/**'
+      - 'tests_solvent/**'
+      - '.github/workflows/windows-preinstall.yml'
+
+jobs:
+  suite-on-windows:
+    name: Suite on Windows (${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the floor the installer enforces; 3.13 is what it
+        # bootstraps. Both are run because a floor nobody tests is a
+        # floor nobody knows holds.
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+
+      - name: Record the environment
+        shell: pwsh
+        run: |
+          python -c "import sys, platform; print(sys.version); print(platform.platform()); print('64-bit:', sys.maxsize > 2**32)"
+          python -c "import sqlite3; print('sqlite', sqlite3.sqlite_version)"
+          Write-Output "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+          Write-Output "PROCESSOR_ARCHITEW6432=$env:PROCESSOR_ARCHITEW6432"
+
+      - name: Install the verification extras
+        run: python -m pip install --disable-pip-version-check -e ".[verification]"
+
+      - name: Full suite
+        run: python -I -m pytest tests_solvent -q
+
+      - name: Windows invariants, on Windows
+        run: python -I -m pytest tests_solvent/test_windows_compatibility.py -q
+
+      - name: The installer's own suite
+        run: python -I -m pytest tests_solvent/test_installer_python_bootstrap.py tests_solvent/test_installer_python_discovery.py -q
+
+      - name: State paths resolve to a drive
+        shell: pwsh
+        run: |
+          python -c @"
+          import ntpath
+          from solvent import harness, runtime
+          from solvent.web import intents
+          for name, value in (('DEFAULT_DB', runtime.DEFAULT_DB),
+                              ('HEARTBEAT_PATH', runtime.HEARTBEAT_PATH),
+                              ('PAYMENT_SPOOL', harness.PAYMENT_SPOOL),
+                              ('INTENT_SPOOL', intents.INTENT_SPOOL)):
+              drive, _ = ntpath.splitdrive(value)
+              print(name, value, 'drive=' + repr(drive))
+              assert drive, name + ' is drive-relative on Windows: ' + value
+          "@
+
+      - name: Python discovery against the real machine
+        shell: pwsh
+        run: |
+          python -c @"
+          import sys
+          sys.path.insert(0, 'windows/installer')
+          from deskpilot_installer import python_runtime
+          from deskpilot_installer.host import WindowsHost
+          host = WindowsHost()
+          for how, where in python_runtime.search_report(host).items():
+              print(how + ':', where)
+          found = python_runtime.discover(host)
+          for interpreter in found:
+              print(interpreter.path, interpreter.version_text,
+                    '64-bit' if interpreter.is_64bit else '32-bit',
+                    interpreter.rejected or 'usable')
+          chosen = python_runtime.choose(found)
+          print('chosen:', chosen.path if chosen else 'none')
+          assert chosen is not None, 'the runner has Python; discovery must find it'
+          "@
+
+      - name: Control centre starts and answers on loopback
+        shell: pwsh
+        run: |
+          python -c @"
+          import sys
+          sys.path.insert(0, '.')
+          from solvent.web import server
+          print('default host:', server.DEFAULT_HOST)
+          assert server.DEFAULT_HOST == '127.0.0.1'
+          "@
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-preinstall-${{ matrix.python }}
+          path: |
+            docs/evidence/**
+          if-no-files-found: ignore

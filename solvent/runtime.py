@@ -34,18 +34,19 @@ from typing import Callable
 from .audit import new_id
 from .errors import FailClosed
 from . import resilience as _res
-from .types import BlockedOn, JobState, OperatingMode, PaymentState
+from .types import (BlockedOn, JobState, OperatingMode, PaymentState,
+                    default_state_path)
 
 #: Where a production database lives when nothing says otherwise. A 24/7 service
 #: whose store defaults to ``:memory:`` would lose the ledger on every restart.
-DEFAULT_DB = "/var/lib/solvent/solvent.db"
+DEFAULT_DB = default_state_path("solvent.db")
 
 RUNTIME = "runtime"
 
 
 #: Where the liveness heartbeat is written. Read by deploy/solvent-watchdog.sh
 #: from outside this process, which is the entire point of it being a file.
-HEARTBEAT_PATH = "/var/lib/solvent/heartbeat"
+HEARTBEAT_PATH = default_state_path("heartbeat")
 
 
 class Mode(Enum):

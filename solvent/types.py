@@ -607,3 +607,82 @@ CERTIFIED_SKILL_COUNT = 5
 #: CERTIFIED_SKILL_COUNT, and conflating the two is the specific
 #: mistake this constant exists to stop being made a third time.
 GLOBAL_COMMITTED_CEILING = CERTIFIED_SKILL_COUNT * JOBS_PER_AGENT_CEILING
+
+
+# ------------------------------------------------------- platform state paths
+
+#: Where DeskPilot keeps its own state when nothing configures it.
+#:
+#: Every one of these is overridable -- the Windows installer configures the
+#: database, the heartbeat and the intent spool explicitly, and the backup
+#: directory and payment spool come from policy and a CLI flag. The defaults
+#: still matter, because the un-installed cases are real: a developer, a
+#: hand-started control centre, a policy nobody filled in.
+#:
+#: They were POSIX literals on both platforms, and on Windows a path like
+#: ``/var/lib/solvent/solvent.db`` names **no drive**: ``ntpath.splitdrive``
+#: returns ``""`` for it, so it resolves against whichever drive the process
+#: happens to be running from. Two DeskPilot processes started from different
+#: drives would then disagree about where the database, the heartbeat and the
+#: spools are. It is also the join footgun -- ``ntpath.join(root, path)``
+#: discards ``root`` when ``path`` starts with a separator.
+_POSIX_STATE_ROOT = "/var/lib/solvent"
+_WINDOWS_STATE_LEAF = "DeskPilot"
+
+
+def default_state_path(*leaf: str, windows: bool | None = None,
+                       program_data: str = "") -> str:
+    """Where a piece of DeskPilot's own state lives, per platform.
+
+    Nothing here guesses at a drive. ``%PROGRAMDATA%`` is where state
+    shared between a user-facing surface and a background service belongs
+    on Windows, and it is what the installer's own layout uses.
+    """
+    import ntpath
+    import os
+    import posixpath
+
+    on_windows = os.name == "nt" if windows is None else windows
+    if not on_windows:
+        return posixpath.join(_POSIX_STATE_ROOT, *leaf)
+    root = program_data or os.environ.get("PROGRAMDATA") or r"C:\ProgramData"
+    return ntpath.join(root.rstrip("\\/"), _WINDOWS_STATE_LEAF, *leaf)
+
+
+def default_owner_intent_spool(
+        *, windows: bool | None = None, program_data: str = "") -> str:
+    """Where the control centre writes owner intents, per platform."""
+    return default_state_path("owner-intents", windows=windows,
+                              program_data=program_data)
+
+
+def state_path_problem(path: str, *, windows: bool | None = None) -> str:
+    """Why this path cannot be relied on, or ``""``.
+
+    A drive-relative path on Windows is refused rather than normalised
+    against the current drive. Normalising would pick a drive on the
+    owner's behalf and produce exactly the silent divergence this guards
+    against; refusing says which setting is wrong.
+    """
+    import ntpath
+    import os
+
+    on_windows = os.name == "nt" if windows is None else windows
+    if not path:
+        return "no path is configured"
+    if not on_windows:
+        return "" if path.startswith("/") else (
+            f"{path!r} is not an absolute path, so which directory it means "
+            "depends on where the process was started")
+    drive, _rest = ntpath.splitdrive(path)
+    if not drive:
+        return (f"{path!r} names no drive, so on Windows it resolves against "
+                "whichever drive the process happens to be running from -- "
+                "two DeskPilot processes could end up using different ones. "
+                r"Configure an absolute path such as C:\ProgramData\DeskPilot")
+    return ""
+
+
+def intent_spool_problem(spool: str, *, windows: bool | None = None) -> str:
+    """Why this owner-intent spool cannot be relied on, or ``""``."""
+    return state_path_problem(spool, windows=windows)

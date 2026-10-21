@@ -33,6 +33,7 @@ from pathlib import Path
 from . import resilience as res
 from .audit import new_id, now
 from .branding import PRODUCT
+from .types import default_state_path
 
 #: How a check came out. Ordered worst-last so a summary can take the maximum.
 HEALTHY = "HEALTHY"
@@ -555,7 +556,7 @@ class Diagnostics:
     @_checked("Backups", "storage", OWNER_ESCALATION)
     def backups(self) -> Finding:
         directory = Path(self._s.policy.get("backup", "directory", default="")
-                         or "/var/lib/solvent/backups")
+                         or default_state_path("backups"))
         if not directory.is_dir():
             return Finding(
                 "Backups", UNKNOWN,
@@ -625,7 +626,8 @@ def _memory() -> dict:
     """
     try:
         fields = {}
-        for line in Path("/proc/meminfo").read_text().splitlines():
+        for line in Path("/proc/meminfo").read_text(
+                encoding="utf-8").splitlines():
             key, _, rest = line.partition(":")
             fields[key] = int(rest.strip().split()[0]) * 1024
         total = fields.get("MemTotal", 0)

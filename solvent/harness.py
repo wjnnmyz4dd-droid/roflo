@@ -65,7 +65,8 @@ from . import types
 from .types import (
     ActionClass, BlockedOn, ConsequenceTier, Criticality, CostCategory, CostLine, GovernorVerdict, JobState,
     Jurisdiction, LocationSignals, PaymentState, PricingTier, PrivacyClass,
-    Requirement, RequirementSource, VerificationTier, check_of, fmt, money,
+    Requirement, RequirementSource, VerificationTier, check_of,
+    default_owner_intent_spool, default_state_path, fmt, money,
 )
 
 OWNER = "owner:demo"
@@ -1631,7 +1632,7 @@ def _run_business_cycle(
 #: Where spooled payment deliveries are read from. Under the service's
 #: ReadWritePaths, so a receiver running as the same user can write there and
 #: nothing else on the host can.
-PAYMENT_SPOOL = "/var/lib/solvent/payments-inbox"
+PAYMENT_SPOOL = default_state_path("payments-inbox")
 
 #: Environment variable holding the Stripe endpoint's signing secret. Read at
 #: the moment of verification and never stored, logged or written to the audit.
@@ -1693,7 +1694,9 @@ def ingest_payment_spool(s: "Solvent", *, spool: str = PAYMENT_SPOOL,
 
 
 #: Where the control centre writes owner intents, and the runtime reads them.
-OWNER_INTENT_SPOOL = "/var/lib/solvent/owner-intents"
+#: One definition, shared with the control centre: two literals drift, and a
+#: spool the writer and the reader disagree about loses requests silently.
+OWNER_INTENT_SPOOL = default_owner_intent_spool()
 
 
 #: An intent left for the owner rather than acted on or refused.

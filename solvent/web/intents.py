@@ -26,11 +26,16 @@ import json
 import secrets
 from pathlib import Path
 
-from ..types import (CERTIFIED_SKILL_COUNT,
-                      GLOBAL_COMMITTED_CEILING, JOBS_PER_AGENT_CEILING)
+from ..types import (CERTIFIED_SKILL_COUNT, GLOBAL_COMMITTED_CEILING,
+                      JOBS_PER_AGENT_CEILING, default_owner_intent_spool)
 
 #: Where intents are written. Writable by the web user, read by the runtime.
-INTENT_SPOOL = "/var/lib/solvent/owner-intents"
+#:
+#: Derived per platform rather than a POSIX literal: on Windows the literal
+#: named no drive, so it resolved against whatever drive the process was
+#: started from and the writer and the reader could disagree about where the
+#: spool was. See :func:`solvent.types.default_owner_intent_spool`.
+INTENT_SPOOL = default_owner_intent_spool()
 
 SAFE = "SAFE"
 CONSEQUENTIAL = "CONSEQUENTIAL"
