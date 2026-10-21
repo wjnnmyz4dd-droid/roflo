@@ -58,6 +58,7 @@ from . import quoting
 from .pricing import PricingReference
 from .projection import project
 from .store import Store
+from .storefront import Storefront
 from . import (csvverify, csvwork, docverify, docwork, entryverify,
                entrywork, reportverify, reportwork, sheetverify, sheetwork)
 from .policy import DEFAULT_MAX_CORRECTIONS
@@ -198,6 +199,14 @@ class Solvent:
                                             notify.VOICE: notify.RecordingProvider(notify.VOICE)})
         self.diagnostics = Diagnostics(self)
         self.memory = BusinessMemory(self.store, self.audit)
+        # The inbound channel. Constructed here because a storefront
+        # nothing builds is a shop with no door: `storefront.py` existed
+        # for several rounds and no entry point created one, so orders
+        # could only be placed by a test. Its *source* is deliberately
+        # not registered here -- registering a work source is an owner
+        # act with a recorded determination, and doing it at construction
+        # would be this process granting itself a channel.
+        self.storefront = Storefront(self.capability, self.policy)
         self.discovery = Discovery(self.store, self.audit, self.policy,
                                    self.gate, capability=self.capability)
         # Prepares applications; cannot send one. Not an authority -- it owns no
@@ -229,6 +238,26 @@ class Solvent:
             self.store, self.audit, self.policy, self.governor, self.capability,
             self.orchestrator, self.discovery, self.memory, self.ledger,
             self.capacity)
+
+    def close(self) -> None:
+        """Let go of the database file.
+
+        Needed on Windows, where an open file cannot be deleted: a
+        caller that builds a Solvent over a temporary database and then
+        removes the directory gets WinError 32 until the handle is
+        released. On POSIX this is tidiness; on Windows it is the
+        difference between a working directory that can be cleaned up
+        and one that cannot. Found by the suite's first run on a real
+        Windows runner, which failed in exactly this way.
+        """
+        self.store.close()
+
+    def __enter__(self) -> "Solvent":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
 
     def project(self, job_id: str):
         return project(job_id=job_id, orchestrator=self.orchestrator,

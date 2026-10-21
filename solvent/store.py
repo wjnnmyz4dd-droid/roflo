@@ -19,6 +19,7 @@ import contextlib
 import re
 import sqlite3
 import threading
+import weakref
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -667,11 +668,33 @@ class AuthorityConnection:
             self._conn.commit()
 
 
+#: Every Store that has not been closed. A weak set, so being in it
+#: never keeps a database alive.
+#:
+#: This exists because of Windows. On POSIX, deleting a file something
+#: still has open is ordinary and the space is reclaimed when the last
+#: handle goes; on Windows the delete fails outright with "the process
+#: cannot access the file because it is being used by another process".
+#: So a working directory, a rotated backup or a temporary database
+#: cannot be removed while anything still holds it, and the thing doing
+#: the removing needs a way to find out what that is.
+#:
+#: Found by running the suite on a real Windows runner for the first
+#: time, where it failed in exactly this way and nowhere else.
+_OPEN: "weakref.WeakSet[Store]" = weakref.WeakSet()
+
+
+def open_stores() -> list["Store"]:
+    """Every database still open, for whoever has to delete the file."""
+    return [s for s in _OPEN]
+
+
 class Store:
     """Owns the database file and hands out per-authority connections."""
 
     def __init__(self, path: str | Path = ":memory:") -> None:
         self.path = str(path)
+        _OPEN.add(self)
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False,
                                      timeout=BUSY_TIMEOUT_S)
@@ -762,3 +785,10 @@ class Store:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+        _OPEN.discard(self)
+
+    def __enter__(self) -> "Store":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()

@@ -48,6 +48,38 @@ class StopReason(Enum):
     NOT_PERMITTED = "NOT_PERMITTED"
 
 
+def productive(result) -> bool:
+    """Did this iteration do the business any good?
+
+    Not the same question as ``BusinessCycle.completed``, which means the
+    cycle went all the way through *payment*. A job that was delivered to
+    the client and invoiced has done everything this loop can do; whether
+    the money has arrived is the payment rail's business and the
+    reconciliation task's, and it happens on the client's schedule rather
+    than this run's.
+
+    Reading ``completed`` here was a real defect. An unattended loop must
+    not fabricate a payment to make its own jobs look finished, so every
+    job it ran correctly stopped at AWAITING_PAYMENT, counted as a
+    failure, and three of them in a row ended the run -- a business that
+    shut itself down for the offence of billing its customers.
+
+    Unpaid exposure is still bounded, and not by this function: the
+    Governor's ``max_committed_unverified_cents`` is the ceiling on work
+    delivered but not yet paid for, and it is checked before each job is
+    priced. Counting an invoice as progress here does not widen it.
+    """
+    if getattr(result, "completed", False):
+        return True
+    # Delivered *and* billed, not merely carrying a figure. A cycle that
+    # stopped early can still hold a quoted amount in `invoiced_cents`,
+    # and reading that alone counted an unprofitable job that stopped at
+    # the budget stage as progress -- which would have disarmed the
+    # consecutive-failure brake.
+    return (bool(getattr(result, "delivered", False))
+            and int(getattr(result, "invoiced_cents", 0) or 0) > 0)
+
+
 @dataclass(frozen=True, slots=True)
 class Bounds:
     """How far the owner has said it may go without being asked again.
@@ -110,6 +142,28 @@ class Operator:
         self._halted = halted or self._policy_halt
 
     def _policy_halt(self) -> bool:
+        """Is the owner's stop engaged?
+
+        Two switches existed and this loop honoured the wrong one. It
+        read ``operations.halted``, a boolean nothing else consults,
+        while the documented kill switch is ``operating_mode`` -- the
+        enum the Action Gate checks through ``blocks_external`` and the
+        orchestrator through ``blocks_new_work``, and the one
+        ``PolicyStore.set_operating_mode`` writes.
+
+        The consequence was precise and bad: an owner who pulled the
+        halt stopped the Gate and the orchestrator but not this loop,
+        which went on picking up work and discovering the halt as a
+        ``FailClosed`` thrown from inside each job -- counted as a
+        failure, three in a row, and the run ended looking like a
+        malfunction instead of a stop the owner asked for.
+
+        Both are read, the mode first. The boolean stays honoured so an
+        owner or a script that set it is not quietly ignored, which is
+        the same mistake in the other direction.
+        """
+        if self._s.policy.operating_mode.blocks_new_work:
+            return True
         return bool(self._s.policy.get("operations", "halted", default=False))
 
     def owner_bounds(self) -> Bounds:
@@ -212,7 +266,7 @@ class Operator:
             report.cycles.append(result)
 
             invoiced = int(getattr(result, "invoiced_cents", 0) or 0)
-            if getattr(result, "completed", False):
+            if productive(result):
                 consecutive = 0
                 # Counted after the job, because what was committed is only
                 # known once the job ran -- but the *next* iteration is

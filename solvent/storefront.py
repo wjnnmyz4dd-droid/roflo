@@ -97,6 +97,45 @@ class RevisionPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class OfferTerm:
+    """One verifiable promise an offer makes, as a named check.
+
+    This is the difference between an offer a person must negotiate and
+    one DeskPilot can execute on its own. ``run_business_cycle`` refuses
+    to infer a client's requirements from a posting -- prose is not a
+    contract, and a deliverable verified against terms DeskPilot wrote
+    for itself is verified against its own invention. So the terms have
+    to come from somewhere real.
+
+    A published offer is that somewhere. It is a standing contract: the
+    scope is fixed, the customer reads it before ordering, and ordering
+    is the agreement. The named ``check`` is what actually runs against
+    the deliverable, so what the advert promises and what the checker
+    recomputes are the same sentence.
+
+    ``check`` must name a check the capability genuinely registers.
+    :func:`offer_problem` refuses an offer that promises one it does
+    not, because an unverifiable promise is the one kind of promise this
+    system must not be able to publish.
+    """
+
+    check: str
+    acceptance: str
+    params: dict = field(default_factory=dict)
+    #: The intake question whose answer supplies this term's parameters.
+    #:
+    #: Some checks both instruct and verify -- ``map_fields`` says which
+    #: source column fills which target field *and* checks that it did.
+    #: A fixed offer cannot know the customer's column names, so for
+    #: those the parameters come from the customer's own answer rather
+    #: than from the advert. The answer must be structured: a form field
+    #: with named keys, not a sentence, because turning a sentence into
+    #: a mapping is interpretation and the five skills call no model to
+    #: do it with.
+    params_from: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class ServiceOffer:
     """One thing DeskPilot will do for money, described well enough to sell.
 
@@ -125,6 +164,9 @@ class ServiceOffer:
     terms: tuple[str, ...] = ()
     #: An offer is a draft until a person publishes it somewhere real.
     published: bool = False
+    #: What the deliverable is checked against. An offer with none cannot
+    #: be sold: see :func:`offer_problem`.
+    requirements: tuple[OfferTerm, ...] = ()
 
     def intake_keys(self) -> tuple[str, ...]:
         return tuple(q.key for q in self.intake)
@@ -151,6 +193,9 @@ class ServiceOffer:
                           "window_days": self.revisions.window_days},
             "terms": list(self.terms),
             "published": self.published,
+            "requirements": [{"check": r.check, "acceptance": r.acceptance,
+                              "params": dict(r.params)}
+                             for r in self.requirements],
         }
 
 
@@ -184,15 +229,54 @@ _DEADLINE = _q("needed_by", "When do you need it back?",
                "than later.", required=False)
 
 
+def _term(check, acceptance, params_from="", **params):
+    return OfferTerm(check=check, acceptance=acceptance, params=params,
+                     params_from=params_from)
+
+
+#: The promise every one of these offers makes, because a deliverable
+#: nobody can open is not a deliverable. Each skill's own checker names
+#: this differently, so the per-offer lists below say which.
 def _offer(offer_id, capability, title, summary, included, excluded,
-           deliverables, extra_questions, minimum_cents, turnaround):
+           deliverables, extra_questions, minimum_cents, turnaround,
+           requirements=()):
     return ServiceOffer(
         offer_id=offer_id, capability=capability, title=title, summary=summary,
         scope_included=included, scope_excluded=excluded,
         deliverables=deliverables,
         intake=(_SOURCE_FILE,) + tuple(extra_questions) + (_DEADLINE,),
         minimum_cents=minimum_cents, turnaround=turnaround,
-        terms=COMMON_TERMS)
+        terms=COMMON_TERMS, requirements=tuple(requirements))
+
+
+def offer_problem(service: "ServiceOffer") -> str:
+    """Why this offer may not be sold, or ``""``.
+
+    Two conditions, both fail-closed. An offer that promises nothing
+    checkable cannot be verified, so selling it would mean delivering
+    against terms nobody could recompute. And an offer naming a check
+    its capability does not register would fail at the verification
+    stage of every order placed against it -- after the customer has
+    paid, which is the worst possible moment to discover it.
+
+    Checked here rather than at delivery because an advert is a promise
+    and the time to refuse an impossible one is before it is shown.
+    """
+    from . import checks
+
+    if not service.requirements:
+        return (f"offer {service.offer_id!r} promises nothing that can be "
+                "checked, so a deliverable against it could not be verified")
+    known = checks.checks_for(service.capability)
+    if not known:
+        return (f"{service.capability!r} registers no checks at all, so "
+                f"offer {service.offer_id!r} cannot be verified")
+    unknown = sorted({r.check for r in service.requirements} - set(known))
+    if unknown:
+        return (f"offer {service.offer_id!r} promises {', '.join(unknown)}, "
+                f"which {service.capability!r} does not register; the order "
+                "would fail verification after the customer had paid")
+    return ""
 
 
 # ------------------------------------------------------------- the offers
@@ -230,7 +314,21 @@ CSV_CLEANUP = _offer(
            "phone numbers may or may not be a duplicate. You decide.",
            required=False)),
     minimum_cents=4_000,
-    turnaround="Same working day once the order is approved")
+    turnaround="Same working day once the order is approved",
+    requirements=(
+        _term("parses_as_csv", "the cleaned file opens as CSV"),
+        _term("trim_whitespace", "no leading or trailing spaces remain"),
+        _term("drop_exact_duplicates", "rows that repeat exactly appear once"),
+        # Stated with the same assumption the line above makes. Promising
+        # reconciliation while leaving `duplicates_removed` at its default
+        # without also promising the dedupe is a contradiction the checker
+        # catches at verification -- which is to say, after the work is
+        # done. The two terms are written together for that reason.
+        _term("row_reconciliation",
+              "every input row is accounted for, less exact duplicates",
+              duplicates_removed=True),
+    ),
+)
 
 SPREADSHEET_AUTOMATION = _offer(
     "spreadsheet-automation", "spreadsheet-automation",
@@ -258,7 +356,24 @@ SPREADSHEET_AUTOMATION = _offer(
            "Currency symbols, decimal places, date format.",
            required=False)),
     minimum_cents=4_000,
-    turnaround="Same working day once the order is approved")
+    turnaround="Same working day once the order is approved",
+    requirements=(
+        _term("opens_as_workbook", "the workbook opens"),
+        # Before the calculation, because a calculation naming a column
+        # the rename has not yet produced fails at execution with "there
+        # is no column named ...". The order of these terms is the order
+        # the work happens in.
+        _term("rename_headers",
+              "your headers are renamed as you asked",
+              params_from="formatting"),
+        _term("compute_column",
+              "the column you asked for is computed from your own figures",
+              params_from="calculations"),
+        _term("row_reconciliation", "every input row is accounted for"),
+        _term("formulas_agree",
+              "every computed cell recomputes to the value shown"),
+    ),
+)
 
 DOCUMENT_PROCESSING = _offer(
     "document-processing", "document-processing",
@@ -284,7 +399,19 @@ DOCUMENT_PROCESSING = _offer(
            "values?", "Skip the row, leave the field blank, or stop and ask. "
            "The one thing we will not do is make something up.")),
     minimum_cents=4_000,
-    turnaround="Same working day once the order is approved")
+    turnaround="Same working day once the order is approved",
+    requirements=(
+        _term("document_opens", "the document opens"),
+        _term("extract_fields",
+              "the fields you named are pulled out of your document",
+              params_from="template"),
+        _term("no_invented_content",
+              "nothing appears that was not in your source"),
+        _term("absences_disclosed",
+              "anything missing from your source is listed rather than "
+              "filled in"),
+    ),
+)
 
 DATA_ENTRY = _offer(
     "data-entry", "data-entry",
@@ -310,7 +437,17 @@ DATA_ENTRY = _offer(
            "format?", "Postcodes, country codes, product codes.",
            required=False)),
     minimum_cents=4_000,
-    turnaround="Same working day once the order is approved")
+    turnaround="Same working day once the order is approved",
+    requirements=(
+        _term("map_fields",
+              "each of your source columns lands in the field you named",
+              params_from="field_mapping"),
+        _term("parses_as_delivered", "the file opens in the format agreed"),
+        _term("records_reconcile", "every source record is accounted for"),
+        _term("no_invented_values",
+              "no value appears that was not in your source"),
+    ),
+)
 
 REPORT_BUILDER = _offer(
     "report-builder", "report-builder",
@@ -335,7 +472,28 @@ REPORT_BUILDER = _offer(
         _q("measures", "Which figures should it show?",
            "Totals, counts, averages -- and of which column.")),
     minimum_cents=4_000,
-    turnaround="Same working day once the order is approved")
+    turnaround="Same working day once the order is approved",
+    requirements=(
+        # One term per section the customer asked for. `report_section`
+        # is the only check the report worker treats as an instruction;
+        # everything else on this list is a property of the finished
+        # document, so an offer without this produces an empty report
+        # that then fails every other term at once.
+        _term("report_section",
+              "each section you asked for is built from your own figures",
+              params_from="group_by"),
+        _term("report_facts_rendered",
+              "the figures you asked for appear",
+              params_from="measures"),
+        _term("report_opens", "the report opens"),
+        _term("report_no_invented_facts",
+              "every figure traces to your source"),
+        _term("report_missing_disclosed",
+              "anything your source did not contain is said to be missing "
+              "rather than estimated",
+              params_from="measures"),
+    ),
+)
 
 OFFERS = (CSV_CLEANUP, SPREADSHEET_AUTOMATION, DOCUMENT_PROCESSING,
           DATA_ENTRY, REPORT_BUILDER)
@@ -478,6 +636,9 @@ class Storefront:
         if not allowed:
             return False, (f"{service.capability} is not cleared for "
                            f"delivery: {why}")
+        unverifiable = offer_problem(service)
+        if unverifiable:
+            return False, unverifiable
         floor = self._minimum_fee()
         if floor and service.minimum_cents < floor:
             return False, (

@@ -1136,22 +1136,72 @@ class Runtime:
             result=f"{summary['completed']} of {summary['attempted']} "
                    f"completed, {fmt(summary['committed_cents'])} committed")
         self._business = {**summary, "finished_at": self._clock()}
-        if report.stopped is StopReason.NOTHING_TO_DO:
+        # Only when it genuinely did nothing. A run that did three jobs
+        # and then found the queue empty also stops with NOTHING_TO_DO,
+        # and reporting that as "no eligible opportunity" hid the three.
+        if report.stopped is StopReason.NOTHING_TO_DO and not summary["attempted"]:
             return "no eligible opportunity"
         return (f"{summary['completed']}/{summary['attempted']} completed; "
                 f"stopped: {summary['stopped']}")
 
     def _one_business_job(self):
-        """One job, through the one business cycle that already exists.
+        """One customer order, through the business cycle that exists.
 
-        Separate from the tick so the loop above has nothing to do with
-        how a job is run, and so a test can drive the Operator with a
-        stand-in without reaching into the runtime.
+        Returns ``None`` when the shop is empty, which is what
+        :meth:`Operator.run` requires in order to stop with
+        NOTHING_TO_DO. Returning a stand-in "nothing happened" object
+        instead would look to the loop like a job that failed, and three
+        of those in a row end the run as if something were wrong.
+
+        **This function was broken from the day it was written.** It read
+        ``self.solvent.policy.owner``, an attribute ``PolicyStore`` does
+        not have, and it omitted ``source_file`` and ``workdir``, which
+        ``run_business_cycle`` declares without defaults. Either one
+        raises on the first call. It was never caught because every test
+        that exercised the business tick -- including the acceptance run
+        that reported a hundred opportunities and fifty-three deliveries
+        -- replaced this method with a substitute. Certifying a function
+        by swapping it out certifies the substitute.
+
+        So the three arguments now come from somewhere real:
+
+        ``owner_identity``
+            from ``governance.owner_identities``, which is the list
+            ``PolicyStore.is_owner`` actually checks. Absent, it raises:
+            a defaulted owner identity is a forged one.
+
+        ``source_file``
+            the file the customer attached to their order. Checked for
+            existence before the job is admitted, not when the worker
+            opens it.
+
+        ``workdir``
+            a directory per order under the runtime's work root.
         """
         from .harness import run_business_cycle
+        from .workorder import next_work_order
 
-        return run_business_cycle(self.solvent, source_name="",
-                                  owner_identity=self.solvent.policy.owner)
+        order = next_work_order(self.solvent, workroot=self._workroot())
+        if order is None:
+            return None
+        return run_business_cycle(self.solvent, **order.as_cycle_kwargs())
+
+    def _workroot(self) -> str:
+        """Where jobs get their scratch directories.
+
+        Beside the database rather than in the system temporary
+        directory: a job's working files are the customer's data, and on
+        a shared machine the temporary directory is not a place for it.
+        """
+        import os
+
+        from .types import default_state_path
+
+        configured = self.solvent.policy.get("operations", "work_root",
+                                             default="")
+        root = str(configured or default_state_path("work"))
+        os.makedirs(root, exist_ok=True)
+        return root
 
     def _take_business_lease(self) -> str | None:
         """Claim the right to be the only business executor, or ``None``.

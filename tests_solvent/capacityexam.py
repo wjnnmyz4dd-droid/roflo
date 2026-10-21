@@ -62,7 +62,17 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
 #: source: 6 questions, 6 passed, and every level's delivered count
 #: identical to the recorded seventh sitting. The new table changed no
 #: answer this paper asks about.
-FROZEN_AT = "2026-10-18T16:40:00Z"
+#: RE-SEALED 2026-10-21. ``solvent/store.py`` gained a weak registry of
+#: open databases and a context manager, so that something can find what
+#: still holds a file. That is a Windows repair: the suite's first run on
+#: a real Windows runner failed with "the process cannot access the file
+#: because it is being used by another process", which POSIX cannot
+#: produce because unlinking an open file is ordinary there.
+#:
+#: Before re-sealing, the eighth paper was re-sat against the changed
+#: source: 13 tests, 32 subtests, all passed, every level's delivered
+#: count unchanged. Letting go of a file alters no answer about capacity.
+FROZEN_AT = "2026-10-21T18:20:00Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
@@ -74,7 +84,7 @@ DIGESTS = {
     "solvent/revenuemodel.py":
         "2c36183d9ce87c93e029bee036b2490173e47501f607173f56c34faef73a72a3",
     "solvent/store.py":
-        "ff99fcb1a19356fc6665f52a390872d4bf4893dac26e3c2e2f779eeb1ed70e5a",
+        "86e98482e8004747e12fcea576dce54674a2e488a5d2e8944b4a4699737e3258",
 }
 
 #: The scoring criteria, fixed before the first run. Identical to the
@@ -386,6 +396,25 @@ reservation leaked, and concurrency stayed inside the limit throughout.
 """
 
 
+NINTH_SITTING = """Sat 2026-10-21T18:20:00Z, seed 2389004946.
+
+Six questions, 6 passed, 0 failed. The ninth
+sitting, sat after solvent/store.py learned to say which databases
+are still open.
+
+    level   7, spike+slow_execution                       7 accepted,   7 delivered, peak 0.189
+    level  13, delayed_verification+revisions            11 accepted,  11 delivered, peak 0.613
+    level  37, failed_submissions+outage                 22 accepted,  22 delivered, peak 0.867
+    level  71, spike+payment_delays                      15 accepted,  15 delivered, peak 0.953
+    level 149, slow_execution+revisions                  33 accepted,  33 delivered, peak 0.996
+    level 307, delayed_verification+failed_submissions   94 accepted,  94 delivered, peak 0.88
+
+Everything accepted was delivered at every level. 25 duplicate
+commitment(s) attempted and refused. 0 obligation seconds lost
+across any restart.
+"""
+
+
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
     "2026-10-14T14:31:21Z": SECOND_SITTING,
@@ -395,6 +424,7 @@ SITTINGS = {
     "2026-10-15T17:55:41Z": SIXTH_SITTING,
     "2026-10-18T00:00:00Z": SEVENTH_SITTING,
     "2026-10-18T16:40:00Z": EIGHTH_SITTING,
+    "2026-10-21T18:20:00Z": NINTH_SITTING,
 }
 
 
