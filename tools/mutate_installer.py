@@ -1203,6 +1203,46 @@ MUTANTS: tuple[Mutant, ...] = (
            "tests_solvent.test_installer_security.SecretsDoNotLeak"
            ".test_a_failure_to_restrict_the_control_centre_file_aborts_it",
            "refuse rather than leave the control centre's file world-readable"),
+    # ---- provisioning Python on a real Windows machine -----------------
+    # Three behaviours the fake host could not previously exercise, because
+    # each is a property of Windows rather than of the installer's logic.
+
+    Mutant("reboot-required-reads-as-a-failed-install", "python_runtime.py",
+           "BOOTSTRAP_OK_CODES = frozenset({0, 3010})",
+           "BOOTSTRAP_OK_CODES = frozenset({0})",
+           "tests_solvent.test_installer_python_bootstrap"
+           ".TheExitCodeIsTheSignal"
+           ".test_a_reboot_required_install_is_a_success",
+           "an installation aborts on 3010, where Python installed fine and "
+           "Windows merely wants a restart"),
+
+    Mutant("the-arm64-check-never-fires", "python_runtime.py",
+           "    if architecture in _ARM64_MARKERS:",
+           "    if False:",
+           "tests_solvent.test_installer_python_bootstrap"
+           ".ArmMachinesAreToldRatherThanGuessedAt"
+           ".test_an_arm64_machine_is_refused_with_its_architecture_named",
+           "the amd64 Python installer is run on a Windows-on-ARM machine "
+           "instead of the owner being told it cannot be served"),
+
+    Mutant("an-arm64-machine-downloads-anyway", "engine.py",
+           "        unsupported = python_runtime.bootstrap_supported(self.host)",
+           "        unsupported = \"\"",
+           "tests_solvent.test_installer_python_bootstrap"
+           ".TheBootstrapRunsThroughTheEngine"
+           ".test_an_arm64_machine_stops_before_downloading_anything",
+           "29MB is fetched and an incompatible installer executed on a "
+           "machine the check had already identified"),
+
+    Mutant("the-exit-code-never-reaches-the-owner", "engine.py",
+           '            raise StepFailed(f"{what} (exit code {ran.returncode}). {remedy}"',
+           '            raise StepFailed(f"{what}. {remedy}"',
+           "tests_solvent.test_installer_python_bootstrap"
+           ".TheBootstrapRunsThroughTheEngine"
+           ".test_an_unrecognised_code_still_reaches_the_owner_as_a_number",
+           "the one signal a /quiet installer produces is dropped, leaving "
+           "the owner a failure with no way to tell which failure it was"),
+
     Mutant("log-scrubber-disabled", "installlog.py",
            "    out = text\n    for pattern, replacement in _PATTERNS:",
            "    out = text\n    for pattern, replacement in []:",

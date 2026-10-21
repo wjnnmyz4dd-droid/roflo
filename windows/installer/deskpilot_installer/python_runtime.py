@@ -74,6 +74,97 @@ BOOTSTRAP_ARGS = ("/quiet", "InstallAllUsers=1", "PrependPath=0",
                   "Include_launcher=0", "Include_test=0", "Include_doc=0",
                   "AssociateFiles=0", "Shortcuts=0")
 
+#: Exit codes from the python.org installer that mean it worked.
+#:
+#: ``3010`` is ``ERROR_SUCCESS_REBOOT_REQUIRED``. Python installed; Windows
+#: wants a restart before some part of it is complete. Treating a non-zero
+#: return as failure turned that into an aborted installation on a machine
+#: where Python was now present and working -- the owner was told the Python
+#: installer had failed, and the next run then *found* the Python it had
+#: supposedly failed to install.
+BOOTSTRAP_OK_CODES = frozenset({0, 3010})
+REBOOT_REQUIRED_CODE = 3010
+
+#: What the installer's exit codes mean, and what the owner can do about each.
+#:
+#: Worth spelling out because ``/quiet`` is silent by design: the python.org
+#: installer writes essentially nothing to stdout or stderr, so the exit code
+#: is the entire signal. Reporting "the Python installer reported failure:"
+#: followed by an empty string is the same as reporting nothing.
+BOOTSTRAP_EXIT_MEANINGS = {
+    1602: ("the installation was cancelled",
+           "Run the installer again and accept the Windows elevation prompt "
+           "when it appears."),
+    1603: ("the Python installer hit a fatal error",
+           "This is usually a previous Python 3.13 install in a broken "
+           "state. Open Settings > Apps, repair or remove any existing "
+           "Python 3.13, then run this installer again."),
+    1618: ("another Windows installation is already running",
+           "Wait for the other installation to finish -- Windows Update "
+           "counts -- then run this installer again."),
+    1619: ("the downloaded Python installer could not be opened",
+           "Delete the downloaded file and run this installer again so it "
+           "is fetched afresh."),
+    1638: ("another version of Python 3.13 is already installed",
+           "Remove it from Settings > Apps, or install Python 3.13 by hand "
+           "from python.org, then run this installer again."),
+    5: ("Windows refused access",
+        "Run the installer as Administrator: this installs Python for all "
+        "users, which a standard account may not do."),
+    740: ("the Python installer needs to be run elevated",
+          "Run this installer as Administrator."),
+}
+
+
+def bootstrap_exit_explanation(code: int) -> tuple[str, str]:
+    """``(what happened, what to do)`` for a Python installer exit code.
+
+    Neither half names the code: the caller prints it once, and a
+    description that carried it too read "exited with code 1 (exit code
+    1)".
+    """
+    if code in BOOTSTRAP_EXIT_MEANINGS:
+        return BOOTSTRAP_EXIT_MEANINGS[code]
+    return ("the Python installer reported failure",
+            f"Install Python {BOOTSTRAP_VERSION} (64-bit) by hand from "
+            f"python.org, then run this installer again. It will detect the "
+            f"Python you installed and continue.")
+
+
+#: Values ``PROCESSOR_ARCHITECTURE`` takes on a 64-bit ARM Windows machine.
+#: ``PROCESSOR_ARCHITEW6432`` carries the real architecture when a 32-bit
+#: process is being emulated, so both are consulted.
+_ARM64_MARKERS = frozenset({"ARM64", "AARCH64"})
+
+
+def machine_architecture(host: Host) -> str:
+    """What this machine actually is, as Windows reports it."""
+    environ = host.environ()
+    return (environ.get("PROCESSOR_ARCHITEW6432")
+            or environ.get("PROCESSOR_ARCHITECTURE") or "").strip().upper()
+
+
+def bootstrap_supported(host: Host) -> str:
+    """``""`` if this machine can run the pinned installer, else why not.
+
+    :data:`BOOTSTRAP_URL` is the amd64 build and there is no ARM64 pin, so on
+    Windows on ARM the honest answer is that this installer cannot provision
+    Python -- not that it failed to. Running the amd64 build there produces
+    either a refusal or an emulated interpreter, and neither is something to
+    discover halfway through an installation.
+
+    Deliberately checked only when a bootstrap is actually needed. An ARM64
+    machine that already has a usable Python is fine, and refusing it for an
+    architecture that never comes up would be a fault of its own.
+    """
+    architecture = machine_architecture(host)
+    if architecture in _ARM64_MARKERS:
+        return (f"this is a {architecture} machine and the Python installer "
+                f"pinned here is the amd64 build, so DeskPilot will not "
+                f"install Python on it")
+    return ""
+
+
 #: Fragments that mean an interpreter belongs to something else.
 _FOREIGN = ("metatrader", "metaquotes", "\\mt4\\", "\\mt5\\")
 

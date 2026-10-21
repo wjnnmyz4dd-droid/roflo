@@ -321,6 +321,11 @@ class ThePythonBootstrapStep(FaultInjection):
             engine, report, _log = self.install()
         self.assertStoppedCleanly(engine, report,
                                   expect_in_why="reported failure")
+        # The exit code is the whole signal under /quiet, so it has to reach
+        # the owner, and so does whatever the installer did manage to say.
+        why = report.failure.why
+        self.assertIn("exit code 1", why)
+        self.assertIn("0x80070643", why)
 
     def test_an_installer_that_succeeds_but_leaves_nothing_is_reported(self):
         from tests_solvent.installer_fake_host import (_bootstrap_bytes,

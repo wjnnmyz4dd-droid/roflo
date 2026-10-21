@@ -212,6 +212,16 @@ class Engine:
                               skipped=True,
                               facts={"path": chosen.path,
                                      "version": chosen.version_text})
+        # Only now, with a bootstrap actually needed: an ARM64 machine that
+        # already has a usable Python was served by the branch above.
+        unsupported = python_runtime.bootstrap_supported(self.host)
+        if unsupported:
+            raise StepFailed(
+                f"{unsupported}. Install Python "
+                f"{python_runtime.MIN_VERSION[0]}."
+                f"{python_runtime.MIN_VERSION[1]} or newer for ARM64 by hand "
+                f"from python.org, then run this installer again -- it will "
+                f"detect it and continue.")
         installer_path = ntpath.join(self.layout.logs,
                                      f"python-{python_runtime.BOOTSTRAP_VERSION}"
                                      f"-amd64.exe")
@@ -233,10 +243,26 @@ class Engine:
         ran = self.host.run([installer_path, *python_runtime.BOOTSTRAP_ARGS],
                             timeout=1800.0)
         self.log.command(ran.argv, ran.returncode, ran.output)
-        if not ran.ok:
-            raise StepFailed(f"the Python installer reported failure: "
-                             f"{ran.output.strip()[:200]}")
-        self._note(f"installed Python {python_runtime.BOOTSTRAP_VERSION}")
+        if ran.timed_out:
+            raise StepFailed(
+                f"the Python installer did not finish within 30 minutes. "
+                f"Install Python {python_runtime.BOOTSTRAP_VERSION} (64-bit) "
+                f"by hand from python.org, then run this installer again.")
+        if ran.returncode not in python_runtime.BOOTSTRAP_OK_CODES:
+            # The exit code is the whole signal: /quiet means the installer
+            # writes nothing worth printing, so reporting its output alone
+            # told the owner "reported failure:" and then nothing at all.
+            what, remedy = python_runtime.bootstrap_exit_explanation(
+                ran.returncode)
+            detail = ran.output.strip()[:200]
+            raise StepFailed(f"{what} (exit code {ran.returncode}). {remedy}"
+                             + (f" The installer said: {detail}"
+                                if detail else ""))
+        if ran.returncode == python_runtime.REBOOT_REQUIRED_CODE:
+            self._note(f"installed Python {python_runtime.BOOTSTRAP_VERSION}; "
+                       "Windows has asked for a restart to finish it")
+        else:
+            self._note(f"installed Python {python_runtime.BOOTSTRAP_VERSION}")
         found = python_runtime.discover(self.host)
         chosen = python_runtime.choose(found)
         if chosen is None:
