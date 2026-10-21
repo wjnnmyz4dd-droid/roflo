@@ -168,13 +168,29 @@ through `clevercsv`. Recorded as a blocker in
 
 ## 6. Verification
 
+Both halves of the chain ran against a settled, committed tree
+(`b0a8c06`, clean) and neither was edited underneath.
+
 ```
 regression   5,080 passed, 46 skipped, 0 failed, 10,335 subtests
-             (written 2026-10-21 16:17, HEAD b0a8c06, clean tree)
+             written 16:17:26, exit 0
+mutation     212/212 killed  (0 survived, 0 not applied, 0 harness)
+             written 16:40:46, exit 0, isolated copy
 iFixAi       CLEAR, 0 violations, 3 of 3 injected controls caught
 ```
 
-Mutation is reported in `docs/evidence/deskpilot-autonomous-runtime.json`.
+5,080 is up from the 5,022 baseline by the 58 tests this round adds.
+
+**Source integrity after testing.** `mutate_solvent.py` patches a copy —
+`isolated: patching a copy of the working tree at
+/tmp/deskpilot-mutation-kap58vib` — so the repository is never mutated.
+Confirmed after the battery: working tree clean, `mutated_files()`
+empty, no active claim, the copy removed. That guard exists because an
+earlier round in this engagement committed a disabled profitability
+guard to origin from under an in-place run.
+
+Figures and the full mutant list are in
+`docs/evidence/deskpilot-autonomous-runtime.json`.
 
 ## 7. What this does not say
 

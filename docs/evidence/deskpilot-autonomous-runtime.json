@@ -1,0 +1,184 @@
+{
+  "document": "DeskPilot autonomous runtime repair evidence",
+  "produced": "2026-10-21",
+  "repository": "wjnnmyz4dd-droid/roflo",
+  "branch": "claude/solvent-architecture-audit-8ot9et",
+  "base_commit": "694867d",
+  "head_at_assembly": "f48ee27943b5c21b4789fa9164578fd25e33a728",
+  "environment": {
+    "os": "Linux x86_64",
+    "python": "3.11.17",
+    "windows_execution": "NOT PERFORMED"
+  },
+  "the_repair": {
+    "defect": "Runtime scheduled eight tasks and none ran the business cycle; solvent/operation.py, the bounded loop, was imported by nothing",
+    "fix": "a ninth scheduled task, 'business', driving the existing Operator, which drives the existing run_business_cycle",
+    "second_engine_created": false,
+    "components_reused": [
+      "Finder",
+      "Governor",
+      "Action Gate",
+      "Qualification",
+      "Capacity",
+      "Operator",
+      "run_business_cycle"
+    ],
+    "refusals": {
+      "simulation": "refused unless egress.simulation_only",
+      "opt_in": "Operator.permitted false unless operations.continuous_enabled; default off",
+      "halt": "checked before each job, not after",
+      "single_executor": "an audit-log lease; stale after 3600s"
+    },
+    "cadence_seconds": 600
+  },
+  "acceptance_through_the_service_path": {
+    "driven_through": "Runtime.start -> default_tasks -> run_due, which is serve() without the real-time sleep",
+    "manual_cli_cycles": 0,
+    "offered": 100,
+    "offered_per_skill": 20,
+    "served": 100,
+    "scheduler_ticks": 13,
+    "business_task_runs": 13,
+    "restarts_mid_run": 1,
+    "startup_safe_to_run": true,
+    "delivered_total": 53,
+    "delivered_per_skill": {
+      "csv-cleanup": 2,
+      "spreadsheet-automation": 20,
+      "document-processing": 11,
+      "data-entry": 10,
+      "report-builder": 10
+    },
+    "attempted_per_skill": {
+      "csv-cleanup": 20,
+      "spreadsheet-automation": 20,
+      "document-processing": 20,
+      "data-entry": 20,
+      "report-builder": 20
+    },
+    "skills_delivering_nothing": [],
+    "deliveries_with_a_consumed_owner_approval": 53,
+    "unauthorized_deliveries": 0,
+    "invoices": 53,
+    "duplicate_invoices": 0,
+    "fabricated_payments": 0,
+    "delivered_but_unbilled": [],
+    "stranded_jobs": [],
+    "real_revenue_cents": 0,
+    "job_census": {
+      "REJECTED": 40,
+      "COMPLETE": 53,
+      "BLOCKED": 7
+    },
+    "audit_chain_ok": true,
+    "simulation_only": true,
+    "wall_s": 10.0,
+    "sample_business_lines": [
+      "business: 2/8 completed; stopped: JOB_LIMIT",
+      "business: 0/8 completed; stopped: JOB_LIMIT",
+      "business: 4/8 completed; stopped: JOB_LIMIT",
+      "business: 8/8 completed; stopped: JOB_LIMIT"
+    ]
+  },
+  "operational_health": {
+    "states_distinguished": 10,
+    "figures_recorded": [
+      "last_cycle_started",
+      "last_cycle_completed",
+      "last_successful_cycle",
+      "last_failure",
+      "queue_depth",
+      "active_workers",
+      "executor_lease"
+    ],
+    "reports_a_single_operational_boolean": false,
+    "why": "a single cheerful boolean is how the disconnection went unnoticed; it reports parts and the renderer totals them"
+  },
+  "external_input_security": {
+    "rule": "external text is DATA, never authorization",
+    "surfaces_tested": [
+      "owner approvals",
+      "policy amendment",
+      "requirements and checks",
+      "deliverable content",
+      "the website intent list",
+      "the audit trail"
+    ],
+    "injections": 10,
+    "tests": 14,
+    "subtests": 50,
+    "authorization_state_changed": false,
+    "why_it_holds": "authority is an HMAC over named fields or a policy row the owner amended; neither is a string that can appear in a document, and no code path turns prose into permission"
+  },
+  "t2_windows_verification": {
+    "startup_check_added": true,
+    "fatal": false,
+    "downgrades_t2": false,
+    "owner_review_counted_as_a_reader": false,
+    "install_half_done": false,
+    "blocker": "the installer's no-pip design is a security property, not an oversight. Installing the readers means adding a package manager to the normal path or vendoring wheels, which is a distribution decision carrying the LGPL chardet reached transitively through clevercsv. Owner's call.",
+    "status": "PARTIAL \u2014 validated and surfaced, not installed"
+  },
+  "defects_i_introduced_and_repaired": [
+    {
+      "what": "the tick referenced fmt without importing it, so every business run raised NameError after the work completed and the task self-reported FAILED",
+      "found_by": "the hundred-job acceptance run, not the suite",
+      "why_the_suite_missed_it": "all 22 tests read the function's source for strings instead of executing it",
+      "repair": "import fmt; add TheTickActuallyRuns, which executes the tick. Removing the import again fails that class and not the source-reading ones, which was checked."
+    },
+    {
+      "what": "the acceptance harness read j.capability, a field Job does not have, and reported all five skills delivering nothing while 53 jobs had been delivered",
+      "repair": "record the skill where it is known"
+    },
+    {
+      "what": "a regression run was launched and then edited underneath, producing three failures that were not the product's",
+      "repair": "re-run against a settled, committed tree; the same class of error as committing from under a mutation run"
+    }
+  ],
+  "independent_review": {
+    "ifixai": {
+      "mode": "NATIVE EXECUTION",
+      "decision": "CLEAR",
+      "violations": 0,
+      "controls_injected": 3,
+      "controls_caught": 3
+    },
+    "klean": {
+      "mode": "SOURCE-DERIVED",
+      "why": "every review path queries models over HTTP"
+    },
+    "confirmed_deskpilot_defects": 0
+  },
+  "source_integrity_after_testing": {
+    "working_tree": "clean",
+    "mutated_files_remaining": [],
+    "active_claim": null,
+    "mutation_patched_a_copy_not_the_repository": true
+  },
+  "regression": {
+    "summary": "5080 passed, 46 skipped, 8 warnings, 10335 subtests passed in 562.99s (0:09:22)",
+    "passed": 5080,
+    "failed": 0,
+    "skipped": 46,
+    "subtests_passed": 10335,
+    "failures": []
+  },
+  "mutation": {
+    "summary": "212/212 killed  (0 survived, 0 not applied or harness)",
+    "killed": 212,
+    "total": 212,
+    "survived": [],
+    "not_applied": [],
+    "harness": [],
+    "isolated": true
+  },
+  "constraints_honoured": [
+    "simulation mode mandatory and enforced in code",
+    "no real marketplace transaction",
+    "no real client outreach",
+    "no real proposal",
+    "no real payment",
+    "no real delivery",
+    "not deployed to the owner's laptop"
+  ]
+}
