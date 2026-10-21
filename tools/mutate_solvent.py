@@ -1109,6 +1109,92 @@ MUTANTS: tuple[Mutant, ...] = (
         "DeskPilot reports itself allowed to submit a proposal to Upwork, "
         "where submission is prohibited and the official route unverified"),
 
+    # ---- the production execution path ---------------------------------
+    #
+    # Eight mutants against the repair that connects the scheduler to the
+    # business cycle. The path had been certified while every test
+    # replaced the method under test, so the first duty of these is to
+    # fail loudly if that can happen again.
+
+    Mutant(
+        "production-the-owner-identity-is-defaulted",
+        "solvent/workorder.py",
+        '    raise NoOwnerRegistered(',
+        '    return "owner:root"  # noqa\n    raise NoOwnerRegistered(',
+        "tests_solvent.test_production_path.RefusalsAreReal"
+        ".test_no_registered_owner_means_nothing_runs",
+        "work runs in the name of an owner who never registered"),
+
+    Mutant(
+        "production-a-missing-source-file-is-not-noticed",
+        "solvent/workorder.py",
+        "    if not os.path.isfile(source_file):",
+        "    if False:",
+        "tests_solvent.test_production_path.RefusalsAreReal"
+        ".test_an_order_naming_a_file_that_is_not_there_is_refused",
+        "a job is admitted against a file that is not there, holding a "
+        "capacity slot and failing at execution"),
+
+    Mutant(
+        "production-prose-is-accepted-as-a-structured-answer",
+        "solvent/workorder.py",
+        "        if not isinstance(answer, dict) or not answer:",
+        "        if False:",
+        "tests_solvent.test_production_path.RefusalsAreReal"
+        ".test_an_unstructured_answer_is_refused_rather_than_interpreted",
+        "a sentence is treated as a field mapping, so the deliverable is "
+        "checked against terms DeskPilot invented"),
+
+    Mutant(
+        "production-an-empty-shop-invents-work",
+        "solvent/workorder.py",
+        "    return None\n\n\ndef _requirements_of",
+        "    return WorkOrder(source_name='', capability='csv-cleanup',\n"
+        "                     source_file='', workdir='', "
+        "agreed_requirements=(),\n"
+        "                     owner_identity=owner, external_ref='')"
+        "\n\n\ndef _requirements_of",
+        "tests_solvent.test_production_path.NoWorkIsARealAnswer"
+        ".test_next_work_order_returns_none_rather_than_a_stand_in",
+        "the loop fabricates a job rather than reporting an empty shop"),
+
+    Mutant(
+        "production-an-offer-may-promise-nothing-checkable",
+        "solvent/storefront.py",
+        "    if not service.requirements:",
+        "    if False:",
+        "tests_solvent.test_production_path.RefusalsAreReal"
+        ".test_an_offer_promising_nothing_cannot_be_sold",
+        "an offer whose deliverable cannot be verified is sold anyway"),
+
+    Mutant(
+        "production-an-offer-may-promise-an-unregistered-check",
+        "solvent/storefront.py",
+        "    if unknown:",
+        "    if False:",
+        "tests_solvent.test_production_path.RefusalsAreReal"
+        ".test_an_offer_promising_an_unregistered_check_cannot_be_sold",
+        "an offer fails verification after the customer has paid"),
+
+    Mutant(
+        "production-the-loop-ignores-the-owners-halt",
+        "solvent/operation.py",
+        "        if self._s.policy.operating_mode.blocks_new_work:",
+        "        if False:",
+        "tests_solvent.test_production_path.RefusalsAreReal"
+        ".test_the_halt_stops_new_work",
+        "the owner pulls the halt and the business loop keeps taking work"),
+
+    Mutant(
+        "production-a-stopped-cycle-counts-as-progress",
+        "solvent/operation.py",
+        '    return (bool(getattr(result, "delivered", False))',
+        '    return (True or bool(getattr(result, "delivered", False))',
+        "tests_solvent.test_operation.EveryStopHasAReason"
+        ".test_consecutive_failures_stop_it",
+        "a run of jobs that all stop early never trips the "
+        "consecutive-failure brake"),
+
     # ---- keeping a mutation run's defects out of the repository ---------
 
     Mutant(
