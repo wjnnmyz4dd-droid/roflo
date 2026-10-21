@@ -61,6 +61,42 @@ def _release(directory: str) -> list[str]:
     return closed
 
 
+@pytest.fixture(autouse=True)
+def _close_what_this_test_opened():
+    """Close databases a test opened, so few are open at once.
+
+    The directory-scoped release below handles the ordering problem;
+    this bounds the count. Snapshotting first, for the same reason as
+    below: an earlier version closed everything open at the end of
+    each test, which closed a class-scoped database after the first
+    test of its class and left the rest failing with "Cannot operate
+    on a closed database".
+
+    **This is tidiness, not the fix for the Windows failure.** It was
+    written as a hypothesis -- that the Windows suite dies partway
+    because open handles accumulate -- and the measurement refuted it:
+    without this fixture, 148 tests leave 3 databases open and none of
+    them file-backed, which is nowhere near exhausting anything. The
+    directory release was already catching the file-backed ones.
+
+    The Windows failure is still unexplained. What is known: the suite
+    stops after exactly 3,477 bytes of progress output, about 60%
+    through, on a complete line, with no traceback and no summary, and
+    the byte count is identical whether the output is tee'd or
+    redirected. A deterministic stop with no Python-level error is the
+    interpreter dying rather than a test failing.
+    """
+    before = {id(h) for h in open_stores()} | {id(h) for h in open_readmodels()}
+    yield
+    for handle in list(open_stores()) + list(open_readmodels()):
+        if id(handle) in before:
+            continue
+        try:
+            handle.close()
+        except Exception:
+            pass
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _close_databases_before_their_directory_goes():
     original = tempfile.TemporaryDirectory.cleanup

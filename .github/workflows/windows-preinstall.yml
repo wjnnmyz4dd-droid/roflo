@@ -190,6 +190,33 @@ jobs:
         run: python -I -m pytest tests_solvent/test_production_path.py -q
 
       # Last, so a tail of the job log always reaches it.
+      # Only when the suite went red. One pytest process per file, so
+      # a file that kills the interpreter is named instead of inferred:
+      # the single-process run stops after exactly 3,477 bytes at about
+      # 60%, on a complete line, with no traceback and no summary, and
+      # the byte count does not move between a tee and a redirect. That
+      # is the process dying, not a test failing, and the one thing the
+      # combined run cannot tell us is which file it dies in.
+      - name: Which file kills the suite
+        if: failure()
+        shell: pwsh
+        run: |
+          $bad = @()
+          foreach ($f in Get-ChildItem tests_solvent/test_*.py | Sort-Object Name) {
+            $name = "tests_solvent/" + $f.Name
+            python -I -m pytest $name -q --tb=no > $null 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              $bad += "$name exit=$LASTEXITCODE"
+              Write-Output "NONZERO  $name  exit=$LASTEXITCODE"
+            }
+          }
+          if ($bad.Count -eq 0) {
+            Write-Output "every file passes on its own; the failure needs the whole run"
+          } else {
+            Write-Output "----- $($bad.Count) file(s) failed on their own -----"
+            $bad | ForEach-Object { Write-Output $_ }
+          }
+
       - name: What failed in the full suite
         if: always()
         shell: pwsh
