@@ -46,19 +46,46 @@ jobs:
           Write-Output "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
           Write-Output "PROCESSOR_ARCHITEW6432=$env:PROCESSOR_ARCHITEW6432"
 
-      - name: Install the verification extras
-        run: python -m pip install --disable-pip-version-check -e ".[verification]"
+      # pytest is in the `dev` extra, not `verification`. Leaving it out
+      # is what made the first three runs of this workflow fail at the
+      # first test step with "No module named pytest" -- and the steps
+      # after it were skipped, so the failure hid every other result.
+      - name: Install the verification extras and the test runner
+        run: python -m pip install --disable-pip-version-check -e ".[verification,dev]"
+
+      # Which formats this Windows machine can give a second opinion on.
+      # Recorded before the suite so it is in the log even when a test
+      # fails: the T2 question is the one this workflow exists to settle.
+      - name: Independent (T2) readers available on Windows
+        if: always()
+        shell: pwsh
+        run: |
+          python -c @"
+          from solvent import independent
+          for extension in sorted(independent._DIFFERENTIAL_READERS):
+              report = independent.available(extension=extension)
+              for producer in report.producers:
+                  print(extension, '|', producer.name, '| usable=' + str(producer.usable),
+                        '| needs_a_person=' + str(producer.needs_a_person),
+                        '|', producer.why)
+          "@
 
       - name: Full suite
         run: python -I -m pytest tests_solvent -q
 
+      # Every step below runs even when the suite fails. A single red
+      # test must not hide the Windows-only answers this workflow is
+      # here to produce -- that is what happened on runs 1 to 3.
       - name: Windows invariants, on Windows
+        if: always()
         run: python -I -m pytest tests_solvent/test_windows_compatibility.py -q
 
       - name: The installer's own suite
+        if: always()
         run: python -I -m pytest tests_solvent/test_installer_python_bootstrap.py tests_solvent/test_installer_python_discovery.py -q
 
       - name: State paths resolve to a drive
+        if: always()
         shell: pwsh
         run: |
           python -c @"
@@ -75,6 +102,7 @@ jobs:
           "@
 
       - name: Python discovery against the real machine
+        if: always()
         shell: pwsh
         run: |
           python -c @"
@@ -96,6 +124,7 @@ jobs:
           "@
 
       - name: Control centre starts and answers on loopback
+        if: always()
         shell: pwsh
         run: |
           python -c @"
@@ -105,6 +134,35 @@ jobs:
           print('default host:', server.DEFAULT_HOST)
           assert server.DEFAULT_HOST == '127.0.0.1'
           "@
+
+      # The scheduler, on Windows, actually ticking. Not a source read:
+      # the business task is constructed and run, and its refusal is
+      # printed. Simulation stays on and continuous operation stays off,
+      # so this proves the wiring without doing any business.
+      - name: The business scheduler ticks on Windows
+        if: always()
+        shell: pwsh
+        run: |
+          python -c @"
+          import sys
+          sys.path.insert(0, '.')
+          from tests_solvent.fixtures import Rig
+          from solvent.runtime import Runtime
+          runtime = Runtime(Rig())
+          runtime.default_tasks()
+          names = [task.name for task in runtime.tasks]
+          print('tasks:', names)
+          assert names.count('business') == 1, names
+          print('tick says:', runtime._tick_business())
+          status = runtime.business_status()
+          print('states:', sorted(status['states']))
+          print('connected:', status['business_cycle_connected'],
+                'enabled:', status['business_cycle_enabled'])
+          "@
+
+      - name: Five-skill smoke test on Windows
+        if: always()
+        run: python -I -m pytest tests_solvent/test_five_skill_library.py -q
 
       - name: Upload the evidence
         if: always()
