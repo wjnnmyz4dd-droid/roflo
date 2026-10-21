@@ -164,6 +164,16 @@ jobs:
         if: always()
         run: python -I -m pytest tests_solvent/test_five_skill_library.py -q
 
+      # The real production path, on Windows. The scheduler tick above
+      # proves the task is wired; this proves a job goes all the way
+      # through it on this operating system -- order, qualification,
+      # Governor, Action Gate, worker, checker, delivery, invoice --
+      # with nothing substituted. Without it, "Windows startup uses the
+      # same real path" would be an assumption rather than a result.
+      - name: The production path, end to end, on Windows
+        if: always()
+        run: python -I -m pytest tests_solvent/test_production_path.py -q
+
       - name: Upload the evidence
         if: always()
         uses: actions/upload-artifact@v4
