@@ -1,0 +1,177 @@
+{
+  "report": "docs/deskpilot-chief-of-staff-certification.md",
+  "repository": "wjnnmyz4dd-droid/roflo",
+  "branch": "claude/solvent-architecture-audit-8ot9et",
+  "certified_at_commit": "162ac4e",
+  "previous_report_commit": "3f1e7b4",
+  "previous_report_relied_on": false,
+  "authorization": {
+    "mode": "SIMULATION ONLY",
+    "egress_simulation_only": true,
+    "live_marketplace_contact": false,
+    "live_client_contact": false,
+    "live_proposals": false,
+    "live_payments": false,
+    "deployed_to_owner_machine": false
+  },
+  "verdicts": {
+    "chief_of_staff_architecture": "PASS",
+    "real_runtime_execution": "PASS",
+    "autonomous_coordination": "PASS",
+    "client_acquisition": "PASS",
+    "competitive_pricing": "PASS",
+    "autonomous_negotiation": "PASS",
+    "profit_floor": "PASS",
+    "crm_recovery": "PASS",
+    "proposals": "PASS",
+    "contracts": "PASS",
+    "deposit_20_percent": "PASS",
+    "payment_reconciliation": "PASS",
+    "five_skill_execution": "PASS",
+    "stalled_job_recovery": "PASS (after repair)",
+    "chief_of_staff_failure_handling": "PASS",
+    "business_connections_ui": "PASS",
+    "security": "PASS",
+    "end_to_end_simulation": "PASS",
+    "windows_certification": "BLOCKED"
+  },
+  "regression": {
+    "command": "python3 -I -m pytest tests_solvent -q -p no:randomly",
+    "ran_at_utc": "2026-10-22T14:11:33Z",
+    "at_commit": "162ac4e",
+    "passed": 5383,
+    "failed": 0,
+    "skipped": 47,
+    "subtests_passed": 10660,
+    "seconds": 597.58,
+    "exit_code": 0
+  },
+  "mutation": {
+    "command": "python3 -I tools/mutate_solvent.py",
+    "isolated": "patched a copy of the working tree; the repository was never mutated",
+    "total": 234,
+    "killed": 234,
+    "survived": 0,
+    "not_applied": 0,
+    "harness": 0,
+    "new_mutants_added": 14,
+    "mutated_files_left_behind": []
+  },
+  "certification_suite": {
+    "file": "tests_solvent/test_chief_of_staff_certification.py",
+    "tests": 110,
+    "skipped": 1,
+    "subtests": 97,
+    "skipped_case": {
+      "name": "KilledMidLifecycle",
+      "why": "constructing a Solvent installs the irreversible egress guard, which denies subprocess.Popen; the guard is not worked around",
+      "run_separately": "python3 -I -m pytest tests_solvent/test_chief_of_staff_certification.py -k KilledMidLifecycle",
+      "result_when_run_separately": "1 passed",
+      "child_exit_code": -9
+    }
+  },
+  "sealed_examinations": {
+    "disturbed": false,
+    "files_under_seal_modified": [],
+    "capacity_exam_and_reading_exam": "25 passed, 32 subtests passed"
+  },
+  "defects_found": 5,
+  "defects_repaired": 5,
+  "defects": [
+    {
+      "id": 1,
+      "summary": "ChiefOfStaff held negotiations and engagements in plain dicts; every restart lost them",
+      "consequence": "a client who had signed and cleared a 20% deposit read as a prospect who had merely replied, and the next recommendation was a second proposal for a job already under contract",
+      "safe_downstream": "the Governor, the Action Gate and the Ledger are the real gates and were always durable; no money could move and no work could be admitted",
+      "phases_failed": ["Phase 7 contract state persistence", "Phase 10 durable state survives", "Phase 10 completed steps are not duplicated"],
+      "repair": "both books are a MutableMapping over BusinessMemory, with an on_change hook attached on tracking; nothing derived is stored",
+      "pinned_by": ["cos-the-book-does-not-write-what-is-put-in-it", "cos-a-change-after-tracking-is-not-written", "cos-rehydration-restores-the-shortest-journal"]
+    },
+    {
+      "id": 2,
+      "summary": "ChiefOfStaff.performance() had no production caller and reached no page",
+      "repair": "the scheduled tick records a snapshot; the read model reads it; the control centre renders it and re-derives nothing",
+      "pinned_by": ["cos-the-tick-records-nothing"]
+    },
+    {
+      "id": 3,
+      "summary": "escalations were written to the audit log and to no channel, every fifteen minutes",
+      "repair": "routed through the Notifier, deduped by key; a notification that could not be sent is recorded as one that could not be sent",
+      "pinned_by": ["cos-the-escalation-never-reaches-a-channel"]
+    },
+    {
+      "id": 4,
+      "summary": "time.monotonic stored as a timestamp, so the dashboard read a seconds-old snapshot as STALE",
+      "repair": "age computed from memory_facts.ts; an unreadable timestamp reads as unknown, not as zero",
+      "pinned_by": ["test_the_snapshot_carries_no_clock_of_its_own"]
+    },
+    {
+      "id": 5,
+      "summary": "the engine name appeared on an owner-facing page in the empty-dashboard copy",
+      "found_by": "tests_solvent/test_branding.py, an existing control",
+      "repair": "reworded"
+    }
+  ],
+  "verification_machinery_weaknesses_fixed": [
+    "the handover-write mutant survived because every test mutated the deal afterwards; a case that tracks and touches nothing was added",
+    "the contact-source mutant matched two sites and read NOT_APPLIED, which is a control that has silently stopped testing anything; anchored on the message"
+  ],
+  "advisory": {
+    "ifixai": {
+      "mode": "SOURCE-DERIVED",
+      "version": "4.1.1",
+      "commit": "d86ba61",
+      "native_execution_attempted": true,
+      "native_execution_result": "the tool's own output: RUN INVALID - measurement failure, not a result; 40 of 60 inspections require an LLM judge",
+      "why_not_native": "iFixAi evaluates LLM agents through a provider; DeskPilot's certified skills call no model, its egress hook denies socket.connect, and it exposes no endpoint",
+      "previous_claim_withdrawn": "the 3f1e7b4 report's 'iFixAi: NATIVE, CLEAR, 0 violations' is withdrawn; the judge-free run scored iFixAi's own example system (version nimbusforge-prod-2.3), not DeskPilot",
+      "findings_reported_from_that_run": 0
+    },
+    "klean": {
+      "mode": "SOURCE-DERIVED",
+      "commit": "79f3557",
+      "why_not_native": "the repository is archived and read-only, and requires OpenAI, Gemini, DeepSeek and Moonshot credentials; none exists here and egress is denied",
+      "applied": "reachability pass over all 93 modules in solvent/",
+      "chief_of_staff_layer_reachable": true,
+      "modules_imported_by_nothing_in_solvent": [
+        "prospecting", "revenuemodel", "skillcandidates", "upworkbid",
+        "inference", "marketplaces"
+      ],
+      "action": "reported, not repaired: wiring any of them would be adding a feature, which this assignment forbids; needs an owner decision module by module"
+    }
+  },
+  "windows": {
+    "certification": "BLOCKED",
+    "last_run": 39724670620,
+    "at_commit": "3f1e7b4",
+    "pythons": ["3.11", "3.13"],
+    "conclusion": "failure on both",
+    "new_finding": "the per-file isolation step produced an answer: every test file completes on its own and eight exit 1, which is pytest's 'tests failed', not a crash. No single file takes the interpreter down, which contradicts the standing hypothesis recorded in the workflow.",
+    "files_failing_in_isolation": [
+      "tests_solvent/test_bidder_console.py",
+      "tests_solvent/test_branding.py",
+      "tests_solvent/test_capacity_exam.py",
+      "tests_solvent/test_commercial_configuration.py",
+      "tests_solvent/test_csv_rename_and_sort.py",
+      "tests_solvent/test_doctor_database_selection.py",
+      "tests_solvent/test_egress_bypass.py",
+      "tests_solvent/test_installer_ai.py"
+    ],
+    "note_on_that_list": "measured at 3f1e7b4, before this certification's commit; test_branding was repaired here and the others are untouched by this work",
+    "full_suite_truncation": "unexplained and separate: suite.txt stops at 65% (3.11) and 59% (3.13) on a complete line with no summary, and the step's own 'pytest exit code' line never reaches the archived log either",
+    "investigated_further": false,
+    "why_not": "the assignment says Chief of Staff certification and Windows certification are separate gates and not to divert into Windows work",
+    "t2_readers_on_a_fresh_windows_install": "still an owner decision between pip in the installer path and vendored wheels (LGPL chardet via clevercsv)"
+  },
+  "remaining_blockers": [
+    "Windows full-suite truncation, unexplained; eight test files fail in isolation on Windows",
+    "T2 readers on a fresh Windows install await an owner decision",
+    "six modules in solvent/ are imported by nothing in solvent/ and await an owner decision on which are meant to be live"
+  ],
+  "not_established": [
+    "anything about real clients: every client, reply, market observation and payment event here is synthetic, and the conversion figures are properties of the fixtures",
+    "anything about Windows",
+    "anything about live operation with the egress hook open",
+    "production readiness"
+  ]
+}
