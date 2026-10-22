@@ -817,6 +817,61 @@ class PolicyStore:
             provider=str(record.get("provider", "")),
             threshold_cents=int(record.get("threshold_cents", 0) or 0))
 
+    def connect_business_email(self, *, owner_identity: str, provider: str,
+                               state: str, reason: str,
+                               evidence: str = "") -> int:
+        """Record mailbox progress. Owner only, forward only, one rung.
+
+        Modelled on :meth:`advance_payment_rail` rather than invented,
+        because the two face the same problem: DeskPilot cannot see
+        whether an account is really attached, so the rungs that claim
+        it require evidence the owner supplies and DeskPilot will not
+        assert on its own behalf.
+
+        No credential is written here. This records a claim about the
+        world, not a secret: there is no field for a password, a token
+        or an app key, and there is deliberately nowhere to put one.
+        """
+        from .connections import (
+            EMAIL_CONFIGURED, EMAIL_LIVE_VERIFIED, EMAIL_SELECTED, EMAIL_STATES,
+        )
+
+        # Ownership first, so the refusal is the true one. `amend`
+        # would catch a stranger anyway, but only after the ladder
+        # check had told them what rung the mailbox is on and refused
+        # them for the wrong reason.
+        if not self.is_owner(owner_identity):
+            raise FailClosed(
+                f"connecting a mailbox is owner-governed (got "
+                f"{owner_identity!r})")
+        if state not in EMAIL_STATES:
+            raise FailClosed(
+                f"{state!r} is not a connection state; the ladder is "
+                f"{', '.join(EMAIL_STATES)}")
+        if not provider.strip():
+            raise FailClosed(
+                "a mailbox connection with no provider names nothing")
+        if state in (EMAIL_CONFIGURED, EMAIL_LIVE_VERIFIED) and not evidence.strip():
+            raise FailClosed(
+                f"{state} is a claim about an account DeskPilot cannot "
+                "inspect, so it requires evidence the owner supplies; "
+                "DeskPilot will not assert it on its own behalf")
+        here = EMAIL_STATES.index(
+            self.get("email", "state", default="") or EMAIL_SELECTED)
+        there = EMAIL_STATES.index(state)
+        if there <= here and self.get("email", "provider", default=""):
+            raise FailClosed(
+                f"the mailbox is already at {EMAIL_STATES[here]}; this "
+                "ladder only goes forward")
+        if there > here + 1:
+            raise FailClosed(
+                f"cannot go from {EMAIL_STATES[here]} to {state} in one "
+                "step; each rung is a different claim about the world")
+        return self.amend({"email": {
+            "provider": provider.strip(), "state": state,
+            "evidence": evidence.strip(), "why": reason,
+        }}, owner_identity, reason or f"mailbox at {state}")
+
     def advance_payment_rail(self, *, owner_identity: str, state: str,
                              reason: str, evidence: str = "") -> int:
         """Move the rail one step along the ladder. Owner only, forward only.

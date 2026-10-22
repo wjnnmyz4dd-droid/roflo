@@ -2687,6 +2687,13 @@ def _apply_owner_intent(s: "Solvent", verb: str, intent: dict, *,
             owner_identity=acting_as, state=str(params.get("state", "")),
             reason=why, evidence=str(params.get("evidence", "")))
         return f"payment rail at {params.get('state')} (policy v{version})"
+    if verb == "connect_business_email":
+        version = s.policy.connect_business_email(
+            owner_identity=acting_as, provider=str(params.get("provider", "")),
+            state=str(params.get("state", "")), reason=why,
+            evidence=str(params.get("evidence", "")))
+        return (f"business email {params.get('provider')} at "
+                f"{params.get('state')} (policy v{version})")
     if verb == "retire_skill_version":
         s.skillslab.retire_version(
             skill=str(params.get("skill", "")),
