@@ -519,3 +519,91 @@ class CarryingThemChangesNoSecurityPromise(unittest.TestCase):
             with self.subTest(module):
                 self.assertNotIn(module, ("solvent", "governor", "gate",
                                           "ledger", "payments"))
+
+
+class TheStepFindsWhatTheBuildWrote(unittest.TestCase):
+    """The two halves agreeing on where the wheels are.
+
+    This is the test that was missing, and the defect it would have
+    caught reached a real Windows machine before anything noticed:
+    ``build.py`` writes ``vendor/wheels/<tag>/<wheel>``, one
+    directory per interpreter because four of the wheels are
+    compiled against a specific CPython ABI -- and ``step_vendor``
+    listed ``vendor/wheels`` itself, saw two directory names, matched
+    neither against a wheel filename, and reported that the payload
+    carried no readers. It carried twenty-two.
+
+    Two things made it survive review. Every unit test here built its
+    own flat directory of wheels, so none of them described the
+    layout the build actually produces. And the step's message said
+    only "this payload carries none" -- no path, nothing to check it
+    against. Both are fixed: this exercises the real nested layout,
+    and every refusal in the step now names the directory it looked
+    in.
+    """
+
+    TAGS = ("cp311", "cp313")
+
+    def setUp(self):
+        self.box = tempfile.TemporaryDirectory()
+        self.addCleanup(self.box.cleanup)
+        self.app = pathlib.Path(self.box.name) / "App"
+        # Exactly the shape build.py appends to the payload.
+        self.bodies = {}
+        for tag in self.TAGS:
+            here = self.app / "vendor" / "wheels" / tag
+            here.mkdir(parents=True)
+            for name in (f"lxml-6.1.3-{tag}-{tag}-win_amd64.whl",
+                         "openpyxl-3.1.5-py2.py3-none-any.whl"):
+                body = wheel_bytes({"pkg/__init__.py": f"tag = {tag!r}\n"})
+                (here / name).write_bytes(body)
+                self.bodies[(tag, name)] = body
+        (self.app / "vendor" / "t2-windows-x64.txt").write_text(
+            manifest_text(), encoding="utf-8")
+
+    def test_the_directory_the_build_writes_is_the_one_the_step_reads(self):
+        for tag in self.TAGS:
+            with self.subTest(tag):
+                where = vendor.wheel_dir(str(self.app), tag)
+                self.assertTrue(pathlib.Path(where.replace("\\", "/")).is_dir(),
+                                f"{where} is not where the build put them")
+
+    def test_each_interpreter_finds_its_own_two_and_not_the_others(self):
+        host = _RealHost()
+        for tag in self.TAGS:
+            with self.subTest(tag):
+                where = vendor.wheel_dir(str(self.app), tag)
+                found = vendor.wheels_for(
+                    host_listdir(where), python_tag=tag)
+                self.assertEqual(len(found), 2, found)
+                other = [t for t in self.TAGS if t != tag][0]
+                self.assertFalse([n for n in found if other in n], found)
+
+    def test_listing_the_parent_finds_nothing_which_is_the_old_defect(self):
+        """Named as a defect so it cannot be mistaken for the design."""
+        parent = ntpath.join(str(self.app), "vendor", "wheels")
+        self.assertEqual(
+            vendor.wheels_for(host_listdir(parent), python_tag="cp311"), [],
+            "if this ever returns wheels the layout changed and "
+            "wheel_dir should change with it")
+
+    def test_the_whole_step_unpacks_from_the_real_layout(self):
+        host = _RealHost()
+        tag = "cp311"
+        where = vendor.wheel_dir(str(self.app), tag)
+        allowed = {hashlib.sha256(b).hexdigest()
+                   for (t, _n), b in self.bodies.items() if t == tag}
+        names = vendor.wheels_for(host_listdir(where), python_tag=tag)
+        wheels = vendor.verify(host, where, names, allowed)
+        into = str(self.app / "vendor" / "site")
+        host.makedirs(into)
+        written = vendor.unpack(host, where, into, wheels)
+        self.assertEqual(len(wheels), 2)
+        self.assertTrue(written)
+        self.assertTrue((self.app / "vendor" / "site" / "pkg"
+                         / "__init__.py").is_file())
+
+
+def host_listdir(path: str) -> list[str]:
+    return sorted(p.name for p in
+                  pathlib.Path(path.replace("\\", "/")).iterdir())

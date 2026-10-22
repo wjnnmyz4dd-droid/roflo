@@ -58,7 +58,23 @@ from .host import Host
 from .report import Failure, Outcome, Row
 
 #: Where the payload carries them, relative to the application root.
+#: One subdirectory per interpreter tag underneath -- ``cp311``,
+#: ``cp313`` -- because four of the wheels are compiled against a
+#: specific CPython ABI and the two sets cannot share a directory.
 WHEELS = "vendor/wheels"
+
+
+def wheel_dir(app_root: str, python_tag: str) -> str:
+    """Where this interpreter's wheels are, inside the application.
+
+    A function rather than a constant because the set is per
+    interpreter, and the first version of this module forgot that:
+    it listed ``vendor/wheels`` itself, saw two directory names,
+    matched neither against a wheel filename, and reported that the
+    payload carried no readers. The payload carried twenty-two. The
+    CI job that installs for real is what found it.
+    """
+    return ntpath.join(app_root, *WHEELS.split("/"), python_tag)
 
 #: Where they are unpacked to, relative to the application root. A
 #: directory of its own rather than the application's: an upgrade

@@ -372,24 +372,45 @@ class Engine:
         """
         from . import vendor
 
-        where = ntpath.join(self.layout.app, *vendor.WHEELS.split("/"))
         manifest = ntpath.join(self.layout.app, *vendor.MANIFEST.split("/"))
-        if not self.host.is_dir(where) or not self.host.exists(manifest):
+        # Every "none" below names the directory it looked in. The
+        # first version said only "this payload carries none" and was
+        # looking one level too high -- at `vendor/wheels`, which
+        # holds the per-interpreter directories and no wheels at all
+        # -- so a payload carrying twenty-two of them reported zero
+        # and there was nothing in the message to say why.
+        if not self.host.exists(manifest):
             return StepResult(
                 "vendor", "Installing independent verification readers", True,
-                "this payload carries none; DeskPilot will decline work "
-                "that needs a second opinion rather than verify it itself",
-                facts={"wheels": 0})
+                f"no reader manifest at {manifest}; this payload carries "
+                "none, and DeskPilot will decline work that needs a second "
+                "opinion rather than verify it itself",
+                facts={"wheels": 0, "looked_in": manifest})
+        # Asked only once there is something to ask about. Putting
+        # this first cost 146 test failures: it runs the interpreter,
+        # and a payload carrying no readers at all -- which is most
+        # of the installer suite -- should return above without ever
+        # needing to know which interpreter it is.
         tag = self._python_tag()
+        where = vendor.wheel_dir(self.layout.app, tag)
+        if not self.host.is_dir(where):
+            return StepResult(
+                "vendor", "Installing independent verification readers", True,
+                f"no wheels for {tag} at {where}; DeskPilot will decline "
+                "work that needs a second opinion",
+                facts={"wheels": 0, "python_tag": tag, "looked_in": where})
         allowed = vendor.allowed_digests(
             self.host.read_bytes(manifest).decode("utf-8"))
-        names = vendor.wheels_for(self.host.listdir(where), python_tag=tag)
+        carried = self.host.listdir(where)
+        names = vendor.wheels_for(carried, python_tag=tag)
         if not names:
             return StepResult(
                 "vendor", "Installing independent verification readers", True,
-                f"none of the carried wheels are built for {tag}; "
-                "DeskPilot will decline work that needs a second opinion",
-                facts={"wheels": 0, "python_tag": tag})
+                f"{where} holds {len(carried)} item(s) and none is a wheel "
+                f"for {tag}; DeskPilot will decline work that needs a "
+                "second opinion",
+                facts={"wheels": 0, "python_tag": tag, "looked_in": where,
+                       "found": carried[:8]})
         wheels = vendor.verify(self.host, where, names, allowed)
         into = ntpath.join(self.layout.app, *vendor.SITE.split("/"))
         self.host.makedirs(into)

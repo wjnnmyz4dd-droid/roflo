@@ -38,6 +38,18 @@ REQUIRED = "required"
 OPTIONAL = "optional"
 
 
+def local(path: str) -> str:
+    """A Layout path, usable on the machine running this script.
+
+    ``Layout`` joins with :mod:`ntpath` and should: it describes a
+    Windows installation. This runs on Windows in anger, where the
+    translation is a no-op, and on Linux when it is being dry-run
+    before anybody trusts it -- and a diagnostic whose first real
+    execution is the one that matters is not a diagnostic.
+    """
+    return path if os.sep == "\\" else path.replace("\\", "/")
+
+
 class Checks:
     def __init__(self) -> None:
         self.rows: list[dict] = []
@@ -72,6 +84,18 @@ def main(argv: list[str] | None = None) -> int:
     checks = Checks()
     print(f"reading the installation at {root}\n")
 
+    # Asked of Layout, not guessed at. The first version hardcoded
+    # `app`, `data` and `deskpilot.db`; the installed tree uses
+    # `App`, `Data` and `solvent.db`, so three checks failed against
+    # a correct installation and said the database had not been
+    # created when it had. A checker that invents the paths it
+    # checks is reporting on a machine that does not exist.
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
+                           / "windows" / "installer"))
+    from deskpilot_installer.layout import Layout
+
+    layout = Layout(root=root)
+
     # ---- what the engine said it did --------------------------------
     report = {}
     if args.report and pathlib.Path(args.report).exists():
@@ -90,13 +114,12 @@ def main(argv: list[str] | None = None) -> int:
                                    if bad else ""))
 
     # ---- the tree ----------------------------------------------------
-    app = os.path.join(root, "app")
-    venv_python = os.path.join(root, "venv", "Scripts", "python.exe")
+    app = local(layout.app)
+    venv_python = local(os.path.join(layout.venv, "Scripts", "python.exe"))
     for name, path in (("the application is on disk",
                         os.path.join(app, "solvent", "harness.py")),
                        ("the Python environment exists", venv_python),
-                       ("the data directory exists",
-                        os.path.join(root, "data"))):
+                       ("the data directory exists", local(layout.data))):
         checks.record(name, os.path.exists(path), path)
 
     if not os.path.exists(venv_python):
@@ -149,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
                   ", ".join(skills) or asked.stderr.strip()[-200:])
 
     # ---- the installed database -------------------------------------
-    db = os.path.join(root, "data", "deskpilot.db")
+    db = local(layout.db)
     checks.record("the database was created", os.path.exists(db), db)
 
     # ---- the dashboard, against the installed database --------------

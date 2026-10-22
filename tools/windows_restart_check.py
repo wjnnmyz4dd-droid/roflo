@@ -99,6 +99,18 @@ s.store.close()
 '''
 
 
+def local(path: str) -> str:
+    """A Layout path, usable on the machine running this script.
+
+    ``Layout`` joins with :mod:`ntpath` and should: it describes a
+    Windows installation. This runs on Windows in anger, where the
+    translation is a no-op, and on Linux when it is being dry-run
+    before anybody trusts it -- and a diagnostic whose first real
+    execution is the one that matters is not a diagnostic.
+    """
+    return path if os.sep == "\\" else path.replace("\\", "/")
+
+
 def run(python: str, code: str) -> subprocess.CompletedProcess:
     return subprocess.run([python, "-I", "-c", code], capture_output=True,
                           text=True, check=False, timeout=600)
@@ -119,8 +131,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default="")
     args = parser.parse_args(argv)
 
-    python = os.path.join(args.root, "venv", "Scripts", "python.exe")
-    db = os.path.join(args.root, "data", "deskpilot.db")
+    # Asked of Layout rather than guessed: the installed tree uses
+    # `App`, `Data` and `solvent.db`, and a checker that invents the
+    # paths it checks reports on a machine that does not exist. This
+    # one happened to pass anyway -- it opens the database, so a
+    # wrong path simply created a second one and tested that -- which
+    # is the more dangerous shape of the same mistake.
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
+                           / "windows" / "installer"))
+    from deskpilot_installer.layout import Layout
+
+    layout = Layout(root=args.root)
+    python = local(os.path.join(layout.venv, "Scripts", "python.exe"))
+    db = local(layout.db)
     if not os.path.exists(python):
         print(f"FAIL  no installed interpreter at {python}")
         return 1
