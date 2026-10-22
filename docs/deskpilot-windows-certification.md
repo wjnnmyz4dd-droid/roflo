@@ -117,6 +117,61 @@ Nothing was skipped to make a number go green, no assertion was
 weakened, and no ordinary test failure was reclassified as a crash —
 the reclassification went the other way.
 
+### Phase 4 — the second measurement, and what it found
+
+Twenty-four became **eight on 3.13 (5,406 passed, 53 skipped, 29:04)
+and a crash on 3.11** — a different crash from the one that was
+retracted above, and a real one this time.
+
+**3.11: the guard denied the test runner's own report.**
+`platform.uname()` on Windows under CPython 3.11 shells out to read
+the OS version and caches the answer for the life of the process.
+3.12 reads the registry instead, so this is invisible on 3.12, 3.13
+and every Linux. The suite installs the egress guard early, five
+thousand tests later pytest's `--junitxml` writer calls
+`platform.node()` from `pytest_sessionfinish`, the guard denied the
+spawn — correctly — and the session died **after every test had run
+and before the report was written**. No summary, no junit.xml,
+nothing to certify, and every test had passed.
+
+The repair is in `solvent/egress.py`: `install` fills that cache
+immediately before adding the hook. The hook is unchanged and still
+denies every spawn afterwards, which a test asserts; exempting
+`platform` inside the hook would have been the hole, because an
+exemption keyed on a stack frame is one anything can arrange. It is
+also a product repair rather than a test one — any DeskPilot process
+on 3.11 Windows that called `platform.release()` after the guard
+armed would have got the same refusal.
+
+**3.13: eight failures, seven of them in tests.**
+
+| # | Failures | What it was | Product or test |
+|---|---|---|---|
+| 1 | 4 | **`self.addCleanup(lambda: None)`** in `test_bidder_console` — a cleanup that cleans nothing, beside the line that opens a `ReadModel`. The reader stayed open and the temporary directory could not be removed. WinError 32, in teardown, in four tests. | Test |
+| 2 | 1 | **A deliberately corrupt database stayed open.** `conftest._release` swallowed the exception from closing a handle over a file that is not a database, so the handle — and the file — survived into the deletion. It now closes the connection underneath, which succeeds where the layer above cannot. | Test harness |
+| 3 | 1 | **Python 3.13 strips indentation from docstrings at compile time.** A test removed a docstring with `source.replace(func.__doc__, "")`, which from 3.13 replaces nothing — so the test reported the docstring's own cautionary example as a defect in the code. Nothing to do with Windows; it would fail on 3.13 anywhere. The docstring is now removed by parsing. | Test |
+| 4 | 1 | **`os.utime(..., follow_symlinks=False)` is not implemented on Windows.** The test's only guard was around `symlink_to`. It now asks `os.supports_follow_symlinks` and ages the target where it cannot age the link — the assertion that the target survives is what carries the security property, and that runs on both. | Test |
+| 5 | 1 | **A platform-dependent assertion about a platform-specific document.** The owner manual is the *Linux* deployment guide — `systemctl`, `/etc/solvent/solvent.env` — and the test demanded it name `harness.PAYMENT_SPOOL`, which on Windows resolves to `C:\ProgramData\…`. It now names the platform, which also makes it stronger: it pins the document's content on every host instead of pinning nothing in particular on each. | Test |
+
+Also repaired, and neither of them a test failure:
+
+* **The per-file sweep could not find a failure.** Its inline
+  PowerShell printed *"junit records no failing test"* over a report
+  whose own summary said `failures="8"`, so the one run with failures
+  to investigate produced no tracebacks. The reading now lives in
+  `tools/junit_failing_files.py`, which eight tests drive over
+  hand-written reports — it could previously be exercised nowhere but
+  on a Windows runner that was already failing.
+* **A green exit code was the only thing the suite step required.**
+  It now requires four: a zero exit code, a junit summary, a
+  plausible test count inside it, and no failures or errors. A
+  partial run is not a certification, and until now a partial run
+  that happened to exit zero would have read as one.
+
+Again: nothing skipped, no assertion weakened, and the one skip that
+exists — the libc bypass demonstration — says in its own message that
+it is not evidence the hook is complete on Windows.
+
 ---
 
 ## Phase 5 — the T2 reader dependencies

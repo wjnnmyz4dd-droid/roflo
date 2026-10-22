@@ -302,10 +302,32 @@ class PruningProcessedIntents(unittest.TestCase):
         import os
         import time
         when = time.time() - (PROCESSED_INTENT_RETENTION_DAYS + 1) * 86400
-        os.utime(link, (when, when), follow_symlinks=False)
+        if os.utime in os.supports_follow_symlinks:
+            # Age the link itself: the pruner sees an old entry whose
+            # target is young, which is the sharper version of the test.
+            os.utime(link, (when, when), follow_symlinks=False)
+        else:
+            # Windows. ``os.utime`` cannot address a link without
+            # following it -- ``NotImplementedError: utime:
+            # follow_symlinks unavailable on this platform`` -- and the
+            # old code hit that and failed the test rather than
+            # skipping, because its only guard was around
+            # ``symlink_to``.
+            #
+            # Ageing the target instead still makes the pruner want to
+            # remove something older than the retention window through
+            # this link, which is the behaviour being tested. What it
+            # does not distinguish is an implementation that stats the
+            # link versus one that stats the target -- so the assertion
+            # that the target survives is doing the real work on both
+            # platforms, and on Windows it is doing all of it.
+            os.utime(outside, (when, when))
         self.prune()
         self.assertTrue(outside.exists(),
                         "pruning followed a symlink out of the spool")
+        self.assertEqual(outside.read_text(encoding="utf-8"),
+                         "not yours to delete",
+                         "pruning wrote through a symlink out of the spool")
 
     def test_a_missing_spool_is_not_an_error(self):
         result = prune_processed_intents(self.s, spool=str(self.dir / "nope"))

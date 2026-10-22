@@ -163,9 +163,17 @@ class TheCeilingIsNotAFormField(Spooled):
 class ThePageShowsWhatTheGateUses(Spooled):
 
     def read(self):
+        """A reader over the same database, closed when the test ends.
+
+        ``self.addCleanup(lambda: None)`` stood here, which registers
+        a cleanup that cleans nothing: the model was left open, and on
+        Windows the temporary directory holding it then could not be
+        removed -- four failures with WinError 32, all of them in
+        teardown and none of them in the thing being tested.
+        """
         self.s.store.close()
         model = ReadModel(self.db)
-        self.addCleanup(lambda: None)
+        self.addCleanup(model.close)
         return model
 
     def test_the_budget_shown_is_the_budget_in_force(self):

@@ -594,9 +594,34 @@ class TheOwnerManualMatchesTheCode(unittest.TestCase):
         self.assertIn(JOB_METADATA_KEY, self.manual)
 
     def test_the_spool_path_it_names_is_the_one_solvent_reads(self):
-        from solvent.harness import PAYMENT_SPOOL
+        """The Linux path, asked for as the Linux path.
 
-        self.assertIn(PAYMENT_SPOOL, self.manual)
+        This asserted ``harness.PAYMENT_SPOOL``, which resolves per
+        platform -- so on Windows it demanded that this document name
+        ``C:\\ProgramData\\DeskPilot\\payments-inbox``, and failed
+        because it does not. It should not: this manual is the Linux
+        deployment guide, it tells the owner to run ``sudo nano
+        /etc/solvent/solvent.env`` and ``systemctl restart solvent``,
+        and a Windows owner never sees it -- they are handed the
+        installer and the control centre instead.
+
+        So the platform is named rather than inherited from whichever
+        host happens to run the suite, which also makes this check
+        stronger: it now pins the document's actual content on every
+        platform instead of pinning nothing in particular on each.
+        """
+        from solvent.types import default_state_path
+
+        self.assertIn(default_state_path("payments-inbox", windows=False),
+                      self.manual)
+
+    def test_it_is_the_linux_guide_which_is_why_the_path_above_is_posix(self):
+        """Guards the test above: its premise, asserted rather than assumed."""
+        for linux_only in ("systemctl restart solvent",
+                           "/etc/solvent/solvent.env",
+                           "sudo chmod 0640"):
+            with self.subTest(linux_only):
+                self.assertIn(linux_only, self.manual)
 
     def test_it_tells_the_owner_the_permissions_that_actually_work(self):
         self.assertIn("0640", self.manual)

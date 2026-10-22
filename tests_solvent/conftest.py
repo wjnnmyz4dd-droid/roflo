@@ -33,6 +33,7 @@ Three things this deliberately is not:
 
 from __future__ import annotations
 
+import gc
 import os
 import tempfile
 
@@ -57,6 +58,19 @@ def _release(directory: str) -> list[str]:
     Windows-only bug of its own. On POSIX ``normcase`` is the
     identity, so nothing here changes.
     """
+    # Before the sweep, because both registers are ``WeakSet``s: a
+    # handle nothing references any more is still holding the file
+    # until the interpreter finalises it, and it is not in the list
+    # below to be closed by hand. Refcounting usually does that at
+    # once; a reference cycle -- a traceback held by a failed
+    # assertion is the common one -- defers it to the collector.
+    # On POSIX the deletion succeeds whatever is still open, so a
+    # collection there buys nothing and costs a full heap sweep on
+    # every temporary directory in the suite -- hundreds of them.
+    # Guarded rather than unconditional for that reason alone.
+    if os.name == "nt":
+        gc.collect()
+
     root = os.path.normcase(os.path.abspath(directory))
     closed = []
     for handle in list(open_stores()) + list(open_readmodels()):
@@ -69,8 +83,20 @@ def _release(directory: str) -> list[str]:
                 closed.append(path)
             except Exception:
                 # A test that deliberately broke its database must not
-                # turn into a teardown error against the next one.
-                pass
+                # turn into a teardown error against the next one --
+                # but it must not keep the file open either. A handle
+                # over a file that is not a database raises on close,
+                # the old code let that pass, and the directory then
+                # could not be removed on Windows. So the connection
+                # underneath is closed directly, which succeeds even
+                # when the layer above it cannot.
+                conn = getattr(handle, "_conn", None)
+                try:
+                    if conn is not None:
+                        conn.close()
+                        closed.append(path)
+                except Exception:
+                    pass
     return closed
 
 

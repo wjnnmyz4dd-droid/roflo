@@ -241,17 +241,63 @@ class DoctorRemainsTheOnlyDoctor(Base):
         source = inspect.getsource(cli_module.cmd_doctor)
         self.assertIn("_open(args)", source,
                       "doctor stopped using the one shared opener")
-        # The docstring describes the old defect, so it says ``Solvent()`` on
-        # purpose. Match the code, not the account of what used to be wrong.
-        body = source.replace(cli_module.cmd_doctor.__doc__ or "", "")
+        # The docstring describes the old defect, so it says ``Solvent()``
+        # on purpose. Match the code, not the account of what used to be
+        # wrong.
+        #
+        # Removed by parsing, not by `source.replace(__doc__, "")`. That
+        # worked until Python 3.13, which strips the common leading
+        # indentation from a docstring at compile time -- so `__doc__` is
+        # no longer a substring of the source, the replace silently does
+        # nothing, and the test fails on the docstring it was written to
+        # ignore. It did, on 3.13, and it would have on any host rather
+        # than only the Windows one that reported it. Parsing cannot
+        # drift that way: the docstring is whichever node the compiler
+        # itself treats as one.
+        body = _without_docstring(source)
+        self.assertNotIn("Solvent()", body.replace(" ", ""),
+                         "doctor constructs a Solvent with no path again")
         self.assertFalse(
             re.search(r"Solvent\(\s*\)", body),
             "doctor constructs a Solvent with no path again")
 
+    def test_the_docstring_remover_does_not_depend_on___doc__(self):
+        """The 3.13 change this test file was repaired for, reproduced.
+
+        Python 3.13 strips the common leading indentation from a
+        docstring at compile time. The old code removed the docstring
+        with ``source.replace(func.__doc__, "")``, which from 3.13
+        onwards replaces nothing at all -- quietly, so the test then
+        reported the docstring's own example as a defect in the code.
+        """
+        source = (
+            "def example():" + chr(10)
+            + "    " + chr(39) * 3
+            + "Mentions Solvent() on purpose." + chr(39) * 3 + chr(10)
+            + "    return _open(args)" + chr(10))
+        self.assertIn("Solvent()", source)
+        self.assertNotIn("Solvent()", _without_docstring(source))
+        self.assertIn("_open(args)", _without_docstring(source))
     def test_the_diagnostics_authority_is_untouched_by_this_fix(self):
         from solvent.store import TABLE_OWNER
 
         self.assertEqual(TABLE_OWNER["diagnostic_reports"], "diagnostics")
+
+
+def _without_docstring(source: str) -> str:
+    """``source`` with its leading docstring removed, however it is spelt."""
+    import ast
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(source))
+    function = tree.body[0]
+    if (function.body
+            and isinstance(function.body[0], ast.Expr)
+            and isinstance(function.body[0].value, ast.Constant)
+            and isinstance(function.body[0].value.value, str)):
+        function.body = function.body[1:]
+    return ast.unparse(tree)
+
 
 
 if __name__ == "__main__":

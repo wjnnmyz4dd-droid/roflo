@@ -304,13 +304,19 @@ jobs:
             Write-Output "no junit.xml: the suite did not get far enough to say"
             exit 0
           }
-          [xml]$x = Get-Content junit.xml
-          $files = @($x.testsuites.testsuite.testcase |
-                     Where-Object { $_.failure -or $_.error } |
-                     ForEach-Object { $_.file } |
-                     Where-Object { $_ } | Sort-Object -Unique)
+          # Read by tools/junit_failing_files.py, not by PowerShell's XML
+          # adapter inline here. The inline version printed "junit records
+          # no failing test" over a report whose own summary said
+          # failures=8, so the sweep produced nothing on the one run that
+          # had failures to sweep -- and it could not be tested anywhere
+          # except on a Windows runner that was already failing. The
+          # Python one is driven over hand-written reports by
+          # tests_solvent/test_windows_checkers.py on every run.
+          $files = @(python -I tools/junit_failing_files.py junit.xml)
           if ($files.Count -eq 0) {
             Write-Output "junit records no failing test; the non-zero exit came from somewhere else"
+            Write-Output "----- junit summary, so this claim can be checked -----"
+            Select-String -Path junit.xml -Pattern '<testsuite ' | Select-Object -First 1
             exit 0
           }
           Write-Output "$($files.Count) file(s) contained a failure:"

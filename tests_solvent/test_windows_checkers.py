@@ -148,6 +148,87 @@ class TheInstallCheckerReadsTheEnginesVocabulary(unittest.TestCase):
                                  outcome.stops_installation, line)
 
 
+class TheSweepCanFindWhatItIsSweepingFor(unittest.TestCase):
+    """The per-file sweep reported no failures over a report with eight.
+
+    The step exists to re-run each failing file alone and print its
+    traceback. Its PowerShell found no failing testcase in a junit.xml
+    whose own summary line said ``failures="8"``, printed "junit
+    records no failing test", and exited 0 -- so the one run with
+    failures to investigate produced no investigation. It could not be
+    tested anywhere but on a Windows runner mid-failure, which is why
+    the reading now lives in ``tools/junit_failing_files.py`` and is
+    driven from here.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        from junit_failing_files import failing_files
+        self.read = failing_files
+
+    def test_a_failure_and_an_error_are_both_found(self):
+        self.assertEqual(
+            self.read(_junit([("tests_solvent/test_a.py", "failure"),
+                              ("tests_solvent/test_b.py", "error")])),
+            ["tests_solvent/test_a.py", "tests_solvent/test_b.py"])
+
+    def test_a_skip_is_not_a_failure(self):
+        self.assertEqual(
+            self.read(_junit([("tests_solvent/test_a.py", "skipped")])), [])
+
+    def test_a_passing_case_is_not_a_failure(self):
+        self.assertEqual(
+            self.read(_junit([("tests_solvent/test_a.py", None)])), [])
+
+    def test_the_file_is_recovered_from_classname_when_absent(self):
+        """pytest has written junit both ways; the sweep must read both."""
+        xml = ('<testsuite tests="1" failures="1">'
+               '<testcase classname="tests_solvent.test_bidder_console.C" '
+               'name="t"><failure>boom</failure></testcase></testsuite>')
+        self.assertEqual(self.read(xml),
+                         ["tests_solvent/test_bidder_console.py"])
+
+    def test_a_report_with_no_testsuites_wrapper_is_read(self):
+        xml = ('<testsuite tests="1" failures="1">'
+               '<testcase classname="tests_solvent.test_a.C" name="t" '
+               'file="tests_solvent/test_a.py"><failure/></testcase>'
+               '</testsuite>')
+        self.assertEqual(self.read(xml), ["tests_solvent/test_a.py"])
+
+    def test_each_file_is_named_once_however_many_cases_failed(self):
+        four = [("tests_solvent/test_bidder_console.py", "failure")] * 4
+        self.assertEqual(self.read(_junit(four)),
+                         ["tests_solvent/test_bidder_console.py"])
+
+    def test_windows_separators_are_normalised(self):
+        xml = _junit([(r"tests_solvent\test_a.py", "failure")])
+        self.assertEqual(self.read(xml), ["tests_solvent/test_a.py"])
+
+    def test_the_eight_failures_of_run_28_would_have_been_found(self):
+        """The report that defeated the old reading, in its own shape."""
+        names = ["tests_solvent/test_bidder_console.py"] * 4 + [
+            "tests_solvent/test_doctor_database_selection.py"] * 2 + [
+            "tests_solvent/test_owner_setup.py",
+            "tests_solvent/test_production_supervision.py"]
+        found = self.read(_junit([(n, "failure") for n in names]))
+        self.assertEqual(len(found), 4)
+        self.assertIn("tests_solvent/test_production_supervision.py", found)
+
+
+def _junit(cases: list) -> str:
+    """A junit document in the shape pytest's ``--junitxml`` writes."""
+    body = []
+    for index, (name, outcome) in enumerate(cases):
+        inner = f"<{outcome}>detail</{outcome}>" if outcome else ""
+        dotted = name.replace("\\", "/").replace("/", ".")[:-3]
+        body.append(f'<testcase classname="{dotted}.C" name="t{index}" '
+                    f'file="{name}">{inner}</testcase>')
+    failures = sum(1 for _n, o in cases if o in ("failure", "error"))
+    return (f'<testsuites><testsuite name="pytest" tests="{len(cases)}" '
+            f'failures="{failures}" errors="0" skipped="0">'
+            + "".join(body) + "</testsuite></testsuites>")
+
+
 class EveryRuleTheHardeningAppliesHasSomethingToApplyTo(unittest.TestCase):
     """The installation failed because ``icacls`` ran before ``mkdir``.
 

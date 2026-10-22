@@ -30,6 +30,7 @@ the whole control.
 
 from __future__ import annotations
 
+import platform
 import sys
 import threading
 from contextlib import contextmanager
@@ -66,12 +67,47 @@ def _hook(event: str, args: tuple) -> None:
     )
 
 
+def _warm_stdlib_caches() -> None:
+    """Fill the standard-library caches that would otherwise need a child.
+
+    ``platform.uname()`` on Windows under CPython 3.11 shells out to
+    read the OS version, and caches the answer for the life of the
+    process. Installing the guard before that first call therefore
+    makes ``platform.node()``, ``platform.release()`` and
+    ``platform.version()`` raise :class:`EgressDenied` forever after
+    -- on Windows, on 3.11, and nowhere else, because 3.12 reads the
+    registry instead.
+
+    That is not theoretical. It took the Windows suite down on 3.11:
+    a test installed the guard, five thousand tests later pytest's
+    own ``--junitxml`` writer called ``platform.node()`` from
+    ``pytest_sessionfinish``, the guard denied the spawn, and the
+    session died *after* every test had passed and *before* the
+    report was written. No summary, no exit code, nothing to certify.
+
+    Warming is not a hole in the guard. The hook is installed
+    immediately afterwards and denies every subsequent spawn; what
+    changes is only that the standard library no longer needs one.
+    The alternative -- exempting ``platform`` inside :func:`_hook` --
+    would be a hole, because the exemption would be keyed on a
+    stack frame and anything can arrange a stack frame.
+    """
+    try:
+        platform.uname()
+    except Exception:
+        # A host where this fails is a host where the cache stays
+        # cold. Nothing here is load-bearing enough to refuse to
+        # install the guard over.
+        pass
+
+
 def install() -> None:
     """Install the guard. Idempotent, and irreversible for this interpreter."""
     global _installed
     with _lock:
         if _installed:
             return
+        _warm_stdlib_caches()
         sys.addaudithook(_hook)
         _installed = True
 
