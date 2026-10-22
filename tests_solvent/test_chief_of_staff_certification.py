@@ -491,8 +491,15 @@ class RunningUnattended(Bench):
         # The owner is told once, not five times. Deduplication is the
         # Notifier's, which is the point of asking it rather than
         # writing five audit rows and calling that a notification.
+        #
+        # Filtered by event, not read whole. `run_due` runs all ten
+        # tasks, and `owner_briefing` writes a summary notification
+        # when the clock is inside its half-hour window -- so the
+        # first version of this assertion passed all day and failed
+        # at 16:30, which is a test that measures the time of day.
         notes = self.s.store.for_authority("notify").query(
-            "SELECT dedupe_key FROM notifications", [])
+            "SELECT dedupe_key FROM notifications WHERE event = ?",
+            ["chief_of_staff.escalation"])
         self.assertEqual([dict(n)["dedupe_key"] for n in notes],
                          ["chief_of_staff:p1"])
 
@@ -2010,8 +2017,11 @@ class TheDefectsThisCertificationFound(Bench):
         runtime.start()
         runtime.default_tasks()
         runtime.run_due()
+        # By event, for the same reason as above: the briefing task
+        # shares this table and runs on the clock.
         rows = self.s.store.for_authority("notify").query(
-            "SELECT event, severity FROM notifications", [])
+            "SELECT event, severity FROM notifications WHERE event = ?",
+            ["chief_of_staff.escalation"])
         self.assertEqual([dict(r)["event"] for r in rows],
                          ["chief_of_staff.escalation"])
         self.assertEqual(dict(rows[0])["severity"], "ACTION_REQUIRED")

@@ -332,17 +332,94 @@ class Engine:
         if not where.ok or not where.stdout.strip():
             raise StepFailed("the DeskPilot Python environment did not report "
                              "its package directory")
-        pth = ntpath.join(where.stdout.strip().splitlines()[0].strip(),
-                          "deskpilot-app.pth")
-        self.host.write_bytes(pth, (self.layout.app + "\n").encode("utf-8"))
+        site_dir = where.stdout.strip().splitlines()[0].strip()
+        pth = ntpath.join(site_dir, "deskpilot-app.pth")
+        # Two lines, not one. The second is where the independent (T2)
+        # readers are unpacked by `step_vendor`, and it is a separate
+        # directory from the application's on purpose: an upgrade
+        # replaces the application tree, and a reader is not part of
+        # the application.
+        self.host.write_bytes(
+            pth, (self.layout.app + "\n"
+                  + ntpath.join(self.layout.app, "vendor", "site")
+                  + "\n").encode("utf-8"))
         self._note(f"put the application on the environment's import path "
                    f"via {pth}")
         self.python_exe = venv_python
         self.state.python_exe = venv_python
+        self.site_dir = site_dir
         return StepResult("venv", "Creating isolated Python environment", True,
                           f"{self.layout.venv} (no packages installed - "
                           f"DeskPilot needs none)",
                           facts={"python": venv_python, "pth": pth})
+
+    def step_vendor(self) -> StepResult:
+        """Unpack the independent readers that came inside the payload.
+
+        Nothing is downloaded here and there is no pip step. The
+        wheels arrived in the payload, whose SHA-256 the installer
+        checked before unpacking anything, and every one of them is
+        hashed again against the manifest shipped beside them before
+        a byte is written -- see :mod:`.vendor` for why that second
+        check is not redundant.
+
+        Not fatal when the set is absent or partial. DeskPilot runs
+        without these and says so: ``solvent.independent.available``
+        reports what this host can actually produce and the business
+        cycle declines a job needing a second opinion while it is
+        still a quote. An installation that stopped here would be
+        refusing to install a working product over an optional one.
+        """
+        from . import vendor
+
+        where = ntpath.join(self.layout.app, *vendor.WHEELS.split("/"))
+        manifest = ntpath.join(self.layout.app, *vendor.MANIFEST.split("/"))
+        if not self.host.is_dir(where) or not self.host.exists(manifest):
+            return StepResult(
+                "vendor", "Installing independent verification readers", True,
+                "this payload carries none; DeskPilot will decline work "
+                "that needs a second opinion rather than verify it itself",
+                facts={"wheels": 0})
+        tag = self._python_tag()
+        allowed = vendor.allowed_digests(
+            self.host.read_bytes(manifest).decode("utf-8"))
+        names = vendor.wheels_for(self.host.listdir(where), python_tag=tag)
+        if not names:
+            return StepResult(
+                "vendor", "Installing independent verification readers", True,
+                f"none of the carried wheels are built for {tag}; "
+                "DeskPilot will decline work that needs a second opinion",
+                facts={"wheels": 0, "python_tag": tag})
+        wheels = vendor.verify(self.host, where, names, allowed)
+        into = ntpath.join(self.layout.app, *vendor.SITE.split("/"))
+        self.host.makedirs(into)
+        written = vendor.unpack(self.host, where, into, wheels)
+        self._note(f"unpacked {len(wheels)} verified reader package(s) "
+                   f"for {tag} into {into}")
+        return StepResult(
+            "vendor", "Installing independent verification readers", True,
+            f"{len(wheels)} verified package(s), {len(written)} file(s), "
+            f"into {into}",
+            facts={"wheels": len(wheels), "files": len(written),
+                   "python_tag": tag})
+
+    def _python_tag(self) -> str:
+        """``cp311``, ``cp313`` -- which compiled wheels this interpreter loads.
+
+        Asked of the interpreter rather than parsed out of a version
+        string, because the ABI tag is what the wheel filename
+        actually encodes and a free-text version is one rename away
+        from disagreeing with it.
+        """
+        asked = self.host.run(
+            [self.python_exe, "-c",
+             "import sys;print('cp%d%d' % sys.version_info[:2])"],
+            timeout=120.0)
+        self.log.command(asked.argv, asked.returncode, asked.output)
+        if not asked.ok or not asked.stdout.strip():
+            raise StepFailed("the DeskPilot Python environment did not "
+                             "report its version")
+        return asked.stdout.strip().splitlines()[0].strip()
 
     def step_secrets(self) -> StepResult:
         # An installation over existing owner data keeps the key it already
@@ -863,6 +940,7 @@ class Engine:
             ("Creating directories", self.step_directories),
             ("Installing DeskPilot", self.step_extract),
             ("Creating isolated Python environment", self.step_venv),
+            ("Installing independent verification readers", self.step_vendor),
             ("Creating owner credentials", self.step_secrets),
             ("Creating persistent database", self.step_database),
             ("Recording owner details", self.step_contracting),

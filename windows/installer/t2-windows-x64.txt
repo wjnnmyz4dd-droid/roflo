@@ -1,0 +1,55 @@
+# DeskPilot's independent (T2) readers, pinned for Windows x64.
+#
+# Fetched at BUILD time against these hashes and placed inside the
+# payload, whose own SHA-256 is compiled into the installer. The
+# installer itself downloads nothing: there is no pip step in an
+# installation and this file is what replaces one.
+#
+# Every licence below is permissive. chardet in particular is 0BSD
+# from 6.0.0 onwards -- it was LGPL-2.1 before that, and that
+# relicensing is what dissolved the blocker this file closes.
+
+# ---- pure Python: one wheel serves every interpreter ----------
+# et_xmlfile-2.0.0-py3-none-any.whl  [MIT]
+et-xmlfile==2.0.0 \
+    --hash=sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa
+# markdown_it_py-3.0.0-py3-none-any.whl  [MIT License]
+markdown-it-py==3.0.0 \
+    --hash=sha256:355216845c60bd96232cd8d8c40e8f9765cc86f46880e43a8fd22dc1a1a8cab1
+# mdurl-0.1.2-py3-none-any.whl  [MIT License]
+mdurl==0.1.2 \
+    --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8
+# openpyxl-3.1.5-py2.py3-none-any.whl  [MIT]
+openpyxl==3.1.5 \
+    --hash=sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2
+# packaging-26.3-py3-none-any.whl  [Apache-2.0 OR BSD-2-Clause]
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+# python_docx-1.1.2-py3-none-any.whl  [MIT]
+python-docx==1.1.2 \
+    --hash=sha256:08c20d6058916fb19853fcf080f7f42b6270d89eac9fa5f8c15f691c0017fabe
+# typing_extensions-4.16.0-py3-none-any.whl  [PSF-2.0]
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+
+# ---- compiled: one wheel per interpreter ----------------------
+# chardet-7.7.0-cp311-cp311-win_amd64.whl  [0BSD]
+# chardet-7.7.0-cp313-cp313-win_amd64.whl  [0BSD]
+chardet==7.7.0 \
+    --hash=sha256:6f70dbc2dd14145d9b4011bce5a207f7ecc26e6bea49b5e87f6cac3b84261089 \
+    --hash=sha256:113bbd3ab85835e3e99499ae66829915ed3b4cf5c69525ab1742260f77638449
+# clevercsv-0.8.5-cp311-cp311-win_amd64.whl  [MIT]
+# clevercsv-0.8.5-cp313-cp313-win_amd64.whl  [MIT]
+clevercsv==0.8.5 \
+    --hash=sha256:f4742573e0d0e56a4bceaa7106a8e9e1e7e70c1850fee3ac970c8278def21fb8 \
+    --hash=sha256:c7897edc6d6dbc7e41d4cee27a76ac0d9d39fd2c99da775e4a9e752cb4a25e7b
+# lxml-6.1.3-cp311-cp311-win_amd64.whl  [BSD-3-Clause]
+# lxml-6.1.3-cp313-cp313-win_amd64.whl  [BSD-3-Clause]
+lxml==6.1.3 \
+    --hash=sha256:7ae4949f212a53b007dbc355884fda122545c5764a54256c9217e419a62a6559 \
+    --hash=sha256:e477aca0bc0d19f3b4ae9e4f2a1cfd687c31bf772d78734910658186b40b2477
+# regex-2026.9.29-cp311-cp311-win_amd64.whl  [Apache-2.0 AND CNRI-Python]
+# regex-2026.9.29-cp313-cp313-win_amd64.whl  [Apache-2.0 AND CNRI-Python]
+regex==2026.9.29 \
+    --hash=sha256:1043aedf5917caa861bcb25a9c11460049656bdf0017a90a309fa8f255467725 \
+    --hash=sha256:61956f074ecd123f55adca68ee3eab46e6a07ad3f8e64e6db95dfacb444f55c4

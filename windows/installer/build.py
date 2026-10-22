@@ -36,9 +36,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
+import zipfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent.parent
@@ -166,12 +168,83 @@ def engine_source(commit: str, dirty: str) -> str:
             "                      local testing and publish nothing from it.\n\n")
 
 
+#: Which interpreters the vendored readers are built for. The floor the
+#: installer enforces, and what it bootstraps.
+WHEEL_PYTHONS = ("3.11", "3.13")
+
+#: The hash-pinned manifest for those readers.
+T2_MANIFEST = HERE / "t2-windows-x64.txt"
+
+
+def fetch_wheels(into: pathlib.Path) -> dict:
+    """Download the T2 readers against the manifest's hashes.
+
+    ``--require-hashes`` makes pip refuse any file whose SHA-256 is
+    not listed, which is the check that matters; the loop afterwards
+    repeats it here rather than taking pip's word, because this is
+    the one step in the build that reaches the network and a build
+    that trusts its downloader is a build with one check in it.
+
+    This is the only network access in the whole installation story.
+    It happens on the build machine, and what reaches an owner is the
+    payload -- whose own digest is compiled into the installer.
+    """
+    allowed = set(re.findall(r"--hash=sha256:([0-9a-f]{64})",
+                             T2_MANIFEST.read_text(encoding="utf-8")))
+    if not allowed:
+        raise SystemExit(f"{T2_MANIFEST} lists no hashes; refusing to fetch")
+    counts = {}
+    for version in WHEEL_PYTHONS:
+        tag = "cp" + version.replace(".", "")
+        dest = into / tag
+        dest.mkdir(parents=True, exist_ok=True)
+        run([sys.executable, "-m", "pip", "download",
+             "--disable-pip-version-check", "--no-cache-dir",
+             "--require-hashes", "--only-binary=:all:",
+             "--platform", "win_amd64", "--python-version", version,
+             "--implementation", "cp", "--dest", str(dest),
+             "-r", str(T2_MANIFEST)])
+        got = sorted(dest.glob("*.whl"))
+        for wheel in got:
+            digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+            if digest not in allowed:
+                raise SystemExit(
+                    f"{wheel.name} hashes to {digest}, which {T2_MANIFEST.name} "
+                    "does not list. Nothing is packaged.")
+        counts[tag] = len(got)
+    return counts
+
+
 def build_payload(out: pathlib.Path, commit: str) -> tuple[str, int]:
-    """``git archive`` the application. Returns ``(sha256, bytes)``."""
+    """``git archive`` the application, plus the verified readers.
+
+    Two sources, and the second one is new. The archive is still
+    exactly what the repository holds at ``commit``; the wheels are
+    appended afterwards under ``vendor/`` because they are not in the
+    repository and should not be -- 12.6 MB of binaries under version
+    control would make every upgrade a binary diff.
+
+    Determinism survives. ``git archive <commit>`` stamps each entry
+    with the commit date, and each wheel is pinned to one SHA-256, so
+    two builds of one commit still produce the same bytes and the
+    same digest.
+    """
     out.parent.mkdir(parents=True, exist_ok=True)
     argv = ["git", "archive", "--format=zip", "-9",
             f"--output={out}", commit, *PAYLOAD_PATHS]
     run(argv, cwd=REPO)
+
+    staged = out.parent / "vendor"
+    if staged.exists():
+        shutil.rmtree(staged)
+    counts = fetch_wheels(staged / "wheels")
+    with zipfile.ZipFile(out, "a", zipfile.ZIP_DEFLATED) as archive:
+        archive.write(T2_MANIFEST, "vendor/t2-windows-x64.txt")
+        for wheel in sorted((staged / "wheels").rglob("*.whl")):
+            archive.write(wheel,
+                          f"vendor/wheels/{wheel.parent.name}/{wheel.name}")
+    print("readers : " + ", ".join(f"{tag}={n}" for tag, n in counts.items()))
+
     data = out.read_bytes()
     return hashlib.sha256(data).hexdigest(), len(data)
 
