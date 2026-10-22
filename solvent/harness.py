@@ -221,8 +221,14 @@ class Solvent:
         # still decided by the Governor, the Action Gate and the owner.
         self.crm = CRM(self.memory, self.audit)
         self.suppressions = Suppressions(self.memory, self.audit)
+        # `memory` is what makes the negotiation and engagement books
+        # survive a restart. Without it this layer came back from one
+        # with both empty, and a client who had signed and paid a
+        # deposit read as a prospect who had merely replied -- which
+        # is a second proposal to somebody who already has a contract.
         self.chief_of_staff = ChiefOfStaff(
-            crm=self.crm, suppressions=self.suppressions, audit=self.audit)
+            crm=self.crm, suppressions=self.suppressions, audit=self.audit,
+            memory=self.memory)
         self.discovery = Discovery(self.store, self.audit, self.policy,
                                    self.gate, capability=self.capability)
         # Prepares applications; cannot send one. Not an authority -- it owns no

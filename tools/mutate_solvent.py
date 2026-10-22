@@ -2567,6 +2567,164 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_the_package_check_does_not_decompress_without_limit",
         "a 206 KB package allocates 815 MB in the check that is supposed to "
         "be the careful one"),
+
+    # ---- the Chief of Staff's controls ------------------------------
+    # Added by the independent certification of this layer. Before it
+    # the coordination half of the business -- the floor, the deposit
+    # gate, the suppression list, and the durability of all three --
+    # had no mutants at all, so the only evidence those controls were
+    # pinned was that tests named after them passed.
+
+    Mutant(
+        "cos-the-floor-is-not-checked-first",
+        "solvent/negotiation.py",
+        "        floor = self.floor\n        if client_cents < floor:",
+        "        floor = self.floor\n        if False:",
+        "tests_solvent.test_chief_of_staff_certification.TheEightClients"
+        ".test_d_asks_below_the_floor_and_is_refused",
+        "client D's offer below cost is accepted, and so is every other"),
+
+    Mutant(
+        "cos-the-discount-limit-is-ignored",
+        "solvent/negotiation.py",
+        "        if discount > self.policy.max_discount_fraction:",
+        "        if False:",
+        "tests_solvent.test_chief_of_staff_certification.TheEightClients"
+        ".test_c_asks_for_twenty_five_percent_and_is_escalated",
+        "a climb-down past the owner's limit is made without asking them"),
+
+    Mutant(
+        "cos-the-deposit-does-not-gate-the-work",
+        "solvent/engagement.py",
+        "        return (self.acceptance is not None and self.deposit_satisfied",
+        "        return (self.acceptance is not None and True",
+        "tests_solvent.test_chief_of_staff_certification.DepositsAndPayments"
+        ".test_a_missing_deposit_keeps_the_gate_shut",
+        "work begins on an unpaid contract, which is the whole point of a "
+        "deposit"),
+
+    Mutant(
+        "cos-an-unverified-payment-counts",
+        "solvent/engagement.py",
+        "        if not verified:",
+        "        if False:",
+        "tests_solvent.test_chief_of_staff_certification.DepositsAndPayments"
+        ".test_a_forged_payment_email_is_not_a_payment",
+        "an email claiming payment opens the gate"),
+
+    Mutant(
+        "cos-a-replayed-payment-is-counted-twice",
+        "solvent/engagement.py",
+        '        if any(p["external_ref"] == ref for p in self.payments):',
+        "        if False:",
+        "tests_solvent.test_chief_of_staff_certification.DepositsAndPayments"
+        ".test_a_duplicate_event_is_recorded_once",
+        "a webhook delivered twice makes a half-paid job look settled"),
+
+    Mutant(
+        "cos-a-change-after-tracking-is-not-written",
+        "solvent/engagement.py",
+        "        if self.on_change is not None:\n            self.on_change(self)",
+        "        if False:\n            self.on_change(self)",
+        "tests_solvent.test_chief_of_staff_certification"
+        ".TheDefectsThisCertificationFound"
+        ".test_a_change_after_tracking_is_written_too",
+        "only the moment of handover is stored, so a restart restores every "
+        "deal as it was when it was first tracked"),
+
+    Mutant(
+        "cos-the-book-does-not-write-what-is-put-in-it",
+        "solvent/chiefofstaff.py",
+        "        self._items[key] = value\n        self._save(key, value)",
+        "        self._items[key] = value",
+        "tests_solvent.test_chief_of_staff_certification"
+        ".TheDefectsThisCertificationFound"
+        ".test_a_deal_that_never_changes_again_is_still_written",
+        "the original defect, restored for any deal that is tracked and "
+        "then not touched again before the process goes away"),
+
+    Mutant(
+        "cos-rehydration-restores-the-shortest-journal",
+        "solvent/chiefofstaff.py",
+        '            if known is None or len(payload.get(journal, [])) > len(\n'
+        '                    known.get(journal, [])):',
+        '            if known is None or len(payload.get(journal, [])) < len(\n'
+        '                    known.get(journal, [])):',
+        "tests_solvent.test_chief_of_staff_certification"
+        ".InterruptedAtEveryStage"
+        ".test_the_contract_itself_survives_not_merely_the_stage",
+        "a restart restores the oldest state of each deal -- the CRM had "
+        "exactly this bug and it silently undid opt-outs"),
+
+    Mutant(
+        "cos-the-escalation-never-reaches-a-channel",
+        "solvent/runtime.py",
+        "            self._notify_owner(\n"
+        '                event="chief_of_staff.escalation",',
+        "            self._skip_notify(\n"
+        '                event="chief_of_staff.escalation",',
+        "tests_solvent.test_chief_of_staff_certification"
+        ".TheDefectsThisCertificationFound"
+        ".test_an_escalation_reaches_a_channel_not_only_the_log",
+        "the owner is never asked, ninety-six times a day"),
+
+    Mutant(
+        "cos-the-tick-records-nothing",
+        "solvent/runtime.py",
+        "        self._record_pipeline(chief, pipeline)",
+        "        pass",
+        "tests_solvent.test_chief_of_staff_certification"
+        ".TheDefectsThisCertificationFound"
+        ".test_the_tick_records_what_it_worked_out",
+        "the figures are computed every fifteen minutes and dropped, and the "
+        "dashboard has nothing to show"),
+
+    Mutant(
+        "cos-the-suppression-list-is-not-consulted",
+        "solvent/outreach.py",
+        "    held = suppressions.active(email)",
+        "    held = None",
+        "tests_solvent.test_chief_of_staff_certification"
+        ".InterruptedAtEveryStage.test_a_suppression_outlives_the_process",
+        "somebody who asked to be left alone is written to again"),
+
+    Mutant(
+        "cos-a-suppression-lifts-without-consent",
+        "solvent/outreach.py",
+        "        if not isinstance(consent, Consent):",
+        "        if False:",
+        "tests_solvent.test_chief_of_staff_certification.ExternalTextIsData"
+        ".test_it_cannot_lift_a_suppression",
+        "an ordinary update reactivates an opt-out, which this module names "
+        "as the worst thing it could do"),
+
+    Mutant(
+        "cos-the-crm-restores-the-oldest-state",
+        "solvent/crm.py",
+        "            if known is None or len(payload.get(\"history\", [])) > len(\n"
+        '                    known.get("history", [])):',
+        "            if known is None or len(payload.get(\"history\", [])) < len(\n"
+        '                    known.get("history", [])):',
+        "tests_solvent.test_crm_recovery_checkpoint",
+        "the repaired CRM defect, restored: a prospect comes back from a "
+        "restart as freshly DISCOVERED and every opt-out is undone"),
+
+    Mutant(
+        "cos-a-contact-needs-no-source",
+        "solvent/crm.py",
+        # Anchored on the message, because the condition alone appears
+        # on Evidence too and a two-site match is NOT_APPLIED -- a
+        # mutant that silently stops testing anything.
+        "        if not self.source.strip():\n"
+        "            raise FailClosed(\n"
+        '                f"contact {self.email!r} has no recorded source;',
+        "        if False:\n"
+        "            raise FailClosed(\n"
+        '                f"contact {self.email!r} has no recorded source;',
+        "tests_solvent.test_chief_of_staff_certification.FailureInjection"
+        ".test_a_contact_with_no_source_is_refused_outright",
+        "an address nobody can say where they got becomes a legitimate "
+        "contact, which is where the US rules on commercial email begin"),
 )
 
 

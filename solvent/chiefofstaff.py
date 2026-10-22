@@ -34,14 +34,24 @@ anything, so that a coordinator bug cannot become a business action.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
 from enum import Enum
 
 from .crm import CRM, Prospect, Standing
-from .engagement import Engagement, Stage
+from .engagement import Engagement, Stage, engagement_from_dict
 from .errors import FailClosed
-from .negotiation import Negotiation, Outcome
+from .negotiation import Negotiation, Outcome, negotiation_from_dict
 from .outreach import Campaign, Suppressions, may_write
+
+#: The memory kinds the two books live under. Not tables of their own:
+#: ``memory_facts`` already exists and the store refuses a write from
+#: any authority but memory's, which is what caught the CRM inventing
+#: a table nobody owned.
+_KIND_NEGOTIATION = "cos_negotiation"
+_KIND_ENGAGEMENT = "cos_engagement"
+
 
 
 class Step(Enum):
@@ -87,17 +97,148 @@ class Recommendation:
                 "why": self.why, "owner_must_decide": self.owner_must_decide}
 
 
+class _Book(MutableMapping):
+    """The deals this layer is tracking, written down as they change.
+
+    A :class:`~collections.abc.MutableMapping` and not a ``dict``
+    subclass. ``dict.update`` and ``dict.setdefault`` do not go through
+    a subclass's ``__setitem__`` in CPython, so a subclass would have
+    persisted ``book[pid] = deal`` and silently dropped
+    ``book.update({pid: deal})`` -- a storage layer with a hole in it
+    shaped exactly like the second-most-obvious way to use it. Every
+    mutating method on a MutableMapping is defined in terms of
+    ``__setitem__``, so there is one way in.
+
+    Putting a deal here also hands it an ``on_change`` hook, so that
+    later transitions on the object -- an acceptance, a payment, a
+    concession -- are written as they happen rather than at whatever
+    point somebody remembers to save. The thing being tracked is
+    mutable; a store that only recorded the moment of handover would
+    hold the first version of every deal for ever.
+    """
+
+    def __init__(self, save: Callable[[str, object], None]) -> None:
+        self._items: dict[str, object] = {}
+        self._save = save
+
+    def __getitem__(self, key):
+        return self._items[key]
+
+    def __setitem__(self, key, value):
+        self._attach(key, value)
+        self._items[key] = value
+        self._save(key, value)
+
+    def __delitem__(self, key):
+        # Deliberately not persisted as a deletion: the store is
+        # append-only and forgetting a deal is not a thing a
+        # coordination layer gets to do to the record.
+        self._items[key].on_change = None
+        del self._items[key]
+
+    def __iter__(self):
+        return iter(self._items)
+
+    def __len__(self):
+        return len(self._items)
+
+    def restore(self, key, value) -> None:
+        """Put back what storage already holds, without rewriting it."""
+        self._attach(key, value)
+        self._items[key] = value
+
+    def _attach(self, key, value) -> None:
+        value.on_change = lambda deal, _k=key: self._save(_k, deal)
+
+
 class ChiefOfStaff:
     """Holds the sequence. Asks the authorities. Escalates when stuck."""
 
     def __init__(self, *, crm: CRM, suppressions: Suppressions,
-                 campaign: Campaign | None = None, audit=None) -> None:
+                 campaign: Campaign | None = None, audit=None,
+                 memory=None) -> None:
         self.crm = crm
         self.suppressions = suppressions
         self.campaign = campaign or Campaign()
         self._audit = audit
-        self.negotiations: dict[str, Negotiation] = {}
-        self.engagements: dict[str, Engagement] = {}
+        #: :class:`solvent.memory.BusinessMemory`, or ``None`` for a
+        #: coordinator that forgets. :attr:`durable` says which, the
+        #: same way :class:`~solvent.crm.CRM` does, so that nobody has
+        #: to infer it from whether a restart happened to work.
+        self._memory = memory
+        self.negotiations: MutableMapping[str, Negotiation] = _Book(
+            lambda key, deal: self._persist(_KIND_NEGOTIATION, key, deal))
+        self.engagements: MutableMapping[str, Engagement] = _Book(
+            lambda key, deal: self._persist(_KIND_ENGAGEMENT, key, deal))
+        if self._memory is not None:
+            self._rehydrate()
+
+    @property
+    def durable(self) -> bool:
+        return self._memory is not None
+
+    # ---- remembering between restarts ----------------------------------
+
+    def _persist(self, kind: str, prospect_id: str, deal) -> None:
+        if self._memory is None:
+            return
+        from .types import VerificationTier
+
+        # T1: a deterministic record of what this layer was told, not a
+        # claim about the client's business or about money having
+        # arrived. The payments inside an engagement carry their own
+        # external references, which is what makes them checkable.
+        self._memory.learn(
+            kind=kind, subject=prospect_id,
+            payload={"prospect_id": prospect_id, **deal.as_dict()},
+            evidence_ref=f"{kind}:{prospect_id}",
+            tier=VerificationTier.T1_DETERMINISTIC)
+
+    def _rehydrate(self) -> None:
+        """Rebuild both books from their latest recorded state.
+
+        The same two traps as :meth:`solvent.crm.CRM._rehydrate`, for
+        the same reason: ``recall`` returns newest first, and ``ts``
+        can tie when several writes land in one instant. The journal
+        length decides instead -- a negotiation's steps and an
+        engagement's history each grow by at least one on every
+        change, so the longest is the latest.
+
+        A row that cannot be rebuilt is skipped rather than guessed
+        at. A half-restored contract is worse than a missing one: the
+        missing one stops the pipeline and gets noticed.
+        """
+        for kind, rebuild, journal, book in (
+                (_KIND_NEGOTIATION, negotiation_from_dict, "steps",
+                 self.negotiations),
+                (_KIND_ENGAGEMENT, engagement_from_dict, "history",
+                 self.engagements)):
+            for prospect_id, payload in self._latest(kind, journal).items():
+                try:
+                    book.restore(prospect_id, rebuild(payload))
+                except (ValueError, KeyError, TypeError, FailClosed):
+                    continue
+
+    def _latest(self, kind: str, journal: str) -> dict:
+        try:
+            facts = self._memory.recall(kind=kind)
+        except Exception:
+            return {}
+        latest: dict[str, dict] = {}
+        for fact in facts:
+            payload = fact.get("payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except ValueError:
+                    continue
+            if not isinstance(payload, dict) or not payload.get("prospect_id"):
+                continue
+            known = latest.get(payload["prospect_id"])
+            if known is None or len(payload.get(journal, [])) > len(
+                    known.get(journal, [])):
+                latest[payload["prospect_id"]] = payload
+        return latest
 
     # ---- the one interesting method -----------------------------------
 

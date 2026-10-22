@@ -24,6 +24,11 @@ import weakref
 NEVER_RENDER = ("signature", "key_id", "secret", "password", "token",
                 "api_key", "webhook_secret")
 
+#: How old the Chief of Staff's recorded snapshot may be before the page
+#: says so. Four times its fifteen-minute cadence, so one missed tick is
+#: not an alarm and a stopped runtime is.
+COS_STALE_SECONDS = 3600.0
+
 
 #: Every ReadModel still holding its connection. Weak, so being listed
 #: never keeps one alive. Same reason as ``solvent.store._OPEN``:
@@ -35,6 +40,24 @@ _OPEN: "weakref.WeakSet[ReadModel]" = weakref.WeakSet()
 def open_readmodels() -> list["ReadModel"]:
     """Every read-only window still open."""
     return [m for m in _OPEN]
+
+
+def _age_seconds(ts) -> float | None:
+    """How old a stored UTC instant is, or ``None`` if it cannot be read.
+
+    ``None`` rather than ``0``. An unreadable timestamp means the age
+    is unknown, and an unknown age rendered as zero reads as "recorded
+    just now" -- the one answer that is certainly wrong.
+    """
+    import datetime as _dt
+
+    try:
+        seen = _dt.datetime.fromisoformat(str(ts))
+    except (TypeError, ValueError):
+        return None
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=_dt.timezone.utc)
+    return max(0.0, (_dt.datetime.now(_dt.timezone.utc) - seen).total_seconds())
 
 
 class ReadModel:
@@ -49,6 +72,49 @@ class ReadModel:
         self._conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True,
                                      check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+
+    def chief_of_staff(self) -> dict:
+        """The coordinator's last recorded snapshot, rendered not re-derived.
+
+        Returns ``{"present", "stale", "age_seconds", "simulated",
+        "figures", "next_steps"}``. Absent means the tick has not run
+        yet, which is the honest answer on a Solvent that has only
+        just started and the alarming one on a Solvent that has been
+        up for a day.
+
+        Nothing here counts anything. The figures are whatever
+        :meth:`solvent.chiefofstaff.ChiefOfStaff.performance` recorded;
+        a projection that added them up itself would be a second
+        answer, and the first time the two disagreed the page would be
+        the one nobody could check.
+        """
+        row = self.one("SELECT payload, ts FROM memory_facts "
+                       "WHERE kind = 'cos_performance' ORDER BY ts DESC "
+                       "LIMIT 1")
+        absent = {"present": False, "stale": True, "age_seconds": None,
+                  "simulated": True, "figures": {}, "next_steps": []}
+        if not row:
+            return absent
+        try:
+            payload = json.loads(row["payload"])
+        except (TypeError, ValueError):
+            return absent
+        if not isinstance(payload, dict):
+            return absent
+        age = _age_seconds(row.get("ts"))
+        figures = {k: v for k, v in payload.items()
+                   if k not in ("simulated", "next_steps")}
+        return {"present": True,
+                # One cadence, named once. The tick runs every fifteen
+                # minutes, so anything older than an hour means the
+                # tick stopped, and a page that showed hour-old
+                # pipeline figures as current would be reporting a
+                # dead coordinator as a quiet one.
+                "stale": age is None or age > COS_STALE_SECONDS,
+                "age_seconds": age,
+                "simulated": bool(payload.get("simulated", True)),
+                "figures": figures,
+                "next_steps": list(payload.get("next_steps", []))}
 
     def latest_diagnostics(self) -> dict:
         """The diagnostics authority's most recent recorded report.

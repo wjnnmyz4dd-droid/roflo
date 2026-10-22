@@ -29,12 +29,13 @@ costs money on every job that follows.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
 from .errors import FailClosed
 from .evidence import Confidence, Figure, Provenance, estimate, unavailable
-from .marketrates import Band, supported_price_cents
+from .marketrates import Band, band_from_dict, supported_price_cents
 from .types import Cents, fmt
 
 
@@ -205,6 +206,14 @@ class Negotiation:
     steps: list[Step] = field(default_factory=list)
     outcome: Outcome = Outcome.OPEN
     escalation: str = ""
+    #: Called with this negotiation after every move. Durability is
+    #: not this class's job -- it is a record of a conversation, not a
+    #: store -- but a conversation that changes without telling anybody
+    #: cannot be made durable from outside, and a negotiation that a
+    #: restart silently forgot is one a client gets to reopen at their
+    #: own number.
+    on_change: Callable[["Negotiation"], None] | None = field(
+        default=None, repr=False, compare=False)
 
     @property
     def floor(self) -> Cents:
@@ -230,6 +239,12 @@ class Negotiation:
         return cents - self.costs.total_cents
 
     def open(self) -> Step:
+        try:
+            return self._open()
+        finally:
+            self._changed()
+
+    def _open(self) -> Step:
         if self.steps:
             raise FailClosed(
                 f"negotiation {self.opportunity_id!r} is already open; a "
@@ -248,7 +263,18 @@ class Negotiation:
         long-term potential, how close the number is -- can be weighed
         against it. Those are reasons to *concede within* the limits,
         never reasons to cross them.
+
+        The hook fires in a ``finally`` so that a refusal is recorded
+        as durably as an agreement. A refused counteroffer that a
+        restart forgot would let the same client come back with the
+        same number and be answered afresh.
         """
+        try:
+            return self._respond(client_cents, why=why)
+        finally:
+            self._changed()
+
+    def _respond(self, client_cents: Cents, *, why: str = "") -> Step:
         if not self.steps:
             raise FailClosed("a counteroffer arrived before an opening price")
         if self.outcome is not Outcome.OPEN:
@@ -317,6 +343,53 @@ class Negotiation:
         self.escalation = why
         return step
 
+    def _changed(self) -> None:
+        if self.on_change is not None:
+            self.on_change(self)
+
+    def as_dict(self) -> dict:
+        """Everything needed to carry on the conversation after a restart.
+
+        Distinct from :meth:`record`, which is for a person to read and
+        renders the band as a sentence. This keeps the band's figures
+        and their provenance, because the opening price is derived from
+        them and a band restored as prose would come back as no band at
+        all -- which silently turns a market-supported opening price
+        into a cost-plus one.
+        """
+        return {
+            "opportunity_id": self.opportunity_id, "service": self.service,
+            "costs": {
+                "service_cents": self.costs.service_cents,
+                "ai_cents": self.costs.ai_cents,
+                "verification_cents": self.costs.verification_cents,
+                "expected_revision_cents": self.costs.expected_revision_cents,
+                "platform_fee_cents": self.costs.platform_fee_cents,
+                "payment_processing_cents":
+                    self.costs.payment_processing_cents,
+                "risk_allowance_cents": self.costs.risk_allowance_cents,
+            },
+            "policy": {
+                "minimum_margin_fraction":
+                    self.policy.minimum_margin_fraction,
+                "minimum_contribution_cents":
+                    self.policy.minimum_contribution_cents,
+                "max_discount_fraction": self.policy.max_discount_fraction,
+                "max_concessions": self.policy.max_concessions,
+                "owner_signs_above_cents":
+                    self.policy.owner_signs_above_cents,
+                "max_revisions_without_owner":
+                    self.policy.max_revisions_without_owner,
+            },
+            "scope_units": self.scope_units,
+            "band": self.band.as_dict() if self.band is not None else None,
+            "steps": [{"move": s.move.value, "cents": s.cents, "why": s.why,
+                       "contribution_cents": s.contribution_cents}
+                      for s in self.steps],
+            "outcome": self.outcome.value,
+            "escalation": self.escalation,
+        }
+
     def record(self) -> dict:
         """Everything Phase 6 asks to be logged, per step."""
         return {
@@ -339,3 +412,25 @@ class Negotiation:
                        "contribution_cents": s.contribution_cents,
                        "why": s.why} for s in self.steps],
         }
+
+
+def negotiation_from_dict(doc: dict) -> Negotiation:
+    """Rebuild a negotiation exactly as it stood.
+
+    The floor is *not* read from the stored row: it is recomputed from
+    the restored costs and policy by the property that always computes
+    it. A floor that came back from storage would be a stored number,
+    and a stored number is one an edit, a migration or a bug can move.
+    """
+    deal = Negotiation(
+        opportunity_id=doc["opportunity_id"], service=doc["service"],
+        costs=Costs(**doc["costs"]),
+        policy=NegotiationPolicy(**doc["policy"]),
+        scope_units=int(doc.get("scope_units", 0)),
+        band=band_from_dict(doc["band"]) if doc.get("band") else None,
+        outcome=Outcome(doc.get("outcome", Outcome.OPEN.value)),
+        escalation=doc.get("escalation", ""))
+    deal.steps = [Step(Move(s["move"]), int(s["cents"]), s.get("why", ""),
+                       int(s.get("contribution_cents", 0)))
+                  for s in doc.get("steps", [])]
+    return deal

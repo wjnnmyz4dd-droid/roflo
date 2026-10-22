@@ -1204,18 +1204,107 @@ class Runtime:
         if chief is None:
             return "not run: no chief of staff is configured"
         try:
-            escalations = chief.escalations()
+            pipeline = chief.pipeline()
         except Exception as problem:            # a read must not stop a tick
             return f"could not read the pipeline: {problem}"
+        escalations = [r for r in pipeline if r.owner_must_decide]
         for item in escalations:
             self.solvent.audit.record(
                 event="chief_of_staff.escalation", authority="orchestrator",
                 initiator=RUNTIME, why=item.why[:200],
                 decision="OWNER_MUST_DECIDE", result=item.prospect_id)
+            # And actually tell them. The audit log is a record, not a
+            # channel: an escalation that only ever landed there was a
+            # question nobody was asked, and this tick runs every
+            # fifteen minutes, so it would have been asked ninety-six
+            # times a day and answered none of them. The Notifier
+            # dedupes by key, which is what makes that safe.
+            self._notify_owner(
+                event="chief_of_staff.escalation",
+                summary=f"{item.prospect_id}: {item.why}"[:400],
+                dedupe_key=f"chief_of_staff:{item.prospect_id}")
+        self._record_pipeline(chief, pipeline)
         total = len(chief.crm.all())
         if not total:
             return "no prospects"
         return (f"{total} prospect(s); {len(escalations)} need the owner")
+
+    def _notify_owner(self, *, event: str, summary: str,
+                      dedupe_key: str) -> None:
+        """Ask the Notifier, and never let a failed ask stop the tick.
+
+        Swallowing the exception would be wrong and recording nothing
+        would be worse, so a notification that could not be sent is
+        written to the audit log as a notification that could not be
+        sent. An owner reading the log can tell "nothing was wrong"
+        from "we could not tell you".
+        """
+        from .notify import ACTION_REQUIRED
+
+        notifier = getattr(self.solvent, "notifier", None)
+        if notifier is None:
+            return
+        try:
+            notifier.notify(event=event, severity=ACTION_REQUIRED,
+                            summary=summary, dedupe_key=dedupe_key)
+        except Exception as problem:
+            self.solvent.audit.record(
+                event="runtime.notification_failed", authority="orchestrator",
+                initiator=RUNTIME, why=dedupe_key, decision="NOT_SENT",
+                result=str(problem)[:200])
+
+    def _record_pipeline(self, chief, pipeline) -> None:
+        """Write down what the coordinator worked out, so it can be seen.
+
+        Without this the whole tick was invisible: the figures were
+        computed every fifteen minutes and dropped, the control centre
+        had no way to reach a ChiefOfStaff (it holds a read-only
+        database connection and no Solvent), and the owner's only
+        evidence that any of it ran was an audit row per escalation.
+
+        The read model renders what is recorded here and recomputes
+        none of it, the same arrangement as the diagnostics report --
+        a projection that re-derived the pipeline would be a second
+        answer to the question this layer exists to answer.
+        """
+        memory = getattr(self.solvent, "memory", None)
+        if memory is None:
+            return
+        from .types import VerificationTier
+
+        try:
+            figures = chief.performance()
+        except Exception as problem:
+            self.solvent.audit.record(
+                event="chief_of_staff.unreadable", authority="orchestrator",
+                initiator=RUNTIME, why="performance", decision="NOT_RECORDED",
+                result=str(problem)[:200])
+            return
+        # Said once, here, rather than left for the page to infer: money
+        # that moved in simulation is not revenue, and a figure whose
+        # label depends on a reader checking a different setting is a
+        # figure that will eventually be read as real.
+        simulated = bool(self.solvent.policy.get(
+            "egress", "simulation_only", default=True))
+        try:
+            memory.learn(
+                kind="cos_performance", subject="pipeline",
+                # No timestamp of our own. `self._clock` is
+                # `time.monotonic` by default, which is seconds since
+                # an arbitrary point inside this process: stored and
+                # read back by anything else it is not a time at all.
+                # `memory_facts.ts` is already a UTC instant written
+                # by the store, so the snapshot's age is read from
+                # there.
+                payload={**figures, "simulated": simulated,
+                         "next_steps": [r.as_dict() for r in pipeline]},
+                evidence_ref="chief_of_staff:pipeline",
+                tier=VerificationTier.T1_DETERMINISTIC)
+        except Exception as problem:
+            self.solvent.audit.record(
+                event="chief_of_staff.unreadable", authority="orchestrator",
+                initiator=RUNTIME, why="snapshot", decision="NOT_RECORDED",
+                result=str(problem)[:200])
 
     def _workroot(self) -> str:
         """Where jobs get their scratch directories.

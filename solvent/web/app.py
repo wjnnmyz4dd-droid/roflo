@@ -169,6 +169,76 @@ def _connection_cards(read) -> str:
     return "".join(blocks) + note
 
 
+def _pipeline_section(read) -> str:
+    """Business performance, as the Chief of Staff last recorded it.
+
+    Rendered from the recorded snapshot and nothing else. The page has
+    a read-only database connection and no Solvent, so it could not
+    construct a ChiefOfStaff even if it wanted to -- which is the
+    right shape: the authority computes, the page shows.
+
+    Every money figure carries the simulation label when simulation is
+    on, and the label comes from the snapshot rather than from the
+    page re-reading the policy. A dashboard that worked out for itself
+    whether the money was real would be one `if` away from showing
+    fixture money under a heading that says Collected.
+    """
+    snapshot = read.chief_of_staff()
+    if not snapshot["present"]:
+        # Not "a Solvent": the engine name on an owner-facing page is a
+        # stale reference, and `test_branding` caught this one.
+        return ('<p class="sub">The Chief of Staff has not run yet. '
+                'Nothing is wrong on an installation that has only just '
+                'started; on one that has been up a while it means the '
+                'tick is not running.</p>')
+    figures = snapshot["figures"]
+    label = pill("SIMULATED", "info") + " " if snapshot["simulated"] else ""
+    age = snapshot["age_seconds"]
+    when = ("age unknown" if age is None
+            else f"recorded {int(age)}s ago")
+    staleness = ("" if not snapshot["stale"] else
+                 '<p class="sub">' + pill("STALE", "warn")
+                 + f" This is the last snapshot, {esc(when)}. The tick "
+                   "runs every fifteen minutes, so a snapshot this old "
+                   "means it stopped.</p>")
+
+    def card(title, value, note=""):
+        return (f'<div class="card"><div class="k">{esc(title)}</div>'
+                f'<div class="v">{value}</div>'
+                f'<div class="n">{esc(note)}</div></div>')
+
+    counted = [
+        card("Prospects", esc(str(figures.get("prospects", 0))),
+             f"{figures.get('with_a_verified_need', 0)} with a published "
+             "need"),
+        card("Contactable", esc(str(figures.get("contactable", 0))),
+             f"{figures.get('suppressed_addresses', 0)} address(es) "
+             "suppressed"),
+        card("Negotiations", esc(str(figures.get("negotiations", 0))),
+             f"{figures.get('negotiations_agreed', 0)} agreed, "
+             f"{figures.get('negotiations_escalated', 0)} with you"),
+        card("Engagements", esc(str(figures.get("engagements", 0))),
+             "contracts at every stage"),
+        card("Contracted", label + esc(money(figures.get(
+            "contracted_cents", 0))), "agreed contract value"),
+        card("Collected", label + esc(money(figures.get(
+            "collected_cents", 0))), "verified payments only"),
+        card("Outstanding", label + esc(money(figures.get(
+            "outstanding_cents", 0))), "invoiced and unpaid"),
+        card("Messages prepared", esc(str(figures.get(
+            "messages_prepared", 0))), "prepared, not necessarily sent"),
+    ]
+    steps: dict[str, int] = {}
+    for row in snapshot["next_steps"]:
+        steps[str(row.get("step", "?"))] = steps.get(
+            str(row.get("step", "?")), 0) + 1
+    by_step = table(
+        ["next step", "relationships"],
+        [[esc(k), esc(str(v))] for k, v in sorted(steps.items())],
+        empty="Nothing queued.")
+    return "".join(counted) + staleness + by_step
+
+
 def _intent_class(verb: str) -> str:
     """The class of a verb named in an audit row, without trusting the row.
 
@@ -463,6 +533,8 @@ class ControlCentre:
                 + f"<h2>Needs your attention</h2>{needs}"
                 + "<h2>System status</h2>" + _board_table(board)
                 + f"<h2>Business</h2>{cards}{simulated}"
+                + "<h2>Business performance</h2>"
+                + _pipeline_section(self.read)
                 + "<h2>Business connections</h2>"
                 + _connection_cards(self.read)
                 + f"<h2>Jobs by state</h2>"

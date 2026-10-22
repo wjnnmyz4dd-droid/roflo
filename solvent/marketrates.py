@@ -39,7 +39,9 @@ from datetime import date, datetime
 from enum import Enum
 
 from .errors import FailClosed
-from .evidence import Confidence, Figure, Provenance, unavailable
+from .evidence import (
+    Confidence, Figure, Provenance, figure_from_dict, unavailable,
+)
 from .types import Cents, fmt
 
 #: The five, and nothing else. A rate for a service DeskPilot cannot
@@ -160,6 +162,31 @@ class Band:
                 f"per unit, median {self.median.render()} "
                 f"[{self.confidence.value}, {self.observations} obs, "
                 f"{self.transacted} transacted]")
+
+    def as_dict(self) -> dict:
+        """Enough to rebuild it. The counts travel with the figures.
+
+        ``observations``, ``transacted`` and ``asking`` are what make
+        the confidence checkable, so a stored band that kept the
+        numbers and dropped the counts would look exactly as
+        well-evidenced as one that kept both.
+        """
+        return {"service": self.service, "low": self.low.as_dict(),
+                "median": self.median.as_dict(), "high": self.high.as_dict(),
+                "observations": self.observations,
+                "transacted": self.transacted, "asking": self.asking,
+                "confidence": self.confidence.value, "why": self.why}
+
+
+def band_from_dict(doc: dict) -> Band:
+    return Band(service=doc["service"], low=figure_from_dict(doc["low"]),
+                median=figure_from_dict(doc["median"]),
+                high=figure_from_dict(doc["high"]),
+                observations=int(doc["observations"]),
+                transacted=int(doc["transacted"]),
+                asking=int(doc["asking"]),
+                confidence=Confidence(doc["confidence"]),
+                why=doc.get("why", ""))
 
 
 class MarketEvidence:

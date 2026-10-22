@@ -92,6 +92,30 @@ class Figure:
         return f"{shown} [{self.provenance.value}]" + (
             f" — {self.detail}" if self.detail else "")
 
+    def as_dict(self) -> dict:
+        """Enough to rebuild it, provenance included.
+
+        The provenance travels with the number here for the same
+        reason it does everywhere else: a stored figure that came back
+        from a restart with its source dropped would read as a plain
+        number, and a plain number is indistinguishable from a
+        verified one.
+        """
+        return {"value": self.value, "provenance": self.provenance.value,
+                "detail": self.detail}
+
+
+def figure_from_dict(doc: dict) -> Figure:
+    """Rebuild a :class:`Figure`. Refuses the combinations it refuses.
+
+    Deliberately goes through the constructor rather than around it,
+    so that a stored row which lost its provenance, or gained a value
+    it should not have, fails here instead of being restored as
+    something the evidence never supported.
+    """
+    return Figure(doc.get("value"), Provenance(doc["provenance"]),
+                  doc.get("detail", ""))
+
 
 def unavailable(why: str) -> Figure:
     return Figure(None, Provenance.UNAVAILABLE, why)

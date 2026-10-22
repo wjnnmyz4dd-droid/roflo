@@ -24,6 +24,7 @@ record of actuals; what lives here is the state of the agreement.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -186,6 +187,15 @@ class Engagement:
     #: Verified payment events only. Never a client's say-so.
     payments: list[dict] = field(default_factory=list)
     history: list[dict] = field(default_factory=list)
+    #: Called with this engagement after every recorded change.
+    #: :meth:`_note` is the one place every transition and every
+    #: payment passes through, so hooking it there means durability
+    #: cannot be lost by somebody adding a transition later and
+    #: forgetting to save -- which is how a signed contract and a
+    #: cleared deposit would come back from a restart as an
+    #: unanswered proposal.
+    on_change: Callable[["Engagement"], None] | None = field(
+        default=None, repr=False, compare=False)
 
     @property
     def deposit_due_cents(self) -> Cents:
@@ -332,6 +342,46 @@ class Engagement:
 
     def _note(self, what: str, detail: str) -> None:
         self.history.append({"at": _now(), "what": what, "detail": detail})
+        if self.on_change is not None:
+            self.on_change(self)
+
+    def as_dict(self) -> dict:
+        """Everything needed to rebuild it, terms included.
+
+        Distinct from :meth:`summary`, which is derived figures for a
+        reader. The proposal and the acceptance are stored whole
+        because they are the contract: an engagement restored with its
+        stage but without the terms it was accepted against is a
+        record that something was agreed and no record of what.
+        """
+        return {
+            "engagement_id": self.engagement_id,
+            "deposit_fraction": self.deposit_fraction,
+            "stage": self.stage.value,
+            "proposal": {
+                "proposal_id": self.proposal.proposal_id,
+                "prospect_id": self.proposal.prospect_id,
+                "service": self.proposal.service,
+                "price_cents": self.proposal.price_cents,
+                "deliverables": [{"description": d.description,
+                                  "check": d.check,
+                                  "acceptance": d.acceptance}
+                                 for d in self.proposal.deliverables],
+                "turnaround_days": self.proposal.turnaround_days,
+                "revisions_included": self.proposal.revisions_included,
+                "scope_excluded": list(self.proposal.scope_excluded),
+                "client_must_supply": list(self.proposal.client_must_supply),
+                "notes": self.proposal.notes,
+            },
+            "acceptance": None if self.acceptance is None else {
+                "accepted_by": self.acceptance.accepted_by,
+                "accepted_on": self.acceptance.accepted_on,
+                "method": self.acceptance.method,
+                "terms_digest": self.acceptance.terms_digest,
+            },
+            "payments": [dict(p) for p in self.payments],
+            "history": [dict(h) for h in self.history],
+        }
 
     def summary(self) -> dict:
         return {
@@ -352,3 +402,35 @@ class Engagement:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def engagement_from_dict(doc: dict) -> Engagement:
+    """Rebuild an engagement exactly as it stood.
+
+    Nothing derived is read back: ``collected_cents``,
+    ``deposit_satisfied`` and ``work_authorised`` are recomputed from
+    the restored payments by the properties that always compute them.
+    A stored ``work_authorised`` flag would be a field for a bug to
+    set, which is the whole reason it is a property.
+    """
+    terms = doc["proposal"]
+    proposal = Proposal(
+        proposal_id=terms["proposal_id"], prospect_id=terms["prospect_id"],
+        service=terms["service"], price_cents=int(terms["price_cents"]),
+        deliverables=tuple(
+            Deliverable(d["description"], d["check"], d["acceptance"])
+            for d in terms["deliverables"]),
+        turnaround_days=int(terms["turnaround_days"]),
+        revisions_included=int(terms["revisions_included"]),
+        scope_excluded=tuple(terms.get("scope_excluded", ())),
+        client_must_supply=tuple(terms.get("client_must_supply", ())),
+        notes=terms.get("notes", ""))
+    accepted = doc.get("acceptance")
+    return Engagement(
+        engagement_id=doc["engagement_id"], proposal=proposal,
+        deposit_fraction=float(doc.get("deposit_fraction",
+                                       DEFAULT_DEPOSIT_FRACTION)),
+        stage=Stage(doc["stage"]),
+        acceptance=None if not accepted else Acceptance(**accepted),
+        payments=[dict(p) for p in doc.get("payments", [])],
+        history=[dict(h) for h in doc.get("history", [])])
