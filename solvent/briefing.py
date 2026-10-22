@@ -62,8 +62,13 @@ def _minutes(hhmm: str) -> int:
 def zone():
     """The owner's timezone, or UTC with the reason it is not theirs.
 
-    A missing tz database is a real possibility on a stripped
-    Windows host, and the wrong answer to it is to carry on in local
+    A missing tz database is not a possibility on Windows -- it is
+    the default. Windows ships none at all, so this fell back to UTC
+    on every Windows host until the installer began carrying the
+    ``tzdata`` package, which ``zoneinfo`` picks up automatically.
+    Windows CI is what established that; it was not a guess.
+
+    The wrong answer to a missing database is to carry on in local
     time as though nothing happened -- that sends the morning
     summary at whatever hour the server happens to think it is.
     Falling back to UTC is wrong too, but it is wrong *visibly*: the

@@ -43,14 +43,27 @@ from solvent.web.readmodel import open_readmodels
 
 
 def _release(directory: str) -> list[str]:
-    """Close every database open underneath ``directory``."""
-    root = os.path.abspath(directory)
+    """Close every database open underneath ``directory``.
+
+    ``normcase`` on both sides, and that is not tidiness. Windows
+    paths are case-insensitive, ``abspath`` does not normalise case,
+    and ``startswith`` is a string comparison -- so a handle opened
+    under ``C:\\Users\\...`` and a directory recorded as
+    ``c:\\users\\...`` did not match, the database was not closed,
+    and the cleanup failed with WinError 32. That was four failures
+    in ``test_bidder_console`` and two in
+    ``test_doctor_database_selection`` on the Windows runner: this
+    file was written to prevent exactly that error and had a
+    Windows-only bug of its own. On POSIX ``normcase`` is the
+    identity, so nothing here changes.
+    """
+    root = os.path.normcase(os.path.abspath(directory))
     closed = []
     for handle in list(open_stores()) + list(open_readmodels()):
         path = getattr(handle, "path", "") or ""
         if path == ":memory:" or not path:
             continue
-        if os.path.abspath(path).startswith(root + os.sep):
+        if os.path.normcase(os.path.abspath(path)).startswith(root + os.sep):
             try:
                 handle.close()
                 closed.append(path)
@@ -79,12 +92,13 @@ def _close_what_this_test_opened():
     them file-backed, which is nowhere near exhausting anything. The
     directory release was already catching the file-backed ones.
 
-    The Windows failure is still unexplained. What is known: the suite
-    stops after exactly 3,477 bytes of progress output, about 60%
-    through, on a complete line, with no traceback and no summary, and
-    the byte count is identical whether the output is tee'd or
-    redirected. A deterministic stop with no Python-level error is the
-    interpreter dying rather than a test failing.
+    The Windows suite failure that prompted it has since been
+    answered, and the interpreter was never dying. Running the suite
+    through ``cmd.exe`` instead of PowerShell produced a complete run
+    with a summary and an exit code; what had been disappearing was
+    PowerShell's output, including its own echo after the command.
+    The suite's real failures were ordinary ones, and are listed in
+    ``docs/deskpilot-windows-certification.md``.
     """
     before = {id(h) for h in open_stores()} | {id(h) for h in open_readmodels()}
     yield

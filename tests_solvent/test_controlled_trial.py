@@ -86,7 +86,12 @@ HOSTILE_MESSAGES = (
 def workspace(content=CLIENT_FILE):
     directory = pathlib.Path(tempfile.mkdtemp(prefix="trial-"))
     source = directory / "client_supplied.csv"
-    source.write_text(content, encoding="utf-8")
+    # newline="": a CSV fixture is bytes, and text mode on Windows
+    # rewrites every LF -- including one inside a quoted field --
+    # as CRLF. See tests_solvent/fixtures_csv.py for the failure
+    # that taught this.
+    with open(source, "w", newline="", encoding="utf-8") as handle:
+        handle.write(content)
     return str(source), str(directory)
 
 

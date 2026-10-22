@@ -73,7 +73,21 @@ def workspace(content: str, name: str = "source.csv") -> tuple[str, str]:
     """Write ``content`` to a fresh directory. Returns ``(source, workdir)``."""
     directory = pathlib.Path(tempfile.mkdtemp())
     source = directory / name
-    source.write_text(content, encoding="utf-8")
+    # newline="" or the fixture corrupts its own input on Windows.
+    #
+    # EMBEDDED_NEWLINE carries a line break *inside* a quoted field --
+    # a customer's two-line address -- and text-mode writing translates
+    # every \n to \r\n, that one included. The file on disk then says
+    # "Acme Corp\r\nSuite 4", DeskPilot round-trips it faithfully, and
+    # the assertion for "Acme Corp\nSuite 4" fails. Which reads exactly
+    # like DeskPilot mangling a client's address on Windows, and is a
+    # fixture writing bytes it did not mean to write.
+    #
+    # The product has had this right all along: csvwork, csvverify,
+    # entrywork and independent all open with newline="", which is the
+    # contract the csv module documents.
+    with open(source, "w", newline="", encoding="utf-8") as handle:
+        handle.write(content)
     return str(source), str(directory)
 
 

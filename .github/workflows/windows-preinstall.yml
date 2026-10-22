@@ -50,8 +50,14 @@ jobs:
       # is what made the first three runs of this workflow fail at the
       # first test step with "No module named pytest" -- and the steps
       # after it were skipped, so the failure hid every other result.
+      # tzdata alongside the extras, because Windows ships no IANA
+      # timezone database and the installer carries this same package
+      # for the same reason. Without it the suite measures a host no
+      # installed DeskPilot will ever be.
       - name: Install the verification extras and the test runner
-        run: python -m pip install --disable-pip-version-check -e ".[verification,dev]"
+        run: |
+          python -m pip install --disable-pip-version-check -e ".[verification,dev]"
+          python -m pip install --disable-pip-version-check tzdata==2026.5
 
       # Which formats this Windows machine can give a second opinion on.
       # Recorded before the suite so it is in the log even when a test
@@ -90,7 +96,12 @@ jobs:
         shell: cmd
         run: |
           python -I -m pytest tests_solvent -p no:randomly --color=no --tb=long -rf --junitxml=junit.xml > suite.txt 2>&1
-          echo %ERRORLEVEL%> exitcode.txt
+          REM `echo %ERRORLEVEL%> file` writes nothing: cmd reads the
+          REM digit immediately before `>` as a stream number, so the
+          REM last run produced a file containing "ECHO is off." and
+          REM the exit code was lost -- in the step built to stop
+          REM losing it. Redirect first, echo second.
+          >exitcode.txt echo %ERRORLEVEL%
           type exitcode.txt
           exit /b 0
 

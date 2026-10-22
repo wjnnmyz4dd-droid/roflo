@@ -253,10 +253,28 @@ class ThePreCommitHookIsReal(unittest.TestCase):
                       hook.read_text(encoding="utf-8"))
 
     def test_the_repository_points_at_the_hook_directory(self):
-        """Read from .git/config rather than asked of the git CLI."""
+        """Read from .git/config rather than asked of the git CLI.
+
+        A developer's clone must point at the hook; a CI checkout
+        cannot, and should not. ``actions/checkout`` clones fresh for
+        every run and configures nothing, so asserting the setting
+        there was a test measuring the environment rather than the
+        repository -- one of the Windows CI failures, and it would
+        have failed on a Linux runner just as surely.
+
+        Skipped rather than relaxed. The assertion is the one that
+        matters on the machine where the hook actually runs.
+        """
+        import os
+
         config = (ROOT / ".git" / "config")
         if not config.is_file():                      # a worktree or a submodule
             self.skipTest("no .git/config here to read")
+        if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+            self.skipTest(
+                "a CI checkout configures no hooks and runs no commit, so "
+                "this asserts nothing here; it is the developer clone that "
+                "has to point at .githooks")
         body = config.read_text(encoding="utf-8", errors="replace")
         self.assertIn("hooksPath = .githooks", body,
                       "run: git config core.hooksPath .githooks")

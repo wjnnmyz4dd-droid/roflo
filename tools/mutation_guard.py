@@ -71,12 +71,31 @@ class RestorationUnproven(Exception):
 # --------------------------------------------------------------- the claim
 
 def _alive(pid: int) -> bool:
+    """Is that process still running?
+
+    Windows does not raise ``ProcessLookupError`` for a pid that does
+    not exist; it raises ``OSError`` with ``winerror == 87``, "The
+    parameter is incorrect". So on Windows a claim left by a run that
+    has since died did not read as stale -- it raised out of
+    :func:`active_claim` and took the caller with it. Windows CI
+    found that.
+
+    Any other ``OSError`` reads as **alive**, which is the
+    conservative direction: the claim exists to stop a second
+    mutation run touching a tree the first one is in the middle of
+    patching, and the expensive mistake is deciding a live run is
+    dead.
+    """
+    if pid <= 0:
+        return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:          # someone else's process, but running
         return True
+    except OSError as exc:
+        return getattr(exc, "winerror", None) != 87
     return True
 
 

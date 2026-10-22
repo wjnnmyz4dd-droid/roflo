@@ -39,11 +39,27 @@ class TheInProcessHookCatchesPython(unittest.TestCase):
         egress.install()
 
     def test_a_python_connect_is_denied(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = str(pathlib.Path(tmp) / "s.sock")
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-                with self.assertRaises(Exception):
-                    client.connect(path)
+        """A Unix socket where there is one, a TCP socket where there is not.
+
+        ``socket.AF_UNIX`` does not exist on Windows, and this test
+        asserting it did was one of the Windows CI failures. The
+        control under test is the same either way -- the audit hook
+        fires on ``socket.connect`` before anything leaves -- and the
+        TCP case connects to the discard port on loopback, which the
+        hook refuses before a packet is formed.
+        """
+        if hasattr(socket, "AF_UNIX"):
+            with tempfile.TemporaryDirectory() as tmp:
+                path = str(pathlib.Path(tmp) / "s.sock")
+                with socket.socket(socket.AF_UNIX,
+                                   socket.SOCK_STREAM) as client:
+                    with self.assertRaises(Exception):
+                        client.connect(path)
+            return
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+            client.settimeout(0.5)
+            with self.assertRaises(Exception):
+                client.connect(("127.0.0.1", 9))
 
     def test_a_dns_lookup_is_denied(self):
         with self.assertRaises(Exception):
@@ -71,11 +87,28 @@ class TheHookDoesNotSeeLibc(unittest.TestCase):
         # working, and would make this test measure the wrong thing.
         # ``CDLL(None)`` opens the main program's symbol table, which on Linux
         # carries libc, with no process spawned.
+        # TypeError is the Windows case and is not an oversight:
+        # ``CDLL(None)`` calls ``LoadLibrary(None)``, which Windows
+        # refuses outright. There is no main-program symbol table to
+        # open and so no bypass of *this* shape to demonstrate.
+        #
+        # That is emphatically not "the hook is complete on Windows".
+        # A Windows process can reach the socket API through
+        # ws2_32.dll by exactly the same reasoning, and the
+        # conclusion this file exists for is unchanged on both
+        # systems: the in-process layer is not the whole control and
+        # the host firewall is required. The deployment contract
+        # below says so, and is asserted on every platform.
         try:
             self.libc = ctypes.CDLL(None, use_errno=True)
             self.libc.socket
-        except (OSError, AttributeError):
-            self.skipTest("no libc symbols available in this process")
+        except (OSError, AttributeError, TypeError) as exc:
+            self.skipTest(
+                f"no main-program symbol table in this process "
+                f"({type(exc).__name__}); on Windows there is never one, "
+                "and the residual risk is demonstrated there through "
+                "ws2_32.dll rather than libc. The host-layer "
+                "requirement is unchanged and is asserted separately.")
 
     def test_libc_can_create_a_socket_the_hook_never_sees(self):
         AF_UNIX, SOCK_STREAM = 1, 1

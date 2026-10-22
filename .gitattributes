@@ -1,0 +1,29 @@
+# Line endings are part of the bytes, and two things here hash them.
+#
+# The sealed examinations in tests_solvent/ take the SHA-256 of source
+# files with `read_bytes()`, which is the point: a seal that normalised
+# what it hashed would not notice a change. On a Windows checkout with
+# Git's default `core.autocrlf=true`, every one of those files arrives
+# with CRLF, every digest differs, and both exams report the seal
+# broken -- five failures that say the code moved when nothing moved.
+#
+# So the working tree is LF everywhere, on every platform. Windows
+# handles LF in source and in text files perfectly well; what it does
+# not handle is being told the files are something other than what the
+# digests were taken over.
+* text=auto eol=lf
+
+# Binary, and must never be translated or diffed as text.
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
+*.whl binary
+*.xlsx binary
+*.docx binary
+*.pdf binary
+
+# NSIS reads LF fine. Named rather than left to `text=auto` so that a
+# future `.nsi` containing a byte that looks binary is still normalised.
+*.nsi text eol=lf
+*.nsh text eol=lf

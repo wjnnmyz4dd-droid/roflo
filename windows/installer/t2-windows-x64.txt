@@ -32,6 +32,17 @@ python-docx==1.1.2 \
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
 
+# The IANA timezone database. Not a reader, and here for a reason
+# Windows CI found: Windows ships no tz database at all, so
+# `ZoneInfo("America/New_York")` fails and DeskPilot falls back to
+# UTC -- visibly, saying so in the summary, which is the right
+# behaviour and still means the owner's 06:50 briefing arrives at
+# some other hour. zoneinfo picks this package up automatically when
+# the system has no database, so shipping it is the whole fix.
+# tzdata-2026.5-py2.py3-none-any.whl  [Apache-2.0]
+tzdata==2026.5 \
+    --hash=sha256:b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac
+
 # ---- compiled: one wheel per interpreter ----------------------
 # chardet-7.7.0-cp311-cp311-win_amd64.whl  [0BSD]
 # chardet-7.7.0-cp313-cp313-win_amd64.whl  [0BSD]

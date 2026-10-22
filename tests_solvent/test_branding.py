@@ -71,8 +71,41 @@ class TheEngineNamesThatMustNotMove(unittest.TestCase):
         self.assertEqual(owner.KEY_ENV, "SOLVENT_OWNER_KEY")
 
     def test_the_runtime_paths_are_unchanged(self):
+        """The engine name in the state path, on whichever platform.
+
+        Asserting the POSIX literal was a Windows CI failure, and the
+        test was the thing that was wrong: ``default_state_path``
+        deliberately returns a ``%PROGRAMDATA%`` path on Windows, and
+        ``test_windows_compatibility`` asserts that it names a drive.
+        Two tests cannot both be right about one constant, and the
+        contract this one is guarding is that the *engine* name stays
+        in the path -- that is what a disk layout already deployed
+        depends on, and it holds on both.
+        """
+        import os
+
         from solvent import runtime as rt
-        self.assertTrue(rt.DEFAULT_DB.startswith("/var/lib/solvent/"))
+        from solvent.types import default_state_path
+
+        self.assertIn(ENGINE.lower(), rt.DEFAULT_DB.lower())
+        self.assertTrue(
+            default_state_path("solvent.db", windows=False)
+            .startswith("/var/lib/solvent/"),
+            "the POSIX layout moved")
+        on_windows = default_state_path("solvent.db", windows=True,
+                                        program_data=r"C:\ProgramData")
+        self.assertTrue(on_windows.startswith("C:\\ProgramData\\"),
+                        on_windows)
+        # On Windows the directory carries the product and the file
+        # carries the engine; on POSIX the directory carries the
+        # engine. Both keep the engine name somewhere in the path,
+        # which is the contract a deployed disk layout depends on.
+        self.assertIn(PRODUCT.lower(), on_windows.lower())
+        self.assertTrue(on_windows.lower().endswith(f"{ENGINE.lower()}.db"))
+        # And the running platform's answer is one of those two.
+        self.assertEqual(
+            rt.DEFAULT_DB,
+            default_state_path("solvent.db", windows=os.name == "nt"))
 
     def test_the_branding_module_warns_against_a_blanket_rename(self):
         """The module docstring is the thing a future agent reads before

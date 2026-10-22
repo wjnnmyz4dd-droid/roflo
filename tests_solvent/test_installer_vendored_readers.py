@@ -92,7 +92,7 @@ class TheManifestIsTheAuthority(unittest.TestCase):
 
     def test_the_hashes_are_well_formed_and_distinct(self):
         hashes = vendor.allowed_digests(manifest_text())
-        self.assertGreaterEqual(len(hashes), 15)
+        self.assertGreaterEqual(len(hashes), 16)
         for digest in hashes:
             self.assertRegex(digest, r"^[0-9a-f]{64}$")
 
@@ -109,7 +109,7 @@ class TheManifestIsTheAuthority(unittest.TestCase):
         permissive = ("MIT", "0BSD", "BSD-3-Clause", "Apache-2.0",
                       "PSF-2.0", "BSD-2-Clause", "CNRI-Python")
         named = re.findall(r"#\s+\S+\.whl\s+\[([^\]]+)\]", text)
-        self.assertGreaterEqual(len(named), 15)
+        self.assertGreaterEqual(len(named), 16)
         for licence in named:
             with self.subTest(licence):
                 self.assertTrue(
@@ -118,6 +118,19 @@ class TheManifestIsTheAuthority(unittest.TestCase):
                     "copyleft dependency is an owner decision, not a "
                     "packaging one")
         self.assertIn("0BSD", named, "chardet's licence is load-bearing")
+
+    def test_it_ships_the_timezone_database(self):
+        """Not a reader, and the one Windows failure nobody predicted.
+
+        Windows ships no IANA timezone database, so
+        ``ZoneInfo("America/New_York")`` raises on every Windows host
+        and ``solvent.briefing`` falls back to UTC -- correctly and
+        visibly, saying so in the summary, and still meaning the
+        owner's 06:50 briefing arrives at some other hour. zoneinfo
+        reads this package automatically when the system has none,
+        so carrying it is the whole repair.
+        """
+        self.assertRegex(manifest_text(), r"(?m)^tzdata==")
 
     def test_nothing_in_it_is_a_source_distribution(self):
         """A sdist would mean compiling on the owner's machine."""
