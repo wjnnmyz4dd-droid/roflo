@@ -168,9 +168,16 @@ def engine_source(commit: str, dirty: str) -> str:
             "                      local testing and publish nothing from it.\n\n")
 
 
-#: Which interpreters the vendored readers are built for. The floor the
-#: installer enforces, and what it bootstraps.
-WHEEL_PYTHONS = ("3.11", "3.13")
+#: Which interpreters the vendored readers are built for.
+#:
+#: Every version between the floor the installer enforces and the
+#: newest it will reuse -- not just the floor and the bootstrap
+#: target. `python_runtime.choose` takes whatever suitable Python is
+#: already on the machine, and a runner with 3.14 installed chose
+#: 3.14, which left the readers unusable on precisely the machine
+#: that had the newest interpreter. Two more sets cost 12.6 MB and
+#: remove a whole class of "works here, not there".
+WHEEL_PYTHONS = ("3.11", "3.12", "3.13", "3.14")
 
 #: The hash-pinned manifest for those readers.
 T2_MANIFEST = HERE / "t2-windows-x64.txt"

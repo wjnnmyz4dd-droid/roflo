@@ -31,36 +31,51 @@ python-docx==1.1.2 \
 # typing_extensions-4.16.0-py3-none-any.whl  [PSF-2.0]
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
-
-# The IANA timezone database. Not a reader, and here for a reason
-# Windows CI found: Windows ships no tz database at all, so
-# `ZoneInfo("America/New_York")` fails and DeskPilot falls back to
-# UTC -- visibly, saying so in the summary, which is the right
-# behaviour and still means the owner's 06:50 briefing arrives at
-# some other hour. zoneinfo picks this package up automatically when
-# the system has no database, so shipping it is the whole fix.
 # tzdata-2026.5-py2.py3-none-any.whl  [Apache-2.0]
 tzdata==2026.5 \
     --hash=sha256:b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac
 
 # ---- compiled: one wheel per interpreter ----------------------
+#
+# cp311 through cp314, which is every version between the floor the
+# installer enforces and the newest it will reuse. Not just the
+# floor and the bootstrap target: `python_runtime.choose` takes
+# whatever suitable Python is already on the machine, and a runner
+# with 3.14 on it chose 3.14 -- so a two-set payload left the
+# readers unusable on exactly the machine with the newest Python.
 # chardet-7.7.0-cp311-cp311-win_amd64.whl  [0BSD]
+# chardet-7.7.0-cp312-cp312-win_amd64.whl  [0BSD]
 # chardet-7.7.0-cp313-cp313-win_amd64.whl  [0BSD]
+# chardet-7.7.0-cp314-cp314-win_amd64.whl  [0BSD]
 chardet==7.7.0 \
     --hash=sha256:6f70dbc2dd14145d9b4011bce5a207f7ecc26e6bea49b5e87f6cac3b84261089 \
-    --hash=sha256:113bbd3ab85835e3e99499ae66829915ed3b4cf5c69525ab1742260f77638449
+    --hash=sha256:e3fa9ea40e766b26b10360edbb4742cfef9e52728b644b39aae7fa39e89df767 \
+    --hash=sha256:113bbd3ab85835e3e99499ae66829915ed3b4cf5c69525ab1742260f77638449 \
+    --hash=sha256:546180f6170da39778069d16130449a9cff49a8fe144535947d1ef26f5330b96
 # clevercsv-0.8.5-cp311-cp311-win_amd64.whl  [MIT]
+# clevercsv-0.8.5-cp312-cp312-win_amd64.whl  [MIT]
 # clevercsv-0.8.5-cp313-cp313-win_amd64.whl  [MIT]
+# clevercsv-0.8.5-cp314-cp314-win_amd64.whl  [MIT]
 clevercsv==0.8.5 \
     --hash=sha256:f4742573e0d0e56a4bceaa7106a8e9e1e7e70c1850fee3ac970c8278def21fb8 \
-    --hash=sha256:c7897edc6d6dbc7e41d4cee27a76ac0d9d39fd2c99da775e4a9e752cb4a25e7b
+    --hash=sha256:04a425f9a3b87d9fc357e727a2e752c4714da5a10129b46150681ef0f2383c72 \
+    --hash=sha256:c7897edc6d6dbc7e41d4cee27a76ac0d9d39fd2c99da775e4a9e752cb4a25e7b \
+    --hash=sha256:3ddac38460cc36370f6d0f6e35ff7a7ca20297251ddfc1c97bcebf2541c6b9f1
 # lxml-6.1.3-cp311-cp311-win_amd64.whl  [BSD-3-Clause]
+# lxml-6.1.3-cp312-cp312-win_amd64.whl  [BSD-3-Clause]
 # lxml-6.1.3-cp313-cp313-win_amd64.whl  [BSD-3-Clause]
+# lxml-6.1.3-cp314-cp314-win_amd64.whl  [BSD-3-Clause]
 lxml==6.1.3 \
     --hash=sha256:7ae4949f212a53b007dbc355884fda122545c5764a54256c9217e419a62a6559 \
-    --hash=sha256:e477aca0bc0d19f3b4ae9e4f2a1cfd687c31bf772d78734910658186b40b2477
+    --hash=sha256:3e9a00d1c2c30936f7add097c41afc5da6556c580909104aafd382cac92a855c \
+    --hash=sha256:e477aca0bc0d19f3b4ae9e4f2a1cfd687c31bf772d78734910658186b40b2477 \
+    --hash=sha256:66299564c046bc7e0cc5de5106601eae907e9fa5904cd68a323380a8502f7861
 # regex-2026.9.29-cp311-cp311-win_amd64.whl  [Apache-2.0 AND CNRI-Python]
+# regex-2026.9.29-cp312-cp312-win_amd64.whl  [Apache-2.0 AND CNRI-Python]
 # regex-2026.9.29-cp313-cp313-win_amd64.whl  [Apache-2.0 AND CNRI-Python]
+# regex-2026.9.29-cp314-cp314-win_amd64.whl  [Apache-2.0 AND CNRI-Python]
 regex==2026.9.29 \
     --hash=sha256:1043aedf5917caa861bcb25a9c11460049656bdf0017a90a309fa8f255467725 \
-    --hash=sha256:61956f074ecd123f55adca68ee3eab46e6a07ad3f8e64e6db95dfacb444f55c4
+    --hash=sha256:fdd88ed5e20b1bcdd234421e454962c971aa44b653bdb7f1ea9ef683e90fb649 \
+    --hash=sha256:61956f074ecd123f55adca68ee3eab46e6a07ad3f8e64e6db95dfacb444f55c4 \
+    --hash=sha256:1c2a0026062abcc321a53db4a185ceba0b59a66b5d37b0808917a88b55a5257f

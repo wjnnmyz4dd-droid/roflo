@@ -236,12 +236,15 @@ class AHostileWheelIsRefused(unittest.TestCase):
         where = r"C:\\DeskPilot\\app\\vendor\\wheels"
         into = r"C:\\DeskPilot\\app\\vendor\\site"
         host.makedirs(where)
-        body = wheel_bytes({"good/__init__.py": "x = 1\n",
+        # An allowlisted package name, so that the traversal check is
+        # what refuses this and not the import allowlist.
+        body = wheel_bytes({"openpyxl/__init__.py": "x = 1\n",
                             "a\\\\..\\\\..\\\\evil.py": "boom\n"})
-        host.write_bytes(ntpath.join(where, "good-1.0-py3-none-any.whl"), body)
+        host.write_bytes(ntpath.join(where, "openpyxl-3.1.5-py3-none-any.whl"),
+                         body)
         digest = hashlib.sha256(body).hexdigest()
-        wheels = vendor.verify(host, where, ["good-1.0-py3-none-any.whl"],
-                               {digest})
+        wheels = vendor.verify(host, where,
+                               ["openpyxl-3.1.5-py3-none-any.whl"], {digest})
         before = set(host.files)
         with self.assertRaises(ReaderRefused):
             vendor.unpack(host, where, into, wheels)
@@ -256,10 +259,44 @@ class AHostileWheelIsRefused(unittest.TestCase):
             "pkg-1.0.dist-info/licenses/LICENSE": "MIT\n",
             "pkg-1.0.data/data/man/man1/pkg.1": "manual\n"})
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
-            kept = vendor.members(archive)
+            kept, refused = vendor.members(archive)
         self.assertIn("pkg-1.0.dist-info/licenses/LICENSE", kept)
-        self.assertIn("pkg/__init__.py", kept)
         self.assertNotIn("pkg-1.0.data/data/man/man1/pkg.1", kept)
+        # `pkg` is not an importable reader, so it is refused -- which
+        # is the allowlist working, not a bug in the fixture.
+        self.assertEqual(refused, ["pkg"])
+
+    def test_only_importable_top_levels_reach_the_import_path(self):
+        """CleverCSV's wheel ships `docs`, `src`, `man` and five more.
+
+        Its own top_level.txt declares all of them, so there is no
+        metadata to trust here. Unpacked as published, a directory
+        called `src` and a directory called `docs` would land on
+        DeskPilot's sys.path, where either could shadow a real
+        module. The allowlist is what stops that, and it is derived
+        from what `solvent.independent` actually imports.
+        """
+        body = wheel_bytes({
+            "clevercsv/__init__.py": "x = 1\n",
+            "docs/index.rst": "hello\n",
+            "src/thing.py": "y = 2\n",
+            "man/man1/clevercsv.1": "manual\n",
+            "clevercsv-0.8.5.dist-info/METADATA": "Name: clevercsv\n"})
+        with zipfile.ZipFile(io.BytesIO(body)) as archive:
+            kept, refused = vendor.members(archive)
+        self.assertIn("clevercsv/__init__.py", kept)
+        self.assertIn("clevercsv-0.8.5.dist-info/METADATA", kept)
+        self.assertEqual(refused, ["docs", "man", "src"])
+        for name in kept:
+            self.assertFalse(name.startswith(("docs/", "src/", "man/")))
+
+    def test_every_reader_solvent_imports_is_on_the_allowlist(self):
+        """Otherwise a reader ships and cannot be imported."""
+        from solvent import independent
+
+        for module, _why in independent._DIFFERENTIAL_READERS.values():
+            with self.subTest(module):
+                self.assertIn(module, vendor.IMPORTABLE)
 
 
 class TheyActuallyImport(unittest.TestCase):
@@ -555,7 +592,8 @@ class TheStepFindsWhatTheBuildWrote(unittest.TestCase):
             here.mkdir(parents=True)
             for name in (f"lxml-6.1.3-{tag}-{tag}-win_amd64.whl",
                          "openpyxl-3.1.5-py2.py3-none-any.whl"):
-                body = wheel_bytes({"pkg/__init__.py": f"tag = {tag!r}\n"})
+                body = wheel_bytes({"openpyxl/__init__.py":
+                                    f"tag = {tag!r}\n"})
                 (here / name).write_bytes(body)
                 self.bodies[(tag, name)] = body
         (self.app / "vendor" / "t2-windows-x64.txt").write_text(
@@ -600,7 +638,7 @@ class TheStepFindsWhatTheBuildWrote(unittest.TestCase):
         written = vendor.unpack(host, where, into, wheels)
         self.assertEqual(len(wheels), 2)
         self.assertTrue(written)
-        self.assertTrue((self.app / "vendor" / "site" / "pkg"
+        self.assertTrue((self.app / "vendor" / "site" / "openpyxl"
                          / "__init__.py").is_file())
 
 

@@ -81,8 +81,14 @@ def wheel_dir(app_root: str, python_tag: str) -> str:
 #: replaces the application tree, and the readers are not part of it.
 SITE = "vendor/site"
 
-#: The manifest, relative to the application root.
-MANIFEST = "windows/installer/t2-windows-x64.txt"
+#: The manifest, relative to the application root. Beside the wheels
+#: under ``vendor/``, which is where ``build.py`` puts it -- not at
+#: its repository path. This constant said the repository path for
+#: three commits, so the step looked somewhere the payload never
+#: writes and reported that a payload carrying twenty-two wheels
+#: carried none. A real Windows installation is what caught it, and
+#: only because the message had started naming the path it checked.
+MANIFEST = "vendor/t2-windows-x64.txt"
 
 #: What a wheel filename promises. ``py3-none-any`` serves every
 #: interpreter; ``cp311-cp311-win_amd64`` serves exactly one.
@@ -228,23 +234,58 @@ def unsafe_member(name: str) -> str:
     return ""
 
 
-def members(archive: zipfile.ZipFile) -> list[str]:
-    """What to write out of one wheel, with the metadata left behind.
+#: The only top-level names that may be written into the import
+#: directory. An allowlist rather than a denylist, and not a tidiness
+#: measure: CleverCSV's wheel ships top-level ``docs``, ``src``,
+#: ``man``, ``notes``, ``auxiliary``, ``stubs``, ``build``,
+#: ``example`` and ``wheelhouse``, and its own ``top_level.txt``
+#: declares every one of them. Unpacking a wheel as published would
+#: put a directory called ``src`` and a directory called ``docs`` on
+#: DeskPilot's ``sys.path``, where either could shadow a real module.
+#:
+#: Derived from what ``solvent.independent`` actually imports and
+#: what those four packages depend on. A reader added to the manifest
+#: without being added here is not unpacked, which fails visibly --
+#: the import does not resolve and ``available()`` says the format is
+#: not covered -- rather than silently widening the import path.
+IMPORTABLE = frozenset({
+    # The four readers themselves, by import name.
+    "openpyxl", "docx", "clevercsv", "markdown_it",
+    # What they need.
+    "chardet", "et_xmlfile", "lxml", "mdurl", "packaging", "regex",
+    "typing_extensions",
+    # Not a reader: the IANA timezone database, which Windows lacks.
+    "tzdata",
+})
+
+
+def importable(top: str) -> bool:
+    """May this top-level name go on the import path?"""
+    return top.removesuffix(".py") in IMPORTABLE
+
+
+def members(archive: zipfile.ZipFile) -> tuple[list[str], list[str]]:
+    """``(to_write, top_levels_refused)`` for one wheel.
 
     ``*.dist-info`` is kept -- a licence that ships with the code is
-    the condition several of these licences attach -- and ``*.data``
-    is dropped, which for this set is CleverCSV's man pages and
-    nothing else.
+    the condition several of these licences attach. ``*.data`` is
+    dropped. Everything else must be on :data:`IMPORTABLE`.
     """
-    keep = []
+    keep, refused = [], set()
     for name in archive.namelist():
         if name.endswith("/"):
             continue
         top = name.split("/")[0]
         if top.endswith(".data"):
             continue
+        if top.endswith(".dist-info"):
+            keep.append(name)
+            continue
+        if not importable(top):
+            refused.add(top)
+            continue
         keep.append(name)
-    return keep
+    return keep, sorted(refused)
 
 
 def unpack(host: Host, wheel_dir: str, into: str,
@@ -258,10 +299,37 @@ def unpack(host: Host, wheel_dir: str, into: str,
     import io
 
     planned: list[tuple[str, bytes]] = []
+    left_out: dict[str, list[str]] = {}
     for wheel in wheels:
         blob = host.read_bytes(ntpath.join(wheel_dir, wheel.name))
         with zipfile.ZipFile(io.BytesIO(blob)) as archive:
-            names = members(archive)
+            # Traversal is checked over *every* entry, before anything
+            # is filtered. The allowlist ran first once, and silently
+            # dropped `a\..\..\evil.py` because that is not an
+            # importable top-level name -- so a tampered wheel
+            # installed successfully and quietly. A hostile archive
+            # must refuse, not be tidied away: selection is a
+            # judgement about usefulness and has no business running
+            # before a judgement about safety.
+            for name in archive.namelist():
+                why = unsafe_member(name)
+                if why:
+                    raise ReaderRefused(Failure(
+                        what_failed=f"unpacking the reader {wheel.name}",
+                        why=(f"it contains the entry {name!r}, which is a "
+                             f"{why} and would write outside the "
+                             f"destination."),
+                        changed=(),
+                        not_changed=("the application", "the database",
+                                     "the owner's data",
+                                     "every file in this wheel set"),
+                        safe_next_action=("Reinstall from a published "
+                                          "DeskPilot-Setup.exe. Nothing "
+                                          "from this wheel set has been "
+                                          "written.")))
+            names, refused = members(archive)
+            if refused:
+                left_out[wheel.package] = refused
             for name in names:
                 why = unsafe_member(name)
                 if why:
@@ -287,6 +355,7 @@ def unpack(host: Host, wheel_dir: str, into: str,
         host.makedirs(ntpath.dirname(target))
         host.write_bytes(target, blob)
         written.append(relative)
+    unpack.left_out = left_out
     return written
 
 

@@ -360,10 +360,12 @@ jobs:
               "PAYLOAD_SHA=$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_ENV
             }
 
-      # The payload carries both wheel sets; only one is for this
-      # interpreter. Asserted here because `step_vendor` picking the
-      # wrong one would not fail -- it would quietly install nothing.
-      - name: The payload carries both wheel sets
+      # The payload carries a wheel set for every interpreter the
+      # installer might reuse -- cp311 through cp314 -- and only one
+      # is for this job's. Asserted here because `step_vendor`
+      # looking in the wrong place does not fail: it quietly installs
+      # nothing, which is exactly what it did for three commits.
+      - name: The payload carries every wheel set
         shell: pwsh
         run: |
           $names = (& python -c @"
@@ -373,10 +375,12 @@ jobs:
           "@ $env:PAYLOAD) -split "`n"
           $wheels = $names | Where-Object { $_ -like "*.whl" }
           Write-Output "$($wheels.Count) wheel(s) in the payload"
-          $cp311 = ($wheels | Where-Object { $_ -like "*cp311*" }).Count
-          $cp313 = ($wheels | Where-Object { $_ -like "*cp313*" }).Count
-          Write-Output "cp311-only=$cp311  cp313-only=$cp313"
-          if ($wheels.Count -lt 20) { throw "the payload carries no wheel set" }
+          foreach ($tag in @("cp311","cp312","cp313","cp314")) {
+            $n = ($names | Where-Object { $_ -like "vendor/wheels/$tag/*" }).Count
+            Write-Output "  $tag : $n wheel(s)"
+            if ($n -lt 10) { throw "the payload carries no $tag wheel set" }
+          }
+          if ($wheels.Count -lt 40) { throw "the payload carries too few wheels" }
           if (-not ($names -contains "vendor/t2-windows-x64.txt")) {
             throw "the payload carries wheels and no manifest to check them against"
           }
