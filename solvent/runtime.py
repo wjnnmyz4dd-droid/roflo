@@ -549,6 +549,7 @@ class Task:
 #: takes hours per job, not a trading system, and a tight loop on a $5 host is
 #: cost with no benefit. Every one is overridable from Policy.
 DEFAULT_INTERVALS = {
+    "chief_of_staff": 900.0,
     # Every task :meth:`Runtime.default_tasks` registers needs an entry here.
     # ``heartbeat`` did not have one, and ``interval`` looked names up with a
     # bare subscript, so registering the first task raised KeyError out of
@@ -743,6 +744,7 @@ class Runtime:
         # Last, and deliberately after supervision: a tick that takes work
         # on should run behind the one that notices work already stuck.
         self.add_task("business", self._tick_business)
+        self.add_task("chief_of_staff", self._tick_chief_of_staff)
 
     def _tick_heartbeat(self) -> str:
         """Touch a file so something outside Solvent can tell it is working.
@@ -1185,6 +1187,35 @@ class Runtime:
         if order is None:
             return None
         return run_business_cycle(self.solvent, **order.as_cycle_kwargs())
+
+    def _tick_chief_of_staff(self) -> str:
+        """Work out what each relationship needs next. Does none of it.
+
+        A tenth task, and deliberately a toothless one: it reads the
+        book, records anything only the owner can answer, and returns.
+        It admits no job, sends no message and moves no money, so it
+        is not a second business engine however often it runs.
+
+        It exists because a coordination layer nothing calls is the
+        defect this codebase keeps producing. The pipeline being empty
+        is a real answer and the ordinary one.
+        """
+        chief = getattr(self.solvent, "chief_of_staff", None)
+        if chief is None:
+            return "not run: no chief of staff is configured"
+        try:
+            escalations = chief.escalations()
+        except Exception as problem:            # a read must not stop a tick
+            return f"could not read the pipeline: {problem}"
+        for item in escalations:
+            self.solvent.audit.record(
+                event="chief_of_staff.escalation", authority="orchestrator",
+                initiator=RUNTIME, why=item.why[:200],
+                decision="OWNER_MUST_DECIDE", result=item.prospect_id)
+        total = len(chief.crm.all())
+        if not total:
+            return "no prospects"
+        return (f"{total} prospect(s); {len(escalations)} need the owner")
 
     def _workroot(self) -> str:
         """Where jobs get their scratch directories.

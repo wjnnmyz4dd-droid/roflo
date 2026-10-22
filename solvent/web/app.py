@@ -129,6 +129,46 @@ def _platform_pill(state: str) -> str:
     }.get(state, "neutral"))
 
 
+def _connection_cards(read) -> str:
+    """The Business Connections section.
+
+    The state comes from `solvent.connections`, which reads the policy
+    and asserts nothing: DeskPilot cannot know that a mailbox works or
+    that a Stripe account is attached, because both are claims about
+    things outside it. A card that said CONNECTED on DeskPilot's own
+    say-so would be the most confidently wrong thing on the page.
+    """
+    from .. import connections as conn
+
+    class _Reader:
+        """Adapts the read-only model to the shape the cards expect."""
+
+        def get(self, *path, default=None):
+            return read.policy_value(*path, default=default)
+
+    summary = conn.summary(_Reader())
+    blocks = []
+    for card in summary["cards"]:
+        tone = {"CONNECTED": "ok", "ERROR": "bad"}.get(card["state"], "warn")
+        button = ""
+        if card["action_verb"]:
+            button = (f'<form method="post" action="/intent">'
+                      f'<input type="hidden" name="verb" '
+                      f'value="{esc(card["action_verb"])}">'
+                      f'<button type="submit">{esc(card["action_label"])}'
+                      f'</button></form>')
+        elsewhere = ("" if not card["owner_must_act_elsewhere"] else
+                     '<div class="n">This step happens with the provider. '
+                     'DeskPilot never asks for a password.</div>')
+        blocks.append(
+            f'<div class="card"><div class="k">{esc(card["title"])}</div>'
+            f'<div class="v">{pill(card["state"], tone)}</div>'
+            f'<div class="n">{esc(card["detail"])}</div>'
+            f'{elsewhere}{button}</div>')
+    note = f'<p class="sub">{esc(summary["note"])}</p>'
+    return "".join(blocks) + note
+
+
 def _intent_class(verb: str) -> str:
     """The class of a verb named in an audit row, without trusting the row.
 
@@ -423,7 +463,9 @@ class ControlCentre:
                 + f"<h2>Needs your attention</h2>{needs}"
                 + "<h2>System status</h2>" + _board_table(board)
                 + f"<h2>Business</h2>{cards}{simulated}"
-                f"<h2>Jobs by state</h2>"
+                + "<h2>Business connections</h2>"
+                + _connection_cards(self.read)
+                + f"<h2>Jobs by state</h2>"
                 + table(["state", "jobs"],
                         [[esc(s), esc(n)] for s, n in sorted(counts.items())],
                         empty="No jobs yet."),

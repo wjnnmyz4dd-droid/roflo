@@ -58,6 +58,9 @@ from . import quoting
 from .pricing import PricingReference
 from .projection import project
 from .store import Store
+from .chiefofstaff import ChiefOfStaff
+from .crm import CRM
+from .outreach import Suppressions
 from .storefront import Storefront
 from . import (csvverify, csvwork, docverify, docwork, entryverify,
                entrywork, reportverify, reportwork, sheetverify, sheetwork)
@@ -207,6 +210,19 @@ class Solvent:
         # act with a recorded determination, and doing it at construction
         # would be this process granting itself a channel.
         self.storefront = Storefront(self.capability, self.policy)
+        # The business-management layer. Built here for the same
+        # reason the storefront is: a Chief of Staff that nothing
+        # constructs is a manager nobody employs, which is the exact
+        # shape of defect this codebase has produced three times --
+        # operation.py, storefront.py and ReadModel.close.
+        #
+        # It owns no authority. It reads the CRM and the suppression
+        # list and says what to do next; everything it recommends is
+        # still decided by the Governor, the Action Gate and the owner.
+        self.crm = CRM(self.memory, self.audit)
+        self.suppressions = Suppressions(self.memory, self.audit)
+        self.chief_of_staff = ChiefOfStaff(
+            crm=self.crm, suppressions=self.suppressions, audit=self.audit)
         self.discovery = Discovery(self.store, self.audit, self.policy,
                                    self.gate, capability=self.capability)
         # Prepares applications; cannot send one. Not an authority -- it owns no
