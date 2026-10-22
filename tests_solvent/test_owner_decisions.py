@@ -380,7 +380,7 @@ class OD2AuthenticEventsStillNeedValidSemantics(unittest.TestCase):
     def test_the_rail_cannot_write_anything(self):
         import ast
 
-        tree = ast.parse(pathlib.Path("solvent/payments.py").read_text())
+        tree = ast.parse(pathlib.Path("solvent/payments.py").read_text(encoding="utf-8"))
         imported = {n.module for n in ast.walk(tree)
                     if isinstance(n, ast.ImportFrom) and n.module}
         self.assertNotIn(".store", imported)
@@ -400,7 +400,7 @@ class OD2CollectionIsNotPayout(unittest.TestCase):
     def test_revenue_counts_collection_not_payout(self):
         from solvent import ledger as ledger_module
 
-        source = pathlib.Path("solvent/ledger.py").read_text()
+        source = pathlib.Path("solvent/ledger.py").read_text(encoding="utf-8")
         self.assertIn("collected revenue unchanged", source)
         self.assertTrue(hasattr(ledger_module.Ledger, "real_revenue_cents"))
 
@@ -549,7 +549,7 @@ class OD3RoutingPrefersLocalAndNeverSubstitutes(unittest.TestCase):
     def test_routing_created_no_second_cost_authority(self):
         import ast
 
-        tree = ast.parse(pathlib.Path("solvent/policy.py").read_text())
+        tree = ast.parse(pathlib.Path("solvent/policy.py").read_text(encoding="utf-8"))
         names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
         for forbidden in ("estimate", "authorize_spend", "approve_spend",
                           "commit_funds"):

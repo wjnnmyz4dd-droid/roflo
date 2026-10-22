@@ -906,7 +906,7 @@ class ThePrivilegeBoundaryIsRespected(unittest.TestCase):
         ast.parse(integration.backup_source(Layout()))
 
     def test_the_backup_retention_matches_the_deployment_contract(self):
-        shell = (ROOT / "deploy" / "backup.sh").read_text()
+        shell = (ROOT / "deploy" / "backup.sh").read_text(encoding="utf-8")
         self.assertIn("SOLVENT_BACKUP_KEEP:-14", shell)
         self.assertEqual(integration.BACKUP_RETENTION, 14)
 

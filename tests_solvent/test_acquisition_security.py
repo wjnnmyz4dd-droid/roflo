@@ -147,7 +147,7 @@ class PermissionsAreEnforcedInTheBackend(Base):
         """The control centre holds no authorities at all, so there is no
         endpoint to attack. Asserted structurally: if one is ever added, the
         grant path has to appear in this module."""
-        source = pathlib.Path("solvent/web/app.py").read_text()
+        source = pathlib.Path("solvent/web/app.py").read_text(encoding="utf-8")
         self.assertNotIn("discovery.grant", source)
         self.assertNotIn("discovery.record_health", source)
         self.assertNotIn("set_credential_configured", source)

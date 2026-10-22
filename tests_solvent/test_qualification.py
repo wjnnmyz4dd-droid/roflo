@@ -251,7 +251,7 @@ class Ranking(unittest.TestCase):
 class QualificationOwnsNoEconomics(unittest.TestCase):
     def test_every_economic_figure_comes_from_the_governor(self):
         """A second place computing margin would be a second financial authority."""
-        source = __import__("pathlib").Path("solvent/qualification.py").read_text()
+        source = __import__("pathlib").Path("solvent/qualification.py").read_text(encoding="utf-8")
         for forbidden in ("margin_floor", "effective_cost_cents =", "apply_factor",
                           "calibration"):
             with self.subTest(term=forbidden):

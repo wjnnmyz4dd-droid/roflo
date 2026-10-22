@@ -34,7 +34,7 @@ sys.path.insert(0, str(INSTALLER))
 
 
 def modules() -> dict[str, ast.Module]:
-    return {p.stem: ast.parse(p.read_text(), filename=str(p))
+    return {p.stem: ast.parse(p.read_text(encoding="utf-8"), filename=str(p))
             for p in sorted(PACKAGE.glob("*.py"))}
 
 
@@ -94,7 +94,7 @@ class ThePackageIsSelfContained(unittest.TestCase):
         is still a dependency, and ``ast`` on its own would miss a string
         passed to ``importlib``."""
         offenders = [p.name for p in PACKAGE.glob("*.py")
-                     if "installer_fake_host" in p.read_text()]
+                     if "installer_fake_host" in p.read_text(encoding="utf-8")]
         self.assertEqual(offenders, [])
 
 
@@ -119,7 +119,7 @@ class NothingReachesAShell(unittest.TestCase):
                   "pwsh.exe", "os.system")
         offenders = []
         for path in PACKAGE.glob("*.py"):
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             for needle in banned:
                 # The docstrings explain *why* PowerShell is avoided, so only
                 # count occurrences outside comments and docstrings.
@@ -174,7 +174,7 @@ class TheInstallerIsNotASecondAuthority(unittest.TestCase):
         argument lists this looks for are wrapped across lines by the formatter
         and a test that breaks on reflowing is a test nobody keeps.
         """
-        engine = " ".join((PACKAGE / "engine.py").read_text().split())
+        engine = " ".join((PACKAGE / "engine.py").read_text(encoding="utf-8").split())
         self.assertIn('"setup", "capability"', engine,
                       "capability promotion must be delegated to solvent")
         self.assertIn('("readiness",)', engine,
@@ -191,7 +191,7 @@ class TheInstallerIsNotASecondAuthority(unittest.TestCase):
         """
         offenders = []
         for path in PACKAGE.glob("*.py"):
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             if "pbkdf2_hmac" in text:
                 offenders.append(path.name)
         self.assertEqual(offenders, [],
@@ -240,18 +240,18 @@ class ThePackagedEntryPointIsTestedSeparately(unittest.TestCase):
                         "the packaged entry point must be tested by execution")
 
     def test_it_declares_how_to_run_it(self):
-        text = self.SUITE.read_text()
+        text = self.SUITE.read_text(encoding="utf-8")
         self.assertIn("RUN_SEPARATELY", text)
         self.assertIn("test_installer_packaged_entrypoint", text)
 
     def test_it_actually_starts_subprocesses(self):
         """A suite that stopped executing anything would prove nothing."""
-        text = self.SUITE.read_text()
+        text = self.SUITE.read_text(encoding="utf-8")
         self.assertIn("subprocess.run", text)
         self.assertIn('"-I"', text)
 
     def test_it_covers_the_launcher_and_the_real_application(self):
-        text = self.SUITE.read_text()
+        text = self.SUITE.read_text(encoding="utf-8")
         for required in ("deskpilot-engine.py", "solvent.cli",
                           "attempted relative import", "selfcheck"):
             self.assertIn(required, text,
@@ -264,7 +264,7 @@ class ThePackagedEntryPointIsTestedSeparately(unittest.TestCase):
         explains in prose why it does not call ``egress.window()``, and a
         substring search cannot tell an explanation from a call.
         """
-        tree = ast.parse(self.SUITE.read_text())
+        tree = ast.parse(self.SUITE.read_text(encoding="utf-8"))
         forbidden = {"window", "posix_spawn", "execv", "execvp", "fork",
                      "addaudithook"}
         called = set()
@@ -285,7 +285,7 @@ class TheWizardDelegatesToTheEngine(unittest.TestCase):
     """The native script must not grow its own copy of a decision."""
 
     def setUp(self):
-        self.nsi = (INSTALLER / "DeskPilot-Setup.nsi").read_text()
+        self.nsi = (INSTALLER / "DeskPilot-Setup.nsi").read_text(encoding="utf-8")
 
     def test_the_wizard_exists_and_is_built_from_the_engine(self):
         """It runs the launcher beside the package, never a module inside it.
@@ -363,7 +363,7 @@ class EveryRefusalStatesItsReason(unittest.TestCase):
     def failures(self) -> list[tuple[str, int, dict]]:
         found = []
         for path in sorted(PACKAGE.rglob("*.py")):
-            tree = ast.parse(path.read_text(), filename=str(path))
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
@@ -470,7 +470,8 @@ class EachBuildKeepsItsOwnProvenance(unittest.TestCase):
             self.assertTrue((out / "BUILD.txt").is_file())
             self.assertEqual(kept, out / "BUILD-abc1234.txt")
             self.assertTrue(kept.is_file())
-            self.assertEqual(kept.read_text(), (out / "BUILD.txt").read_text())
+            self.assertEqual(kept.read_text(encoding="utf-8"),
+                             (out / "BUILD.txt").read_text(encoding="utf-8"))
 
     def test_a_throwaway_build_does_not_overwrite_a_release_record(self):
         """Both are at the same commit when one of them is dirty.
@@ -490,7 +491,7 @@ class EachBuildKeepsItsOwnProvenance(unittest.TestCase):
                 out, "abc1234", "a throwaway\n",
                 dirty=" M windows/installer/build.py")
             self.assertNotEqual(release, throwaway)
-            self.assertEqual(release.read_text(), "the delivered build\n")
+            self.assertEqual(release.read_text(encoding="utf-8"), "the delivered build\n")
             self.assertIn("dirty", throwaway.name)
 
     def test_a_later_build_does_not_destroy_an_earlier_record(self):
@@ -500,9 +501,9 @@ class EachBuildKeepsItsOwnProvenance(unittest.TestCase):
             out = pathlib.Path(box)
             first = build.write_provenance(out, "aaaaaaa", "the first build\n")
             build.write_provenance(out, "bbbbbbb", "the second build\n")
-            self.assertEqual(first.read_text(), "the first build\n",
+            self.assertEqual(first.read_text(encoding="utf-8"), "the first build\n",
                              "the second build overwrote the first's record")
-            self.assertEqual((out / "BUILD.txt").read_text(),
+            self.assertEqual((out / "BUILD.txt").read_text(encoding="utf-8"),
                              "the second build\n")
 
 
@@ -539,7 +540,7 @@ class EveryMutantStillDescribesTheCode(unittest.TestCase):
             if not path.is_file():
                 wrong.append(f"{mutant.name}: {mutant.module} does not exist")
                 continue
-            found = path.read_text().count(mutant.old)
+            found = path.read_text(encoding="utf-8").count(mutant.old)
             if found != 1:
                 wrong.append(f"{mutant.name}: its anchor appears {found} "
                              f"times in {mutant.module}")

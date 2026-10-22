@@ -230,9 +230,9 @@ class ApprovalsAreChecked(Spooled):
                           why="twice", subject="", params=None)
         replayed = pathlib.Path(self.spool)
         for path in replayed.glob("*.intent"):
-            body = json.loads(path.read_text())
+            body = json.loads(path.read_text(encoding="utf-8"))
             body["id"] = first["id"]
-            path.write_text(json.dumps(body))
+            path.write_text(json.dumps(body), encoding="utf-8")
             os.replace(path, replayed / f"{first['id']}.intent")
         result = self.outcome(self.apply(approval), first["id"])
         self.assertEqual(result["outcome"], "REFUSED")
@@ -262,9 +262,9 @@ class ApprovalsAreChecked(Spooled):
         self.s.policy.set_operating_mode(OperatingMode.HALT, OWNER, "test")
         record = self.queue("resume", why="done")
         path = pathlib.Path(self.spool) / f"{record['id']}.intent"
-        body = json.loads(path.read_text())
+        body = json.loads(path.read_text(encoding="utf-8"))
         body["owner_identity"] = second
-        path.write_text(json.dumps(body))
+        path.write_text(json.dumps(body), encoding="utf-8")
 
         # The approval is the first owner's. The spool file claims the second.
         self.apply(self.approval_for(record["id"]))
@@ -300,7 +300,7 @@ class WhatAnApprovalStillCannotDo(Spooled):
         path = pathlib.Path(self.spool)
         path.mkdir(parents=True, exist_ok=True)
         (path / "int_forged.intent").write_text(json.dumps(
-            {"id": "int_forged", "verb": "grant_everything", "why": "hello"}))
+            {"id": "int_forged", "verb": "grant_everything", "why": "hello"}), encoding="utf-8")
         result = self.outcome(self.apply(self.approval_for("int_forged")),
                               "int_forged")
         self.assertEqual(result["outcome"], "REFUSED")
@@ -395,7 +395,7 @@ class TheWebProcessStillCannotDoThis(unittest.TestCase):
         import solvent.web.server
         for module in (solvent.web.app, solvent.web.intents,
                        solvent.web.readmodel, solvent.web.server):
-            source = pathlib.Path(module.__file__).read_text()
+            source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
             with self.subTest(module=module.__name__):
                 self.assertNotIn("OwnerChannel", source)
 

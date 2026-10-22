@@ -38,7 +38,7 @@ class TheTwoNames(unittest.TestCase):
                     list((ROOT / "tests_solvent").rglob("*.py")):
             if path.name == "test_branding.py":
                 continue
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             for spelling in bad:
                 if spelling in text:
                     offenders.append(f"{path.relative_to(ROOT)}: {spelling!r}")
@@ -62,7 +62,7 @@ class TheEngineNamesThatMustNotMove(unittest.TestCase):
     def test_the_session_cookie_name_is_unchanged(self):
         """A browser already holding this cookie must stay signed in across
         the rename."""
-        source = (ROOT / "solvent" / "web" / "server.py").read_text()
+        source = (ROOT / "solvent" / "web" / "server.py").read_text(encoding="utf-8")
         self.assertIn("solvent_session=", source)
         self.assertNotIn("deskpilot_session", source.lower())
 

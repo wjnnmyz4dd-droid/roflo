@@ -23,6 +23,15 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 PRODUCTION = sorted((ROOT / "solvent").rglob("*.py"))
 INSTALLER = sorted(
     (ROOT / "windows" / "installer" / "deskpilot_installer").rglob("*.py"))
+#: The test tree and the tooling, which were outside this check until
+#: Windows CI failed on eight files and the cause in every one of them
+#: was an undeclared encoding in a *test*. A matcher that guards the
+#: product and not the thing that measures the product cannot tell
+#: that the product is fine; it just goes red on Windows and nowhere
+#: else. 147 calls were missing one.
+HARNESS = sorted(
+    list((ROOT / "tests_solvent").rglob("*.py"))
+    + list((ROOT / "tools").rglob("*.py")))
 
 
 def source(paths):
@@ -181,9 +190,42 @@ class TextIoDeclaresItsEncoding(unittest.TestCase):
 
     CALL = re.compile(r"\b(?:open|read_text|write_text)\s*\(")
 
+    @staticmethod
+    def _quoted(text: str) -> list[tuple[int, int]]:
+        """Character ranges covered by a string literal or a comment.
+
+        Tokenised rather than guessed at. The matcher reads raw source,
+        so ``self.assertNotIn("open(request", text)`` -- a test
+        asserting that something is *absent* -- looked exactly like a
+        bare call, and so did every example written inside this
+        module's own docstrings. Three false positives the moment the
+        scan was pointed at the test tree, all of the same kind:
+        flagging a file for containing the string it exists to refuse.
+        """
+        import io
+        import tokenize
+
+        offsets, running = [0], 0
+        for line in text.splitlines(keepends=True):
+            running += len(line)
+            offsets.append(running)
+        spans = []
+        try:
+            for token in tokenize.generate_tokens(io.StringIO(text).readline):
+                if token.type in (tokenize.STRING, tokenize.COMMENT):
+                    start = offsets[token.start[0] - 1] + token.start[1]
+                    end = offsets[token.end[0] - 1] + token.end[1]
+                    spans.append((start, end))
+        except (tokenize.TokenError, IndentationError):   # pragma: no cover
+            return []
+        return spans
+
     def test_every_text_call_names_an_encoding(self):
-        for name, text in source(PRODUCTION + INSTALLER):
+        for name, text in source(PRODUCTION + INSTALLER + HARNESS):
+            quoted = self._quoted(text)
             for match in self.CALL.finditer(text):
+                if any(a <= match.start() < b for a, b in quoted):
+                    continue
                 # To the call's own closing bracket, counting depth: a
                 # 400-character window cut `write_text(json.dumps({...}),
                 # encoding="utf-8")` in half and called it a defect.
@@ -221,6 +263,38 @@ class TextIoDeclaresItsEncoding(unittest.TestCase):
                     self.fail(f"{name}:{line} does text IO without an "
                               f"encoding; on Windows that is the ANSI code "
                               f"page: {head.strip()[:90]}")
+
+
+    def test_the_matcher_still_finds_one(self):
+        """A control. A scan that cannot report a bare call proves nothing.
+
+        The sample is built from pieces so that this file does not
+        itself contain the text being looked for -- which would make
+        the scan above report this very line and prove only that the
+        two halves of the check disagree.
+        """
+        call = "read_" + "text("
+        sample = "text = path." + call + ")\n"
+        found = [m.group() for m in self.CALL.finditer(sample)
+                 if not any(a <= m.start() < b
+                            for a, b in self._quoted(sample))]
+        self.assertEqual(found, [call])
+
+    def test_the_matcher_ignores_one_inside_a_string(self):
+        """The false positive that appeared the moment it scanned tests."""
+        call = "read_" + "text("
+        sample = 'self.assertNotIn("' + call + '", text)\n'
+        quoted = self._quoted(sample)
+        found = [m.group() for m in self.CALL.finditer(sample)
+                 if not any(a <= m.start() < b for a, b in quoted)]
+        self.assertEqual(found, [])
+
+    def test_the_harness_is_actually_scanned(self):
+        """Otherwise the list above could quietly become empty."""
+        self.assertGreater(len(HARNESS), 150)
+        names = {p.name for p in HARNESS}
+        self.assertIn("test_windows_compatibility.py", names)
+        self.assertIn("mutate_solvent.py", names)
 
 
 class TheDatabaseSurvivesWindowsLocking(unittest.TestCase):

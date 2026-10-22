@@ -144,7 +144,7 @@ class ManyJobsInARow(unittest.TestCase):
         for path in sorted(pathlib.Path("solvent").glob("*.py")):
             if path.name in SLEEPS_FOR_SOMEBODY_ELSE:
                 continue
-            for number, line in enumerate(path.read_text().splitlines(), 1):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 if re.search(r"\b(time\.sleep|asyncio\.sleep)\s*\(", line):
                     offenders.append(f"{path.name}:{number}: {line.strip()}")
         self.assertEqual(
@@ -167,7 +167,7 @@ class ManyJobsInARow(unittest.TestCase):
             if path.name in ("prospecting.py", "cli.py"):
                 continue
             if re.search(r"^from \.prospecting import|^from \. import prospecting",
-                         path.read_text(), re.MULTILINE):
+                         path.read_text(encoding="utf-8"), re.MULTILINE):
                 importers.append(path.name)
         self.assertEqual(
             importers, [],

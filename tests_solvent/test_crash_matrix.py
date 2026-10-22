@@ -383,7 +383,7 @@ class TheHarnessIsTestOnly(unittest.TestCase):
         inject a fault, however carefully the flag is named."""
         for path in pathlib.Path("solvent").rglob("*.py"):
             with self.subTest(module=str(path)):
-                source = path.read_text()
+                source = path.read_text(encoding="utf-8")
                 self.assertNotIn("from tests_solvent", source)
                 self.assertNotIn("import faults", source)
 

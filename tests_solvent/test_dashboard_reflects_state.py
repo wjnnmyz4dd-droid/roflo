@@ -103,7 +103,7 @@ class TheInventoryFollowsTheRegistry(Base):
 
     def test_no_skill_name_is_written_into_the_page_source(self):
         """A hard-coded card would have to name a skill. None does."""
-        source = APP.read_text()
+        source = APP.read_text(encoding="utf-8")
         for name in ("pdf-extract", "csv-cleanup", "report-builder"):
             self.assertNotIn(name, source)
 
@@ -195,7 +195,7 @@ class TheDashboardDecidesNothing(Base):
         forbidden = {"record_validation", "request_validation",
                      "record_certification", "record_promotion", "register",
                      "decide", "amend", "promote"}
-        tree = ast.parse(APP.read_text())
+        tree = ast.parse(APP.read_text(encoding="utf-8"))
         called = {node.func.attr for node in ast.walk(tree)
                   if isinstance(node, ast.Call)
                   and isinstance(node.func, ast.Attribute)}
@@ -211,7 +211,7 @@ class TheDashboardDecidesNothing(Base):
         """
         import ast
 
-        tree = ast.parse(APP.read_text())
+        tree = ast.parse(APP.read_text(encoding="utf-8"))
         calls = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):

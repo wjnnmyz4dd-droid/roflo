@@ -311,7 +311,7 @@ class TheWizardSearchesTheSamePlaces(unittest.TestCase):
 
     def setUp(self):
         self.nsi = (ROOT / "windows" / "installer"
-                    / "DeskPilot-Setup.nsi").read_text()
+                    / "DeskPilot-Setup.nsi").read_text(encoding="utf-8")
 
     def test_the_wizard_includes_the_generated_search_list(self):
         self.assertIn("PYTHON_SEARCH_NSH", self.nsi)
@@ -361,7 +361,7 @@ class TheWizardSearchesTheSamePlaces(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as box:
             build.write_python_search(pathlib.Path(box))
-            text = (pathlib.Path(box) / "python-search.nsh").read_text()
+            text = (pathlib.Path(box) / "python-search.nsh").read_text(encoding="utf-8")
 
         for candidate in pr.machine_candidates():
             self.assertIn(candidate, text,

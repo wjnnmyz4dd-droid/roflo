@@ -39,7 +39,7 @@ def config(tag: str, kind: str = "ollama") -> str:
     """Write a roflo.toml naming ``tag`` and return its path."""
     directory = tempfile.mkdtemp()
     path = pathlib.Path(directory) / "roflo.toml"
-    path.write_text(f'[backend]\nkind = "{kind}"\nmodel = "{tag}"\n')
+    path.write_text(f'[backend]\nkind = "{kind}"\nmodel = "{tag}"\n', encoding="utf-8")
     return str(path)
 
 
@@ -167,13 +167,13 @@ class ConfiguredModelReading(unittest.TestCase):
     def test_a_malformed_config_is_unknown_not_permissive(self):
         directory = tempfile.mkdtemp()
         path = pathlib.Path(directory) / "roflo.toml"
-        path.write_text("this is not = valid = toml [[[")
+        path.write_text("this is not = valid = toml [[[", encoding="utf-8")
         self.assertEqual(configured_model(str(path), env={}), ("", ""))
 
     def test_a_config_without_a_backend_table_is_unknown(self):
         directory = tempfile.mkdtemp()
         path = pathlib.Path(directory) / "roflo.toml"
-        path.write_text('template = "chatml"\n')
+        path.write_text('template = "chatml"\n', encoding="utf-8")
         self.assertEqual(configured_model(str(path), env={}), ("", ""))
 
 
@@ -328,6 +328,6 @@ class EnvironmentOverrides(unittest.TestCase):
     def test_the_override_names_match_roflo(self):
         """If roflo renames these, this test fails rather than the check silently
         going blind."""
-        source = pathlib.Path("roflo/config.py").read_text()
+        source = pathlib.Path("roflo/config.py").read_text(encoding="utf-8")
         for name in (ENV_BACKEND, ENV_MODEL):
             self.assertIn(f'env.get("{name}")', source)

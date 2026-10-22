@@ -46,7 +46,7 @@ class Scorecard(unittest.TestCase):
 
 class NotASecondGovernor(unittest.TestCase):
     def test_the_module_prices_nothing(self):
-        source = pathlib.Path("solvent/services.py").read_text()
+        source = pathlib.Path("solvent/services.py").read_text(encoding="utf-8")
         for forbidden in ("margin_floor", "Cents", "money(", "effective_cost",
                           "calibration", "authorize_spend"):
             with self.subTest(term=forbidden):

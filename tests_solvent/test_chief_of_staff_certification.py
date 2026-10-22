@@ -249,7 +249,7 @@ class TheArchitectureIsWhatItClaims(unittest.TestCase):
 
     def test_the_coordinator_holds_no_authority(self):
         """Parsed, not grepped: this module's prose names them all."""
-        tree = ast.parse((SOLVENT / "chiefofstaff.py").read_text())
+        tree = ast.parse((SOLVENT / "chiefofstaff.py").read_text(encoding="utf-8"))
         called = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute):
@@ -261,7 +261,7 @@ class TheArchitectureIsWhatItClaims(unittest.TestCase):
 
     def test_the_guard_above_can_fail(self):
         """A control for the control: the AST walk does find attributes."""
-        tree = ast.parse((SOLVENT / "chiefofstaff.py").read_text())
+        tree = ast.parse((SOLVENT / "chiefofstaff.py").read_text(encoding="utf-8"))
         called = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
         self.assertIn("standing", called)
 
@@ -1985,9 +1985,9 @@ class TheDefectsThisCertificationFound(Bench):
         """Defect 2. ``performance()`` was called by no production code."""
         import solvent.chiefofstaff as module
 
-        source = pathlib.Path(module.__file__).read_text()
+        source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
         self.assertIn("def performance", source)
-        runtime_source = (SOLVENT / "runtime.py").read_text()
+        runtime_source = (SOLVENT / "runtime.py").read_text(encoding="utf-8")
         self.assertIn("chief.performance()", runtime_source,
                       "the figures are computed by something that runs")
         self.a_prospect()

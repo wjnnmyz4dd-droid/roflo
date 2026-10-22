@@ -124,7 +124,7 @@ class MissionIsStatedWhereItCannotBeMissed(unittest.TestCase):
         import pathlib
         mission = pathlib.Path("SOLVENT.md")
         self.assertTrue(mission.exists(), "SOLVENT.md is the canonical mission doc")
-        head = mission.read_text()[:600].upper()
+        head = mission.read_text(encoding="utf-8")[:600].upper()
         self.assertIn("FIND", head)
         self.assertIn("PROFIT", head)
 

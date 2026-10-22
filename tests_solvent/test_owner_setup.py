@@ -352,7 +352,7 @@ class TheOwnersIdentityIsHeldProportionately(Base):
 
 
 def gitignore_patterns() -> list[str]:
-    return [line.strip() for line in (REPO / ".gitignore").read_text().splitlines()
+    return [line.strip() for line in (REPO / ".gitignore").read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.startswith("#")]
 
 
@@ -498,7 +498,7 @@ class GitCannotCarryASecret(unittest.TestCase):
     def test_the_template_is_tracked_and_carries_no_value(self):
         template = REPO / "deploy" / "solvent.env.example"
         self.assertTrue(template.exists())
-        for line in template.read_text().splitlines():
+        for line in template.read_text(encoding="utf-8").splitlines():
             if line.startswith(("SOLVENT_OWNER_KEY", "SOLVENT_STRIPE")):
                 with self.subTest(line=line):
                     self.assertTrue(line.endswith("="),
@@ -515,8 +515,8 @@ class TheDeploymentInstructionsAgreeWithThemselves(unittest.TestCase):
     reports every credential as missing."""
 
     def test_the_installer_and_the_unit_name_the_same_file(self):
-        unit = (REPO / "deploy" / "solvent.service").read_text()
-        installer = (REPO / "deploy" / "install.sh").read_text()
+        unit = (REPO / "deploy" / "solvent.service").read_text(encoding="utf-8")
+        installer = (REPO / "deploy" / "install.sh").read_text(encoding="utf-8")
         self.assertIn("/etc/solvent/solvent.env", unit)
         self.assertIn("solvent.env", installer)
 
@@ -524,24 +524,24 @@ class TheDeploymentInstructionsAgreeWithThemselves(unittest.TestCase):
         """0600 root:solvent is root-only: the service user could not read it.
         Two files said exactly that."""
         for name in ("solvent.service", "solvent.env.example", "install.sh"):
-            text = (REPO / "deploy" / name).read_text()
+            text = (REPO / "deploy" / name).read_text(encoding="utf-8")
             for line in text.splitlines():
                 if "0600" in line and "solvent.env" in line.lower():
                     self.fail(f"{name}: {line.strip()}")
 
     def test_the_installer_uses_a_mode_the_service_user_can_read(self):
-        installer = (REPO / "deploy" / "install.sh").read_text()
+        installer = (REPO / "deploy" / "install.sh").read_text(encoding="utf-8")
         self.assertIn("-m 0640", installer)
 
     def test_the_backup_script_excludes_the_secret_file(self):
-        backup = (REPO / "deploy" / "backup.sh").read_text()
+        backup = (REPO / "deploy" / "backup.sh").read_text(encoding="utf-8")
         self.assertIn("SECRETS ARE DELIBERATELY NOT INCLUDED", backup)
         self.assertNotIn("/etc/solvent/solvent.env\"", backup)
 
     def test_the_environment_variable_names_match_the_code(self):
         """If a variable is renamed in code the template goes stale silently,
         and the owner fills in a name nothing reads."""
-        template = (REPO / "deploy" / "solvent.env.example").read_text()
+        template = (REPO / "deploy" / "solvent.env.example").read_text(encoding="utf-8")
         self.assertIn(KEY_ENV, template)
         self.assertIn(STRIPE_SECRET_ENV, template)
 
@@ -552,7 +552,7 @@ class TheOwnerManualMatchesTheCode(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.manual = (REPO / "docs" / "solvent-owner-manual-setup.md").read_text()
+        cls.manual = (REPO / "docs" / "solvent-owner-manual-setup.md").read_text(encoding="utf-8")
 
     def commands_it_tells_the_owner_to_run(self) -> set[str]:
         import re

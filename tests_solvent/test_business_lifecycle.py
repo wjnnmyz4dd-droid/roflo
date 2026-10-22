@@ -236,7 +236,7 @@ class TheWholeLifecycle(ProductionPath):
 
         AUTHORITIES = {"FinancialGovernor", "ActionGate", "JobOrchestrator",
                        "Ledger", "OwnerChannel", "Qualification"}
-        tree = ast.parse(_p.Path("solvent/chiefofstaff.py").read_text())
+        tree = ast.parse(_p.Path("solvent/chiefofstaff.py").read_text(encoding="utf-8"))
 
         imported = set()
         for node in ast.walk(tree):

@@ -243,7 +243,7 @@ class GroundTruthIsolation(unittest.TestCase):
 
         for name in ("harness.py", "runner.py", "scenarios.py"):
             source = pathlib.Path("tests_solvent/blackbox") / name
-            text = source.read_text()
+            text = source.read_text(encoding="utf-8")
             with self.subTest(module=name):
                 self.assertNotIn("record_verification", text)
                 self.assertNotIn("mark_verified", text)

@@ -78,7 +78,7 @@ class TheAnswerChangesWhenDemandArrives(unittest.TestCase):
         import pathlib
 
         self.assertEqual(sc.DEMAND_THRESHOLD, 3)
-        source = pathlib.Path("solvent/skillcandidates.py").read_text()
+        source = pathlib.Path("solvent/skillcandidates.py").read_text(encoding="utf-8")
         self.assertIn("anecdote", source,
                       "the threshold is a number with no stated reasoning")
 

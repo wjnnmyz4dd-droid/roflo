@@ -118,7 +118,7 @@ class TheDeploymentContractIsNotOptional(unittest.TestCase):
     """What follows from the bypass being real."""
 
     def test_the_module_says_so_rather_than_claiming_completeness(self):
-        source = pathlib.Path("solvent/egress.py").read_text()
+        source = pathlib.Path("solvent/egress.py").read_text(encoding="utf-8")
         self.assertIn("ctypes", source)
         # Matched across the line wrap, so reflowing the docstring does not
         # silently turn this assertion off.
@@ -129,7 +129,7 @@ class TheDeploymentContractIsNotOptional(unittest.TestCase):
         contract = pathlib.Path("docs/solvent-egress-deployment-contract.md")
         self.assertTrue(contract.is_file(),
                         "the in-process layer names a contract that is missing")
-        text = contract.read_text()
+        text = contract.read_text(encoding="utf-8")
         self.assertIn("namespace", text.lower())
 
     def test_an_unrecorded_firewall_is_therefore_unsafe(self):

@@ -182,7 +182,7 @@ class Limited(unittest.TestCase):
     def test_the_scope_is_recorded_not_interpreted(self):
         """Prose the owner wrote is shown to a human, never parsed into rights."""
         import pathlib
-        source = pathlib.Path("solvent/capability.py").read_text()
+        source = pathlib.Path("solvent/capability.py").read_text(encoding="utf-8")
         block = source[source.index("def decide("):source.index("def development_decision(")]
         for parsing in ("scope.split", "scope.lower", 'in scope', "eval(", "re."):
             self.assertNotIn(parsing, block, f"scope is being interpreted: {parsing}")

@@ -207,7 +207,7 @@ class BlankLinesAreNotRows(unittest.TestCase):
 
     def test_blank_lines_do_not_appear_in_the_deliverable(self):
         report = self.run_text("Order ID,Total\n1,250.00\n\n\n1,250.00\n")
-        text = pathlib.Path(report.artifacts[-1].path).read_text()
+        text = pathlib.Path(report.artifacts[-1].path).read_text(encoding="utf-8")
         self.assertNotIn("\n\n", text)
 
     def test_blank_lines_are_not_counted_as_rows(self):
@@ -218,7 +218,7 @@ class BlankLinesAreNotRows(unittest.TestCase):
         """Zero fields is a blank line. Correct width with empty values is data."""
         report = self.run_text("Order ID,Total\n1,\n2,\n1,\n")
         self.assertTrue(report.delivered, report.escalated)
-        text = pathlib.Path(report.artifacts[-1].path).read_text()
+        text = pathlib.Path(report.artifacts[-1].path).read_text(encoding="utf-8")
         self.assertIn("1,\n", text)
         self.assertIn("2,\n", text)
 
@@ -250,7 +250,7 @@ class TheDeliveryGateRefusesOnItsOwn(unittest.TestCase):
         report = run_csv_job(source=src, requirements=fx.COMPLEX, workdir=work,
                              solvent=s)
         path = pathlib.Path(report.artifacts[-1].path)
-        path.write_text(path.read_text() + " ", encoding="utf-8")
+        path.write_text(path.read_text(encoding="utf-8") + " ", encoding="utf-8")
         with self.assertRaises(FailClosed) as caught:
             s.orchestrator.record_delivery(job_id=report.job_id, initiator="x",
                                            gate_request_id="act")

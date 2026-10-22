@@ -502,7 +502,7 @@ class ItHoldsNoAuthority(unittest.TestCase):
     def test_the_module_never_imports_an_authority_it_could_command(self):
         import ast
 
-        source = pathlib.Path("solvent/resilience.py").read_text()
+        source = pathlib.Path("solvent/resilience.py").read_text(encoding="utf-8")
         imported = set()
         for node in ast.walk(ast.parse(source)):
             if isinstance(node, ast.ImportFrom) and node.module:
@@ -569,7 +569,7 @@ class DeterministicReplay(unittest.TestCase):
         is no code path here that could be pointed at a real one by mistake."""
         import ast
 
-        tree = ast.parse(pathlib.Path("solvent/resilience.py").read_text())
+        tree = ast.parse(pathlib.Path("solvent/resilience.py").read_text(encoding="utf-8"))
         replay = next(n for n in ast.walk(tree)
                       if isinstance(n, ast.FunctionDef) and n.name == "replay")
         calls = {getattr(n.func, "attr", getattr(n.func, "id", ""))

@@ -117,7 +117,7 @@ class TheWizardCommandMatchesTheWizardLayout(unittest.TestCase):
     """The script's own two halves have to agree about where the engine is."""
 
     def setUp(self):
-        self.nsi = NSI.read_text()
+        self.nsi = NSI.read_text(encoding="utf-8")
 
     def test_the_launcher_is_shipped_beside_the_package(self):
         self.assertTrue(LAUNCHER.is_file(),
@@ -131,7 +131,7 @@ class TheWizardCommandMatchesTheWizardLayout(unittest.TestCase):
     def test_the_launcher_has_no_relative_imports(self):
         """The defect in one line: a script cannot do relative imports."""
         import ast
-        tree = ast.parse(LAUNCHER.read_text())
+        tree = ast.parse(LAUNCHER.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 self.assertEqual(node.level, 0,
@@ -226,7 +226,7 @@ class TheRealLauncherRuns(unittest.TestCase):
         run_engine(self.launcher, "selfcheck", "--root", "C:/DeskPilot",
                    "--package", os.devnull, "--expect-sha256", "ab" * 32,
                    "--out", str(out))
-        report = json.loads(out.read_text())
+        report = json.loads(out.read_text(encoding="utf-8"))
         engine_row = next(r for r in report["rows"]
                           if r["name"] == "Installation engine")
         self.assertTrue(engine_row["facts"]["isolated"],
@@ -244,7 +244,7 @@ class TheRealLauncherRuns(unittest.TestCase):
         run_engine(self.launcher, "selfcheck", "--root", "C:/DeskPilot",
                    "--package", os.devnull, "--expect-sha256", "ab" * 32,
                    "--out", str(out))
-        report = json.loads(out.read_text())
+        report = json.loads(out.read_text(encoding="utf-8"))
         self.assertEqual(report["phase"], "selfcheck")
         self.assertFalse(report["may_continue"])
         names = {row["name"] for row in report["rows"]}
@@ -363,7 +363,7 @@ class TheHandOverWorksThroughARealEnvironment(unittest.TestCase):
                              "--expect-sha256", "ab" * 32, "--out",
                              str(pathlib.Path(self.box.name) / "r.json"))
         report = json.loads(
-            (pathlib.Path(self.box.name) / "r.json").read_text())
+            (pathlib.Path(self.box.name) / "r.json").read_text(encoding="utf-8"))
         self.assertNotIn("correct-horse-battery", json.dumps(report))
 
 
@@ -379,7 +379,7 @@ class ADamagedEngineStopsSafely(unittest.TestCase):
 
     def test_a_syntax_error_in_a_module_is_reported_readably(self):
         target = pathlib.Path(self.box.name) / "engine" / "deskpilot_installer"
-        (target / "payload.py").write_text("this is not python ((\n")
+        (target / "payload.py").write_text("this is not python ((\n", encoding="utf-8")
         done = run_engine(self.launcher, "selfcheck")
         self.assertEqual(done.returncode, 3)
         self.assertIn("DESKPILOT ENGINE COULD NOT START", done.stderr)
@@ -403,7 +403,7 @@ class ADamagedEngineStopsSafely(unittest.TestCase):
 
     def test_a_damaged_engine_never_reports_success(self):
         target = pathlib.Path(self.box.name) / "engine" / "deskpilot_installer"
-        (target / "probe.py").write_text("raise RuntimeError('boom')\n")
+        (target / "probe.py").write_text("raise RuntimeError('boom')\n", encoding="utf-8")
         done = run_engine(self.launcher, "selfcheck")
         self.assertNotEqual(done.returncode, 0)
 
@@ -439,7 +439,7 @@ class TheRealApplicationCommandsWork(unittest.TestCase):
              "import site;print(site.getsitepackages()[0])"],
             capture_output=True, text=True, check=True, timeout=120)
         (pathlib.Path(site.stdout.strip())
-         / "deskpilot-app.pth").write_text(str(cls.app) + "\n")
+         / "deskpilot-app.pth").write_text(str(cls.app) + "\n", encoding="utf-8")
         cls.db = base / "solvent.db"
         cls.env = dict(os.environ)
         cls.env["SOLVENT_OWNER_KEY"] = "a" * 16 + "b1c2d3e4f5" * 5
@@ -574,7 +574,7 @@ class TheRealApplicationCommandsWork(unittest.TestCase):
         self.assertIn("cannot import name 'Solvent'", done.stderr)
 
     def test_08_the_engines_capability_script_uses_the_right_module(self):
-        source = (PACKAGE / "engine.py").read_text()
+        source = (PACKAGE / "engine.py").read_text(encoding="utf-8")
         self.assertIn("from solvent.harness import Solvent", source)
         self.assertNotIn("from solvent.services import Solvent", source)
 
@@ -614,7 +614,7 @@ class TheRealApplicationCommandsWork(unittest.TestCase):
 
     def test_13_the_engines_step_order_matches_what_the_cli_requires(self):
         """Provision before anything that needs a database."""
-        source = (PACKAGE / "engine.py").read_text()
+        source = (PACKAGE / "engine.py").read_text(encoding="utf-8")
         order = [m for m in re.findall(r'\("([^"]+)", self\.step_\w+\)', source)]
         self.assertIn("Creating persistent database", order)
         database = order.index("Creating persistent database")
@@ -625,7 +625,7 @@ class TheRealApplicationCommandsWork(unittest.TestCase):
                                f"{later} runs before the database exists")
 
     def test_14_no_step_passes_a_typed_name_as_a_governance_identity(self):
-        source = (PACKAGE / "engine.py").read_text()
+        source = (PACKAGE / "engine.py").read_text(encoding="utf-8")
         flattened = " ".join(source.split())
         self.assertNotIn('"--owner", self.answers.owner_identity', flattened)
 

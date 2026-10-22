@@ -185,7 +185,7 @@ class ItOwnsNoNewAuthority(unittest.TestCase):
         # Parsed, not grepped. The module's own docstring names
         # run_business_cycle to say what it calls, and a text search
         # cannot tell an explanation from a call.
-        tree = ast.parse(_p.Path("solvent/operation.py").read_text())
+        tree = ast.parse(_p.Path("solvent/operation.py").read_text(encoding="utf-8"))
         called = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
@@ -205,7 +205,7 @@ class ItOwnsNoNewAuthority(unittest.TestCase):
         import ast
         import pathlib as _p
 
-        tree = ast.parse(_p.Path("solvent/operation.py").read_text())
+        tree = ast.parse(_p.Path("solvent/operation.py").read_text(encoding="utf-8"))
         imported = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:

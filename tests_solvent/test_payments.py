@@ -226,7 +226,7 @@ class RailIsNotAnAuthority(unittest.TestCase):
 
     def test_the_rail_module_never_touches_the_store(self):
         import pathlib
-        source = pathlib.Path("solvent/payments.py").read_text()
+        source = pathlib.Path("solvent/payments.py").read_text(encoding="utf-8")
         for forbidden in ("Store", "for_authority", "INSERT INTO", "UPDATE "):
             with self.subTest(term=forbidden):
                 self.assertNotIn(forbidden, source)

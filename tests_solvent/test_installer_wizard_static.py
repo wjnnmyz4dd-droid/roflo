@@ -51,7 +51,7 @@ _COMMENT = re.compile(r"^\s*(;|#)")
 def code_lines() -> list[tuple[int, str]]:
     """Every line that NSIS will execute, with its 1-based number."""
     out = []
-    for number, line in enumerate(NSI.read_text().splitlines(), 1):
+    for number, line in enumerate(NSI.read_text(encoding="utf-8").splitlines(), 1):
         if _COMMENT.match(line) or not line.strip():
             continue
         out.append((number, line))
@@ -141,7 +141,7 @@ class TheSystemPluginRegisterConvention(unittest.TestCase):
 
     def test_the_handover_clears_the_register_and_the_variable(self):
         """A password must not sit in a global after it has been handed over."""
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         self.assertIn('StrCpy $R5 ""', text)
         self.assertIn('StrCpy $AnswersJson ""', text)
 
@@ -346,7 +346,7 @@ class NoSecretReachesACommandLine(unittest.TestCase):
         self.assertEqual(offenders, [], "\n".join(offenders))
 
     def test_the_wizard_clears_the_secrets_after_the_install_phase(self):
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         for name in ("$WebPassword", "$WebPassword2", "$AiApiKey"):
             self.assertIn(f'StrCpy {name} ""', text,
                           f"{name} is never cleared")
@@ -356,25 +356,25 @@ class TheWizardStagesAndRunsWhatItClaims(unittest.TestCase):
     """Cheap structural checks over the install sequence's own wiring."""
 
     def test_the_self_check_runs_before_the_install_phase(self):
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         self.assertLess(text.index("deskpilot-engine.py\" selfcheck"),
                         text.index("deskpilot-engine.py\" install"))
 
     def test_the_answers_are_set_before_the_self_check(self):
         """The self-check verifies the hand-over, so it must happen after it."""
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         self.assertLess(text.index("SetEnvironmentVariable(t \"DESKPILOT_SETUP_ANSWERS\", t R5)"),
                         text.index("deskpilot-engine.py\" selfcheck"))
 
     def test_the_answers_are_cleared_after_the_install_phase(self):
         """The successful path forgets them once the engine has them."""
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         forget = text.index("Call ForgetSecrets", text.index(
             "deskpilot-engine.py\" install"))
         self.assertGreater(forget, text.index("deskpilot-engine.py\" install"))
 
     def test_a_failed_self_check_aborts(self):
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         window = text[text.index("deskpilot-engine.py\" selfcheck"):]
         window = window[:window.index("deskpilot-engine.py\" install")]
         self.assertIn("Abort", window)
@@ -476,7 +476,7 @@ class TheUninstallerDoesNotGuessAtPython(unittest.TestCase):
         return functions()["un.FindPython"]
 
     def test_the_installer_records_the_interpreter_it_used(self):
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         self.assertIn('WriteRegStr HKLM "${REGKEY}" "PythonExe" "$PythonExe"',
                       text)
 
@@ -558,7 +558,7 @@ class TheUpgradeDoesNotMixTwoEngines(unittest.TestCase):
 
     def test_the_clearing_happens_after_the_engine_has_committed(self):
         """Nothing is removed until the install phase has already succeeded."""
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         self.assertLess(text.index('deskpilot-engine.py" install'),
                         text.index(f'RMDir /r "{self.OWNED}"'),
                         "the Engine directory is cleared before the install "
@@ -577,7 +577,7 @@ class OneExecutableInstallsOrRepairs(unittest.TestCase):
     """
 
     def text(self) -> str:
-        return NSI.read_text()
+        return NSI.read_text(encoding="utf-8")
 
     def install_section(self) -> list[str]:
         inside, out = False, []
@@ -662,19 +662,19 @@ class TheLastScreenCannotClaimMoreThanWasChecked(unittest.TestCase):
                       " ".join(self.install_section()))
 
     def test_verification_runs_after_the_work_not_before(self):
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         self.assertLess(text.index('deskpilot-engine.py" install'),
                         text.index('deskpilot-engine.py" verify'))
 
     def test_the_page_that_only_claimed_to_verify_is_gone(self):
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         self.assertNotIn("Function VerifyPage", text)
         self.assertNotIn("Page custom VerifyPage", text)
         self.assertNotIn("Running health, readiness and diagnostics",
                          "\n".join(line for _n, line in code_lines()))
 
     def test_the_finish_title_is_not_a_fixed_claim(self):
-        text = NSI.read_text()
+        text = NSI.read_text(encoding="utf-8")
         self.assertIn('!define MUI_FINISHPAGE_TITLE "$FinishTitle"', text)
         self.assertNotIn('!define MUI_FINISHPAGE_TITLE "DeskPilot is installed"',
                          text)

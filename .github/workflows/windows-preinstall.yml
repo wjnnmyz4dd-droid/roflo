@@ -70,23 +70,65 @@ jobs:
                         '|', producer.why)
           "@
 
-      # Redirected rather than tee'd, and deliberately silent here. The
-      # tee'd version lost the end of the run: the uploaded file stopped
-      # at 60% and the step's console output never reached the archived
-      # log either, so three attempts to find out which Windows tests
-      # fail all came back with nothing. A plain redirect produces a
-      # complete file, and the short step below prints the part that
-      # matters.
+      # cmd.exe, not pwsh, and that is the point of this step's shape.
       #
-      # -rf lists every failure by name at the end, so the tail is the
-      # answer rather than a sample of it.
+      # The previous two attempts both lost the end of the run: the
+      # tee'd version stopped at 60%, the redirected one at 65%, and in
+      # both the step's own `Write-Output "pytest exit code: ..."`
+      # never reached the archived log either. A shell that loses its
+      # own echo after the command it ran is a shell whose buffer went
+      # with it, so this run removes the shell from the path: cmd.exe's
+      # `>` is an OS-level handle on the child process, written by
+      # pytest itself with nothing in between to buffer.
+      #
+      # And the answer no longer depends on stdout at all. --junitxml
+      # is written incrementally by pytest and names every test that
+      # ran, so even a lost console says which test was last. The exit
+      # code goes to a file in the same breath, because a code printed
+      # to a stream that disappears is not evidence.
       - name: Full suite
+        shell: cmd
+        run: |
+          python -I -m pytest tests_solvent -p no:randomly -v --color=no --tb=long -rA --junitxml=junit.xml > suite.txt 2>&1
+          echo %ERRORLEVEL%> exitcode.txt
+          type exitcode.txt
+          exit /b 0
+
+      # Separate from the step above so the suite's own exit code
+      # cannot stop the diagnosis. Everything measured here is read
+      # from files pytest wrote, not from a console that may not have
+      # survived.
+      - name: What the suite actually did
+        if: always()
         shell: pwsh
         run: |
-          python -I -m pytest tests_solvent -q --tb=line -rf > suite.txt 2>&1
-          $code = $LASTEXITCODE
+          $code = if (Test-Path exitcode.txt) { (Get-Content exitcode.txt -Raw).Trim() } else { "no file" }
           Write-Output "pytest exit code: $code"
-          exit $code
+          if (Test-Path suite.txt) {
+            $lines = @(Get-Content suite.txt)
+            Write-Output "suite.txt: $($lines.Count) line(s), $((Get-Item suite.txt).Length) bytes"
+            Write-Output "----- last line written -----"
+            Write-Output $lines[-1]
+          } else { Write-Output "suite.txt was never created" }
+          if (Test-Path junit.xml) {
+            [xml]$x = Get-Content junit.xml
+            $suite = $x.testsuites.testsuite
+            Write-Output ("junit: tests={0} failures={1} errors={2} skipped={3}" -f `
+                          $suite.tests, $suite.failures, $suite.errors, $suite.skipped)
+            $cases = @($suite.testcase)
+            Write-Output "junit recorded $($cases.Count) case(s); last was:"
+            Write-Output ("  {0}::{1}" -f $cases[-1].classname, $cases[-1].name)
+          } else { Write-Output "junit.xml was never created -- pytest did not reach the end" }
+          Write-Output "----- free disk and memory -----"
+          Get-PSDrive C | Select-Object Used,Free | Format-List
+          Get-CimInstance Win32_OperatingSystem |
+            Select-Object FreePhysicalMemory,TotalVisibleMemorySize | Format-List
+          if (Test-Path suite.txt) {
+            Write-Output "----- suite.txt, last 80 lines -----"
+            Get-Content suite.txt -Tail 80
+          }
+          $code = if (Test-Path exitcode.txt) { (Get-Content exitcode.txt -Raw).Trim() } else { "1" }
+          if ($code -ne "0") { exit 1 }
 
       # Every step below runs even when the suite fails. A single red
       # test must not hide the Windows-only answers this workflow is
@@ -189,44 +231,45 @@ jobs:
         if: always()
         run: python -I -m pytest tests_solvent/test_production_path.py -q
 
-      # Last, so a tail of the job log always reaches it.
-      # Only when the suite went red. One pytest process per file, so
-      # a file that kills the interpreter is named instead of inferred:
-      # the single-process run stops after exactly 3,477 bytes at about
-      # 60%, on a complete line, with no traceback and no summary, and
-      # the byte count does not move between a tee and a redirect. That
-      # is the process dying, not a test failing, and the one thing the
-      # combined run cannot tell us is which file it dies in.
-      - name: Which file kills the suite
+      # One pytest process per file, and this time with the tracebacks.
+      #
+      # The previous version sent per-file output to $null and printed
+      # only the exit code, which answered "which files fail" and not
+      # "why" -- so eight names came back with nothing to act on. Each
+      # file's full output now goes to its own file under per-file/,
+      # and every one of them is uploaded.
+      #
+      # It also records the exit codes themselves rather than only the
+      # non-zero ones. An exit code of 1 is pytest saying tests failed;
+      # a crash on Windows is 0xC0000005 and reads as a large negative
+      # number. Printing both is what lets the two be told apart
+      # instead of inferred.
+      - name: Every file on its own, with tracebacks
         if: failure()
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path per-file | Out-Null
           $bad = @()
           foreach ($f in Get-ChildItem tests_solvent/test_*.py | Sort-Object Name) {
             $name = "tests_solvent/" + $f.Name
-            python -I -m pytest $name -q --tb=no > $null 2>&1
-            if ($LASTEXITCODE -ne 0) {
-              $bad += "$name exit=$LASTEXITCODE"
-              Write-Output "NONZERO  $name  exit=$LASTEXITCODE"
+            $out = "per-file/" + $f.BaseName + ".txt"
+            cmd /c "python -I -m pytest $name -p no:randomly --tb=long -rA --color=no > $out 2>&1"
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              $bad += [pscustomobject]@{ File = $name; Code = $code }
+              Write-Output "NONZERO  $name  exit=$code"
             }
           }
           if ($bad.Count -eq 0) {
             Write-Output "every file passes on its own; the failure needs the whole run"
           } else {
             Write-Output "----- $($bad.Count) file(s) failed on their own -----"
-            $bad | ForEach-Object { Write-Output $_ }
-          }
-
-      - name: What failed in the full suite
-        if: always()
-        shell: pwsh
-        run: |
-          if (Test-Path suite.txt) {
-            $lines = (Get-Content suite.txt).Count
-            Write-Output "----- suite.txt has $lines line(s); last 60 -----"
-            Get-Content suite.txt -Tail 60
-          } else {
-            Write-Output "the full suite produced no output file"
+            foreach ($row in $bad) {
+              Write-Output ""
+              Write-Output "================ $($row.File)  exit=$($row.Code) ================"
+              $out = "per-file/" + [System.IO.Path]::GetFileNameWithoutExtension($row.File) + ".txt"
+              if (Test-Path $out) { Get-Content $out -Tail 120 }
+            }
           }
 
       - name: Upload the evidence
@@ -237,4 +280,7 @@ jobs:
           path: |
             docs/evidence/**
             suite.txt
+            junit.xml
+            exitcode.txt
+            per-file/**
           if-no-files-found: ignore

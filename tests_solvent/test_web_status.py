@@ -171,7 +171,7 @@ class LivenessComesFromTheHeartbeat(unittest.TestCase):
         self.beat = self.dir / "heartbeat"
 
     def test_a_fresh_heartbeat_is_verified_healthy(self):
-        self.beat.write_text("x")
+        self.beat.write_text("x", encoding="utf-8")
         answer = board.runtime_liveness(str(self.beat))
         self.assertEqual(answer.state, st.VERIFIED_HEALTHY)
         self.assertIn(str(self.beat), answer.evidence)
@@ -179,7 +179,7 @@ class LivenessComesFromTheHeartbeat(unittest.TestCase):
     def test_a_stale_heartbeat_is_unknown_not_dead(self):
         """Stopped and wedged are different problems, and the file's age
         cannot tell them apart. Claiming either would be a guess."""
-        self.beat.write_text("x")
+        self.beat.write_text("x", encoding="utf-8")
         old = time.time() - board.HEARTBEAT_STALE_SECONDS - 60
         os.utime(self.beat, (old, old))
         answer = board.runtime_liveness(str(self.beat))
@@ -207,7 +207,7 @@ class LivenessComesFromTheHeartbeat(unittest.TestCase):
         `stat()` needs no read permission, so an unreadable heartbeat
         reported VERIFIED HEALTHY.
         """
-        self.beat.write_text("x")
+        self.beat.write_text("x", encoding="utf-8")
         target = str(self.beat)
         real_open = pathlib.Path.open
 
@@ -227,7 +227,7 @@ class LivenessComesFromTheHeartbeat(unittest.TestCase):
 
     def test_a_readable_heartbeat_is_still_read_as_fresh(self):
         """Guards the above: a fix that refused everything would pass it."""
-        self.beat.write_text("x")
+        self.beat.write_text("x", encoding="utf-8")
         answer = board.runtime_liveness(str(self.beat))
         self.assertEqual(answer.state, st.VERIFIED_HEALTHY)
 

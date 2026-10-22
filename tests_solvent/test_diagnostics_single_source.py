@@ -84,7 +84,7 @@ class TheWebsiteRendersAndDoesNotDecide(Base):
         report off as a current verdict, which is the opposite of deciding what
         a check means.
         """
-        source = APP.read_text()
+        source = APP.read_text(encoding="utf-8")
         for state in ("HEALTHY", "DEGRADED", "OWNER_ACTION_REQUIRED",
                       "UNSAFE", "FAILED", "WARNING"):
             occurrences = [line for line in source.splitlines()
@@ -96,7 +96,7 @@ class TheWebsiteRendersAndDoesNotDecide(Base):
             self.assertEqual(constructing, [], f"{state}: {constructing}")
 
     def test_the_web_module_has_no_function_that_builds_findings(self):
-        tree = ast.parse(APP.read_text())
+        tree = ast.parse(APP.read_text(encoding="utf-8"))
         names = {n.name for n in ast.walk(tree)
                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
         self.assertNotIn("_diagnostic_findings", names)
@@ -105,7 +105,7 @@ class TheWebsiteRendersAndDoesNotDecide(Base):
         """It may import the *constants* it renders with. It may not run the
         checks: it cannot, and pretending otherwise would hide the reason the
         report has to be recorded at all."""
-        source = APP.read_text()
+        source = APP.read_text(encoding="utf-8")
         self.assertNotIn("Diagnostics(", source)
 
 

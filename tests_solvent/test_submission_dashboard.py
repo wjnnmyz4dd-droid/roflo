@@ -211,7 +211,7 @@ class TheDashboardDecidesNothingAboutSubmission(Base):
     def test_the_web_module_cannot_submit(self):
         import ast
 
-        tree = ast.parse(pathlib.Path("solvent/web/app.py").read_text())
+        tree = ast.parse(pathlib.Path("solvent/web/app.py").read_text(encoding="utf-8"))
         called = {n.func.attr for n in ast.walk(tree)
                   if isinstance(n, ast.Call)
                   and isinstance(n.func, ast.Attribute)}

@@ -295,7 +295,7 @@ class OneFinderServesEveryCapability(FinderFixture):
 
         polls, ranks = [], []
         for path in sorted(pathlib.Path("solvent").glob("*.py")):
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             for match in re.finditer(
                     r"^class (\w+)[^\n]*:\n(?:(?!^class ).*\n)*", text,
                     re.MULTILINE):

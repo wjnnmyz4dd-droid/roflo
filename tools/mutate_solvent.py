@@ -2797,7 +2797,7 @@ def _battery(chosen, where: pathlib.Path) -> int:
     results = []
     for mutant in chosen:
         path = where / mutant.module
-        original = path.read_text()
+        original = path.read_text(encoding="utf-8")
 
         if original.count(mutant.old) != 1:
             found = original.count(mutant.old)
@@ -2813,11 +2813,11 @@ def _battery(chosen, where: pathlib.Path) -> int:
             results.append((mutant, "HARNESS", ""))
             continue
 
-        path.write_text(original.replace(mutant.old, mutant.new))
+        path.write_text(original.replace(mutant.old, mutant.new), encoding="utf-8")
         try:
             still_green, tail = run(mutant.test, where)
         finally:
-            path.write_text(original)
+            path.write_text(original, encoding="utf-8")
 
         back_green, _ = run(mutant.test, where)
         if not back_green:

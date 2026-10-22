@@ -25,7 +25,7 @@ AUTHORITIES = {"governor", "gate", "orchestrator", "ledger", "memory", "capabili
 
 
 def modules() -> dict[str, ast.Module]:
-    return {p.stem: ast.parse(p.read_text(), filename=str(p))
+    return {p.stem: ast.parse(p.read_text(encoding="utf-8"), filename=str(p))
             for p in sorted(PACKAGE.glob("*.py"))}
 
 

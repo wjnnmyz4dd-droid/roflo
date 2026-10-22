@@ -120,7 +120,7 @@ class ArtifactAttacks(unittest.TestCase):
     def test_changing_one_byte_invalidates_every_pass(self):
         s, report, source = delivered_job()
         path = pathlib.Path(report.artifacts[-1].path)
-        path.write_text(path.read_text() + " ", encoding="utf-8")
+        path.write_text(path.read_text(encoding="utf-8") + " ", encoding="utf-8")
         ok, _ = s.orchestrator.verification_satisfied(report.job_id)
         self.assertFalse(ok)
 
@@ -161,7 +161,9 @@ class ArtifactAttacks(unittest.TestCase):
         s, report, source = delivered_job()
         first = report.artifacts[-1]
         second = pathlib.Path(first.path).with_name("v2.csv")
-        second.write_text(pathlib.Path(first.path).read_text() + "9999,X,2026-01-01,North,1,1.00\n",
+        second.write_text(
+            pathlib.Path(first.path).read_text(encoding="utf-8")
+            + "9999,X,2026-01-01,North,1,1.00\n",
                           encoding="utf-8")
         artifact = s.orchestrator.register_artifact(
             job_id=report.job_id, role="DELIVERABLE", path=str(second),

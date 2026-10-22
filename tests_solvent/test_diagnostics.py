@@ -286,7 +286,7 @@ class DiagnosisIsNotAuthority(unittest.TestCase):
 
     def test_it_recommends_a_halt_and_cannot_perform_one(self):
         """The strongest response it can name, and it still cannot act on it."""
-        source = pathlib.Path("solvent/diagnostics.py").read_text()
+        source = pathlib.Path("solvent/diagnostics.py").read_text(encoding="utf-8")
         self.assertIn("HALT_REQUIRED", source)
         for forbidden in ("set_operating_mode", "amend(", "register(",
                           "record_delivery", "issue("):
@@ -298,7 +298,7 @@ class DiagnosisIsNotAuthority(unittest.TestCase):
         """One INSERT, into one table. No UPDATE, DELETE or DROP anywhere: a
         report is a new row, never an edit to an old one, so the history of
         what the system looked like cannot be rewritten."""
-        tree = ast.parse(pathlib.Path("solvent/diagnostics.py").read_text())
+        tree = ast.parse(pathlib.Path("solvent/diagnostics.py").read_text(encoding="utf-8"))
         writes = [n.value.strip() for n in ast.walk(tree)
                   if isinstance(n, ast.Constant) and isinstance(n.value, str)
                   and n.value.strip().upper().startswith(

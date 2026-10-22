@@ -128,7 +128,7 @@ class HealthStates(unittest.TestCase):
 
     def test_health_is_derived_and_never_stored(self):
         """A stored health value could disagree with the authorities."""
-        source = (REPO / "solvent" / "runtime.py").read_text()
+        source = (REPO / "solvent" / "runtime.py").read_text(encoding="utf-8")
         self.assertNotIn("INSERT INTO", source)
 
 
@@ -739,7 +739,7 @@ class TheRuntimeIsNotAnAuthority(unittest.TestCase):
     """It schedules. It must never decide."""
 
     def setUp(self):
-        self.source = (REPO / "solvent" / "runtime.py").read_text()
+        self.source = (REPO / "solvent" / "runtime.py").read_text(encoding="utf-8")
 
     def test_it_never_amends_policy(self):
         self.assertNotIn(".amend(", self.source)

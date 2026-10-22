@@ -52,7 +52,7 @@ def authority_strings(path: pathlib.Path) -> set[str]:
     claiming nothing — a check that would have missed a module claiming several
     authorities through constants.
     """
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     constants = {}
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
@@ -87,7 +87,7 @@ def reads_environment(path: pathlib.Path, needle: str) -> bool:
     so a check that demanded a literal would miss the one real reader while
     flagging every module that reads some *other* variable.
     """
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     constants = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
@@ -166,7 +166,7 @@ class NothingRecomputesAnothersAnswer(unittest.TestCase):
         for path in modules():
             if path.name in ("ledger.py", "metrics.py"):
                 continue
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             if "SUM(collected_cents)" in text and "readmodel" not in path.name:
                 offenders.append(path.name)
         self.assertEqual(offenders, [])
@@ -174,7 +174,7 @@ class NothingRecomputesAnothersAnswer(unittest.TestCase):
     def test_the_web_projection_reads_columns_rather_than_recomputing_profit(self):
         """It may total a column the Ledger owns. It must not implement the
         Ledger's rules about what counts."""
-        text = (SOLVENT / "web" / "readmodel.py").read_text()
+        text = (SOLVENT / "web" / "readmodel.py").read_text(encoding="utf-8")
         for rule in ("def actual_profit", "def real_revenue_cents",
                      "margin =", "def _decide_event"):
             with self.subTest(rule=rule):
@@ -185,20 +185,20 @@ class NothingRecomputesAnothersAnswer(unittest.TestCase):
         for path in modules():
             if path.name in ("capability.py", "harness.py"):
                 continue
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             if "proven=True" in text:
                 offenders.append(path.name)
         self.assertEqual(offenders, [])
 
     def test_the_skills_lab_does_not_certify(self):
         """It records a certification result. It must not produce one."""
-        text = (SOLVENT / "skillslab.py").read_text()
+        text = (SOLVENT / "skillslab.py").read_text(encoding="utf-8")
         self.assertNotIn("run_generated", text)
         self.assertNotIn("TrialReport", text)
         self.assertNotIn("certify_verifier", text)
 
     def test_the_skills_lab_does_not_register_a_capability(self):
-        text = (SOLVENT / "skillslab.py").read_text()
+        text = (SOLVENT / "skillslab.py").read_text(encoding="utf-8")
         self.assertNotIn("capability.register", text)
         self.assertNotIn(".register(", text)
 
@@ -206,7 +206,7 @@ class NothingRecomputesAnothersAnswer(unittest.TestCase):
         """`egress.install` is the marker: whatever calls it is the containment
         boundary, and there must be exactly one."""
         callers = [path.name for path in modules()
-                   if "egress.install()" in path.read_text()]
+                   if "egress.install()" in path.read_text(encoding="utf-8")]
         self.assertEqual(callers, ["gate.py"])
 
     def test_only_the_owner_channel_reads_the_signing_key(self):
@@ -233,7 +233,7 @@ class NothingRecomputesAnothersAnswer(unittest.TestCase):
 
     def test_only_one_module_decides_the_operating_mode(self):
         setters = [path.name for path in modules()
-                   if "def set_operating_mode" in path.read_text()]
+                   if "def set_operating_mode" in path.read_text(encoding="utf-8")]
         self.assertEqual(setters, ["policy.py"])
 
 
@@ -246,7 +246,7 @@ class TheNewSurfacesAddedNoAuthority(unittest.TestCase):
                           "WebsiteLedger", "WebsiteAudit", "LabRegistry"):
             with self.subTest(name=forbidden):
                 offenders = [p.name for p in modules()
-                             if forbidden in p.read_text()]
+                             if forbidden in p.read_text(encoding="utf-8")]
                 self.assertEqual(offenders, [])
 
     def test_the_skills_lab_owns_only_its_own_four_tables(self):
@@ -262,7 +262,7 @@ class TheNewSurfacesAddedNoAuthority(unittest.TestCase):
         nobody can answer."""
         from solvent.web import intents
 
-        text = (SOLVENT / "web" / "intents.py").read_text()
+        text = (SOLVENT / "web" / "intents.py").read_text(encoding="utf-8")
         self.assertIn("is not an intent this surface may write", text)
         self.assertGreater(len(intents.INTENTS), 0)
 

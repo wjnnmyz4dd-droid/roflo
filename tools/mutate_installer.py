@@ -1639,16 +1639,16 @@ def _in(where: pathlib.Path, mutant: Mutant) -> pathlib.Path:
 def apply_mutation(mutant: Mutant, where: pathlib.Path = ROOT) -> tuple[bool, str]:
     """Replace the source. Returns ``(applied, original_text)``."""
     path = _in(where, mutant)
-    original = path.read_text()
+    original = path.read_text(encoding="utf-8")
     occurrences = original.count(mutant.old)
     if occurrences != 1:
         return False, original
-    path.write_text(original.replace(mutant.old, mutant.new, 1))
-    return path.read_text() != original, original
+    path.write_text(original.replace(mutant.old, mutant.new, 1), encoding="utf-8")
+    return path.read_text(encoding="utf-8") != original, original
 
 
 def restore(mutant: Mutant, original: str, where: pathlib.Path = ROOT) -> None:
-    _in(where, mutant).write_text(original)
+    _in(where, mutant).write_text(original, encoding="utf-8")
 
 
 def main() -> int:

@@ -185,7 +185,7 @@ class TheChecksAreIndependentOfTheWorker(unittest.TestCase):
         """
         import ast
 
-        tree = ast.parse(pathlib.Path("solvent/reportverify.py").read_text())
+        tree = ast.parse(pathlib.Path("solvent/reportverify.py").read_text(encoding="utf-8"))
         imported = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:

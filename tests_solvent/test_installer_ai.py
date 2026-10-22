@@ -176,7 +176,7 @@ class TheNonCommercialModelIsRefused(unittest.TestCase):
         If the evidence is ever revised, this fails and someone has to look at
         both, which is the correct outcome for a licence conclusion.
         """
-        evidence = (ROOT / "docs" / "solvent-model-rights-evidence.md").read_text()
+        evidence = (ROOT / "docs" / "solvent-model-rights-evidence.md").read_text(encoding="utf-8")
         self.assertIn("qwen-research", evidence)
         self.assertIn("FOR NON-COMMERCIAL PURPOSES ONLY", evidence)
         self.assertIn("Qwen2.5-3B-Instruct", evidence)
@@ -269,7 +269,7 @@ class SizingLeavesRoomForOtherSoftware(unittest.TestCase):
 
     def test_the_autoclearable_digest_matches_the_applications_default(self):
         import re
-        cli = (ROOT / "solvent" / "cli.py").read_text()
+        cli = (ROOT / "solvent" / "cli.py").read_text(encoding="utf-8")
         digest = ai.QWEN14B_DIGEST.split("sha256:")[1]
         flattened = re.sub(r'"\s*\n\s*"', "", cli)
         self.assertIn(digest, flattened,

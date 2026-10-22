@@ -301,7 +301,7 @@ class ANotificationGrantsNothing(Base):
     def test_there_is_no_reply_to_approve_path(self):
         """SMS is unauthenticated. A reply-to-approve flow would put the
         business behind a sender-id check."""
-        source = pathlib.Path("solvent/notify.py").read_text().lower()
+        source = pathlib.Path("solvent/notify.py").read_text(encoding="utf-8").lower()
         for forbidden in ("def receive", "def on_reply", "def handle_reply",
                           "reply_to_approve", "def inbound"):
             self.assertNotIn(forbidden, source)
@@ -309,7 +309,7 @@ class ANotificationGrantsNothing(Base):
     def test_the_module_cannot_command_an_authority(self):
         import ast
 
-        tree = ast.parse(pathlib.Path("solvent/notify.py").read_text())
+        tree = ast.parse(pathlib.Path("solvent/notify.py").read_text(encoding="utf-8"))
         imported = {node.module for node in ast.walk(tree)
                     if isinstance(node, ast.ImportFrom) and node.module}
         for forbidden in ("policy", "ledger", "governor", "gate", "capability",

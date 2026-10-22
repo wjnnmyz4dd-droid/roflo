@@ -233,7 +233,7 @@ class ThereIsASolventCommand(unittest.TestCase):
         import pathlib
 
         root = pathlib.Path(__file__).resolve().parent.parent
-        installer = (root / "deploy" / "install.sh").read_text()
+        installer = (root / "deploy" / "install.sh").read_text(encoding="utf-8")
         self.assertIn("/usr/local/bin/solvent", installer)
         self.assertIn("chmod 0755 /usr/local/bin/solvent", installer)
 

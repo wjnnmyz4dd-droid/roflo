@@ -81,12 +81,12 @@ class ItProducesARealFile(unittest.TestCase):
         r = run_csv_job(source=source, requirements=[fx.ISO_DATES, fx.OPENS],
                         workdir=work)
         self.assertTrue(r.delivered, r.escalated)
-        self.assertIn("Suite 4", pathlib.Path(r.artifacts[-1].path).read_text())
+        self.assertIn("Suite 4", pathlib.Path(r.artifacts[-1].path).read_text(encoding="utf-8"))
 
     def test_leading_zeros_in_identifiers_are_not_eaten(self):
         source, work = fx.workspace(fx.LEADING_ZEROS)
         r = run_csv_job(source=source, requirements=fx.SIMPLE, workdir=work)
-        text = pathlib.Path(r.artifacts[-1].path).read_text()
+        text = pathlib.Path(r.artifacts[-1].path).read_text(encoding="utf-8")
         self.assertIn("00123", text)
         self.assertIn("00045", text)
 
@@ -239,7 +239,7 @@ class ChecksAreIndependentOfTheWorker(unittest.TestCase):
         """
         import ast
 
-        tree = ast.parse(pathlib.Path("solvent/csvverify.py").read_text())
+        tree = ast.parse(pathlib.Path("solvent/csvverify.py").read_text(encoding="utf-8"))
         imported = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

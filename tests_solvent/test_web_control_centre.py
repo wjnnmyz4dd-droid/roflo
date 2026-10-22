@@ -468,7 +468,7 @@ class HostileContentIsDisplayedNotExecuted(Base):
 
         root = _pathlib.Path(web_auth.__file__).parent
         for module in sorted(root.glob("*.py")):
-            text = module.read_text()
+            text = module.read_text(encoding="utf-8")
             with self.subTest(module=module.name):
                 self.assertNotIn("send_file", text)
                 self.assertNotIn("open(request", text)
@@ -544,7 +544,7 @@ class TheSurfaceCannotBecomeABypass(Base):
                            "SOLVENT_OWNER_KEY", "Solvent"}
         root = _pathlib.Path(web_auth.__file__).parent
         for module in sorted(root.glob("*.py")):
-            tree = ast.parse(module.read_text())
+            tree = ast.parse(module.read_text(encoding="utf-8"))
             names, strings = set(), set()
             for node in ast.walk(tree):
                 if isinstance(node, ast.Name):
@@ -568,7 +568,7 @@ class TheSurfaceCannotBecomeABypass(Base):
 
         root = _pathlib.Path(web_auth.__file__).parent
         for module in sorted(root.glob("*.py")):
-            tree = ast.parse(module.read_text())
+            tree = ast.parse(module.read_text(encoding="utf-8"))
             imported = set()
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module:
@@ -589,7 +589,7 @@ class TheSurfaceCannotBecomeABypass(Base):
         root = _pathlib.Path(web_auth.__file__).parent
         for module in sorted(root.glob("*.py")):
             with self.subTest(module=module.name):
-                self.assertNotIn("Solvent(", module.read_text())
+                self.assertNotIn("Solvent(", module.read_text(encoding="utf-8"))
 
     def test_a_consequential_intent_is_marked_as_needing_an_approval(self):
         cookies = self.sign_in()

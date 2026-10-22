@@ -153,9 +153,9 @@ class TheDeploymentArtifactsSayWhatTheyDo(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.unit = (REPO / "deploy" / "solvent-web.service").read_text()
-        cls.firewall = (REPO / "deploy" / "firewall.sh").read_text()
-        cls.env = (REPO / "deploy" / "solvent-web.env.example").read_text()
+        cls.unit = (REPO / "deploy" / "solvent-web.service").read_text(encoding="utf-8")
+        cls.firewall = (REPO / "deploy" / "firewall.sh").read_text(encoding="utf-8")
+        cls.env = (REPO / "deploy" / "solvent-web.env.example").read_text(encoding="utf-8")
 
     def test_the_web_service_runs_as_its_own_user(self):
         """What makes read-only real rather than a promise in the code."""
