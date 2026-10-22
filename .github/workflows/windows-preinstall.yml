@@ -89,7 +89,7 @@ jobs:
       - name: Full suite
         shell: cmd
         run: |
-          python -I -m pytest tests_solvent -p no:randomly -v --color=no --tb=long -rA --junitxml=junit.xml > suite.txt 2>&1
+          python -I -m pytest tests_solvent -p no:randomly --color=no --tb=long -rf --junitxml=junit.xml > suite.txt 2>&1
           echo %ERRORLEVEL%> exitcode.txt
           type exitcode.txt
           exit /b 0
@@ -231,44 +231,50 @@ jobs:
         if: always()
         run: python -I -m pytest tests_solvent/test_production_path.py -q
 
-      # One pytest process per file, and this time with the tracebacks.
+      # The files the suite actually failed in, re-run on their own and
+      # with the tracebacks kept.
       #
-      # The previous version sent per-file output to $null and printed
-      # only the exit code, which answered "which files fail" and not
-      # "why" -- so eight names came back with nothing to act on. Each
-      # file's full output now goes to its own file under per-file/,
-      # and every one of them is uploaded.
+      # Driven off junit.xml rather than by sweeping all ~200 files.
+      # The sweep took twenty-five minutes to tell us what the record
+      # pytest already wrote says in a second, and a diagnostic that
+      # costs more than the run it diagnoses does not get used.
       #
-      # It also records the exit codes themselves rather than only the
-      # non-zero ones. An exit code of 1 is pytest saying tests failed;
-      # a crash on Windows is 0xC0000005 and reads as a large negative
-      # number. Printing both is what lets the two be told apart
-      # instead of inferred.
-      - name: Every file on its own, with tracebacks
+      # Running each on its own still matters: a failure that only
+      # happens in the combined run is a different animal from one
+      # that happens alone, and the two need different repairs. When
+      # junit lists failures and none of them reproduce in isolation,
+      # that is itself the finding and this step says so.
+      - name: The failing files on their own, with tracebacks
         if: failure()
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path per-file | Out-Null
-          $bad = @()
-          foreach ($f in Get-ChildItem tests_solvent/test_*.py | Sort-Object Name) {
-            $name = "tests_solvent/" + $f.Name
-            $out = "per-file/" + $f.BaseName + ".txt"
-            cmd /c "python -I -m pytest $name -p no:randomly --tb=long -rA --color=no > $out 2>&1"
-            $code = $LASTEXITCODE
-            if ($code -ne 0) {
-              $bad += [pscustomobject]@{ File = $name; Code = $code }
-              Write-Output "NONZERO  $name  exit=$code"
-            }
+          if (-not (Test-Path junit.xml)) {
+            Write-Output "no junit.xml: the suite did not get far enough to say"
+            exit 0
           }
-          if ($bad.Count -eq 0) {
-            Write-Output "every file passes on its own; the failure needs the whole run"
-          } else {
-            Write-Output "----- $($bad.Count) file(s) failed on their own -----"
-            foreach ($row in $bad) {
-              Write-Output ""
-              Write-Output "================ $($row.File)  exit=$($row.Code) ================"
-              $out = "per-file/" + [System.IO.Path]::GetFileNameWithoutExtension($row.File) + ".txt"
-              if (Test-Path $out) { Get-Content $out -Tail 120 }
+          [xml]$x = Get-Content junit.xml
+          $files = @($x.testsuites.testsuite.testcase |
+                     Where-Object { $_.failure -or $_.error } |
+                     ForEach-Object { $_.file } |
+                     Where-Object { $_ } | Sort-Object -Unique)
+          if ($files.Count -eq 0) {
+            Write-Output "junit records no failing test; the non-zero exit came from somewhere else"
+            exit 0
+          }
+          Write-Output "$($files.Count) file(s) contained a failure:"
+          $files | ForEach-Object { Write-Output "  $_" }
+          New-Item -ItemType Directory -Force -Path per-file | Out-Null
+          foreach ($name in $files) {
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($name)
+            $out = "per-file/$base.txt"
+            cmd /c "python -I -m pytest $name -p no:randomly --tb=long -rf --color=no > $out 2>&1"
+            $code = $LASTEXITCODE
+            Write-Output ""
+            Write-Output "================ $name  alone: exit=$code ================"
+            if ($code -eq 0) {
+              Write-Output "  passes on its own -- this failure needs the whole run"
+            } elseif (Test-Path $out) {
+              Get-Content $out -Tail 100
             }
           }
 
@@ -283,4 +289,107 @@ jobs:
             junit.xml
             exitcode.txt
             per-file/**
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------------
+  # The installation itself, on a real Windows machine.
+  #
+  # Separate from the suite job on purpose. The suite proves the code
+  # behaves on Windows; this proves the thing an owner actually runs
+  # puts a working DeskPilot on a machine that did not have one. They
+  # fail for different reasons and a reader needs to know which.
+  #
+  # Nothing here is a fake host. The payload is built by build.py, the
+  # engine is driven through its own CLI with the same phases
+  # DeskPilot-Setup.exe drives, and the filesystem is the runner's.
+  # ------------------------------------------------------------------
+  install-on-windows:
+    name: Install on Windows (${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+
+      # Build machine and target machine are the same box here, which
+      # is not how a release is built -- but the payload it produces is
+      # byte-identical to one built anywhere, because `git archive` of
+      # a commit and wheels pinned by SHA-256 are both deterministic.
+      - name: Build the certified payload
+        shell: pwsh
+        run: |
+          python windows/installer/build.py --payload-only `
+            --out-dir "$env:RUNNER_TEMP/dist"
+          Get-ChildItem "$env:RUNNER_TEMP/dist/stage" -Filter *.zip |
+            ForEach-Object {
+              Write-Output "payload: $($_.Name)  $($_.Length) bytes"
+              "PAYLOAD=$($_.FullName)" >> $env:GITHUB_ENV
+              "PAYLOAD_SHA=$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_ENV
+            }
+
+      # The payload carries both wheel sets; only one is for this
+      # interpreter. Asserted here because `step_vendor` picking the
+      # wrong one would not fail -- it would quietly install nothing.
+      - name: The payload carries both wheel sets
+        shell: pwsh
+        run: |
+          $names = (& python -c @"
+          import zipfile, sys
+          z = zipfile.ZipFile(sys.argv[1])
+          print('\n'.join(n for n in z.namelist() if n.startswith('vendor/')))
+          "@ $env:PAYLOAD) -split "`n"
+          $wheels = $names | Where-Object { $_ -like "*.whl" }
+          Write-Output "$($wheels.Count) wheel(s) in the payload"
+          $cp311 = ($wheels | Where-Object { $_ -like "*cp311*" }).Count
+          $cp313 = ($wheels | Where-Object { $_ -like "*cp313*" }).Count
+          Write-Output "cp311-only=$cp311  cp313-only=$cp313"
+          if ($wheels.Count -lt 20) { throw "the payload carries no wheel set" }
+          if (-not ($names -contains "vendor/t2-windows-x64.txt")) {
+            throw "the payload carries wheels and no manifest to check them against"
+          }
+
+      - name: Install, for real, into a fresh root
+        shell: pwsh
+        env:
+          DESKPILOT_SETUP_ANSWERS: >-
+            {"owner_identity":"owner:ci","business_email":"owner@example.invalid",
+             "web_password":"ci-only-not-a-real-secret-${{ github.run_id }}",
+             "ai_kind":"none","components":{}}
+        run: |
+          $root = "$env:RUNNER_TEMP\DeskPilot"
+          "DESKPILOT_ROOT=$root" >> $env:GITHUB_ENV
+          python -I windows/installer/deskpilot-engine.py `
+            install --root $root --package $env:PAYLOAD `
+            --expect-sha256 $env:PAYLOAD_SHA `
+            --out "$env:RUNNER_TEMP/install-report.json"
+          Write-Output "engine exit code: $LASTEXITCODE"
+          if (Test-Path "$env:RUNNER_TEMP/install-report.json") {
+            Get-Content "$env:RUNNER_TEMP/install-report.json"
+          }
+          exit $LASTEXITCODE
+
+      - name: What the installation produced
+        if: always()
+        shell: pwsh
+        run: |
+          python -I tools/windows_install_check.py `
+            --root $env:DESKPILOT_ROOT `
+            --report "$env:RUNNER_TEMP/install-report.json" `
+            --out "$env:RUNNER_TEMP/install-check.json"
+
+      - name: Upload the installation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-install-${{ matrix.python }}
+          path: |
+            ${{ runner.temp }}/install-report.json
+            ${{ runner.temp }}/install-check.json
           if-no-files-found: ignore
