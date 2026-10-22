@@ -60,6 +60,10 @@ INTENTS = {
     "decide_proposal": (CONSEQUENTIAL, "answer a capability proposal"),
     "authorize_work_source": (CONSEQUENTIAL, "allow work from a source"),
     "advance_payment_rail": (CONSEQUENTIAL, "record payment-rail progress"),
+    # Consequential for the same reason as the payment rail: it
+    # records a claim about an account DeskPilot cannot inspect.
+    "connect_business_email": (CONSEQUENTIAL,
+                               "record business-email connection progress"),
     "retire_skill_version": (CONSEQUENTIAL, "withdraw a capability version"),
     "rollback_skill": (CONSEQUENTIAL, "point new work at an earlier version"),
     "record_contracting": (CONSEQUENTIAL, "change who Solvent contracts as"),
