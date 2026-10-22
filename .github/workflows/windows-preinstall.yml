@@ -19,6 +19,13 @@ on:
       - 'tests_solvent/**'
       - '.github/workflows/windows-preinstall.yml'
 
+# One run per branch. Four Windows jobs competing for runners made
+# every push slower than the one before it, and a superseded run's
+# result is not evidence about the current commit anyway.
+concurrency:
+  group: windows-preinstall-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   suite-on-windows:
     name: Suite on Windows (${{ matrix.python }})
@@ -395,6 +402,52 @@ jobs:
             --report "$env:RUNNER_TEMP/install-report.json" `
             --out "$env:RUNNER_TEMP/install-check.json"
 
+      # The engine's own verification phase, which is what the wizard
+      # runs on its last screen. Separate from the check above: that
+      # reads the disk from outside, this asks DeskPilot about itself.
+      - name: The installation verifies itself
+        if: always()
+        shell: pwsh
+        run: |
+          python -I windows/installer/deskpilot-engine.py `
+            verify --root $env:DESKPILOT_ROOT `
+            --headline "$env:RUNNER_TEMP/headline.txt" `
+            --out "$env:RUNNER_TEMP/verify-report.json"
+          Write-Output "verify exit code: $LASTEXITCODE"
+          if (Test-Path "$env:RUNNER_TEMP/headline.txt") {
+            Get-Content "$env:RUNNER_TEMP/headline.txt"
+          }
+
+      # Phase 7's restart requirement. Business state is written by one
+      # process and read by another started from scratch, with a real
+      # close in between -- and then read a third time to prove the
+      # second did not duplicate anything.
+      - name: Business state survives a restart
+        if: always()
+        shell: pwsh
+        run: |
+          python -I tools/windows_restart_check.py `
+            --root $env:DESKPILOT_ROOT `
+            --out "$env:RUNNER_TEMP/restart-check.json"
+
+      # Uninstall keeps the owner's records unless they say otherwise,
+      # and the engine proves that by checking the kept paths after the
+      # deletions rather than restating the promise.
+      - name: Uninstall keeps the business records
+        if: always()
+        shell: pwsh
+        run: |
+          python -I windows/installer/deskpilot-engine.py `
+            uninstall --root $env:DESKPILOT_ROOT `
+            --out "$env:RUNNER_TEMP/uninstall-report.json"
+          Write-Output "uninstall exit code: $LASTEXITCODE"
+          $db = Join-Path $env:DESKPILOT_ROOT "data\deskpilot.db"
+          if (Test-Path $db) {
+            Write-Output "KEPT: $db ($((Get-Item $db).Length) bytes)"
+          } else {
+            throw "uninstall destroyed the business records without being asked"
+          }
+
       - name: Upload the installation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -403,4 +456,8 @@ jobs:
           path: |
             ${{ runner.temp }}/install-report.json
             ${{ runner.temp }}/install-check.json
+            ${{ runner.temp }}/verify-report.json
+            ${{ runner.temp }}/restart-check.json
+            ${{ runner.temp }}/uninstall-report.json
+            ${{ runner.temp }}/headline.txt
           if-no-files-found: ignore
