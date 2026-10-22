@@ -119,12 +119,33 @@ the installer would rather say it cannot be sure than guess.
   spending stay off until you authorise them. Starting the two services does
   not authorise anything.
 
+## The second opinion is included
+
+DeskPilot checks its own work, and for a job above its confidence
+threshold it wants a second reader -- one written by somebody else --
+to look at the file before it goes to a client. Four of those come
+with the installer: openpyxl for workbooks, python-docx for
+documents, CleverCSV for CSV, markdown-it-py for Markdown.
+
+You do not install them and there is no `pip install` step. They
+travel inside the same file you downloaded, their SHA-256 hashes are
+checked twice before anything is unpacked, and the installer
+contacts nothing to get them.
+
+The last screen reports what the second opinion covers. If it says
+fewer than four formats, DeskPilot still runs -- it will decline a
+job that needs a reader it has not got, while that job is still a
+quote, rather than discovering it at delivery.
+
 ## Several people, several installations
 
 Each installation generates its own owner key on its own machine and keeps its
 own database, credentials and settings. There is no account server, no licence
 check and nothing to register — the installer never contacts anything except
-python.org, and only then if no suitable Python is already present.
+python.org, and only then if no suitable Python is already present. The
+second-opinion readers and the timezone database travel inside the installer
+rather than being fetched, so a machine with no internet at all installs the
+same DeskPilot as one with.
 
 One caveat, stated because it is a real limit: the installation directory is
 fixed at `C:\DeskPilot`, so this is one installation per Windows machine or per

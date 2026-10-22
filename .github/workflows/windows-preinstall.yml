@@ -249,6 +249,14 @@ jobs:
         if: always()
         run: python -I -m pytest tests_solvent/test_production_path.py -q
 
+      # The chain Phase 9 draws, on Windows: Chief of Staff, discovery,
+      # qualification, pricing, negotiation, proposal, contract, the
+      # 20% deposit, Governor, Action Gate, the five skills, the
+      # independent checker, delivery, invoice, reconciliation, CRM.
+      - name: The whole business lifecycle, on Windows
+        if: always()
+        run: python -I -m pytest tests_solvent/test_business_lifecycle.py tests_solvent/test_chief_of_staff_certification.py -q
+
       # The files the suite actually failed in, re-run on their own and
       # with the tracebacks kept.
       #
@@ -429,6 +437,35 @@ jobs:
           python -I tools/windows_restart_check.py `
             --root $env:DESKPILOT_ROOT `
             --out "$env:RUNNER_TEMP/restart-check.json"
+
+      # Phase 9 on the installed application, driven through the
+      # entry points it ships rather than through a harness written
+      # for the occasion. `solvent demo` is the complete-job harness
+      # -- Governor, Action Gate, worker, independent checker,
+      # delivery, invoice -- and `solvent run` is the real scheduler,
+      # Chief of Staff tick included.
+      #
+      # The lower half of the chain is also proved separately by the
+      # suite job, which runs test_production_path.py and
+      # test_business_lifecycle.py on this same operating system.
+      # What this step adds is that it happens on the *installed*
+      # tree, with the installed interpreter.
+      - name: The production runtime, on the installed application
+        if: always()
+        shell: pwsh
+        run: |
+          $py = Join-Path $env:DESKPILOT_ROOT "venv\Scripts\python.exe"
+          $db = Join-Path $env:DESKPILOT_ROOT "data\deskpilot.db"
+          Write-Output "----- solvent health -----"
+          & $py -I -m solvent.cli health --db $db
+          Write-Output "----- solvent demo (the complete-job harness) -----"
+          & $py -I -m solvent.cli demo
+          $demo = $LASTEXITCODE
+          Write-Output "demo exit code: $demo"
+          Write-Output "----- solvent run, three real ticks -----"
+          & $py -I -m solvent.cli run --db $db --max-ticks 3 --tick 0
+          Write-Output "run exit code: $LASTEXITCODE"
+          if ($demo -ne 0) { throw "the complete-job harness failed on the installed application" }
 
       # Uninstall keeps the owner's records unless they say otherwise,
       # and the engine proves that by checking the kept paths after the

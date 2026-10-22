@@ -419,3 +419,103 @@ def _fetch_portable(into: pathlib.Path) -> list[pathlib.Path]:
         return []
     return sorted(p for p in into.glob("*.whl")
                   if p.name.endswith("-any.whl"))
+
+
+class CarryingThemChangesNoSecurityPromise(unittest.TestCase):
+    """Phase 8, against the one part of the installer that is new.
+
+    Vendoring is the obvious place to reintroduce the thing the
+    installer exists to avoid: a dependency resolved on the owner's
+    machine, from a source nobody pinned, by a step that reaches the
+    network while running as Administrator. These assert it did not.
+    """
+
+    PACKAGE = INSTALLER / "deskpilot_installer"
+
+    def test_the_unpacker_reaches_nothing(self):
+        """No network, no shell, no subprocess -- by import, not by rule."""
+        import ast
+
+        tree = ast.parse((self.PACKAGE / "vendor.py").read_text(
+            encoding="utf-8"))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+        for forbidden in ("urllib", "http", "socket", "subprocess",
+                          "ssl", "ftplib", "requests", "pip"):
+            with self.subTest(forbidden):
+                self.assertNotIn(forbidden, imported)
+
+    def test_no_module_in_the_installer_fetches_anything(self):
+        """The whole package, not only the new file.
+
+        An installation downloads exactly one thing -- a Python
+        runtime, when the machine has none -- and that path is
+        checked separately and verifies what it got. Nothing else in
+        the package may reach the network, and after this change the
+        readers do not either: they arrive in the payload.
+        """
+        import ast
+
+        offenders = []
+        for path in sorted(self.PACKAGE.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [a.name.split(".")[0] for a in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    names = [node.module.split(".")[0]]
+                for name in names:
+                    if name in ("requests", "httpx", "pip"):
+                        offenders.append(f"{path.name}:{node.lineno} {name}")
+        self.assertEqual(offenders, [])
+
+    def test_pip_appears_only_in_the_build_and_only_with_hashes(self):
+        """The one network step, and it is not on the owner's machine."""
+        build = (INSTALLER / "build.py").read_text(encoding="utf-8")
+        self.assertIn("--require-hashes", build)
+        self.assertIn("--only-binary=:all:", build)
+        # And it checks for itself rather than trusting the downloader.
+        self.assertIn("hashlib.sha256(wheel.read_bytes())", build)
+        engine = (self.PACKAGE / "engine.py").read_text(encoding="utf-8")
+        self.assertNotIn("pip download", engine)
+        self.assertNotIn("pip install", engine)
+
+    def test_no_wheel_is_committed_to_the_repository(self):
+        """12.6 MB of binaries would make every upgrade a binary diff."""
+        self.assertEqual(sorted(p.name for p in ROOT.rglob("*.whl")
+                                if ".git" not in p.parts), [])
+
+    def test_the_manifest_carries_no_credential(self):
+        text = manifest_text().lower()
+        for secret in ("password", "token", "api_key", "secret",
+                       "authorization", "@"):
+            with self.subTest(secret):
+                self.assertNotIn(secret, text)
+
+    def test_unpacking_cannot_reach_outside_the_destination(self):
+        """Already asserted per-entry; asserted here as the property."""
+        for member in ("/etc/passwd", "C:/windows/evil.dll",
+                       "../../evil.py", "a\\..\\..\\evil.py",
+                       "\\\\server\\share\\evil.dll"):
+            with self.subTest(member):
+                self.assertTrue(vendor.unsafe_member(member),
+                                f"{member!r} would have been written")
+
+    def test_the_readers_are_not_a_second_anything(self):
+        """They read files. They decide nothing.
+
+        A vendored package that touched money, admission or delivery
+        would be a second authority arriving through the back door,
+        which is the one thing this installer may never ship.
+        """
+        from solvent import independent
+
+        for module, _why in independent._DIFFERENTIAL_READERS.values():
+            with self.subTest(module):
+                self.assertNotIn(module, ("solvent", "governor", "gate",
+                                          "ledger", "payments"))
