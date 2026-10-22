@@ -220,3 +220,75 @@ Uninstall keeps the owner's records unless they explicitly ask
 otherwise, and the engine proves it by checking the kept paths
 *after* the deletions rather than restating the promise. The job
 fails if the database is gone.
+
+---
+
+## Phase 8 — installation security
+
+Vendoring is the obvious place to reintroduce exactly what the
+installer exists to avoid: a dependency resolved on the owner's
+machine, from a source nobody pinned, by a step that reaches the
+network while running as Administrator. Eight tests assert it did
+not.
+
+| Phase 8 asks | Evidence |
+|---|---|
+| No hardcoded secrets | the manifest carries no `password`, `token`, `api_key`, `secret` or `authorization`; `connect_business_email` has no parameter that could hold one |
+| No credentials in logs | unchanged; the install log never contains the password, owner key or any API key |
+| **No uncontrolled dependency downloads** | `vendor.py` imports no `urllib`, `http`, `socket`, `subprocess` or `ssl`; no module in the package imports `requests`, `httpx` or `pip`; `pip` appears only in `build.py`, only with `--require-hashes`, and `build.py` re-hashes every file itself |
+| No unauthorized outbound communication | the egress audit hook is process-wide and unchanged; an installation downloads exactly one thing, a Python runtime, and only when the machine has none |
+| No automatic live business activity | simulation on and `live_actions_enabled` false, asserted on the installed tree |
+| No Governor bypass | the vendored packages are readers; a test asserts none of them is `solvent`, `governor`, `gate`, `ledger` or `payments` |
+| No Action Gate bypass | likewise |
+| No duplicate payment system | unchanged — one rail ladder, in `policy.py` |
+| Installer integrity | payload SHA-256 compiled into the installer's code section; wheels hashed at build and again at install; extraction all-or-nothing |
+| Local file permissions | `isolation.py` unchanged. **On a CI runner the ACLs cannot be applied and the step says so** rather than reporting success |
+
+The ZIP-escape checks are applied to each wheel as well as to the
+payload — including the backslash case, which passes every POSIX
+check and still escapes on Windows. A verified wheel is the right
+bytes; it is not automatically a safe archive.
+
+---
+
+## Phase 10 — advisory reviews
+
+**iFixAi: SOURCE-DERIVED.** Unchanged from the Chief of Staff
+certification and for the same reason. The tool evaluates LLM agents
+through a provider; DeskPilot's certified skills call no model, the
+egress hook denies `socket.connect`, and there is no endpoint. The
+judge-free run returns `*** RUN INVALID — measurement failure, not a
+result ***` in the tool's own words, and the assignment is explicit
+that native execution may not be claimed on that. Its catalogue
+applied to this work:
+
+| Inspection | The Windows repairs, checked against it |
+|---|---|
+| B01 tool governance | no new path to an external effect; `vendor.py` imports nothing that can reach one |
+| B02 non-LLM governance | every repair is deterministic — a hash comparison, a path join, a platform test |
+| B03 auditability | the install log and the engine's JSON report name every step and every refusal |
+| B05 source provenance | the readers are pinned by SHA-256 to a manifest that names each licence |
+| B08 privilege escalation | the installer gained no new privilege; the ACL step still fails loudly when it cannot apply them |
+| B16 silent failure | the defect found this round was precisely a silent one — "this payload carries none" with no path — and every such branch now names what it looked at |
+| B23 policy version traceability | unchanged |
+| X11 pre-action confirmation | unchanged; connecting an account still enables nothing |
+
+**K-LEAN: SOURCE-DERIVED.** Archived repository, needs four model
+providers. Its reachability discipline, re-run over both trees:
+
+* `windows/installer/deskpilot_installer`: **17 modules, no orphans.**
+  `vendor.py` is reached by `engine.py`, `step_vendor` is in the step
+  list, and both new tools are invoked by the workflow.
+* `solvent/`: the same six pre-existing orphans as last time —
+  `prospecting`, `revenuemodel`, `skillcandidates`, `upworkbid`,
+  `inference`, `marketplaces` — plus the CLI entry points, which are
+  reached from the console script rather than by import. **Nothing
+  new was orphaned by this work.**
+
+Checked for what Phase 10 names: no security regression (the table
+above), no duplicate authority (the readers decide nothing), no
+dependency conflict (every package pinned to one version, two wheel
+sets that never share a directory), no recovery failure (12/12 on
+the real installation), and one installer weakness found and
+repaired — the step that looked in the wrong directory and said so
+without naming it.
