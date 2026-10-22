@@ -140,7 +140,20 @@ class Layout:
 
     @property
     def all_dirs(self) -> tuple[str, ...]:
-        return self.replaceable_dirs + self.owner_dirs
+        """Every directory the installer creates up front.
+
+        :attr:`spool` is here and not in :attr:`owner_dirs`, which is
+        the difference between a directory that must exist and one an
+        uninstall must keep. Nothing created it: the runtime makes it
+        on first write, and the installer's own hardening step runs
+        ``icacls`` against it long before any first write. On a real
+        Windows runner that step failed with "The system cannot find
+        the file specified", took the installation down with it, and
+        the autostart tasks after it were never registered -- so a
+        missing ``mkdir`` read on screen as a broken security
+        boundary.
+        """
+        return self.replaceable_dirs + self.owner_dirs + (self.spool,)
 
 
 #: Path fragments DeskPilot must never install into, and why.

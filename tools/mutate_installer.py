@@ -286,11 +286,19 @@ MUTANTS: tuple[Mutant, ...] = (
            ".EachRouteWorksOnItsOwn.test_another_users_profile_is_searched_too",
            "every profile is swept, not just the elevated one"),
     Mutant("older-minor-versions-not-searched", "python_runtime.py",
-           'MINORS = ("313", "314", "312", "311")',
+           'MINORS = ("315", "314", "313", "312", "311")',
            'MINORS = ("313",)',
            "tests_solvent.test_installer_python_discovery"
            ".EachRouteWorksOnItsOwn.test_every_supported_minor_version_is_searched",
            "every supported minor version is searched"),
+    Mutant("newest-python-chosen-over-a-served-one", "python_runtime.py",
+           '    preferred = [i for i in usable if served(i.version)]\n'
+           '    return max(preferred or usable, key=lambda i: i.version)',
+           '    return max(usable, key=lambda i: i.version)',
+           "tests_solvent.test_installer_python_discovery"
+           ".TheRunnerWithANewerPythonThanThePayloadServes"
+           ".test_the_served_interpreter_is_preferred_over_a_newer_one",
+           "an interpreter the payload carries readers for is preferred"),
     # The packaging and execution defects found on the real VPS. Each guards
     # a control that a function-level test cannot reach, because the failures
     # were in how the engine is *launched* and how the application's commands

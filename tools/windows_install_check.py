@@ -105,13 +105,47 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             checks.record("the engine's report is readable", False, str(exc))
     if report:
+        # Three readings, because the first one on its own was a
+        # control that could not fire. It asked each row for ``ok``
+        # and the engine writes ``outcome`` -- so `.get("ok") is
+        # False` was never true, `bad` was always empty, and this
+        # line printed "14 step(s), 0 failed" over a report whose
+        # last row said FAIL and which carried a whole `failure`
+        # block. Two CI runs were read as clean installations on the
+        # strength of it. A check that cannot fail is worse than no
+        # check: it is a claim.
+        #
+        # So: the vocabulary is now the engine's own, taken from the
+        # engine rather than spelled again here; `may_continue` and
+        # `failure` are read as well, because a report can stop
+        # before it writes the row that says why; and a report whose
+        # rows carry none of the keys this understands is itself a
+        # finding.
+        from deskpilot_installer.report import Outcome
+
+        stopping = {o.value for o in Outcome if o.stops_installation}
         steps = report.get("steps") or report.get("rows") or []
+        graded = [s for s in steps
+                  if isinstance(s, dict)
+                  and ("outcome" in s or "ok" in s)]
         bad = [s for s in steps
-               if isinstance(s, dict) and s.get("ok") is False]
+               if isinstance(s, dict)
+               and (s.get("outcome") in stopping or s.get("ok") is False)]
+        checks.record("every installation step is graded by this check",
+                      len(graded) == len(steps) and bool(steps),
+                      f"{len(graded)} of {len(steps)} row(s) carry an "
+                      f"outcome this check understands ({sorted(stopping)} "
+                      f"stop an installation)")
         checks.record("every installation step reported success",
                       not bad, f"{len(steps)} step(s), {len(bad)} failed"
                                 + (f": {[s.get('name') for s in bad]}"
                                    if bad else ""))
+        checks.record("the engine did not stop part-way",
+                      report.get("failure") is None
+                      and report.get("may_continue") is not False,
+                      (report.get("failure") or {}).get("what_failed")
+                      or "no failure block; may_continue="
+                         f"{report.get('may_continue')}")
 
     # ---- the tree ----------------------------------------------------
     app = local(layout.app)

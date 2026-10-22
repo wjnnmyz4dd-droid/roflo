@@ -191,7 +191,13 @@ class Interpreter:
 #: Minor versions worth looking for, newest first. Patch level never appears
 #: in an installation path -- 3.13.0 and 3.13.12 both live in ``Python313`` --
 #: so searching by minor version covers every patch release of it.
-MINORS = ("313", "314", "312", "311")
+#:
+#: 3.15 is on this list and is deliberately *not* on
+#: :data:`.vendor.SERVED_MINORS`. Finding it matters -- a machine
+#: whose only Python is 3.15 should be used rather than have a
+#: second copy installed beside it -- and preferring it does not,
+#: which is why those are two lists and not one.
+MINORS = ("315", "314", "313", "312", "311")
 
 #: All-users install roots. What ``InstallAllUsers=1`` produces.
 _MACHINE_ROOTS = (r"C:\Program Files", r"C:\Program Files (x86)", "C:\\")
@@ -360,11 +366,37 @@ def discover(host: Host, extra: tuple[str, ...] = ()) -> list[Interpreter]:
 
 
 def choose(found: list[Interpreter]) -> Interpreter | None:
-    """The newest usable interpreter, or ``None``."""
+    """The newest usable interpreter the payload can serve, or ``None``.
+
+    "That the payload can serve" is the whole of the repair here. This
+    returned ``max(version)`` and nothing else, and a real Windows
+    runner showed twice what that costs: the machine had the 3.11 the
+    job installed *and* a 3.15.1 in the hosted tool cache, the payload
+    carries wheel sets for cp311 through cp314, so the installation
+    landed on 3.15 and finished with no independent readers at all.
+    The installer had both a Python it could fully serve and a newer
+    one it could not, and picked the one it could not.
+
+    Preferring a served interpreter is a one-line change and it is the
+    right one rather than a fourth, fifth, sixth wheel set, because
+    the set can never lead: ``clevercsv`` publishes no cp315 wheel for
+    any release, so for some months after every CPython release there
+    is a newest Python the readers do not exist for. Chasing it loses
+    every October. :data:`.vendor.SERVED_MINORS` is the one list all
+    of this reads.
+
+    An unserved interpreter is still returned when it is the only
+    usable one: a DeskPilot that installs and declines second-opinion
+    work is worth more than an installation that refuses to happen,
+    and :meth:`.Engine.step_vendor` already says on screen which it
+    got. ``row`` below says which was chosen and why.
+    """
     usable = [i for i in found if i.usable]
     if not usable:
         return None
-    return max(usable, key=lambda i: i.version)
+    from .vendor import served
+    preferred = [i for i in usable if served(i.version)]
+    return max(preferred or usable, key=lambda i: i.version)
 
 
 def search_report(host: Host) -> dict[str, list[str]]:
@@ -388,9 +420,20 @@ def row(found: list[Interpreter], chosen: Interpreter | None,
         host: Host | None = None) -> Row:
     """The system-check line. ``WILL INSTALL`` is a pass, not a problem."""
     if chosen is not None:
+        from .vendor import served
+        # Said on the system-check screen rather than discovered at the
+        # end of an installation. When this is the only Python on the
+        # machine the installation still goes ahead -- declining
+        # second-opinion work beats refusing to install -- but the
+        # owner is entitled to know before, not after.
+        note = ("" if served(chosen.version) else
+                " - no independent reader set ships for this version, so "
+                "DeskPilot will decline work needing a second opinion")
         return Row("Python", Outcome.PASS,
-                   f"{chosen.version_text} 64-bit at {chosen.path}",
-                   facts={"path": chosen.path, "version": chosen.version_text})
+                   f"{chosen.version_text} 64-bit at {chosen.path}{note}",
+                   facts={"path": chosen.path,
+                          "version": chosen.version_text,
+                          "readers_available": served(chosen.version)})
     if found:
         why = "; ".join(f"{i.path}: {i.rejected}" for i in found[:3])
         return Row("Python", Outcome.WILL_INSTALL,

@@ -63,6 +63,38 @@ from .report import Failure, Outcome, Row
 #: specific CPython ABI and the two sets cannot share a directory.
 WHEELS = "vendor/wheels"
 
+#: The interpreter minor versions the payload carries a wheel set for,
+#: newest first. One list, read by three things that must not drift
+#: apart: ``build.py`` fetches exactly these, the manifest beside the
+#: wheels pins exactly these, and
+#: :func:`.python_runtime.choose` prefers an interpreter on this list
+#: over a newer one that is not.
+#:
+#: That last reader is the repair for a defect a real Windows runner
+#: found twice. ``choose`` took the newest usable Python on the
+#: machine; the payload carried cp311-cp314; the runner had 3.15.1 on
+#: it as well as the 3.11 the job had set up. So the installation
+#: landed on 3.15, found no cp315 wheel set, and installed no
+#: independent readers at all -- on the machine that had the *most*
+#: Python available. The first time this happened the newest was 3.14
+#: and the answer was to add a fourth wheel set; that answer loses
+#: again every October.
+#:
+#: cp315 is not on this list and cannot be: ``clevercsv`` 0.8.5
+#: publishes no cp315 wheel, and no release of it does. A payload
+#: cannot promise a set for a CPython its readers have not been built
+#: for yet, so the chooser avoids landing there instead.
+SERVED_MINORS = ((3, 14), (3, 13), (3, 12), (3, 11))
+
+#: The same list as ABI tags, which is how the wheel filenames and the
+#: per-interpreter directories spell it.
+SERVED_TAGS = tuple(f"cp{major}{minor}" for major, minor in SERVED_MINORS)
+
+
+def served(version: tuple[int, ...]) -> bool:
+    """True when the payload carries a wheel set for this interpreter."""
+    return tuple(version[:2]) in SERVED_MINORS
+
 
 def wheel_dir(app_root: str, python_tag: str) -> str:
     """Where this interpreter's wheels are, inside the application.

@@ -641,7 +641,7 @@ class Engine:
                           facts={"tag": option.tag, "licence": option.licence})
 
     def step_runtime_paths(self) -> StepResult:
-        """Tell the runtime where its own files live on this machine.
+        r"""Tell the runtime where its own files live on this machine.
 
         ``runtime.heartbeat_path`` defaults to ``/var/lib/solvent/heartbeat``,
         which is this project's Linux deployment path. Nothing configured it on

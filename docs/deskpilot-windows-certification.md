@@ -145,8 +145,35 @@ Every report since this came up has carried "LGPL `chardet` via
 **Vendored, as the assignment prefers.** The manifest
 `windows/installer/t2-windows-x64.txt` is a hash-pinned pip
 requirements file. Four packages are compiled and therefore need one
-wheel per interpreter, so the payload carries a `cp311` set and a
-`cp313` set, 6.3 MB each.
+wheel per interpreter, so the payload carries four sets — `cp311`,
+`cp312`, `cp313`, `cp314` — of twelve wheels each.
+
+**Which four, and why not five.** This went wrong twice and the
+second time is the one that mattered.
+
+`python_runtime.choose` returned the newest usable Python on the
+machine. A GitHub Windows runner has the interpreter the job set up
+*and* whatever else is in the hosted tool cache, and in October 2026
+that includes 3.15.1. So the installation chose 3.15, found no
+`cp315` wheel set, and finished with **no independent readers at
+all** — on the machine with the most Python available on it. The
+first time this happened the newest was 3.14 and the answer was to
+add a fourth wheel set; that answer loses again every October.
+
+It cannot be taken a second time in any case: **`clevercsv`
+publishes no `cp315` wheel, for any release of itself.** A payload
+cannot promise a set for a CPython its readers have not been built
+for yet. So the repair is on the other side — `choose` now prefers
+an interpreter the payload can serve, and falls back to an unserved
+newer one only when it is the only usable Python on the machine.
+
+`vendor.SERVED_MINORS` is the one list this is written in.
+`build.py` fetches exactly those, the manifest pins one hash per
+package per set, and `choose` prefers them; three tests in
+`test_installer_vendored_readers.py` fail if any of the three drifts
+from the others, and `MINORS` — the *search* list — deliberately
+still includes 3.15, because finding a Python and preferring it are
+different jobs.
 
 The security model is unchanged and the chain has two independent
 checks:
@@ -220,6 +247,65 @@ Uninstall keeps the owner's records unless they explicitly ask
 otherwise, and the engine proves it by checking the kept paths
 *after* the deletions rather than restating the promise. The job
 fails if the database is gone.
+
+### What the real installation found
+
+Four defects, and three of them were in the verification rather than
+in the product. That ratio is the finding.
+
+**1. `icacls` ran before `mkdir`, and took the installation with
+it.** `Restricting the control centre` applies a required ACL rule to
+the request spool. Nothing created the spool: the runtime makes it on
+first write, which is long after an installation ends. On the runner
+the step failed with *"The system cannot find the file specified"*,
+the installation stopped there — correctly, fail-closed, with a
+complete change ledger — and the autostart tasks registered *after*
+it were therefore never created. So the verify phase then reported
+`[FAIL] Autostart: missing: DeskPilot, DeskPilot Control Centre`, and
+a missing `mkdir` read on screen as a broken security boundary and a
+broken autostart. The spool is now in `Layout.all_dirs`, and a test
+asserts that **every** required hardening rule targets something the
+installation creates, not just this one.
+
+**2. The install checker's broadest check could not fail.** It read
+each row of the engine's report for a key named `ok`; the engine
+writes `outcome`. `s.get("ok") is False` was never true for any
+report the engine has ever produced, so the line printed
+
+```
+PASS  every installation step reported success: 14 step(s), 0 failed
+```
+
+over a report whose last row read `FAIL`, which carried a whole
+`failure` block, and whose engine had exited 1. **I read two CI runs
+as clean installations on the strength of that line.** Both were
+failures. The checker now reads the engine's own `Outcome`
+vocabulary, imported from the engine rather than spelled again; reads
+`may_continue` and `failure` as well, because a report can stop
+before it writes the row that says why; and reports a row it cannot
+grade as a finding in its own right. `tests_solvent/test_windows_checkers.py`
+drives it as a subprocess over synthetic reports — the checkers had
+no tests at all, which is how a control that cannot fire survived.
+
+**3. Two workflow steps proved the wrong database.** They spelled the
+path `data\deskpilot.db`; the installation writes `Data\solvent.db`.
+Windows is case-insensitive about the directory and not about the
+filename, so those steps quietly *created* a second, empty database
+and then proved that it survived the uninstall. The path now comes
+from `Layout`, the step fails if the installation created no database
+there, and the uninstall check compares the byte count across the
+uninstall instead of only testing for presence.
+
+**4. No `DeskPilot-Setup.exe` was being built.** The hosted Windows
+image no longer ships NSIS, and the step said so and carried on. The
+workflow now installs NSIS 3.11 through Chocolatey — a build-machine
+tool, pinned and checksummed by its own package manager, in the same
+category as the `pip download` in `build.py`, with no byte of it
+reaching an owner's machine or the payload. The installer's "no
+downloads during an installation" rule is untouched and is still
+asserted on every run. The compile is followed by two assertions:
+the output is a PE executable, and it carries the SHA-256 of the
+payload it refuses to install without.
 
 ---
 

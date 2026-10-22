@@ -645,3 +645,102 @@ class TheStepFindsWhatTheBuildWrote(unittest.TestCase):
 def host_listdir(path: str) -> list[str]:
     return sorted(p.name for p in
                   pathlib.Path(path.replace("\\", "/")).iterdir())
+
+
+class TheThreeListsThatHaveToAgree(unittest.TestCase):
+    """Which interpreters are served is one fact, written once.
+
+    It used to be three facts: ``build.WHEEL_PYTHONS`` decided what
+    was fetched, the manifest's hash count decided what could be
+    verified, and ``python_runtime.choose`` -- which knew nothing
+    about either -- decided which interpreter the owner's machine
+    would end up running. A Windows runner carrying a 3.15 beside the
+    job's 3.11 is what proved they drift: the installation chose the
+    Python with no wheel set and shipped no independent readers at
+    all.
+
+    :data:`vendor.SERVED_MINORS` is now the single list. These tests
+    are what makes that true rather than aspirational.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, str(INSTALLER))
+        import build
+        self.build = build
+        self.manifest = MANIFEST.read_text(encoding="utf-8")
+
+    def test_the_build_fetches_exactly_the_served_interpreters(self):
+        self.assertEqual(
+            sorted(self.build.WHEEL_PYTHONS),
+            sorted(f"{a}.{b}" for a, b in vendor.SERVED_MINORS))
+
+    def test_every_compiled_package_pins_one_hash_per_served_interpreter(self):
+        """A missing hash is a wheel set that cannot be verified.
+
+        Counted per package rather than in total, because a total is
+        satisfied by one package carrying two sets and another none.
+        """
+        want = len(vendor.SERVED_MINORS)
+        for name, hashes in _manifest_entries(self.manifest).items():
+            with self.subTest(name):
+                self.assertIn(len(hashes), (1, want),
+                              f"{name} pins {len(hashes)} hash(es); a "
+                              f"compiled package needs {want}, one per "
+                              f"served interpreter, and a pure-Python one "
+                              f"needs exactly 1")
+
+    def test_the_comment_block_names_every_served_tag(self):
+        """The licence comments are the audit trail; they must be complete."""
+        for tag in vendor.SERVED_TAGS:
+            with self.subTest(tag):
+                self.assertIn(f"-{tag}-", self.manifest,
+                              f"no wheel filename for {tag} is recorded in "
+                              f"the manifest's comments")
+
+    def test_the_python_a_bare_machine_gets_is_one_the_payload_serves(self):
+        """Otherwise a fresh install is the unserved case by default.
+
+        ``step_python`` downloads ``BOOTSTRAP_VERSION`` when the
+        machine has no usable Python at all. If the payload carried
+        no wheel set for it, every installation onto a bare machine
+        -- the most common one there is -- would end with no
+        independent readers, and nothing would say why.
+        """
+        from deskpilot_installer import python_runtime as pr
+        major, minor, _patch = pr.BOOTSTRAP_VERSION.split(".", 2)
+        self.assertTrue(vendor.served((int(major), int(minor))),
+                        f"the installer bootstraps {pr.BOOTSTRAP_VERSION} "
+                        f"and the payload serves {vendor.SERVED_TAGS}")
+
+    def test_the_floor_the_installer_enforces_is_served_too(self):
+        """The oldest Python it will accept must also get readers."""
+        from deskpilot_installer import python_runtime as pr
+        self.assertTrue(vendor.served(pr.MIN_VERSION))
+
+    def test_an_unserved_interpreter_is_recognised_as_unserved(self):
+        self.assertFalse(vendor.served((3, 15)))
+        self.assertFalse(vendor.served((3, 10)))
+        self.assertTrue(all(vendor.served(v) for v in vendor.SERVED_MINORS))
+
+    def test_served_reads_a_full_version_tuple_not_just_two_fields(self):
+        """``discover`` hands it ``(3, 11, 9)``, not ``(3, 11)``."""
+        self.assertTrue(vendor.served((3, 11, 9)))
+        self.assertFalse(vendor.served((3, 15, 1)))
+
+
+def _manifest_entries(text: str) -> dict[str, list[str]]:
+    """``{package: [sha256, ...]}`` from the pip requirements syntax."""
+    entries: dict[str, list[str]] = {}
+    current = None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        name = re.match(r"^([A-Za-z0-9._-]+)==", line)
+        if name:
+            current = name.group(1)
+            entries[current] = []
+        found = re.findall(r"--hash=sha256:([0-9a-f]{64})", line)
+        if current is not None:
+            entries[current].extend(found)
+    return entries

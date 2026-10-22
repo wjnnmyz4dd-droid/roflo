@@ -376,3 +376,107 @@ class TheWizardSearchesTheSamePlaces(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheRunnerWithANewerPythonThanThePayloadServes(unittest.TestCase):
+    """``choose`` took the newest Python and left the readers behind.
+
+    The machine is a GitHub Windows runner as it actually was: the
+    3.11 the job set up, and a 3.15.1 sitting in the hosted tool cache
+    beside it. The payload carries wheel sets for cp311 through cp314.
+    The old ``choose`` returned ``max(version)``, the installation
+    landed on 3.15, and ``Installing independent verification
+    readers`` reported "no wheels for cp315" and installed nothing --
+    on the machine with the *most* Python available on it.
+
+    The first time this happened the newest was 3.14 and the answer
+    was a fourth wheel set. That answer loses again every October, and
+    it cannot be taken this time at all: ``clevercsv`` publishes no
+    cp315 wheel for any release of itself. So the chooser now prefers
+    an interpreter the payload can serve, and these tests hold it to
+    all three halves of that -- prefer served, still use unserved when
+    it is all there is, and say which it got.
+    """
+
+    SERVED = r"C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe"
+    NEWER = r"C:\hostedtoolcache\windows\Python\3.15.1\x64\python.exe"
+
+    def host(self, *interpreters: tuple[str, str]) -> FakeWindows:
+        host = bare_windows()
+        for path, version in interpreters:
+            with_interpreter(host, path, version=version)
+        host.registry_paths = [p for p, _ in interpreters]
+        return host
+
+    def test_the_served_interpreter_is_preferred_over_a_newer_one(self):
+        chosen = pr.choose(pr.discover(
+            self.host((self.SERVED, "3 11 True"), (self.NEWER, "3 15 True"))))
+        self.assertEqual(chosen.path, self.SERVED,
+                         "3.15 has no wheel set; 3.11 has one")
+
+    def test_the_newest_served_one_wins_among_several(self):
+        """Preferring served must not become preferring oldest."""
+        host = self.host(
+            (r"C:\Program Files\Python311\python.exe", "3 11 True"),
+            (r"C:\Program Files\Python313\python.exe", "3 13 True"),
+            (r"C:\Program Files\Python314\python.exe", "3 14 True"),
+            (self.NEWER, "3 15 True"))
+        chosen = pr.choose(pr.discover(host))
+        self.assertEqual(chosen.path, r"C:\Program Files\Python314\python.exe")
+
+    def test_an_unserved_python_is_still_used_when_it_is_the_only_one(self):
+        """Declining second opinions beats declining to install."""
+        chosen = pr.choose(pr.discover(self.host((self.NEWER, "3 15 True"))))
+        self.assertEqual(chosen.path, self.NEWER)
+        row = pr.row(pr.discover(self.host((self.NEWER, "3 15 True"))),
+                     chosen)
+        self.assertEqual(row.outcome, Outcome.PASS)
+        # Said before the installation, not discovered after it.
+        self.assertFalse(row.facts["readers_available"])
+        self.assertIn("decline work needing a second opinion", row.detail)
+
+    def test_a_served_choice_is_not_labelled_with_a_warning(self):
+        host = self.host((self.SERVED, "3 11 True"))
+        found = host and pr.discover(host)
+        row = pr.row(found, pr.choose(found))
+        self.assertTrue(row.facts["readers_available"])
+        self.assertNotIn("decline", row.detail)
+
+    def test_a_python_below_the_floor_is_not_preferred_into_use(self):
+        """``served`` must not re-admit what ``usable`` rejected."""
+        host = self.host((r"C:\Program Files\Python310\python.exe",
+                          "3 10 True"))
+        self.assertIsNone(pr.choose(pr.discover(host)))
+
+    def test_the_engine_installs_the_readers_for_the_python_it_picked(self):
+        """End to end: the two lists agreeing is the whole repair."""
+        from deskpilot_installer import vendor
+        from deskpilot_installer.engine import Engine, OwnerAnswers
+        from deskpilot_installer.installlog import Log
+        from deskpilot_installer.layout import Layout
+        from deskpilot_installer.probe import Settings
+        from deskpilot_installer.report import Secret
+
+        host = self.host((self.SERVED, "3 11 True"), (self.NEWER, "3 15 True"))
+        engine = Engine(host, Settings(layout=Layout()),
+                        OwnerAnswers(owner_identity="Jo",
+                                     web_password=Secret("correct-horse-batt")),
+                        Log(host))
+        engine.step_python()
+        # In front of the handler `with_interpreter` registered, which
+        # also matches on "sys.version_info" and answers the discovery
+        # probe's three-field format. Handlers are first match wins.
+        host.handlers.insert(0, host.on(
+            engine.python_exe, "cp%d%d", stdout="cp311").handlers.pop())
+        self.assertIn(engine._python_tag(), vendor.SERVED_TAGS)
+
+    def test_the_search_looks_for_a_python_it_will_not_prefer(self):
+        """Finding 3.15 and not preferring it are different jobs.
+
+        A machine whose only Python is 3.15 should be used rather than
+        have a second copy installed beside it, so the search list and
+        the served list are deliberately not the same list.
+        """
+        self.assertIn("315", pr.MINORS)
+        from deskpilot_installer import vendor
+        self.assertNotIn("cp315", vendor.SERVED_TAGS)

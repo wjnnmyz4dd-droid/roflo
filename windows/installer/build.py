@@ -47,6 +47,12 @@ REPO = HERE.parent.parent
 ENGINE = HERE / "deskpilot_installer"
 NSI = HERE / "DeskPilot-Setup.nsi"
 
+# Imported at module scope, not inside a function like the rest, because
+# WHEEL_PYTHONS below is a module constant and the whole point of reading
+# it from the engine is that there is no second copy to fall out of date.
+sys.path.insert(0, str(HERE))
+from deskpilot_installer import vendor  # noqa: E402
+
 #: Paths from the repository that make up the application payload.
 PAYLOAD_PATHS = ("solvent", "roflo", "tests_solvent", "tests", "deploy",
                  "docs", "tools", "pyproject.toml", "roflo.toml", "README.md",
@@ -170,14 +176,15 @@ def engine_source(commit: str, dirty: str) -> str:
 
 #: Which interpreters the vendored readers are built for.
 #:
-#: Every version between the floor the installer enforces and the
-#: newest it will reuse -- not just the floor and the bootstrap
-#: target. `python_runtime.choose` takes whatever suitable Python is
-#: already on the machine, and a runner with 3.14 installed chose
-#: 3.14, which left the readers unusable on precisely the machine
-#: that had the newest interpreter. Two more sets cost 12.6 MB and
-#: remove a whole class of "works here, not there".
-WHEEL_PYTHONS = ("3.11", "3.12", "3.13", "3.14")
+#: Read from :data:`.vendor.SERVED_MINORS` rather than written here,
+#: and that is the point: the same tuple decides what this build
+#: fetches, what the manifest beside the wheels pins, and which
+#: interpreter ``python_runtime.choose`` prefers on the owner's
+#: machine. Those three were three separate lists, and a Windows
+#: runner carrying a 3.15 the payload had no set for is what proved
+#: they drift -- the installation chose 3.15 and shipped no readers.
+WHEEL_PYTHONS = tuple(f"{major}.{minor}"
+                      for major, minor in reversed(vendor.SERVED_MINORS))
 
 #: The hash-pinned manifest for those readers.
 T2_MANIFEST = HERE / "t2-windows-x64.txt"

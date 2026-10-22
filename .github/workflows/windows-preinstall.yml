@@ -145,8 +145,34 @@ jobs:
             Write-Output "----- suite.txt, last 80 lines -----"
             Get-Content suite.txt -Tail 80
           }
+          # Four conditions, not one. "A partial run is not
+          # certification", so a zero exit code on its own is not
+          # enough: pytest must have reached the end and written a
+          # junit summary, that summary must account for the whole
+          # suite, and nothing in it may have failed or errored. A
+          # run that dies after 300 green tests exits non-zero *and*
+          # leaves no junit.xml; one that is cancelled can leave a
+          # truncated one. Each is named separately so the log says
+          # which held.
           $code = if (Test-Path exitcode.txt) { (Get-Content exitcode.txt -Raw).Trim() } else { "1" }
-          if ($code -ne "0") { exit 1 }
+          $bad = @()
+          if ($code -ne "0") { $bad += "pytest exit code was $code" }
+          if (-not (Test-Path junit.xml)) {
+            $bad += "no junit.xml: pytest did not reach the end"
+          } else {
+            [xml]$x = Get-Content junit.xml
+            $suite = $x.testsuites.testsuite
+            $ran = [int]$suite.tests
+            $skipped = [int]$suite.skipped
+            if ($ran -lt 5000) { $bad += "only $ran test(s) in the summary; this suite has thousands" }
+            if ([int]$suite.failures -ne 0) { $bad += "$($suite.failures) failure(s)" }
+            if ([int]$suite.errors -ne 0) { $bad += "$($suite.errors) error(s)" }
+            Write-Output "COMPLETE RUN: $ran test(s), $skipped skipped, exit code $code"
+          }
+          if ($bad.Count -gt 0) {
+            Write-Output "NOT A COMPLETE GREEN RUN: $($bad -join '; ')"
+            exit 1
+          }
 
       # Every step below runs even when the suite fails. A single red
       # test must not hide the Windows-only answers this workflow is
@@ -403,9 +429,29 @@ jobs:
             }
           }
           if (-not $nsis) {
-            Write-Output "NSIS is not on this runner, so DeskPilot-Setup.exe was not built here."
-            Write-Output "The payload and the engine are built and tested above; the wizard"
-            Write-Output "compile is the one step this environment cannot perform."
+            # The hosted image no longer ships NSIS, so install it --
+            # pinned, and through Chocolatey, which checks the package's
+            # own SHA-256 against its manifest before unpacking it.
+            #
+            # This is a build-machine tool, not a product dependency: no
+            # byte of it reaches an owner's machine or the payload. It is
+            # the same category as the `pip download` in build.py, which
+            # also runs here and nowhere else. The installer's own "no
+            # downloads during an installation" rule is untouched, and
+            # tests_solvent/test_installer_vendored_readers.py asserts it
+            # on every run.
+            Write-Output "NSIS is not on this runner; installing it to build the wizard."
+            choco install nsis --version=3.11 --no-progress -y
+            foreach ($guess in @("C:\Program Files (x86)\NSIS\makensis.exe",
+                                 "C:\Program Files\NSIS\makensis.exe")) {
+              if (Test-Path $guess) { $nsis = Get-Item $guess; break }
+            }
+          }
+          if (-not $nsis) {
+            Write-Output "NSIS could not be installed on this runner, so"
+            Write-Output "DeskPilot-Setup.exe was not built here. The payload and the"
+            Write-Output "engine are built and tested above; the wizard compile is the"
+            Write-Output "one step this environment could not perform."
             "SETUP_EXE=none" >> $env:GITHUB_ENV
             exit 0
           }
@@ -419,6 +465,22 @@ jobs:
             Write-Output "bytes: $((Get-Item $exe).Length)"
             Write-Output "sha256: $hash"
             "SETUP_EXE=$exe" >> $env:GITHUB_ENV
+            # Two assertions, because "a file appeared" is not a build.
+            # It has to be a Windows executable, and it has to carry the
+            # digest of the payload it is supposed to refuse to install
+            # without -- which is the whole of the installer's supply
+            # chain promise and is compiled in rather than shipped beside.
+            $bytes = [System.IO.File]::ReadAllBytes($exe)
+            if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+              throw "DeskPilot-Setup.exe is not a PE executable"
+            }
+            $built = Get-ChildItem "$env:RUNNER_TEMP/dist/stage" -Filter "DeskPilot-certified-*.zip" | Select-Object -First 1
+            $want = (Get-FileHash $built.FullName -Algorithm SHA256).Hash.ToLower()
+            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+            if (-not $text.Contains($want)) {
+              throw "the installer does not carry its payload's digest $want"
+            }
+            Write-Output "carries the payload digest: $want"
           } else {
             throw "makensis ran and produced no DeskPilot-Setup.exe"
           }
@@ -442,6 +504,23 @@ jobs:
             Get-Content "$env:RUNNER_TEMP/install-report.json"
           }
           exit $LASTEXITCODE
+
+      # Asked of Layout, which is what the installer itself joined the
+      # path with. Two steps below used to spell it `data\deskpilot.db`
+      # by hand; the installation writes `Data\solvent.db`, so on a
+      # case-insensitive filesystem those steps quietly created a second,
+      # empty database and then proved that *it* survived the uninstall.
+      # A guard that invents the thing it guards proves nothing.
+      - name: Where the installed database actually is
+        if: always()
+        shell: pwsh
+        run: |
+          $db = python -I -c "import sys; sys.path.insert(0, 'windows/installer'); from deskpilot_installer.layout import Layout; print(Layout(root=sys.argv[1]).db)" $env:DESKPILOT_ROOT
+          if (-not (Test-Path $db)) { throw "the installation created no database at $db" }
+          $bytes = (Get-Item $db).Length
+          Write-Output "installed database: $db ($bytes bytes)"
+          "DESKPILOT_DB=$db" >> $env:GITHUB_ENV
+          "DESKPILOT_DB_BYTES=$bytes" >> $env:GITHUB_ENV
 
       - name: What the installation produced
         if: always()
@@ -497,7 +576,8 @@ jobs:
         shell: pwsh
         run: |
           $py = Join-Path $env:DESKPILOT_ROOT "venv\Scripts\python.exe"
-          $db = Join-Path $env:DESKPILOT_ROOT "data\deskpilot.db"
+          $db = $env:DESKPILOT_DB
+          if (-not (Test-Path $db)) { throw "no installed database at $db" }
           Write-Output "----- solvent health -----"
           & $py -I -m solvent.cli health --db $db
           Write-Output "----- solvent demo (the complete-job harness) -----"
@@ -520,11 +600,14 @@ jobs:
             uninstall --root $env:DESKPILOT_ROOT `
             --out "$env:RUNNER_TEMP/uninstall-report.json"
           Write-Output "uninstall exit code: $LASTEXITCODE"
-          $db = Join-Path $env:DESKPILOT_ROOT "data\deskpilot.db"
-          if (Test-Path $db) {
-            Write-Output "KEPT: $db ($((Get-Item $db).Length) bytes)"
-          } else {
+          $db = $env:DESKPILOT_DB
+          if (-not (Test-Path $db)) {
             throw "uninstall destroyed the business records without being asked"
+          }
+          $after = (Get-Item $db).Length
+          Write-Output "KEPT: $db ($after bytes, was $env:DESKPILOT_DB_BYTES)"
+          if ($after -lt [int]$env:DESKPILOT_DB_BYTES) {
+            throw "the database shrank across the uninstall: $env:DESKPILOT_DB_BYTES -> $after bytes"
           }
 
       - name: Upload the installation evidence
