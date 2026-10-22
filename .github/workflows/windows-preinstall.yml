@@ -381,6 +381,44 @@ jobs:
             throw "the payload carries wheels and no manifest to check them against"
           }
 
+      # Whether the shipping artifact can be produced at all, which
+      # is a separate question from whether the engine works. The
+      # answer is reported either way rather than assumed: an
+      # installer nobody has built is not an installer, and claiming
+      # one without the build step having run would be exactly the
+      # kind of statement this whole engagement keeps retracting.
+      - name: Build DeskPilot-Setup.exe, or say why not
+        if: matrix.python == '3.11'
+        shell: pwsh
+        run: |
+          $nsis = Get-Command makensis -ErrorAction SilentlyContinue
+          if (-not $nsis) {
+            foreach ($guess in @("C:\Program Files (x86)\NSIS\makensis.exe",
+                                 "C:\Program Files\NSIS\makensis.exe")) {
+              if (Test-Path $guess) { $nsis = Get-Item $guess; break }
+            }
+          }
+          if (-not $nsis) {
+            Write-Output "NSIS is not on this runner, so DeskPilot-Setup.exe was not built here."
+            Write-Output "The payload and the engine are built and tested above; the wizard"
+            Write-Output "compile is the one step this environment cannot perform."
+            "SETUP_EXE=none" >> $env:GITHUB_ENV
+            exit 0
+          }
+          Write-Output "makensis: $($nsis.Source ?? $nsis.FullName)"
+          $env:PATH = "$([System.IO.Path]::GetDirectoryName($nsis.Source ?? $nsis.FullName));$env:PATH"
+          python windows/installer/build.py --out-dir "$env:RUNNER_TEMP/dist" --allow-dirty
+          $exe = Join-Path $env:RUNNER_TEMP "dist/DeskPilot-Setup.exe"
+          if (Test-Path $exe) {
+            $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+            Write-Output "built: $exe"
+            Write-Output "bytes: $((Get-Item $exe).Length)"
+            Write-Output "sha256: $hash"
+            "SETUP_EXE=$exe" >> $env:GITHUB_ENV
+          } else {
+            throw "makensis ran and produced no DeskPilot-Setup.exe"
+          }
+
       - name: Install, for real, into a fresh root
         shell: pwsh
         env:
@@ -497,4 +535,5 @@ jobs:
             ${{ runner.temp }}/restart-check.json
             ${{ runner.temp }}/uninstall-report.json
             ${{ runner.temp }}/headline.txt
+            ${{ runner.temp }}/dist/DeskPilot-Setup.exe
           if-no-files-found: ignore
