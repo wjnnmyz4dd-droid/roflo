@@ -48,9 +48,12 @@ def default_task_names() -> list[str]:
 
 class TheServiceSchedulesTheBusinessCycle(unittest.TestCase):
 
+    #: Updated deliberately when a task is added, which is the point of
+    #: the test below: it failed the moment `chief_of_staff` appeared,
+    #: which is the pin doing its job rather than a defect.
     DECLARED = ["heartbeat", "health", "reconciliation", "discovery",
                 "diagnostics", "owner_intents", "owner_briefing",
-                "supervision", "business"]
+                "supervision", "business", "chief_of_staff"]
 
     def test_the_task_list_is_the_declared_one(self):
         """Adding or removing a timer task stays a visible change."""

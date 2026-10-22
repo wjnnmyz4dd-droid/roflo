@@ -204,6 +204,16 @@ class TextIoDeclaresItsEncoding(unittest.TestCase):
                 before = text[max(0, match.start() - 24):match.start()]
                 if re.search(r"(?:archive|zf|zipf|package)\.$", before):
                     continue
+                # `def open(self)` is a method, not a file. A codebase
+                # may legitimately call something `open` -- a
+                # negotiation opens -- and flagging the definition is
+                # the fifth false positive this matcher has produced.
+                # Calls on an object are skipped for the same reason;
+                # only a bare `open(...)` opens a file.
+                if re.search(r"(?:def|async\s+def)\s+$", before):
+                    continue
+                if match.group().startswith("open") and before.rstrip().endswith("."):
+                    continue
                 line = text[:match.start()].count("\n") + 1
                 if text.splitlines()[line - 1].lstrip().startswith("#"):
                     continue
