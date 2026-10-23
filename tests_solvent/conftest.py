@@ -35,9 +35,26 @@ from __future__ import annotations
 
 import gc
 import os
+import platform
 import tempfile
 
 import pytest
+
+# Before anything imports solvent, let alone arms its egress guard.
+#
+# `platform.uname()` on Windows under CPython 3.11 shells out to read
+# the OS version and caches the answer; the guard denies the spawn, so
+# a process that arms it while that cache is cold can never fill it.
+# pytest's --junitxml writer calls platform.node() from
+# pytest_sessionfinish, and a denial there loses the entire report
+# after every test has already run and passed. That happened twice.
+#
+# solvent.egress.install warms it too, which is the product-side
+# repair and the one that matters for an installed DeskPilot. This
+# line is the suite's own belt: it does not depend on which module
+# arms the guard, or on no test ever clearing the cache -- one test
+# cleared it, and took the whole 3.11 job down with it.
+platform.uname()
 
 from solvent.store import open_stores
 from solvent.web.readmodel import open_readmodels

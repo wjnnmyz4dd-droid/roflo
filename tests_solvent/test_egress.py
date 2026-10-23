@@ -167,16 +167,25 @@ class TheStandardLibraryStillWorksBehindTheGuard(unittest.TestCase):
         ``platform.uname`` reads ``os.uname`` and spawns nothing, so
         the guard was never in its way. What it can do, and does, is
         hold the outcome: with the guard armed, the three functions
-        pytest's junit writer calls must answer. On 3.11 Windows that
-        is true only because of the warming; everywhere else it is
-        true anyway, and a test that passes for the easy reason on
-        one host and the hard reason on another is still the test
-        that fails when the warming is removed.
+        pytest's junit writer calls must answer.
+
+        **It does not clear the cache first, and the first version of
+        it did.** Clearing ``platform._uname_cache`` inside a process
+        whose guard is already armed is not a way to simulate a cold
+        interpreter -- on 3.11 Windows it *creates* one that can
+        never warm up again, because refilling that cache needs the
+        spawn the guard denies. The warming swallowed the refusal,
+        the cache stayed empty, and five thousand tests later pytest
+        wrote no junit report for exactly the reason this class was
+        added to prevent. One line in one test took the whole 3.11
+        job down.
+
+        What holds the repair is
+        :meth:`test_install_warms_before_it_arms` below, which reads
+        the order out of the source and cannot sabotage anything.
         """
         import platform
         egress.install()
-        platform._uname_cache = None          # as if never asked
-        egress._warm_stdlib_caches()
         self.assertTrue(egress.is_installed())
         self.assertIsNotNone(platform.node())
         self.assertIsNotNone(platform.release())

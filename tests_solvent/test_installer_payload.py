@@ -24,6 +24,8 @@ collide.
 
 from __future__ import annotations
 
+import io
+import zipfile
 import hashlib
 import os
 import pathlib
@@ -273,7 +275,6 @@ class AHostileArchiveIsNotUnpacked(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
-
 class ThePayloadDigestIsReproducible(unittest.TestCase):
     """Two builds of one commit must produce one digest.
 
@@ -290,67 +291,53 @@ class ThePayloadDigestIsReproducible(unittest.TestCase):
     the docstring directly above the code said "two builds of one
     commit still produce the same bytes and the same digest".
 
-    The network is not touched here: ``fetch_wheels`` is replaced with
-    one that writes two files, and the two builds are separated in
-    time so their mtimes genuinely differ. That separation is the
-    whole experiment -- without it the old code passes too.
+    **Tested at ``_append`` rather than at ``build_payload``.** The
+    whole-function test spawned ``git archive``, and this suite arms
+    an egress guard that denies spawning -- which is correct, and is
+    why ``tools/verify_egress.py`` lives outside the suite. A test
+    that can only run when the guard is off is a test that does not
+    run. ``_append`` is where the defect was and where the repair is;
+    that ``build_payload`` goes through it is asserted from the
+    source, which needs no subprocess either.
     """
 
     #: Two mtimes a zip can tell apart. A DOS timestamp stores seconds
-    #: in two-second steps, so "download one, sleep a moment, download
-    #: the other" is not a reliable difference -- the first version of
-    #: this slept 1.1s and the negative test below passed or failed
-    #: depending on which side of an even second the clock fell. The
-    #: mtimes are set outright instead, which is also what makes this
-    #: run in the same time either way.
+    #: in two-second steps, so "write one, sleep a moment, write the
+    #: other" is not a reliable difference -- an earlier version slept
+    #: 1.1s and passed or failed depending on which side of an even
+    #: second the clock fell. The mtimes are set outright instead.
     MTIMES = (1_700_000_000.0, 1_700_086_400.0)
 
-    def _fake_wheels(self, into):
-        into.mkdir(parents=True, exist_ok=True)
-        when = self.MTIMES[self._build]
-        for tag in ("cp311", "cp313"):
-            directory = into / tag
-            directory.mkdir(parents=True, exist_ok=True)
-            wheel = directory / ("thing-1.0-%s-%s-win_amd64.whl" % (tag, tag))
+    STAMP = (2026, 10, 23, 0, 0, 0)
+
+    def _archive(self, mtime: float, append) -> bytes:
+        """One payload-shaped zip, built with ``append``."""
+        with tempfile.TemporaryDirectory() as box:
+            wheel = pathlib.Path(box) / "thing-1.0-cp311-cp311-win_amd64.whl"
             wheel.write_bytes(b"wheel bytes")
-            os.utime(wheel, (when, when))
-        return {"cp311": 1, "cp313": 1}
+            os.utime(wheel, (mtime, mtime))
+            out = pathlib.Path(box) / "payload.zip"
+            with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+                append(archive, wheel,
+                       "vendor/wheels/cp311/" + wheel.name, self.STAMP)
+            return out.read_bytes()
 
-    def _build_twice(self, writer=None):
-        import subprocess
-        import sys
-
+    def _build(self):
         sys.path.insert(0, str(INSTALLER))
         import build
+        return build
 
-        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ROOT),
-                                capture_output=True, text=True,
-                                check=True).stdout.strip()
-        original_fetch, build.fetch_wheels = build.fetch_wheels, self._fake_wheels
-        original_append = build._append
-        if writer is not None:
-            build._append = writer
-        try:
-            digests = []
-            for index in range(2):
-                self._build = index
-                with tempfile.TemporaryDirectory() as box:
-                    out = pathlib.Path(box) / "stage" / ("p%d.zip" % index)
-                    digest, _size = build.build_payload(out, commit)
-                    digests.append(digest)
-            return digests
-        finally:
-            build.fetch_wheels = original_fetch
-            build._append = original_append
-
-    def test_two_builds_of_one_commit_agree(self):
-        first, second = self._build_twice()
-        self.assertEqual(first, second,
-                         "the payload digest depends on something other "
-                         "than the commit and the pinned wheels")
+    def test_two_appends_of_one_file_agree_whatever_its_mtime(self):
+        build = self._build()
+        first = self._archive(self.MTIMES[0], build._append)
+        second = self._archive(self.MTIMES[1], build._append)
+        self.assertEqual(hashlib.sha256(first).hexdigest(),
+                         hashlib.sha256(second).hexdigest(),
+                         "the payload digest depends on when a wheel "
+                         "happened to be downloaded")
 
     def test_the_old_way_of_appending_did_not_agree(self):
-        """The defect itself, so this test cannot pass for a free reason.
+        """The defect itself, so the test above cannot pass for free.
 
         If ``ZipFile.write`` ever becomes deterministic this fails,
         and that is the right outcome: it would mean the test above
@@ -359,7 +346,33 @@ class ThePayloadDigestIsReproducible(unittest.TestCase):
         def by_mtime(archive, source, name, stamp):
             archive.write(source, name)
 
-        first, second = self._build_twice(writer=by_mtime)
-        self.assertNotEqual(first, second,
-                            "appending by mtime should differ between "
-                            "two builds a second apart")
+        first = self._archive(self.MTIMES[0], by_mtime)
+        second = self._archive(self.MTIMES[1], by_mtime)
+        self.assertNotEqual(hashlib.sha256(first).hexdigest(),
+                            hashlib.sha256(second).hexdigest(),
+                            "appending by mtime should differ between two "
+                            "files stamped a day apart")
+
+    def test_the_entry_carries_the_stamp_it_was_given(self):
+        build = self._build()
+        blob = self._archive(self.MTIMES[0], build._append)
+        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+            info, = archive.infolist()
+            self.assertEqual(info.date_time, self.STAMP)
+            self.assertEqual(archive.read(info.filename), b"wheel bytes")
+
+    def test_build_payload_appends_through_it_and_not_by_mtime(self):
+        """The repair is only a repair if the caller goes through it."""
+        import inspect
+
+        source = inspect.getsource(self._build().build_payload)
+        self.assertIn("_append(archive", source)
+        self.assertNotIn("archive.write(", source,
+                         "build_payload appends by mtime again")
+
+    def test_the_stamp_comes_from_the_commit_and_not_the_clock(self):
+        """``commit_date`` is what makes a rebuild reproduce the file."""
+        import inspect
+
+        source = inspect.getsource(self._build().build_payload)
+        self.assertIn("stamp = commit_date(commit)", source)

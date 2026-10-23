@@ -22,9 +22,9 @@ and the first of them fails if a FAIL row ever again reads as a pass.
 
 from __future__ import annotations
 
+import io
 import json
 import pathlib
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -43,15 +43,36 @@ def _row(name: str, outcome: Outcome, detail: str = "") -> dict:
     return {"name": name, "outcome": outcome.value, "detail": detail}
 
 
-def _check(report: dict, root: str) -> subprocess.CompletedProcess:
-    """Run the checker over ``report``, the way the workflow does."""
+def _check(report: dict, root: str) -> str:
+    """Run the checker over ``report`` and return what it printed.
+
+    In this process, not as a subprocess. The first version of this
+    file ran the real command line -- which is what CI runs, and
+    looked like the more honest test -- and it passed on its own and
+    failed twelve times inside the full suite on Windows. The reason
+    is the thing being tested elsewhere in this very suite: the
+    egress guard is process-wide and irreversible, and it denies
+    ``subprocess.Popen``. A test that spawns cannot live in a suite
+    that forbids spawning, and ``tools/verify_egress.py`` already
+    says so about itself.
+
+    What is lost is the argument parsing, so the one test that
+    exercises ``main`` keeps doing that -- in-process, through
+    ``main(argv)``, which is the same entry point the command line
+    reaches.
+    """
+    import contextlib
+    import importlib
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    checker = importlib.import_module("windows_install_check")
     with tempfile.TemporaryDirectory() as box:
         path = pathlib.Path(box) / "install-report.json"
         path.write_text(json.dumps(report), encoding="utf-8")
-        return subprocess.run(
-            [sys.executable, "-I", str(CHECKER),
-             "--root", root, "--report", str(path)],
-            capture_output=True, text=True, check=False, timeout=300.0)
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            checker.main(["--root", root, "--report", str(path)])
+        return printed.getvalue()
 
 
 class TheInstallCheckerReadsTheEnginesVocabulary(unittest.TestCase):
@@ -64,9 +85,8 @@ class TheInstallCheckerReadsTheEnginesVocabulary(unittest.TestCase):
     ABSENT = r"C:\no-such-deskpilot-root"
 
     def lines(self, report: dict) -> dict[str, str]:
-        done = _check(report, self.ABSENT)
         out = {}
-        for line in done.stdout.splitlines():
+        for line in _check(report, self.ABSENT).splitlines():
             if ":" in line and line[:4].strip() in ("PASS", "FAIL", "WARN"):
                 mark, rest = line.split(None, 1)
                 name, detail = rest.split(":", 1)
