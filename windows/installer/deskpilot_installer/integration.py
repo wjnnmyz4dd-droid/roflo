@@ -395,23 +395,47 @@ def _escape(text: str) -> str:
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
+def said(output: str) -> str:
+    """What a ``schtasks`` command printed, on one line, trimmed.
+
+    A refusal that reads "the probe task could not be registered" and
+    stops there is a refusal with no next step in it: an installation
+    halted on a real Windows runner with exactly that sentence and
+    nothing to act on, because the three task helpers below returned a
+    bool and dropped the rest. ``schtasks`` writes a specific reason --
+    the account cannot log on as a batch job, the XML is rejected,
+    access is denied -- and discarding it is what turned a diagnosable
+    failure into a shrug.
+    """
+    text = " ".join((output or "").split())
+    return text[:400] if text else "schtasks said nothing"
+
+
+def create_task(host: Host, name: str, xml_path: str):
+    """Create or replace one scheduled task. The whole result, reason and all."""
+    return host.run(["schtasks.exe", "/Create", "/TN", name,
+                     "/XML", xml_path, "/F"], timeout=120.0)
+
+
 def register_task(host: Host, name: str, xml_path: str) -> bool:
-    """Create or replace one scheduled task from its XML definition."""
-    result = host.run(["schtasks.exe", "/Create", "/TN", name,
-                       "/XML", xml_path, "/F"], timeout=120.0)
-    return result.ok
+    """:func:`create_task` as a condition, for the callers that only ask."""
+    return create_task(host, name, xml_path).ok
 
 
 def start_task(host: Host, name: str) -> bool:
-    """Run a registered task now.
+    """Run a registered task now. :func:`run_task` keeps the reason.
 
     A boot trigger starts a service at the next boot and not before, so a fresh
     installation left both services down until the owner rebooted -- and the
     Finish page offers the control centre's address immediately. Starting them
     here is what makes that link answer.
     """
-    result = host.run(["schtasks.exe", "/Run", "/TN", name], timeout=120.0)
-    return result.ok
+    return run_task(host, name).ok
+
+
+def run_task(host: Host, name: str):
+    """:func:`start_task` with the reason kept."""
+    return host.run(["schtasks.exe", "/Run", "/TN", name], timeout=120.0)
 
 
 def stop_task(host: Host, name: str) -> bool:

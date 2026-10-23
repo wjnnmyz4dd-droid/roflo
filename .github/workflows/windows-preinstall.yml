@@ -471,27 +471,32 @@ jobs:
             Write-Output "bytes: $((Get-Item $exe).Length)"
             Write-Output "sha256: $hash"
             "SETUP_EXE=$exe" >> $env:GITHUB_ENV
-            # Two assertions, because "a file appeared" is not a build.
-            # It has to be a Windows executable, and it has to carry the
-            # digest of the payload it is supposed to refuse to install
-            # without -- which is the whole of the installer's supply
-            # chain promise and is compiled in rather than shipped beside.
-            $bytes = [System.IO.File]::ReadAllBytes($exe)
-            if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
-              throw "DeskPilot-Setup.exe is not a PE executable"
+            # "A file appeared" is not a build. It has to be a Windows
+            # executable carrying the SHA-256 of the payload it refuses
+            # to install without -- the whole of the installer's supply
+            # chain promise, compiled in rather than shipped beside.
+            #
+            # Checked against the digest this build recorded in
+            # BUILD.txt, not against a zip re-hashed here, and in both
+            # encodings. The first version of this searched the bytes
+            # for ASCII and failed a correct build: NSIS compiles its
+            # string constants as UTF-16LE. The reading is now in
+            # tools/installer_carries_digest.py, which the suite drives.
+            python -I tools/installer_carries_digest.py $exe "$env:RUNNER_TEMP/dist/BUILD.txt"
+            if ($LASTEXITCODE -ne 0) {
+              throw "DeskPilot-Setup.exe did not pass its own provenance check"
             }
-            $built = Get-ChildItem "$env:RUNNER_TEMP/dist/stage" -Filter "DeskPilot-certified-*.zip" | Select-Object -First 1
-            $want = (Get-FileHash $built.FullName -Algorithm SHA256).Hash.ToLower()
-            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
-            if (-not $text.Contains($want)) {
-              throw "the installer does not carry its payload's digest $want"
-            }
-            Write-Output "carries the payload digest: $want"
           } else {
             throw "makensis ran and produced no DeskPilot-Setup.exe"
           }
 
+      # `always()`, because the wizard compile above it is a separate
+      # question. When that step failed, this one was skipped and the
+      # seven after it failed for want of DESKPILOT_ROOT -- so a build
+      # tool's absence read as seven broken installation checks, and
+      # the thing this job exists to measure was not measured at all.
       - name: Install, for real, into a fresh root
+        if: always()
         shell: pwsh
         env:
           DESKPILOT_SETUP_ANSWERS: >-
@@ -521,7 +526,11 @@ jobs:
         if: always()
         shell: pwsh
         run: |
+          if (-not $env:DESKPILOT_ROOT) {
+            throw "DESKPILOT_ROOT is unset: the installation step did not run"
+          }
           $db = python -I -c "import sys; sys.path.insert(0, 'windows/installer'); from deskpilot_installer.layout import Layout; print(Layout(root=sys.argv[1]).db)" $env:DESKPILOT_ROOT
+          if (-not $db) { throw "Layout named no database for $env:DESKPILOT_ROOT" }
           if (-not (Test-Path $db)) { throw "the installation created no database at $db" }
           $bytes = (Get-Item $db).Length
           Write-Output "installed database: $db ($bytes bytes)"

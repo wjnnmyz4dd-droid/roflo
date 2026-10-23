@@ -229,6 +229,38 @@ def fetch_wheels(into: pathlib.Path) -> dict:
     return counts
 
 
+def commit_date(commit: str) -> tuple[int, int, int, int, int, int]:
+    """The commit's own author date, as a zip ``date_time`` tuple.
+
+    The same instant ``git archive`` stamps every entry it writes, so
+    an appended entry is indistinguishable from an archived one and a
+    rebuild of the commit reproduces the file byte for byte.
+    """
+    import datetime
+
+    text = subprocess.run(["git", "show", "-s", "--format=%aI", commit],
+                          cwd=REPO, check=True, capture_output=True,
+                          text=True).stdout.strip()
+    when = datetime.datetime.fromisoformat(text)
+    return (when.year, when.month, when.day,
+            when.hour, when.minute, when.second)
+
+
+def _append(archive: zipfile.ZipFile, source: pathlib.Path, name: str,
+            stamp: tuple[int, int, int, int, int, int]) -> None:
+    """Add one file under a fixed timestamp and fixed permissions.
+
+    ``ZipFile.write`` would take both from the filesystem, which is
+    what made the payload's digest depend on when the wheels happened
+    to be downloaded.
+    """
+    info = zipfile.ZipInfo(name, date_time=stamp)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o644 << 16
+    info.create_system = 3
+    archive.writestr(info, pathlib.Path(source).read_bytes())
+
+
 def build_payload(out: pathlib.Path, commit: str) -> tuple[str, int]:
     """``git archive`` the application, plus the verified readers.
 
@@ -238,10 +270,23 @@ def build_payload(out: pathlib.Path, commit: str) -> tuple[str, int]:
     repository and should not be -- 12.6 MB of binaries under version
     control would make every upgrade a binary diff.
 
-    Determinism survives. ``git archive <commit>`` stamps each entry
-    with the commit date, and each wheel is pinned to one SHA-256, so
-    two builds of one commit still produce the same bytes and the
-    same digest.
+    **Determinism, which did not survive and now does.** ``git
+    archive <commit>`` stamps every entry with the commit date, and
+    each wheel is pinned to one SHA-256, so the docstring here used to
+    claim that two builds of one commit produce the same bytes. They
+    did not. ``ZipFile.write`` stamps an appended entry with the
+    file's mtime on disk, and a wheel's mtime is when ``pip
+    download`` fetched it -- so two builds of commit c8e06b5 in one CI
+    run produced payloads digesting to ``a81a8a05...`` and
+    ``3fb1e25a...``.
+
+    That is not cosmetic. The payload's SHA-256 is compiled into the
+    installer and is the whole of its supply-chain claim: an owner, an
+    auditor or a future maintainer is meant to be able to rebuild the
+    commit and get the same number. They could not. Every appended
+    entry is now stamped with the commit's own date, which is what
+    ``git archive`` already uses for everything else in the file, and
+    :func:`payload_is_reproducible` asserts it by building twice.
     """
     out.parent.mkdir(parents=True, exist_ok=True)
     argv = ["git", "archive", "--format=zip", "-9",
@@ -252,11 +297,12 @@ def build_payload(out: pathlib.Path, commit: str) -> tuple[str, int]:
     if staged.exists():
         shutil.rmtree(staged)
     counts = fetch_wheels(staged / "wheels")
+    stamp = commit_date(commit)
     with zipfile.ZipFile(out, "a", zipfile.ZIP_DEFLATED) as archive:
-        archive.write(T2_MANIFEST, "vendor/t2-windows-x64.txt")
+        _append(archive, T2_MANIFEST, "vendor/t2-windows-x64.txt", stamp)
         for wheel in sorted((staged / "wheels").rglob("*.whl")):
-            archive.write(wheel,
-                          f"vendor/wheels/{wheel.parent.name}/{wheel.name}")
+            _append(archive, wheel,
+                    f"vendor/wheels/{wheel.parent.name}/{wheel.name}", stamp)
     print("readers : " + ", ".join(f"{tag}={n}" for tag, n in counts.items()))
 
     data = out.read_bytes()

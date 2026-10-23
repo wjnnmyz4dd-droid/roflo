@@ -877,11 +877,23 @@ class Engine:
                                  identity=isolation.WEB_SID,
                                  elevated=False).encode("utf-8"))
         try:
-            if not integration.register_task(self.host, self.PROBE_TASK_NAME,
-                                             task_xml_path):
-                return (), ["the probe task could not be registered"]
-            if not integration.start_task(self.host, self.PROBE_TASK_NAME):
-                return (), ["the probe task could not be started"]
+            # Both refusals carry what ``schtasks`` itself said. The
+            # first of them read "the probe task could not be
+            # registered" and nothing else on a real Windows runner,
+            # which stopped the installation with no reason in it and
+            # no next step -- the one failure mode this installer's
+            # own architecture test exists to forbid.
+            made = integration.create_task(self.host, self.PROBE_TASK_NAME,
+                                           task_xml_path)
+            self.log.command(made.argv, made.returncode, made.output)
+            if not made.ok:
+                return (), ["the probe task could not be registered: "
+                            + integration.said(made.output)]
+            started = integration.run_task(self.host, self.PROBE_TASK_NAME)
+            self.log.command(started.argv, started.returncode, started.output)
+            if not started.ok:
+                return (), ["the probe task could not be started: "
+                            + integration.said(started.output)]
             text = self._await_probe(result_file)
         finally:
             integration.delete_task(self.host, self.PROBE_TASK_NAME)
