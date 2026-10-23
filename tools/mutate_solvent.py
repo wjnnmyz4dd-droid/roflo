@@ -1842,9 +1842,9 @@ MUTANTS: tuple[Mutant, ...] = (
         "invoice-recovery-reinvoices-what-is-already-billed",
         "solvent/ledger.py",
         "            \"LEFT JOIN payments p ON p.job_id = o.job_id \"\n"
-        "            \"WHERE p.id IS NULL ORDER BY o.ts\")]",
+        "            \"WHERE p.id IS NULL ORDER BY o.ts, o.rowid\")]",
         "            \"LEFT JOIN payments p ON p.job_id = o.job_id \"\n"
-        "            \"ORDER BY o.ts\")]",
+        "            \"ORDER BY o.ts, o.rowid\")]",
         "tests_solvent.test_invoice_recovery.DeliveredJobs"
         ".test_repeated_restarts_still_leave_exactly_one_invoice",
         "every restart writes the client another invoice for the same job"),

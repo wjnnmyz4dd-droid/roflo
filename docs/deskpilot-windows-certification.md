@@ -523,7 +523,33 @@ Each line is what was measured, not what was configured.
 | **RESTART RECOVERY** | **PASS.** 12/12, four interpreters, real closes, replay not double-counted |
 | **SECURITY** | **PASS.** 15 access checks run *as* LOCAL SERVICE, every one as required. Uninstall preserved Data, Config, Logs, Backups |
 | **REGRESSION** | **PASS.** 5,495 passed, 0 failed, 50 skipped, 10,918 subtests on Linux |
-| **MUTATION** | Reported separately below |
+| **MUTATION** | **PASS.** Installer 203/203 killed. Solvent 234/234 killed, 0 survived — after repairing one stale anchor the run itself exposed |
+
+### Mutation: both batteries, and the one that was not guarding anything
+
+**Installer: 203 mutants, 203 killed.**
+
+**Solvent: 234 mutants, 234 killed, 0 survived** — but the first
+full run reported *233 killed, 0 survived, 1 not applied*, and zero
+survivors reads like a clean sheet when it is not one.
+
+The unapplied mutant was
+``invoice-recovery-reinvoices-what-is-already-billed``, which quotes
+a line of ``solvent/ledger.py`` that the tiebreaker sweep had edited.
+Its replacement matched zero times, so the control it guards — that
+a restart does not write the client a second invoice for the same
+job — had no mutant behind it. The harness reported it correctly and
+quietly, at the end of a forty-minute run, one line in a wall of
+KILLED. Repointed, and it kills.
+
+``tools/mutate_installer.py`` has been guarded against exactly this
+since three of its anchors went stale in one afternoon.
+``tools/mutate_solvent.py`` was not, which is why this took a full
+run to surface rather than a second.
+``tests_solvent/test_mutant_anchors.py`` now holds **both**
+batteries to the same rules: every anchor appears exactly once in
+the file it names, no mutation is a no-op, and every mutant names a
+test module that imports. Editing a quoted line fails it.
 
 ### Defects found and repaired
 
