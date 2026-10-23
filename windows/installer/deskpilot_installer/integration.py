@@ -332,6 +332,65 @@ def backup_source(layout: Layout, keep: int = BACKUP_RETENTION) -> str:
 # Autostart
 # ---------------------------------------------------------------------------
 
+#: The built-in service accounts: SYSTEM, LOCAL SERVICE, NETWORK SERVICE.
+#: Task Scheduler knows how these log on and wants no help with it.
+_SERVICE_SIDS = frozenset({"S-1-5-18", "S-1-5-19", "S-1-5-20"})
+
+#: What the Task Scheduler **XML schema** accepts for ``<LogonType>``.
+#: Not the same list as the COM ``TASK_LOGON_TYPE`` enumeration, and
+#: that difference cost an installation.
+LOGON_TYPES = ("S4U", "Password", "InteractiveToken",
+               "InteractiveTokenOrPassword")
+
+
+def task_xml_bytes(*args, **kwargs) -> bytes:
+    """:func:`task_xml` encoded as the bytes its own declaration promises.
+
+    The document says ``encoding="UTF-16"`` and every caller wrote it
+    out as UTF-8. ``schtasks`` sniffs, so it parsed anyway -- which is
+    how this survived: a declaration that lies about its encoding
+    reads as working right up until a path contains a character
+    outside ASCII, and then the file is garbage in a way no error
+    message will attribute to the declaration.
+
+    UTF-16LE with a BOM, which is what Task Scheduler's own export
+    writes.
+    """
+    return b"\xff\xfe" + task_xml(*args, **kwargs).encode("utf-16-le")
+
+
+def _logon_type(identity: str) -> str:
+    """The ``<LogonType>`` line for this principal, or none at all.
+
+    This emitted ``<LogonType>ServiceAccount</LogonType>``, with a
+    comment explaining -- correctly -- that LOCAL SERVICE and SYSTEM
+    are logged on by the service control manager and have no password
+    for Task Scheduler to hold. The reasoning was right and the value
+    does not exist. ``TASK_LOGON_SERVICE_ACCOUNT`` is in the COM
+    ``TASK_LOGON_TYPE`` enumeration; the XML schema's ``logonType``
+    accepts only the four in :data:`LOGON_TYPES`. So ``schtasks``
+    refused every task this installer has ever written, with
+
+        ERROR: The task XML contains a value which is incorrectly
+        formatted or out of range. (9,33):LogonType:ServiceAccount
+
+    and refused it at line 9, column 33, which is where that word
+    was. Nobody saw it for as long as the refusal was reported as
+    "the probe task could not be registered" and nothing more.
+
+    For a built-in service account the element is simply left out --
+    it is ``minOccurs="0"``, and this is what Task Scheduler's own
+    export produces for a task running as LOCAL SERVICE. For any
+    other identity ``S4U`` is used, the one value in the schema that
+    stores no password, which is what the original comment was
+    reaching for.
+    """
+    sid = identity.lstrip("*")
+    if sid in _SERVICE_SIDS:
+        return ""
+    return "    <LogonType>S4U</LogonType>\n"
+
+
 def task_xml(python_exe: str, script: str, *, at_startup: bool,
              daily_at: str = "03:17:00",
              identity: str = "*S-1-5-18", elevated: bool = True) -> str:
@@ -364,11 +423,7 @@ def task_xml(python_exe: str, script: str, *, at_startup: bool,
         f"  <Triggers>{trigger}</Triggers>\n"
         "  <Principals><Principal id=\"Author\">\n"
         f"    <UserId>{identity.lstrip('*')}</UserId>\n"
-        # ServiceAccount, because LOCAL SERVICE and SYSTEM are logged on by the
-        # service control manager and have no password for Task Scheduler to
-        # hold. A task that asked for an interactive logon here would need a
-        # stored credential, which is a new secret created to protect a secret.
-        "    <LogonType>ServiceAccount</LogonType>\n"
+        f"{_logon_type(identity)}"
         f"    <RunLevel>{'HighestAvailable' if elevated else 'LeastPrivilege'}"
         "</RunLevel>\n"
         "  </Principal></Principals>\n"

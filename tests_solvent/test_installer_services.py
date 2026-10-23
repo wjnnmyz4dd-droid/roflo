@@ -287,7 +287,7 @@ class BothServicesStartAtBootAndNow(Scenario):
         layout = Layout()
         for service in integration.BOOT_SERVICES:
             script = service.script_path(layout)
-            xml = host.read_bytes(service.xml_path(layout)).decode("utf-8")
+            xml = _task_xml(host, service.xml_path(layout))
             self.assertIn(script, xml,
                           f"{service.task_name} does not point at its script")
             host.read_bytes(script)   # raises if the installer never wrote it
@@ -296,7 +296,7 @@ class BothServicesStartAtBootAndNow(Scenario):
         host, _engine, _report = self.installed()
         layout = Layout()
         for service in integration.BOOT_SERVICES:
-            xml = host.read_bytes(service.xml_path(layout)).decode("utf-8")
+            xml = _task_xml(host, service.xml_path(layout))
             with self.subTest(service=service.task_name):
                 self.assertIn("<BootTrigger>", xml)
                 self.assertIn("<RestartOnFailure>", xml)
@@ -318,7 +318,7 @@ class BothServicesStartAtBootAndNow(Scenario):
         layout = Layout()
         identities = {}
         for service in integration.BOOT_SERVICES:
-            xml = host.read_bytes(service.xml_path(layout)).decode("utf-8")
+            xml = _task_xml(host, service.xml_path(layout))
             identities[service.task_name] = xml
 
         runtime = next(s for s in integration.BOOT_SERVICES
@@ -335,15 +335,80 @@ class BothServicesStartAtBootAndNow(Scenario):
                          "the control centre's task still mentions SYSTEM")
 
     def test_every_task_logs_on_without_a_stored_credential(self):
-        """``ServiceAccount`` means the service control manager logs the
-        identity on. An interactive logon type would need a password stored
-        somewhere, which is a new secret invented to protect a secret."""
+        """No logon type at all, which is how a service account logs on.
+
+        This asserted ``<LogonType>ServiceAccount</LogonType>`` and
+        explained -- correctly -- that an interactive logon type
+        would need a password stored somewhere, a new secret invented
+        to protect a secret. The reasoning was right and the value
+        does not exist. ``TASK_LOGON_SERVICE_ACCOUNT`` belongs to the
+        COM ``TASK_LOGON_TYPE`` enumeration; the XML schema's
+        ``logonType`` accepts only ``S4U``, ``Password``,
+        ``InteractiveToken`` and ``InteractiveTokenOrPassword``. So
+        ``schtasks`` refused every task this installer wrote:
+
+            ERROR: The task XML contains a value which is incorrectly
+            formatted or out of range. (9,33):LogonType:ServiceAccount
+
+        The test asserted the defect and passed for six months of
+        work, because nothing here ever handed the XML to Windows.
+
+        What it checks now is the outcome the old name was reaching
+        for: no stored credential anywhere, and no value the schema
+        would reject.
+        """
         host, _engine, _report = self.installed()
         layout = Layout()
         for service in integration.BOOT_SERVICES:
-            xml = host.read_bytes(service.xml_path(layout)).decode("utf-8")
+            xml = _task_xml(host, service.xml_path(layout))
             with self.subTest(service=service.task_name):
-                self.assertIn("<LogonType>ServiceAccount</LogonType>", xml)
+                self.assertNotIn("ServiceAccount", xml)
+                self.assertNotIn("<LogonType>", xml,
+                                 "a built-in service account needs none, "
+                                 "and Task Scheduler's own export omits it")
+                self.assertNotIn("<Password", xml)
+
+    def test_no_task_names_a_logon_type_the_schema_does_not_have(self):
+        """Generalised past the one value, so the next one is caught."""
+        import re
+
+        host, _engine, _report = self.installed()
+        layout = Layout()
+        for service in integration.BOOT_SERVICES:
+            xml = _task_xml(host, service.xml_path(layout))
+            for found in re.findall(r"<LogonType>([^<]*)</LogonType>", xml):
+                with self.subTest(service=service.task_name, value=found):
+                    self.assertIn(found, integration.LOGON_TYPES)
+
+    def test_a_non_service_identity_gets_a_passwordless_logon_type(self):
+        """The branch no installation takes, asserted so it stays correct."""
+        xml = integration.task_xml(r"C:\py\python.exe", r"C:\s.py",
+                                   at_startup=False, identity="CORP\\jo")
+        self.assertIn("<LogonType>S4U</LogonType>", xml)
+        self.assertIn("S4U", integration.LOGON_TYPES)
+
+    def test_the_task_file_is_written_in_the_encoding_it_declares(self):
+        """It said UTF-16 and every caller wrote UTF-8.
+
+        ``schtasks`` sniffs, so it parsed anyway -- which is how this
+        survived. A declaration that lies about its encoding works
+        right up until a path holds a character outside ASCII, and
+        then the file is garbage in a way no error message will
+        attribute to the declaration.
+        """
+        blob = integration.task_xml_bytes(r"C:\py\python.exe", r"C:\s.py",
+                                          at_startup=False)
+        self.assertEqual(blob[:2], b"\xff\xfe", "no UTF-16LE byte-order mark")
+        text = blob.decode("utf-16")
+        self.assertIn('encoding="UTF-16"', text)
+        self.assertIn("<Task version=", text)
+
+    def test_a_path_outside_ascii_survives_the_round_trip(self):
+        """What the encoding repair is actually for."""
+        blob = integration.task_xml_bytes(r"C:\Users\Zoë\python.exe",
+                                          r"C:\Users\Zoë\s.py",
+                                          at_startup=False)
+        self.assertIn("Zoë", blob.decode("utf-16"))
 
     def test_the_control_centre_launcher_never_opens_the_owner_key_file(self):
         """The launcher reads its environment file whole and filters by name
@@ -361,7 +426,7 @@ class BothServicesStartAtBootAndNow(Scenario):
         host, _engine, _report = self.installed()
         layout = Layout()
         for service in integration.BOOT_SERVICES:
-            xml = host.read_bytes(service.xml_path(layout)).decode("utf-8")
+            xml = _task_xml(host, service.xml_path(layout))
             for secret in ("SOLVENT_OWNER_KEY", "PASSWORD", "password"):
                 self.assertNotIn(secret, xml)
 
@@ -526,6 +591,22 @@ class TheLifecycleKnowsAboutBothServices(Scenario):
         row = engine._autostart_row()
         self.assertEqual(row.outcome.name, "FAIL")
         self.assertIn("DeskPilot Control Centre", row.detail)
+
+
+def _task_xml(host, path: str) -> str:
+    """Read a task definition the way Task Scheduler reads it.
+
+    UTF-16LE with a byte-order mark, which is what Windows wants and
+    what the document's own declaration has always said. The tests
+    decoded UTF-8 while the installer wrote UTF-8 under a UTF-16
+    declaration, so both halves agreed with each other and neither
+    agreed with Windows.
+    """
+    blob = host.read_bytes(path)
+    if blob[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return blob.decode("utf-16")
+    return blob.decode("utf-8")
+
 
 
 if __name__ == "__main__":

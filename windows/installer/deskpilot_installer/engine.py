@@ -730,10 +730,10 @@ class Engine:
             xml_path = service.xml_path(self.layout)
             self.host.write_bytes(
                 xml_path,
-                integration.task_xml(self.python_exe, script,
-                                     at_startup=True,
-                                     identity=service.identity,
-                                     elevated=service.elevated).encode("utf-8"))
+                integration.task_xml_bytes(self.python_exe, script,
+                                           at_startup=True,
+                                           identity=service.identity,
+                                           elevated=service.elevated))
             if not integration.register_task(self.host, service.task_name,
                                              xml_path):
                 raise StepFailed(f"the scheduled task that starts "
@@ -873,9 +873,10 @@ class Engine:
                                    result=result_file).encode("utf-8"))
         self.host.write_bytes(
             task_xml_path,
-            integration.task_xml(self.python_exe, script, at_startup=False,
-                                 identity=isolation.WEB_SID,
-                                 elevated=False).encode("utf-8"))
+            integration.task_xml_bytes(self.python_exe, script,
+                                       at_startup=False,
+                                       identity=isolation.WEB_SID,
+                                       elevated=False))
         try:
             # Both refusals carry what ``schtasks`` itself said. The
             # first of them read "the probe task could not be
@@ -935,9 +936,10 @@ class Engine:
         self.host.write_bytes(scripts.backup,
                               integration.backup_source(self.layout)
                               .encode("utf-8"))
-        xml = integration.task_xml(self.python_exe, scripts.backup,
-                                   at_startup=False)
-        self.host.write_bytes(scripts.backup_task_xml, xml.encode("utf-8"))
+        self.host.write_bytes(
+            scripts.backup_task_xml,
+            integration.task_xml_bytes(self.python_exe, scripts.backup,
+                                       at_startup=False))
         if not integration.register_task(self.host,
                                           integration.BACKUP_TASK_NAME,
                                           scripts.backup_task_xml):

@@ -479,7 +479,7 @@ class InterruptionScenarios(Scenario):
                          sorted(integration.ALL_TASK_NAMES))
         xml = host.read_bytes(
             integration.InstalledScripts.under(Layout()).task_xml
-        ).decode("utf-8")
+        ).decode("utf-16")
         self.assertIn("<BootTrigger>", xml)
         self.assertIn("S-1-5-18", xml)
 
@@ -490,7 +490,7 @@ class InterruptionScenarios(Scenario):
         self.install(host, digest)
         xml = host.read_bytes(
             integration.InstalledScripts.under(Layout()).task_xml
-        ).decode("utf-8")
+        ).decode("utf-16")
         self.assertIn("<RestartOnFailure>", xml)
         self.assertIn("<Count>10</Count>", xml)
 

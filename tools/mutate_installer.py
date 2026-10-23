@@ -299,6 +299,24 @@ MUTANTS: tuple[Mutant, ...] = (
            ".TheRunnerWithANewerPythonThanThePayloadServes"
            ".test_the_served_interpreter_is_preferred_over_a_newer_one",
            "an interpreter the payload carries readers for is preferred"),
+    # The one that got all the way to a real Windows runner and was
+    # reported, for three runs, as "the probe task could not be
+    # registered" with nothing after it.
+    Mutant("a-logon-type-the-schema-does-not-have", "integration.py",
+           '    if sid in _SERVICE_SIDS:\n        return ""',
+           '    if sid in _SERVICE_SIDS:\n'
+           '        return "    <LogonType>ServiceAccount</LogonType>\\n"',
+           "tests_solvent.test_installer_services"
+           ".BothServicesStartAtBootAndNow"
+           ".test_no_task_names_a_logon_type_the_schema_does_not_have",
+           "every LogonType written is one the XML schema accepts"),
+    Mutant("task-xml-written-in-the-wrong-encoding", "integration.py",
+           '    return b"\\xff\\xfe" + task_xml(*args, **kwargs).encode("utf-16-le")',
+           '    return task_xml(*args, **kwargs).encode("utf-8")',
+           "tests_solvent.test_installer_services"
+           ".BothServicesStartAtBootAndNow"
+           ".test_the_task_file_is_written_in_the_encoding_it_declares",
+           "a task definition is written in the encoding it declares"),
     # The packaging and execution defects found on the real VPS. Each guards
     # a control that a function-level test cannot reach, because the failures
     # were in how the engine is *launched* and how the application's commands
