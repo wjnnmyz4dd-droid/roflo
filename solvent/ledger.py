@@ -202,7 +202,7 @@ class Ledger:
         return [dict(r) for r in self._db.query(
             "SELECT o.* FROM billing_obligations o "
             "LEFT JOIN payments p ON p.job_id = o.job_id "
-            "WHERE p.id IS NULL ORDER BY o.ts, rowid")]
+            "WHERE p.id IS NULL ORDER BY o.ts, o.rowid")]
 
     def payment_rows(self) -> list[dict]:
         """Every payment row. For counting, and for the payment monitor."""

@@ -174,6 +174,37 @@ class NoTimeOrderedQueryIsLeftWithoutATiebreaker(unittest.TestCase):
                     "chooses, and on Windows under CPython 3.11 a tick is "
                     "about 15.6 ms")
 
+    def test_a_tiebreaker_is_qualified_wherever_the_column_is(self):
+        """``rowid`` alone does not exist in a join, and SQLite says so.
+
+        The sweep that added the tiebreakers wrote a bare ``rowid``
+        everywhere, including after ``ORDER BY o.ts`` in a query
+        joining two tables. SQLite answers that with ``no such
+        column: rowid`` -- not a wrong order, a failed query -- and
+        102 tests went red at once. The ledger's unbilled
+        obligations, the production path, the Chief of Staff
+        certification: everything downstream of one join.
+
+        A qualified column takes a qualified tiebreaker. This is a
+        static check because the failure is a SQL error, and a SQL
+        error in a query no test happens to reach is a landmine.
+        """
+        import re
+
+        pattern = re.compile(
+            r"ORDER BY ([a-z_]+)\.[a-z_]+(?: DESC)?,\s*"
+            r"((?:[a-z_]+\.)?)rowid")
+        for path in sorted((ROOT / "solvent").rglob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            for match in pattern.finditer(text):
+                table, qualifier = match.group(1), match.group(2)
+                with self.subTest(path.name, clause=match.group(0)):
+                    self.assertEqual(
+                        qualifier, table + ".",
+                        f"{match.group(0)!r} orders by a qualified column "
+                        f"and breaks the tie with an unqualified rowid; "
+                        f"SQLite has no bare rowid in a join")
+
     def test_the_check_can_fail(self):
         """It found forty-one; it must not pass on anything."""
         self.assertEqual(self.offenders('"SELECT * FROM x ORDER BY ts DESC"'),
