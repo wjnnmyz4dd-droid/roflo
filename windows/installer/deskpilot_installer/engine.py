@@ -555,28 +555,13 @@ class Engine:
                 f"{opened.output.strip()[:300] or '(no detail)'}. It has not "
                 f"been replaced or deleted.")
         self._note(f"created the database at {self.layout.db}")
-        # The two files SQLite makes beside a WAL database, created
-        # empty here so that the hardening step has something to put
-        # an access-control entry on. SQLite deletes both on the last
-        # clean close, so after `solvent setup` finished neither
-        # existed, both rules were skipped for want of a target, and
-        # the files SQLite made on the next open inherited a
-        # traverse-only entry -- leaving the control centre unable to
-        # open the database at all. See `isolation.sidecars` for the
-        # part of this that is still open.
-        from . import isolation
-
-        made = [path for path in isolation.sidecars(self.layout)
-                if not self.host.exists(path)]
-        for path in made:
-            self.host.write_bytes(path, b"")
-        if made:
-            self._note(f"created {len(made)} empty SQLite sidecar(s) so the "
-                       f"control centre's access to them can be set")
+        # The SQLite sidecars are created by `isolation.apply`, not
+        # here. They were created here first, and every later step
+        # that runs `solvent.cli` opens the database and closes it
+        # cleanly -- which is when SQLite deletes them. See
+        # `isolation.sidecars`.
         return StepResult("database", "Creating persistent database", True,
-                          self.layout.db,
-                          facts={"db": self.layout.db,
-                                 "sidecars": len(made)})
+                          self.layout.db, facts={"db": self.layout.db})
 
     def step_contracting(self) -> StepResult:
         """Record the owner's name and email as a contracting identity.

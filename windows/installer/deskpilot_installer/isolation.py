@@ -154,8 +154,19 @@ def rules(layout: Layout) -> tuple[Rule, ...]:
         # grants read/write would leave the database writable. Cutting
         # inheritance on the file is what makes the narrower grant the
         # whole of it, without a deny entry.
+        # ``(F)``, not ``(OI)(CI)(F)``. Those two are inheritance
+        # flags and a file inherits to nothing; icacls takes them and
+        # writes an entry that applies to children a file does not
+        # have, so the file ends up granting its owners nothing at
+        # all. Cutting inheritance at the same time made that total:
+        # the next step reported "unable to open database file", and
+        # it was not the control centre being refused -- it was
+        # everyone. The other file rules in this module always used
+        # the plain form; this one did not.
         Rule(layout.db,
-             ("/inheritance:r", "/grant:r", full, "/grant:r", admins_full,
+             ("/inheritance:r",
+              "/grant:r", f"{SYSTEM_SID}:(F)",
+              "/grant:r", f"{ADMINISTRATORS_SID}:(F)",
               "/grant:r", f"{WEB_SID}:(R)"),
              "the control centre reads the database and cannot write it"),
         # The sidecars, now required, because the installation
@@ -273,6 +284,18 @@ def apply(host: Host, layout: Layout) -> tuple[list[str], list[str]]:
     boundary. An installer that trusted this function's success would be
     making exactly the assumption this module exists to stop.
     """
+    # Immediately before the rules, not at installation time. They
+    # were created in the step that makes the database, and every
+    # later step that runs ``solvent.cli`` opened the database and
+    # closed it cleanly -- and SQLite deletes both sidecars on a
+    # clean close. By the time the rules ran the files were gone
+    # again and ``icacls`` reported "Successfully processed 0 files;
+    # Failed processing 1 files". Here there is nothing between
+    # creating them and granting on them.
+    for path in sidecars(layout):
+        if not host.exists(path):
+            host.write_bytes(path, b"")
+
     ran: list[str] = []
     failed: list[str] = []
     for rule in rules(layout):

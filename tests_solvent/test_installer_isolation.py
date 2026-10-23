@@ -397,15 +397,44 @@ class TheSidecarsAreNotLeftToChance(unittest.TestCase):
                     f"{path} is hardened only if it happens to exist, and "
                     f"after a clean close it does not")
 
-    def test_the_installation_creates_them(self):
-        """Required is only safe because something makes them."""
+    def test_applying_the_rules_creates_them_first(self):
+        """Required is only safe because the same call makes them.
+
+        Behaviour, not source. They were created in the step that
+        makes the database, which reads as the obvious place and is
+        not: every later step runs ``solvent.cli``, each of those
+        opens the database and closes it cleanly, and a clean close
+        is exactly when SQLite deletes both. By the time the rules
+        ran the files were gone and ``icacls`` reported
+        "Successfully processed 0 files; Failed processing 1 files".
+        """
+        from deskpilot_installer import isolation
+        from tests_solvent.installer_fake_host import fresh_windows
+
+        host = fresh_windows()
+        # Every icacls succeeds here. What is under test is whether
+        # the files exist by the time the rules reach them, not what
+        # the rules then say.
+        host.on("icacls.exe")
+        for path in isolation.sidecars(self.layout):
+            self.assertFalse(host.exists(path))
+        isolation.apply(host, self.layout)
+        for path in isolation.sidecars(self.layout):
+            with self.subTest(path):
+                self.assertTrue(host.exists(path),
+                                "the rules ran against a file that was "
+                                "not there")
+
+    def test_nothing_between_making_them_and_granting_on_them(self):
+        """The ordering is the repair; a source check is what holds it."""
         import inspect
 
-        from deskpilot_installer.engine import Engine
+        from deskpilot_installer import isolation
 
-        source = inspect.getsource(Engine.step_database)
-        self.assertIn("isolation.sidecars", source)
-        self.assertIn('write_bytes(path, b"")', source)
+        source = inspect.getsource(isolation.apply)
+        self.assertLess(source.index("sidecars(layout)"),
+                        source.index("for rule in rules(layout)"),
+                        "the sidecars must exist before the rules run")
 
     def test_the_shared_index_is_the_only_one_that_may_be_written(self):
         """The compromise, bounded: -shm writable, -wal and the database not."""
