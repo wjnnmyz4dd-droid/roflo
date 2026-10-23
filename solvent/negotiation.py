@@ -111,12 +111,34 @@ class Costs:
     platform_fee_cents: Cents = 0
     payment_processing_cents: Cents = 0
     risk_allowance_cents: Cents = 0
+    #: What it cost to find this client: research, outreach, and the
+    #: share of proposals that were written and lost. Added because
+    #: the docstring above says "named so none is forgotten" and two
+    #: were. An audit priced the worked example this file is built
+    #: around -- $200 in, $35 execution, $20 verification, $40
+    #: revisions, $30 acquisition, $7 fees, $25 supervision -- and the
+    #: floor believed contribution was $98 when it was $43, because
+    #: acquisition and supervision had nowhere to go. At those numbers
+    #: the floor was $145.71, so a job at $146 cleared the owner's
+    #: authorised profit floor while losing $11.
+    #:
+    #: Acquisition is per job here, not per proposal. Spend on
+    #: proposals that never became jobs belongs to no job and is
+    #: recorded against the business through ``Ledger.record_cost``
+    #: with no job id, where ``total_costs_cents`` already counts it.
+    acquisition_cents: Cents = 0
+    #: The owner's own time: reviewing a proposal, answering a
+    #: clarification, approving a delivery. Unpaid attention is still
+    #: a cost, and a business that prices at zero for it is pricing a
+    #: job it cannot repeat at scale.
+    supervision_cents: Cents = 0
 
     @property
     def total_cents(self) -> Cents:
         return (self.service_cents + self.ai_cents + self.verification_cents
                 + self.expected_revision_cents + self.platform_fee_cents
-                + self.payment_processing_cents + self.risk_allowance_cents)
+                + self.payment_processing_cents + self.risk_allowance_cents
+                + self.acquisition_cents + self.supervision_cents)
 
     def breakdown(self) -> dict:
         return {
@@ -126,6 +148,8 @@ class Costs:
             "platform_fees": self.platform_fee_cents,
             "payment_processing": self.payment_processing_cents,
             "risk_allowance": self.risk_allowance_cents,
+            "acquisition": self.acquisition_cents,
+            "supervision": self.supervision_cents,
             "total": self.total_cents,
         }
 
