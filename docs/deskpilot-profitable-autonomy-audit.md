@@ -87,6 +87,18 @@ The assignment asked whether DeskPilot would report $165 or $200. It
 reports $98 — better than both naive failures, and still wrong by a
 third of the cost stack.
 
+**A guard existed and could not fire.**
+`test_pricing_and_negotiation.TheFloorIsArithmetic.test_every_cost_line_moves_the_floor`
+was written for exactly this risk — its docstring reads *"A fee nobody
+counted is the one that eats the margin."* It could not catch this
+one, because it mapped each breakdown key to a field through a table
+written by hand: it could check that every line **present** moves the
+floor, and was blind to a line that was **absent**. It now reads the
+fields off the dataclass, so a line added later is covered the moment
+it is added. That is the seventh verification control this programme
+has found reporting honestly in a place where nothing it could say
+would have helped.
+
 **This is Defect 1 and it is repaired.** `Costs` gained
 `acquisition_cents` and `supervision_cents`; both reach `total_cents`
 and `breakdown()`. `tests_solvent/test_full_cost_floor.py` holds the

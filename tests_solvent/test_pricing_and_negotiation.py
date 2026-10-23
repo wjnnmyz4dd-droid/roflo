@@ -174,21 +174,33 @@ class TheFloorIsArithmetic(unittest.TestCase):
             floor_cents(COSTS, NegotiationPolicy(minimum_margin_fraction=1.0))
 
     def test_every_cost_line_moves_the_floor(self):
-        """A fee nobody counted is the one that eats the margin."""
+        """A fee nobody counted is the one that eats the margin.
+
+        Read from the dataclass, not from a table written here. The
+        table was the reason this test could not do its job: it
+        mapped each breakdown key to a field by hand, so a cost line
+        that did not exist was invisible to it, and two did not
+        exist. An audit priced the worked example this file is built
+        around and found the floor short by acquisition and owner
+        supervision -- $55 of a $157 stack, enough that a job at $146
+        cleared the floor and lost $11.
+
+        Iterating the fields means a line added later is covered the
+        moment it is added, and one that is missing is a question
+        this test cannot answer -- which is why
+        ``test_full_cost_floor.py`` asks it directly.
+        """
+        import dataclasses
+
         policy = NegotiationPolicy()
         base = floor_cents(Costs(), policy)
-        for field_name in Costs().breakdown():
-            if field_name == "total":
-                continue
-            with self.subTest(cost=field_name):
-                attr = {"service": "service_cents", "ai": "ai_cents",
-                        "verification": "verification_cents",
-                        "expected_revisions": "expected_revision_cents",
-                        "platform_fees": "platform_fee_cents",
-                        "payment_processing": "payment_processing_cents",
-                        "risk_allowance": "risk_allowance_cents"}[field_name]
-                raised = floor_cents(Costs(**{attr: 10_000}), policy)
-                self.assertGreater(raised, base)
+        for field in dataclasses.fields(Costs):
+            with self.subTest(cost=field.name):
+                raised = floor_cents(Costs(**{field.name: 10_000}), policy)
+                self.assertGreater(
+                    raised, base,
+                    f"{field.name} does not move the floor, so a job can be "
+                    f"priced as though it were free")
 
     def test_the_floor_is_never_stored(self):
         """Recomputed per call, so nothing can quietly move it."""
