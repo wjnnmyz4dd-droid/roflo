@@ -433,3 +433,159 @@ sets that never share a directory), no recovery failure (12/12 on
 the real installation), and one installer weakness found and
 repaired — the step that looked in the wrong directory and said so
 without naming it.
+
+
+---
+
+## Phase 9 — the whole thing, on Windows
+
+Run 35, commit `c0a429d`. **Four jobs, four green.**
+
+| Job | Result |
+|---|---|
+| Suite on Windows 3.11 | 5,492 passed, 53 skipped, 52:50. **junit: 16,469 cases, exit code 0** |
+| Suite on Windows 3.13 | **junit: 16,473 cases, 53 skipped, exit code 0** |
+| Install on Windows 3.11 | 17 steps 0 failed; 13/13 required checks; 12/12 restart checks |
+| Install on Windows 3.13 | the same |
+
+A complete junit summary and a zero exit code are both required, and
+so are a plausible case count and no failures or errors — four
+conditions, because a partial run that happened to exit zero would
+otherwise have read as a certification.
+
+### What the installation actually did
+
+Seventeen steps, every one PASS, on a machine with no DeskPilot on
+it:
+
+```
+[PASS] Installing Python runtime: reusing 3.14 at C:\hostedtoolcache\...\3.14.9
+[PASS] Installing independent verification readers: 12 verified package(s),
+       1382 file(s), into ...\App\vendor\site
+[PASS] Creating persistent database: ...\Data\db\solvent.db
+[PASS] Restricting the control centre: the control centre runs as LOCAL
+       SERVICE; 15 access checks were run as that identity and every one
+       behaved as required
+[PASS] Configuring autostart: 2 services run at boot and restart on failure:
+       DeskPilot as SYSTEM, DeskPilot Control Centre as LOCAL SERVICE
+[PASS] Configuring backups: daily, newest 14 kept, secrets excluded
+```
+
+Then, read back from outside the installation by `python -I`, by
+path, inheriting nothing:
+
+* the five certified skills load — csv-cleanup, data-entry,
+  document-processing, report-builder, spreadsheet-automation
+* independent (T2) readers usable for `csv, docx, markdown, md, xlsx`
+* the dashboard renders both connection cards, and **email and
+  Stripe read NOT CONNECTED**
+* **simulation on, live actions off**
+* the scheduler registers ten tasks, runs all ten, and the Chief of
+  Staff ticks
+* the control centre answers on `http://127.0.0.1:8765`
+* `Health: HEALTHY — governed, nothing outstanding`, `May start work:
+  yes`
+* the complete-job harness reaches `final state : COMPLETE` with
+  `real revenue: $0.00`
+
+**Restart recovery, 12/12.** Four separate interpreters against one
+installation with a real close between each: a contract and a cleared
+20% deposit written, read back, the same payment event delivered
+again as a rail would, and read a third time. The deposit survived at
+20000 with one payment row, not two; the stage is the one it reached
+(`DEPOSIT_RECEIVED`); `work_authorised` is **recomputed from the
+restored payments rather than restored**; and the next step is the
+one it stopped at rather than an earlier one.
+
+**Uninstall keeps the records.** `KEPT: ...\Data\db\solvent.db
+(454656 bytes, was 454656)` — the byte count is compared across the
+uninstall rather than the file merely tested for presence, because a
+truncated file is also present.
+
+---
+
+## Phase 11 — the verdicts
+
+Each line is what was measured, not what was configured.
+
+| | |
+|---|---|
+| **WINDOWS PYTHON 3.11** | **PASS.** 16,469 cases, 53 skipped, exit code 0, complete junit summary |
+| **WINDOWS PYTHON 3.13** | **PASS.** 16,473 cases, 53 skipped, exit code 0, complete junit summary |
+| **T2 DEPENDENCIES** | **RESOLVED.** Twelve packages vendored, hash-pinned, every licence permissive; installed and usable for five formats on a real installation |
+| **WINDOWS INSTALLER** | **BUILT.** `DeskPilot-Setup.exe`, 25,077,329 bytes, NSIS 3.11. **Compiled but not executed** — see the blocker below |
+| **CLEAN INSTALLATION** | **PASS.** 17 steps, 0 failed, on both interpreters, driven through the engine the wizard drives |
+| **APPLICATION STARTUP** | **PASS.** HEALTHY, may start work, control centre answering on loopback |
+| **DASHBOARD** | **PASS.** Both connection cards render; email and Stripe NOT CONNECTED |
+| **CHIEF OF STAFF** | **PASS.** Scheduler registers ten tasks and ticks the Chief of Staff on the installed tree |
+| **FIVE SKILLS** | **PASS.** All five load in the installed environment |
+| **END-TO-END WINDOWS SIMULATION** | **PASS, SIMULATED.** `final state : COMPLETE`, `real revenue: $0.00`. No money moved and no figure is revenue |
+| **RESTART RECOVERY** | **PASS.** 12/12, four interpreters, real closes, replay not double-counted |
+| **SECURITY** | **PASS.** 15 access checks run *as* LOCAL SERVICE, every one as required. Uninstall preserved Data, Config, Logs, Backups |
+| **REGRESSION** | **PASS.** 5,495 passed, 0 failed, 50 skipped, 10,918 subtests on Linux |
+| **MUTATION** | Reported separately below |
+
+### Defects found and repaired
+
+Thirteen, of which **six were in the verification rather than the
+product** — and that ratio is the finding of this assignment.
+
+| # | Defect | Where |
+|---|---|---|
+| 1 | `icacls` ran before `mkdir`: the spool was hardened before anything created it, and the installation stopped there | Product |
+| 2 | The install checker read each row for `ok`; the engine writes `outcome`. It printed "0 failed" over a report whose last row said FAIL. **Two CI runs were read as clean installations on that line** | Verification |
+| 3 | Two workflow steps proved a database the installation never creates, having spelled the path by hand | Verification |
+| 4 | `choose` took the newest Python; the payload serves cp311–cp314 and the runner had 3.15. The readers were installed for an interpreter nobody had | Product |
+| 5 | `<LogonType>ServiceAccount</LogonType>` is in the COM enum and **not in the XML schema**, so every task definition this installer ever wrote was invalid. The test asserted the defect | Product + verification |
+| 6 | The task XML declared UTF-16 and every caller wrote UTF-8; the tests decoded UTF-8 too, so both halves agreed with each other and neither with Windows | Product + verification |
+| 7 | The hardening denied the control centre's identity the engine directory, and the probe wrote its own script there | Product |
+| 8 | SQLite deletes the WAL sidecars on a clean close, so their rules were skipped and the control centre could not open the database at all | Product |
+| 9 | The application directory never cut inheritance, so the control centre could write beside the runtime's code | Product |
+| 10 | `platform.uname()` shells out on 3.11 Windows; the guard denied it and pytest's junit writer died after every test had passed | Product |
+| 11 | **Fifty-one time orderings with no deterministic tiebreaker.** On a 15.6 ms clock an evidence authority decided "the latest status" by coin toss | Product |
+| 12 | The per-file sweep printed "junit records no failing test" over a report whose summary said `failures="8"` | Verification |
+| 13 | A green exit code was the only thing the suite step required | Verification |
+
+Four more were mine, introduced during this work and caught here
+rather than shipped: tests that spawned subprocesses inside a suite
+that forbids spawning; a test that cleared `platform._uname_cache`
+and so created the very condition it was written to prevent; a byte
+search for an NSIS constant that sits inside an LZMA block; and a
+bare `rowid` in a join, which is not a wrong order but a failed
+query — 102 tests at once.
+
+### Remaining blockers
+
+**1. The WAL sidecars do not stay hardened across a runtime restart.**
+SQLite deletes `solvent.db-wal` and `solvent.db-shm` on the last
+clean close and recreates them on the next open, inheriting the
+database directory's traverse-only entry. The installation creates
+them and grants on them, so a fresh installation is correct and was
+measured correct; a runtime that stops and starts cleanly leaves the
+control centre unable to read the database until the rules are
+applied again.
+
+`Engine.apply_isolation` already does exactly that and is already the
+repair path. What does not exist is anything that calls it when the
+runtime restarts. The obvious alternative — an inheritable read/write
+grant on the database's directory — is **rejected**, because it
+reaches the write-ahead log as well as the shared index, and a
+writable `-wal` is a writable database: a frame's checksums are
+computed from a salt the attacker can read. Smallest safe fix: have
+the runtime re-apply the two sidecar rules at startup. Not done here,
+because it adds a hook to the runtime and this assignment was told
+not to.
+
+**2. `DeskPilot-Setup.exe` has been compiled and never executed.**
+The payload, the engine and every installation phase are tested on
+real Windows, and the wizard is the same engine behind a UI. But no
+run of this workflow has double-clicked the `.exe`, so the NSIS
+pages, the elevation prompt and the silent-install switches are
+**unverified**. A GitHub runner can install the engine; it cannot
+answer a wizard.
+
+**3. Not certified beyond 3.11 and 3.13.** The payload carries wheel
+sets for cp311–cp314, and cp315 cannot be added: `clevercsv`
+publishes no cp315 wheel for any release. The chooser now prefers an
+interpreter the payload can serve and says on the system-check screen
+when it cannot.
