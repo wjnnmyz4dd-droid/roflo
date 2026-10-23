@@ -975,10 +975,11 @@ class SkillsLab:
     def versions(self, skill: str = "") -> list[dict]:
         if skill:
             return [dict(r) for r in self._db.query(
-                "SELECT * FROM skill_versions WHERE skill = ? ORDER BY ts",
+                "SELECT * FROM skill_versions WHERE skill = ? "
+                    "ORDER BY ts, rowid",
                 (skill,))]
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM skill_versions ORDER BY ts")]
+            "SELECT * FROM skill_versions ORDER BY ts, rowid")]
 
     def version_state(self, skill: str, version: str) -> str:
         """The latest lifecycle recorded for one version, or ``""``."""
@@ -1101,7 +1102,7 @@ class SkillsLab:
             params.append(skill)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY ts"
+        sql += " ORDER BY ts, rowid"
         return [self.project(r["id"]) for r in self._db.query(sql, tuple(params))]
 
     def target_scope(self, project_id: str) -> frozenset:

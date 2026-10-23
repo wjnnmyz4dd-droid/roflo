@@ -79,7 +79,7 @@ class BusinessMemory:
         if subject:
             sql += " AND subject = ?"
             params.append(subject)
-        rows = self._db.query(sql + " ORDER BY ts DESC", params)
+        rows = self._db.query(sql + " ORDER BY ts DESC, rowid DESC", params)
         return [{**dict(r), "payload": json.loads(r["payload"])} for r in rows]
 
     def client_history(self, client_id: str) -> list[dict]:

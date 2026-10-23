@@ -733,8 +733,10 @@ class ClientFeedback:
 
     def for_job(self, job_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM client_feedback WHERE job_id = ? ORDER BY ts", (job_id,))]
+            "SELECT * FROM client_feedback WHERE job_id = ? "
+                "ORDER BY ts, rowid", (job_id,))]
 
     def open_items(self) -> list[dict]:
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM client_feedback WHERE status = 'OPEN' ORDER BY ts")]
+            "SELECT * FROM client_feedback WHERE status = 'OPEN' "
+                "ORDER BY ts, rowid")]

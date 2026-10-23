@@ -332,13 +332,13 @@ class Resilience:
         insert and so needs nothing excluded.
         """
         rows = [r for r in self._db.query(
-            "SELECT * FROM incidents WHERE fingerprint = ? ORDER BY ts",
+            "SELECT * FROM incidents WHERE fingerprint = ? ORDER BY ts, rowid",
             (print_,)) if r["id"] != exclude]
         if not rows:
             return Correlation(fingerprint=print_, seen_before=False)
         lesson = self._db.query_one(
             "SELECT * FROM incident_lessons WHERE fingerprint = ? "
-            "ORDER BY ts DESC LIMIT 1", (print_,))
+            "ORDER BY ts DESC, rowid DESC LIMIT 1", (print_,))
         verified = any(r["status"] == VERIFIED for r in rows)
         return Correlation(
             fingerprint=print_, seen_before=True,
@@ -469,7 +469,8 @@ class Resilience:
             params.extend(_SETTLED)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        return [dict(r) for r in self._db.query(sql + " ORDER BY ts DESC",
+        return [dict(r) for r in self._db.query(sql +
+            " ORDER BY ts DESC, rowid DESC",
                                                 tuple(params))]
 
     def timeline(self, incident_id: str) -> list[dict]:
@@ -480,7 +481,7 @@ class Resilience:
     def lesson_for(self, print_: str) -> dict | None:
         row = self._db.query_one(
             "SELECT * FROM incident_lessons WHERE fingerprint = ? "
-            "ORDER BY ts DESC LIMIT 1", (print_,))
+            "ORDER BY ts DESC, rowid DESC LIMIT 1", (print_,))
         return dict(row) if row else None
 
     def _event(self, incident_id: str, stage: str, detail: str,

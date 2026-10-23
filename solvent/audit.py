@@ -383,13 +383,14 @@ class AuditLog:
         """
         rows = self._db.query(
             "SELECT * FROM verification_evidence WHERE subject_ref = ? "
-            "AND artifact_digest = ? AND verdict = 'PASS' ORDER BY ts",
+            "AND artifact_digest = ? AND verdict = 'PASS' ORDER BY ts, rowid",
             (subject_ref, artifact_digest))
         return {r["requirement_id"]: dict(r) for r in rows if r["requirement_id"]}
 
     def evidence_for(self, subject_ref: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM verification_evidence WHERE subject_ref = ? ORDER BY ts",
+            "SELECT * FROM verification_evidence WHERE subject_ref = ? "
+                "ORDER BY ts, rowid",
             (subject_ref,))]
 
     def best_tier(self, subject_ref: str) -> VerificationTier | None:

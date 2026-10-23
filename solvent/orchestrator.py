@@ -339,7 +339,8 @@ class JobOrchestrator:
         """
         existing = self._db.query_one(
             "SELECT * FROM job_clarifications WHERE job_id = ? AND kind = ? "
-            "AND subject = ? AND status != 'SUPERSEDED' ORDER BY ts DESC",
+            "AND subject = ? AND status != 'SUPERSEDED' "
+                "ORDER BY ts DESC, rowid DESC",
             (job_id, ambiguity.kind, ambiguity.subject))
         if existing is not None:
             return dict(existing)
@@ -523,7 +524,7 @@ class JobOrchestrator:
                          media_type=r["media_type"], produced_by=r["produced_by"],
                          capability_version=r["capability_version"],
                          source_digest=r["source_digest"])
-                for r in self._db.query(sql + " ORDER BY ts", params)]
+                for r in self._db.query(sql + " ORDER BY ts, rowid", params)]
 
     def current_deliverable(self, job_id: str) -> Artifact | None:
         """The newest deliverable. Earlier ones stay on the record."""

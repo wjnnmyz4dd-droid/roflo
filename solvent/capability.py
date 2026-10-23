@@ -334,7 +334,7 @@ class CapabilityRegistry:
     def proposals(self, name: str | None = None) -> list[dict]:
         rows = self._proposals_for(name) if name else [
             dict(r) for r in self._db.query(
-                "SELECT * FROM capability_proposals ORDER BY ts")]
+                "SELECT * FROM capability_proposals ORDER BY ts, rowid")]
         return rows
 
     def awaiting_owner(self) -> list[dict]:
@@ -349,7 +349,8 @@ class CapabilityRegistry:
 
     def _proposals_for(self, name: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM capability_proposals WHERE name = ? ORDER BY ts",
+            "SELECT * FROM capability_proposals WHERE name = ? "
+                "ORDER BY ts, rowid",
             (name,))]
 
     # ------------------------------------------------- durable registration
@@ -685,7 +686,7 @@ class CapabilityRegistry:
         """The current certification, which is the most recent record."""
         rows = self._db.query(
             "SELECT * FROM verifier_certifications WHERE verifier_ref = ? "
-            "AND capability_version = ? ORDER BY ts, rowid", 
+            "AND capability_version = ? ORDER BY ts, rowid",
             (verifier_ref, capability_version))
         return dict(rows[-1]) if rows else None
 

@@ -202,12 +202,12 @@ class Ledger:
         return [dict(r) for r in self._db.query(
             "SELECT o.* FROM billing_obligations o "
             "LEFT JOIN payments p ON p.job_id = o.job_id "
-            "WHERE p.id IS NULL ORDER BY o.ts")]
+            "WHERE p.id IS NULL ORDER BY o.ts, rowid")]
 
     def payment_rows(self) -> list[dict]:
         """Every payment row. For counting, and for the payment monitor."""
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM payments ORDER BY updated_at DESC")]
+            "SELECT * FROM payments ORDER BY updated_at DESC, rowid DESC")]
 
     def set_payment_state(self, payment_id: str, state: PaymentState, *,
                           collected_cents: Cents = 0, verification_method: str = "") -> None:
@@ -241,7 +241,8 @@ class Ledger:
 
     def payment_for(self, job_id: str) -> dict | None:
         row = self._db.query_one(
-            "SELECT * FROM payments WHERE job_id = ? ORDER BY updated_at DESC", (job_id,))
+            "SELECT * FROM payments WHERE job_id = ? "
+                "ORDER BY updated_at DESC, rowid DESC", (job_id,))
         return dict(row) if row else None
 
     def is_simulated(self, job_id: str) -> bool:
@@ -402,7 +403,8 @@ class Ledger:
         if job_id:
             sql += " WHERE job_id = ?"
             params = (job_id,)
-        return [dict(r) for r in self._db.query(sql + " ORDER BY ts", params)]
+        return [dict(r) for r in self._db.query(sql +
+            " ORDER BY ts, rowid", params)]
 
     # ---------------------------------------------------------------- profit
 
@@ -427,7 +429,8 @@ class Ledger:
         change, so the read lives with the table instead.
         """
         return [r["job_id"] for r in self._db.query(
-            "SELECT DISTINCT job_id FROM payments ORDER BY updated_at DESC")]
+            "SELECT DISTINCT job_id FROM payments "
+                "ORDER BY updated_at DESC, rowid DESC")]
 
     def verified_job_ids(self) -> list[str]:
         """Jobs whose revenue was externally verified — the calibration sample."""

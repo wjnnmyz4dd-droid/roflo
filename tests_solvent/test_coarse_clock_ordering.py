@@ -126,6 +126,73 @@ class AFrozenClockDoesNotReorderTheEvidence(unittest.TestCase):
                     lab.VERIFIED)
 
 
+class NoTimeOrderedQueryIsLeftWithoutATiebreaker(unittest.TestCase):
+    """Swept across the whole package, not just where it was found.
+
+    The first sweep looked for ``ORDER BY ts, id`` and repaired ten
+    sites. That was too narrow by half: ``ORDER BY ts DESC`` with no
+    tiebreaker at all is the same defect and there were forty more of
+    them. The one that got through ordered incidents, so
+    ``incidents()[0]`` -- "the newest" -- returned whichever of two
+    crashes in the same tick SQLite happened to hand back, and the
+    test that recorded two crashes and asked whether the second was a
+    recurrence was comparing a row with itself.
+
+    A column that is unique per row needs no tiebreaker, so ``rowid``,
+    ``seq`` and ``id`` orderings are left alone, as are aggregates and
+    orderings by name, where a tie is a presentation detail rather
+    than a question of which record is the latest.
+    """
+
+    #: Columns whose value can repeat inside one clock tick.
+    TIMEISH = ("ts", "updated_at", "issued_at", "ran_at", "last_seen",
+               "first_seen", "created_at", "decided_at", "sent_at")
+
+    def offenders(self, text: str) -> list[str]:
+        import re
+
+        pattern = re.compile(
+            r"ORDER BY ((?:[a-z_]+\.)?(?:" + "|".join(self.TIMEISH) + r"))"
+            r"( DESC)?(?![a-z_])")
+        found = []
+        for match in pattern.finditer(text):
+            after = text[match.end():match.end() + 24].lstrip()
+            # Qualified too: a join orders by ``a.ts DESC, a.rowid
+            # DESC``, and reading only for a bare ``rowid`` reported
+            # a correctly tiebroken query as a defect.
+            if not re.match(r",\s*(?:[a-z_]+\.)?rowid", after):
+                found.append(match.group(0))
+        return found
+
+    def test_every_module_in_the_package(self):
+        for path in sorted((ROOT / "solvent").rglob("*.py")):
+            with self.subTest(path.relative_to(ROOT).as_posix()):
+                self.assertEqual(
+                    self.offenders(path.read_text(encoding="utf-8")), [],
+                    "a time ordering with no tiebreaker: two rows written "
+                    "in one clock tick come back in whatever order SQLite "
+                    "chooses, and on Windows under CPython 3.11 a tick is "
+                    "about 15.6 ms")
+
+    def test_the_check_can_fail(self):
+        """It found forty-one; it must not pass on anything."""
+        self.assertEqual(self.offenders('"SELECT * FROM x ORDER BY ts DESC"'),
+                         ["ORDER BY ts DESC"])
+        self.assertEqual(self.offenders('"... ORDER BY updated_at"'),
+                         ["ORDER BY updated_at"])
+
+    def test_a_tiebroken_ordering_is_accepted(self):
+        for good in ('"ORDER BY ts, rowid"', '"ORDER BY ts DESC, rowid DESC"',
+                     '"ORDER BY rowid"', '"ORDER BY seq DESC"',
+                     '"ORDER BY name"', '"ORDER BY n DESC"'):
+            with self.subTest(good):
+                self.assertEqual(self.offenders(good), [])
+
+    def test_a_column_whose_name_merely_starts_the_same_is_not_matched(self):
+        """``ts_total`` is not ``ts``."""
+        self.assertEqual(self.offenders('"ORDER BY ts_total DESC"'), [])
+
+
 class NoReaderBreaksTiesWithARandomIdentifier(unittest.TestCase):
     """The clause, swept for across every authority that uses it.
 

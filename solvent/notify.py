@@ -202,7 +202,7 @@ class Notifier:
 
         existing = self._db.query_one(
             "SELECT * FROM notifications WHERE dedupe_key = ? "
-            "AND state NOT IN (?, ?) ORDER BY ts DESC LIMIT 1",
+            "AND state NOT IN (?, ?) ORDER BY ts DESC, rowid DESC LIMIT 1",
             (key, ACKNOWLEDGED, EXPIRED))
         if existing is not None and _RANK[severity] <= _RANK[existing["severity"]]:
             # Already told them, at least this loudly. Saying it again is noise,
@@ -341,7 +341,7 @@ class Notifier:
         window = self._escalate_after()
         return [dict(row) for row in self._db.query(
             "SELECT * FROM notifications WHERE state IN (?, ?) "
-            "AND severity IN (?, ?) AND ? - raised_at >= ? ORDER BY ts",
+            "AND severity IN (?, ?) AND ? - raised_at >= ? ORDER BY ts, rowid",
             (SENT, QUEUED, URGENT, CRITICAL, at, window))]
 
     def escalate(self, notification_id: str, *, clock=None) -> str:
@@ -397,7 +397,8 @@ class Notifier:
             params.append(severity)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        return [dict(r) for r in self._db.query(sql + " ORDER BY ts DESC",
+        return [dict(r) for r in self._db.query(sql +
+            " ORDER BY ts DESC, rowid DESC",
                                                 tuple(params))]
 
     def delivery_failures(self) -> list[dict]:
@@ -409,9 +410,9 @@ class Notifier:
         """
         return [dict(r) for r in self._db.query(
             "SELECT * FROM notifications WHERE delivery_failures > 0 "
-            "ORDER BY ts DESC")]
+            "ORDER BY ts DESC, rowid DESC")]
 
     def unresolved(self) -> list[dict]:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM notifications WHERE state NOT IN (?, ?) "
-            "ORDER BY ts DESC", (ACKNOWLEDGED, EXPIRED))]
+            "ORDER BY ts DESC, rowid DESC", (ACKNOWLEDGED, EXPIRED))]

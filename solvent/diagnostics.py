@@ -218,7 +218,8 @@ class Diagnostics:
     def latest(self) -> dict | None:
         """The most recent recorded report, or ``None`` if none was ever run."""
         row = self._db.query_one(
-            "SELECT * FROM diagnostic_reports ORDER BY ran_at DESC LIMIT 1")
+            "SELECT * FROM diagnostic_reports "
+                "ORDER BY ran_at DESC, rowid DESC LIMIT 1")
         return dict(row) if row else None
 
     # ---------------------------------------------------------------- checks
@@ -285,7 +286,7 @@ class Diagnostics:
     def verifiers(self) -> Finding:
         rows = self._s.store.raw_readonly(
             "SELECT verifier_ref, capability_version, state FROM "
-            "verifier_certifications ORDER BY ts")
+            "verifier_certifications ORDER BY ts, rowid")
         latest: dict = {}
         for row in rows:
             latest[(row["verifier_ref"], row["capability_version"])] = row["state"]

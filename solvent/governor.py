@@ -105,7 +105,8 @@ class FinancialGovernor:
         ratios: list[float] = []
         rows = self._db.query(
             "SELECT job_id, known_cents, estimated_cents, allowance_cents "
-            "FROM price_estimates WHERE job_class = ? ORDER BY ts DESC LIMIT ?",
+            "FROM price_estimates WHERE job_class = ? "
+                "ORDER BY ts DESC, rowid DESC LIMIT ?",
             (job_class, window))
         for row in rows:
             if row["job_id"] not in verified:
@@ -402,7 +403,7 @@ class FinancialGovernor:
         """
         row = self._db.query_one(
             "SELECT id FROM budget_grants WHERE job_id = ? AND revoked = 0 "
-            "ORDER BY ts DESC LIMIT 1", (job_id,))
+            "ORDER BY ts DESC, rowid DESC LIMIT 1", (job_id,))
         return (row["id"] if row else "") or ""
 
     def authorize_spend(self, *, grant_id: str, amount_cents: Cents, what: str,
@@ -470,4 +471,5 @@ class FinancialGovernor:
 
     def decisions_for(self, job_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM governor_decisions WHERE job_id = ? ORDER BY ts", (job_id,))]
+            "SELECT * FROM governor_decisions WHERE job_id = ? "
+                "ORDER BY ts, rowid", (job_id,))]

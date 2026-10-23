@@ -366,15 +366,15 @@ class Applications:
 
     def applications(self) -> list[dict]:
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM applications ORDER BY ts DESC")]
+            "SELECT * FROM applications ORDER BY ts DESC, rowid DESC")]
 
     def attempts(self, application_id: str = "") -> list[dict]:
         if application_id:
             return [dict(r) for r in self._db.query(
                 "SELECT * FROM submission_attempts WHERE application_id = ? "
-                "ORDER BY ts", (application_id,))]
+                "ORDER BY ts, rowid", (application_id,))]
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM submission_attempts ORDER BY ts")]
+            "SELECT * FROM submission_attempts ORDER BY ts, rowid")]
 
     # -------------------------------------------------------- owner approval
 

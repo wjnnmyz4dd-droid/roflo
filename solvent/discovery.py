@@ -1245,7 +1245,8 @@ class Discovery:
         if status is not None:
             sql += " WHERE status = ?"
             params = (status.value,)
-        return [dict(r) for r in self._db.query(sql + " ORDER BY ts DESC", params)]
+        return [dict(r) for r in self._db.query(sql +
+            " ORDER BY ts DESC, rowid DESC", params)]
 
     def counts(self) -> dict:
         rows = self._db.query(

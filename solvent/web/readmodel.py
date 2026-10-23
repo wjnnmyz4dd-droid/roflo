@@ -89,7 +89,8 @@ class ReadModel:
         the one nobody could check.
         """
         row = self.one("SELECT payload, ts FROM memory_facts "
-                       "WHERE kind = 'cos_performance' ORDER BY ts DESC "
+                       "WHERE kind = 'cos_performance' "
+                           "ORDER BY ts DESC, rowid DESC "
                        "LIMIT 1")
         absent = {"present": False, "stale": True, "age_seconds": None,
                   "simulated": True, "figures": {}, "next_steps": []}
@@ -134,7 +135,7 @@ class ReadModel:
         from ..diagnostics import REPORT_STALE_SECONDS, UNKNOWN
 
         row = self.one("SELECT * FROM diagnostic_reports "
-                       "ORDER BY ran_at DESC LIMIT 1")
+                       "ORDER BY ran_at DESC, rowid DESC LIMIT 1")
         if not row:
             return {"present": False, "stale": True, "age_seconds": None,
                     "ran_at": "", "worst": UNKNOWN, "findings": []}
@@ -179,14 +180,16 @@ class ReadModel:
         return sorted(out, key=lambda e: (-e["occurrences"], e["need"]))
 
     def applications(self) -> list[dict]:
-        return self.rows("SELECT * FROM applications ORDER BY ts DESC")
+        return self.rows("SELECT * FROM applications "
+            "ORDER BY ts DESC, rowid DESC")
 
     def submission_attempts(self, application_id: str = "") -> list[dict]:
         if application_id:
             return self.rows(
                 "SELECT * FROM submission_attempts WHERE application_id = ? "
-                "ORDER BY ts", (application_id,))
-        return self.rows("SELECT * FROM submission_attempts ORDER BY ts DESC")
+                "ORDER BY ts, rowid", (application_id,))
+        return self.rows("SELECT * FROM submission_attempts "
+            "ORDER BY ts DESC, rowid DESC")
 
     def applications_awaiting_approval(self) -> list[dict]:
         """Prepared, verified, and waiting on the owner to authorise sending.
@@ -401,7 +404,7 @@ class ReadModel:
             clauses.append("status NOT IN ('VERIFIED', 'FIXED')")
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        return self.rows(sql + " ORDER BY ts DESC", tuple(params))
+        return self.rows(sql + " ORDER BY ts DESC, rowid DESC", tuple(params))
 
     def incident(self, incident_id: str) -> dict | None:
         return self.one("SELECT * FROM incidents WHERE id = ?", (incident_id,))
@@ -413,13 +416,13 @@ class ReadModel:
 
     def related_incidents(self, fingerprint: str, exclude: str = "") -> list[dict]:
         return [r for r in self.rows(
-            "SELECT * FROM incidents WHERE fingerprint = ? ORDER BY ts",
+            "SELECT * FROM incidents WHERE fingerprint = ? ORDER BY ts, rowid",
             (fingerprint,)) if r["id"] != exclude]
 
     def incident_lesson(self, fingerprint: str) -> dict | None:
         return self.one(
             "SELECT * FROM incident_lessons WHERE fingerprint = ? "
-            "ORDER BY ts DESC LIMIT 1", (fingerprint,))
+            "ORDER BY ts DESC, rowid DESC LIMIT 1", (fingerprint,))
 
     def flight_frames(self, trace_id: str) -> list[dict]:
         return self.rows(
@@ -444,12 +447,12 @@ class ReadModel:
                 params.append(value)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        return self.rows(sql + " ORDER BY ts DESC", tuple(params))
+        return self.rows(sql + " ORDER BY ts DESC, rowid DESC", tuple(params))
 
     def unresolved_notifications(self) -> list[dict]:
         return self.rows(
             "SELECT * FROM notifications WHERE state NOT IN "
-            "('ACKNOWLEDGED', 'EXPIRED') ORDER BY ts DESC")
+            "('ACKNOWLEDGED', 'EXPIRED') ORDER BY ts DESC, rowid DESC")
 
     def notification_delivery_failures(self) -> list[dict]:
         """Sends that failed, counted durably rather than read off the state.
@@ -460,7 +463,7 @@ class ReadModel:
         """
         return self.rows(
             "SELECT * FROM notifications WHERE delivery_failures > 0 "
-            "ORDER BY ts DESC")
+            "ORDER BY ts DESC, rowid DESC")
 
     def notification_settings(self) -> dict:
         """What is configured, as the website is allowed to see it.
@@ -515,7 +518,7 @@ class ReadModel:
         return self.rows(
             "SELECT client_id, COUNT(*) AS jobs, MAX(created_at) AS last_seen "
             "FROM jobs WHERE client_id <> '' GROUP BY client_id "
-            "ORDER BY last_seen DESC")
+            "ORDER BY last_seen DESC, rowid DESC")
 
     def client_jobs(self, client_id: str) -> list[dict]:
         return self.jobs(client_id=client_id)
