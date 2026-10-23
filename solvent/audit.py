@@ -390,7 +390,7 @@ class AuditLog:
     def evidence_for(self, subject_ref: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM verification_evidence WHERE subject_ref = ? "
-                "ORDER BY ts, rowid",
+            "ORDER BY ts, rowid",
             (subject_ref,))]
 
     def best_tier(self, subject_ref: str) -> VerificationTier | None:

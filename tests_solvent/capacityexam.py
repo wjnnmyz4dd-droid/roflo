@@ -72,13 +72,28 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
 #: Before re-sealing, the eighth paper was re-sat against the changed
 #: source: 13 tests, 32 subtests, all passed, every level's delivered
 #: count unchanged. Letting go of a file alters no answer about capacity.
-FROZEN_AT = "2026-10-21T18:20:00Z"
+#:
+#: RE-SEALED 2026-10-23. ``solvent/capacity.py`` gained a tiebreaker:
+#: the query that finds a job's outstanding reservation ordered by
+#: ``ts`` alone, and two reservations written inside one clock tick
+#: share a timestamp -- so which one it released was decided by
+#: whatever order SQLite happened to return. On Linux the clock has
+#: microsecond resolution and it almost never happened; on Windows
+#: under CPython 3.11 a tick is about 15.6 ms. The same clause was
+#: repaired in fifty other places; this is the one inside the seal.
+#:
+#: Before re-sealing, the ninth paper was re-sat against the changed
+#: source: 13 tests, 32 subtests, all passed, every level's delivered
+#: count unchanged. Releasing a determinate reservation rather than an
+#: arbitrary one of two alters no answer this paper asks about -- and
+#: it is the answer being right for a reason rather than by luck.
+FROZEN_AT = "2026-10-23T02:40:00Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
 DIGESTS = {
     "solvent/capacity.py":
-        "73c48c433579bff72808ab972889ad0ef0af77719d0bdd70c2524eb62e67d9c5",
+        "e9fc6d7e156d3804fca56c0380a2471fab1df5ace695dcebcfe5135efc59a1f9",
     "solvent/finder.py":
         "0fac9a608a6742aeaa2ebd7309111f7a128b19977194061598583f970d423fd7",
     "solvent/revenuemodel.py":
@@ -415,6 +430,41 @@ across any restart.
 """
 
 
+TENTH_SITTING = """Sat 2026-10-23T02:40:00Z, seed 3992426089.
+
+Six questions, 6 passed, 0 failed. The tenth sitting, and the sixth
+time the seal has done its job rather than merely held.
+
+Sealed after solvent/capacity.py gained a tiebreaker. The query that
+finds a job's outstanding reservation ordered by ``ts`` alone, and two
+reservations written inside one clock tick share a timestamp -- so
+which one it released was decided by whatever order SQLite happened to
+return. On Linux the clock has microsecond resolution and it almost
+never happened; on Windows under CPython 3.11 a tick is about 15.6 ms,
+and a real Windows runner is what found the same defect elsewhere.
+
+That is a repair to a limit this paper examines, which is exactly the
+case the seal exists for: the change is small, authorised and correct,
+and the exam still refused to mark itself until a person looked. Before
+re-sealing, the NINTH paper was re-sat against the changed source: 13
+tests, 32 subtests, all passed, every level's delivered count identical
+to the ninth record. Releasing a determinate reservation rather than an
+arbitrary one of two alters no answer here -- it makes the answer right
+for a reason rather than by luck. Moving the freeze moved the seed, so
+this is a tenth paper and not a re-mark of the ninth.
+
+    level   7, spike+slow_execution                       7 accepted,   7 delivered, peak 0.16
+    level  13, delayed_verification+revisions            12 accepted,  12 delivered, peak 0.9
+    level  37, failed_submissions+outage                 29 accepted,  29 delivered, peak 0.795
+    level  71, spike+payment_delays                      10 accepted,  10 delivered, peak 0.338
+    level 149, slow_execution+revisions                  24 accepted,  24 delivered, peak 0.585
+    level 307, delayed_verification+failed_submissions   83 accepted,  83 delivered, peak 0.839
+
+Everything accepted was delivered at every level. 23 duplicate
+commitment(s) attempted and refused. 0 obligation seconds lost
+across any restart.
+"""
+
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
     "2026-10-14T14:31:21Z": SECOND_SITTING,
@@ -425,6 +475,7 @@ SITTINGS = {
     "2026-10-18T00:00:00Z": SEVENTH_SITTING,
     "2026-10-18T16:40:00Z": EIGHTH_SITTING,
     "2026-10-21T18:20:00Z": NINTH_SITTING,
+    "2026-10-23T02:40:00Z": TENTH_SITTING,
 }
 
 

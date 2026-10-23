@@ -219,7 +219,7 @@ class Diagnostics:
         """The most recent recorded report, or ``None`` if none was ever run."""
         row = self._db.query_one(
             "SELECT * FROM diagnostic_reports "
-                "ORDER BY ran_at DESC, rowid DESC LIMIT 1")
+            "ORDER BY ran_at DESC, rowid DESC LIMIT 1")
         return dict(row) if row else None
 
     # ---------------------------------------------------------------- checks

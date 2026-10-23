@@ -976,7 +976,7 @@ class SkillsLab:
         if skill:
             return [dict(r) for r in self._db.query(
                 "SELECT * FROM skill_versions WHERE skill = ? "
-                    "ORDER BY ts, rowid",
+                "ORDER BY ts, rowid",
                 (skill,))]
         return [dict(r) for r in self._db.query(
             "SELECT * FROM skill_versions ORDER BY ts, rowid")]

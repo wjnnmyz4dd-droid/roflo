@@ -90,7 +90,7 @@ class ReadModel:
         """
         row = self.one("SELECT payload, ts FROM memory_facts "
                        "WHERE kind = 'cos_performance' "
-                           "ORDER BY ts DESC, rowid DESC "
+                       "ORDER BY ts DESC, rowid DESC "
                        "LIMIT 1")
         absent = {"present": False, "stale": True, "age_seconds": None,
                   "simulated": True, "figures": {}, "next_steps": []}

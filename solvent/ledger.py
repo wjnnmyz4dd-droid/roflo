@@ -242,7 +242,7 @@ class Ledger:
     def payment_for(self, job_id: str) -> dict | None:
         row = self._db.query_one(
             "SELECT * FROM payments WHERE job_id = ? "
-                "ORDER BY updated_at DESC, rowid DESC", (job_id,))
+            "ORDER BY updated_at DESC, rowid DESC", (job_id,))
         return dict(row) if row else None
 
     def is_simulated(self, job_id: str) -> bool:
@@ -430,7 +430,7 @@ class Ledger:
         """
         return [r["job_id"] for r in self._db.query(
             "SELECT DISTINCT job_id FROM payments "
-                "ORDER BY updated_at DESC, rowid DESC")]
+            "ORDER BY updated_at DESC, rowid DESC")]
 
     def verified_job_ids(self) -> list[str]:
         """Jobs whose revenue was externally verified — the calibration sample."""

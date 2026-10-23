@@ -350,7 +350,7 @@ class CapabilityRegistry:
     def _proposals_for(self, name: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM capability_proposals WHERE name = ? "
-                "ORDER BY ts, rowid",
+            "ORDER BY ts, rowid",
             (name,))]
 
     # ------------------------------------------------- durable registration

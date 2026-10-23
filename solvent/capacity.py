@@ -821,7 +821,7 @@ class Capacity:
         row = self._db.query_one(
             "SELECT id FROM capacity_reservations WHERE job_id = ? AND "
             f"kind = ? AND state IN ({placeholders}) "
-                "ORDER BY ts, rowid LIMIT 1",
+            "ORDER BY ts, rowid LIMIT 1",
             (job_id, kind) + tuple(OUTSTANDING))
         return row["id"] if row else ""
 

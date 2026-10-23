@@ -106,7 +106,7 @@ class FinancialGovernor:
         rows = self._db.query(
             "SELECT job_id, known_cents, estimated_cents, allowance_cents "
             "FROM price_estimates WHERE job_class = ? "
-                "ORDER BY ts DESC, rowid DESC LIMIT ?",
+            "ORDER BY ts DESC, rowid DESC LIMIT ?",
             (job_class, window))
         for row in rows:
             if row["job_id"] not in verified:
@@ -472,4 +472,4 @@ class FinancialGovernor:
     def decisions_for(self, job_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM governor_decisions WHERE job_id = ? "
-                "ORDER BY ts, rowid", (job_id,))]
+            "ORDER BY ts, rowid", (job_id,))]

@@ -270,7 +270,7 @@ class OwnerChannel:
         """Approvals issued and not yet used — what the owner is still owed."""
         return [dict(r) for r in self._db.query(
             "SELECT * FROM owner_approvals WHERE used_at IS NULL "
-                "ORDER BY issued_at, rowid")]
+            "ORDER BY issued_at, rowid")]
 
 
 def _key_from_environment() -> bytes | None:

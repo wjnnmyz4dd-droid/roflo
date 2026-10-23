@@ -308,13 +308,13 @@ class ActionGate:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM action_requests WHERE phase = ? AND request_id NOT IN "
             "(SELECT request_id FROM action_requests WHERE phase = ?) "
-                "ORDER BY ts, rowid",
+            "ORDER BY ts, rowid",
             (ATTEMPTING, SETTLED))]
 
     def requests_for(self, job_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM action_requests WHERE job_id = ? "
-                "ORDER BY ts, rowid", (job_id,))]
+            "ORDER BY ts, rowid", (job_id,))]
 
 
 def _approval_id(approval) -> str:

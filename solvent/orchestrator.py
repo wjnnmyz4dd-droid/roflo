@@ -340,7 +340,7 @@ class JobOrchestrator:
         existing = self._db.query_one(
             "SELECT * FROM job_clarifications WHERE job_id = ? AND kind = ? "
             "AND subject = ? AND status != 'SUPERSEDED' "
-                "ORDER BY ts DESC, rowid DESC",
+            "ORDER BY ts DESC, rowid DESC",
             (job_id, ambiguity.kind, ambiguity.subject))
         if existing is not None:
             return dict(existing)
