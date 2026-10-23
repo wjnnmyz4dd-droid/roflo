@@ -249,75 +249,96 @@ def _junit(cases: list) -> str:
             + "".join(body) + "</testsuite></testsuites>")
 
 
-class TheInstallerCarriesItsPayloadsDigest(unittest.TestCase):
-    """The provenance check, and the encoding that defeated the first one.
+class TheInstallerIsCheckedAgainstWhatItWasBuiltFrom(unittest.TestCase):
+    """The provenance check, and the two versions of it that were wrong.
 
-    The installer refuses to install any payload whose SHA-256 is not
-    the one compiled into it, so CI asserts the constant is actually
-    in the executable. The first version of that assertion searched
-    the bytes for the digest as ASCII and failed a build that was
-    correct: NSIS compiles its string constants as UTF-16LE. The
-    build it rejected had produced a 25,077,329-byte installer that
-    was in every respect fine.
+    The installer refuses to install any payload whose SHA-256 is
+    not the one compiled into it, so CI should assert that promise
+    is intact. Two attempts asserted something else.
+
+    The first searched the executable's bytes for the digest as
+    ASCII and failed a build that was correct. The second added
+    UTF-16LE, reasoning that NSIS writes its strings that way, and
+    failed a correct build again. Neither could ever have worked:
+    DeskPilot-Setup.nsi sets ``SetCompressor /SOLID lzma``, so the
+    string table is inside a compressed block. Both versions were
+    asserting something untrue of every NSIS installer, and each
+    rejected a 25 MB installer that was in every respect fine.
+
+    What is checkable is checked, and what is not is said out loud.
     """
 
     def setUp(self):
         sys.path.insert(0, str(ROOT / "tools"))
         import installer_carries_digest as module
         self.module = module
-        self.digest = "3fb1e25a5f7bc05d809deaa3edc7e7bd3f80cad9a0a133631167a0f8902a05ca"
+        self.digest = ("3fb1e25a5f7bc05d809deaa3edc7e7bd"
+                       "3f80cad9a0a133631167a0f8902a05ca")
 
-    def test_an_ascii_constant_is_found(self):
-        blob = b"MZ" + self.digest.encode("ascii")
-        self.assertEqual(self.module.carries(blob, self.digest), "ascii")
-
-    def test_a_utf16_constant_is_found_which_is_what_nsis_writes(self):
-        blob = b"MZ" + self.digest.encode("utf-16-le")
-        self.assertEqual(self.module.carries(blob, self.digest), "utf-16-le")
-
-    def test_case_does_not_matter_in_either_encoding(self):
-        for encoding in ("ascii", "utf-16-le"):
-            with self.subTest(encoding):
-                blob = b"MZ" + self.digest.upper().encode(encoding)
-                self.assertEqual(self.module.carries(blob, self.digest),
-                                 encoding)
-
-    def test_an_installer_without_the_digest_is_refused(self):
-        self.assertEqual(self.module.carries(b"MZ nothing here", self.digest),
-                         "")
-
-    def test_a_different_digest_is_not_accepted(self):
-        blob = b"MZ" + ("a" * 64).encode("utf-16-le")
-        self.assertEqual(self.module.carries(blob, self.digest), "")
+    def provenance(self, digest: str = "", name: str = "p.zip") -> str:
+        return ("source commit       : c8e06b5" + chr(10)
+                + "payload             : " + name + chr(10)
+                + "payload SHA-256     : " + (digest or self.digest) + chr(10))
 
     def test_the_digest_is_read_from_the_builds_own_provenance(self):
-        text = ("source commit       : c8e06b5" + chr(10)
-                + "payload SHA-256     : " + self.digest + chr(10))
-        self.assertEqual(self.module.payload_digest(text), self.digest)
+        self.assertEqual(self.module.payload_digest(self.provenance()),
+                         self.digest)
+        self.assertEqual(self.module.payload_name(self.provenance()), "p.zip")
 
     def test_provenance_naming_no_payload_digest_is_a_finding(self):
         self.assertEqual(self.module.payload_digest("nothing useful"), "")
 
+    def test_the_real_script_uses_the_digest_in_both_places(self):
+        nsi = (ROOT / "windows" / "installer"
+               / "DeskPilot-Setup.nsi").read_text(encoding="utf-8")
+        self.assertEqual(self.module.script_uses_the_digest(nsi), [])
+
+    def test_a_script_that_never_compares_the_payload_is_a_finding(self):
+        self.assertTrue(self.module.script_uses_the_digest(
+            'nsExec::ExecToLog \'install --expect-sha256 '
+            '"${PAYLOAD_SHA256}"\''))
+
+    def test_a_script_that_never_tells_the_engine_is_a_finding(self):
+        self.assertTrue(self.module.script_uses_the_digest(
+            '${If} $R3 == "${PAYLOAD_SHA256}"'))
+
+    def test_a_script_missing_both_names_both(self):
+        self.assertEqual(len(self.module.script_uses_the_digest("")), 2)
+
     def test_a_file_that_is_not_an_executable_is_refused(self):
         with tempfile.TemporaryDirectory() as box:
-            exe = pathlib.Path(box) / "DeskPilot-Setup.exe"
-            exe.write_bytes(b"not a PE" + self.digest.encode("utf-16-le"))
-            provenance = pathlib.Path(box) / "BUILD.txt"
-            provenance.write_text("payload SHA-256 : " + self.digest,
-                                  encoding="utf-8")
-            self.assertEqual(
-                self.module.main(["x", str(exe), str(provenance)]), 1)
+            code = self._run(box, exe_bytes=b"not a PE")
+            self.assertEqual(code, 1)
 
-    def test_a_real_looking_pair_passes_end_to_end(self):
+    def test_a_digest_that_does_not_match_the_staged_payload_is_refused(self):
         with tempfile.TemporaryDirectory() as box:
-            exe = pathlib.Path(box) / "DeskPilot-Setup.exe"
-            exe.write_bytes(b"MZ" + b"\x00" * 64
-                            + self.digest.encode("utf-16-le"))
-            provenance = pathlib.Path(box) / "BUILD.txt"
-            provenance.write_text("payload SHA-256     : " + self.digest,
-                                  encoding="utf-8")
-            self.assertEqual(
-                self.module.main(["x", str(exe), str(provenance)]), 0)
+            code = self._run(box, recorded="b" * 64)
+            self.assertEqual(code, 1)
+
+    def test_a_real_looking_build_passes(self):
+        with tempfile.TemporaryDirectory() as box:
+            self.assertEqual(self._run(box), 0)
+
+    def _run(self, box: str, *, exe_bytes: bytes = b"MZ\x00\x00",
+             recorded: str = "") -> int:
+        """Lay out a dist directory the way build.py leaves one."""
+        import hashlib
+
+        dist = pathlib.Path(box)
+        (dist / "stage").mkdir()
+        payload = dist / "stage" / "p.zip"
+        payload.write_bytes(b"payload bytes")
+        true_digest = hashlib.sha256(payload.read_bytes()).hexdigest()
+        exe = dist / "DeskPilot-Setup.exe"
+        exe.write_bytes(exe_bytes)
+        build_txt = dist / "BUILD.txt"
+        build_txt.write_text(self.provenance(recorded or true_digest),
+                             encoding="utf-8")
+        nsi = dist / "DeskPilot-Setup.nsi"
+        nsi.write_text('${If} $R3 == "${PAYLOAD_SHA256}"' + chr(10)
+                       + 'install --expect-sha256 "${PAYLOAD_SHA256}"' + chr(10),
+                       encoding="utf-8")
+        return self.module.main(["x", str(exe), str(build_txt), str(nsi)])
 
 
 class EveryRuleTheHardeningAppliesHasSomethingToApplyTo(unittest.TestCase):

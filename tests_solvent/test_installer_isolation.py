@@ -359,6 +359,124 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class TheHardeningDoesNotLockOutItsOwnVerifier(unittest.TestCase):
+    """The probe must be able to read the script it is asked to run.
+
+    It could not. ``verify_isolation`` wrote ``isolation-probe.py``
+    into ``layout.engine``, and ``rules`` denies the control centre's
+    identity that directory outright -- "the installation engine can
+    install; the website cannot run it". So the task registered,
+    started, could not read its own script, died, and wrote nothing.
+    The step reported "the probe produced no result, so nothing was
+    proved", which was true and said nothing about why; the
+    hardening had locked out its own verifier, and three CI runs
+    went past it.
+
+    The checks below are about where the probe's files go relative
+    to what the identity under test may touch, which is a property
+    of the pair and is what went wrong.
+    """
+
+    def setUp(self):
+        from deskpilot_installer import isolation
+        from deskpilot_installer.engine import Engine, OwnerAnswers
+        from deskpilot_installer.installlog import Log
+        from deskpilot_installer.probe import Settings
+        from deskpilot_installer.report import Secret
+        from tests_solvent.installer_fake_host import fresh_windows
+
+        self.isolation = isolation
+        self.layout = Layout(root=r"C:\DeskPilot")
+        host = fresh_windows()
+        self.engine = Engine(host, Settings(layout=self.layout),
+                             OwnerAnswers(owner_identity="Jo",
+                                          web_password=Secret("correct-horse")),
+                             Log(host))
+
+    def granted(self, path: str) -> str:
+        """The rights the control centre's identity has at ``path``.
+
+        Taken from the rule that names the path, or from the nearest
+        rule above it, because an ``icacls`` grant with ``(OI)(CI)``
+        reaches the files underneath.
+        """
+        best, rights = "", ""
+        for rule in self.isolation.rules(self.layout):
+            if not (path == rule.path
+                    or path.lower().startswith(rule.path.lower() + "\\")):
+                continue
+            if len(rule.path) < len(best):
+                continue
+            best = rule.path
+            rights = ""
+            args = list(rule.args)
+            for index, arg in enumerate(args[:-1]):
+                # ``lstrip`` on the argument, not only on the SID:
+                # icacls grants are written ``*S-1-5-19:(M)`` and
+                # comparing one spelling against the other matched
+                # nothing, so an earlier version of this reported
+                # that every path grants the web identity nothing.
+                if arg != "/grant:r":
+                    continue
+                grant = args[index + 1].lstrip("*")
+                if grant.startswith(self.isolation.WEB_SID.lstrip("*")):
+                    rights = grant.split(":", 1)[1]
+        return rights
+
+    def test_the_probe_script_is_somewhere_its_runner_can_read(self):
+        script = self.probe_path("isolation-probe.py")
+        rights = self.granted(script)
+        self.assertTrue(rights, f"no rule grants the web identity {script}")
+        self.assertIn("R", rights,
+                      f"the probe runs as the web identity and {script} "
+                      f"grants it {rights!r}")
+
+    def test_the_probe_script_is_not_in_the_engine_directory(self):
+        """Named as the defect so it cannot be reintroduced quietly."""
+        script = self.probe_path("isolation-probe.py")
+        self.assertFalse(
+            script.lower().startswith(self.layout.engine.lower() + "\\"),
+            "the engine directory is denied to the identity the probe runs as")
+
+    def test_the_probe_can_write_its_result_where_it_is_asked_to(self):
+        result = self.probe_path("isolation-probe.json")
+        rights = self.granted(result)
+        self.assertTrue(any(letter in rights for letter in ("M", "W", "F")),
+                        f"the probe writes its result to {result} and is "
+                        f"granted {rights!r} there")
+
+    def probe_path(self, leaf: str) -> str:
+        """Where ``verify_isolation`` puts one of its files.
+
+        Read out of the source rather than restated, so this test
+        moves when the code does instead of agreeing with a copy.
+        """
+        import inspect
+        import re
+
+        source = inspect.getsource(self.engine.verify_isolation)
+        # The whole leaf, extension included. Matching only the stem
+        # found the .json line when asked for the .py one, because
+        # both are called isolation-probe.
+        found = re.search(
+            r'ntpath\.join\(self\.layout\.(\w+),\s*"'
+            + re.escape(leaf) + r'"\)',
+            source)
+        self.assertIsNotNone(
+            found, f"verify_isolation no longer joins a path for {leaf}")
+        return __import__("ntpath").join(
+            getattr(self.layout, found.group(1)), leaf)
+
+    def test_the_probe_removes_the_script_it_wrote(self):
+        """It did not, and left a generated file in the installed tree."""
+        import inspect
+
+        source = inspect.getsource(self.engine.verify_isolation)
+        finally_at = source.index("finally:")
+        self.assertIn("remove_file(script)", source[finally_at:],
+                      "the probe script is left behind after every install")
+
+
 class RepairRestoresTheConfinement(Scenario):
     """A repair restores the boundary, not only the files.
 

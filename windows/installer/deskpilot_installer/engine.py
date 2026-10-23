@@ -859,7 +859,25 @@ class Engine:
 
         planted = ntpath.join(self.layout.spool, "probe-planted.intent")
         result_file = ntpath.join(self.layout.logs, "isolation-probe.json")
-        script = ntpath.join(self.layout.engine, "isolation-probe.py")
+        # Under `app`, not under `engine`, and that is the repair.
+        #
+        # `isolation.rules` denies the control centre's identity the
+        # engine directory outright -- "the installation engine can
+        # install; the website cannot run it" -- and the probe wrote
+        # its script there and then asked that identity to run it. So
+        # the task started, could not read its own script, died, and
+        # wrote no result. The step reported "the probe produced no
+        # result, so nothing was proved", which was true and said
+        # nothing about why. The hardening had locked out its own
+        # verifier.
+        #
+        # `app` is granted (OI)(CI)(RX) to the same identity --
+        # "the control centre runs DeskPilot's code and cannot alter
+        # it" -- so a file created there inherits read and execute.
+        # The probe is code that identity is asked to execute, which
+        # is exactly what that grant is for, and the `finally` below
+        # removes it.
+        script = ntpath.join(self.layout.app, "isolation-probe.py")
         task_xml_path = ntpath.join(self.layout.config, "isolation-probe.xml")
 
         # A request the probe must not be able to read, change or delete. Put
@@ -899,11 +917,21 @@ class Engine:
         finally:
             integration.delete_task(self.host, self.PROBE_TASK_NAME)
             self.host.remove_file(task_xml_path)
+            # The script was never removed. It is generated, it names
+            # this installation's paths, and it was being left behind
+            # in the installed tree after every installation.
+            self.host.remove_file(script)
             self.host.remove_file(planted)
             self.host.remove_file(ntpath.join(self.layout.spool,
                                          "probe-submission.intent"))
         if text is None:
-            return (), ["the probe produced no result, so nothing was proved"]
+            # With what Windows says about the task, because "no
+            # result" on its own is not a diagnosis. Task Scheduler
+            # records a Last Result for every run, and reading it is
+            # the difference between "the probe did not answer" and
+            # "the probe could not read its own script".
+            return (), ["the probe produced no result, so nothing was "
+                        "proved: " + self._probe_task_state()]
         try:
             results = _json.loads(text)
         except ValueError:
@@ -911,6 +939,20 @@ class Engine:
         if not isinstance(results, dict):
             return (), ["the probe's result was not a set of findings"]
         return isolation.judge(results)
+
+    def _probe_task_state(self) -> str:
+        """What Task Scheduler says about the probe run, for the refusal."""
+        asked = self.host.run(["schtasks.exe", "/Query", "/TN",
+                               self.PROBE_TASK_NAME, "/FO", "LIST", "/V"],
+                              timeout=120.0)
+        self.log.command(asked.argv, asked.returncode, asked.output)
+        if not asked.ok:
+            return ("Task Scheduler could not be asked about it: "
+                    + integration.said(asked.output))
+        wanted = ("Last Result", "Status", "Last Run Time")
+        kept = [" ".join(line.split()) for line in asked.output.splitlines()
+                if any(line.strip().startswith(key) for key in wanted)]
+        return "; ".join(kept) if kept else integration.said(asked.output)
 
     def _await_probe(self, result_file: str, tries: int = 30) -> str | None:
         """Wait for the probe's result file. ``None`` if it never appeared.

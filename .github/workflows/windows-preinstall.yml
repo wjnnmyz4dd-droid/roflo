@@ -476,13 +476,19 @@ jobs:
             # to install without -- the whole of the installer's supply
             # chain promise, compiled in rather than shipped beside.
             #
-            # Checked against the digest this build recorded in
-            # BUILD.txt, not against a zip re-hashed here, and in both
-            # encodings. The first version of this searched the bytes
-            # for ASCII and failed a correct build: NSIS compiles its
-            # string constants as UTF-16LE. The reading is now in
-            # tools/installer_carries_digest.py, which the suite drives.
-            python -I tools/installer_carries_digest.py $exe "$env:RUNNER_TEMP/dist/BUILD.txt"
+            # Not by searching the executable for the digest. Two
+            # versions of this did, in ASCII and then in UTF-16LE, and
+            # both failed correct builds: the script sets
+            # SetCompressor /SOLID lzma, so the constant is inside a
+            # compressed block and no byte search can find it in any
+            # NSIS installer. tools/installer_carries_digest.py checks
+            # what is actually checkable -- the recorded digest against
+            # the staged payload recomputed, and that the script
+            # compares it before unpacking and hands it to the engine
+            # -- and says plainly what it cannot see.
+            python -I tools/installer_carries_digest.py $exe `
+              "$env:RUNNER_TEMP/dist/BUILD.txt" `
+              windows/installer/DeskPilot-Setup.nsi
             if ($LASTEXITCODE -ne 0) {
               throw "DeskPilot-Setup.exe did not pass its own provenance check"
             }
