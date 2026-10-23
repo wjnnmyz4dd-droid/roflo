@@ -87,9 +87,39 @@ class Layout:
 
     # -- individual files ------------------------------------------------
     @property
+    def db_dir(self) -> str:
+        """The database and whatever SQLite creates beside it.
+
+        A directory rather than loose files in ``Data``, and that is
+        not tidiness. The database runs in WAL mode, and SQLite
+        cannot open a WAL database even for reading without
+        write access to its ``-shm`` shared index. Those sidecars do
+        not exist between connections -- SQLite deletes them on the
+        last clean close and recreates them on the next open -- so
+        the rules that granted the control centre access to them
+        were skipped at install time for want of a file, and the
+        files that appeared later inherited ``Data``'s traverse-only
+        entry instead.
+
+        The effect: the control centre could not read the database
+        at all. The probe caught it on a real Windows runner --
+        ``read_database`` is expected to be ALLOWED and was refused
+        -- and it would have caught it on an owner's machine too.
+        This is not a CI artefact.
+
+        An inheritable grant has to live on a directory, and putting
+        one on ``Data`` would hand the control centre write access to
+        every file created there later, the runtime's heartbeat
+        among them. So the database gets a container of its own, the
+        inheritable grant goes on that, and nothing else in ``Data``
+        changes.
+        """
+        return ntpath.join(self.data, "db")
+
+    @property
     def db(self) -> str:
         """The one real database. Every authority is pointed at this path."""
-        return ntpath.join(self.data, "solvent.db")
+        return ntpath.join(self.db_dir, "solvent.db")
 
     @property
     def spool(self) -> str:
@@ -153,7 +183,8 @@ class Layout:
         missing ``mkdir`` read on screen as a broken security
         boundary.
         """
-        return self.replaceable_dirs + self.owner_dirs + (self.spool,)
+        return (self.replaceable_dirs + self.owner_dirs
+                + (self.spool, self.db_dir))
 
 
 #: Path fragments DeskPilot must never install into, and why.

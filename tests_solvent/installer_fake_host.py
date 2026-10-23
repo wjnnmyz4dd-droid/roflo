@@ -46,7 +46,7 @@ from deskpilot_installer.host import (  # noqa: E402
 from deskpilot_installer.report import Secret  # noqa: E402
 from deskpilot_installer import integration  # noqa: E402
 from deskpilot_installer.layout import (  # noqa: E402
-    DEFAULT_ROOT, WEB_PORT,
+    DEFAULT_ROOT, WEB_PORT, Layout,
 )
 from tests_solvent.installer_acl_model import AclModel  # noqa: E402
 
@@ -424,7 +424,13 @@ def _python_reports(version: str = "3 13 True"):
 
 
 SYSTEM_PYTHON = r"C:\Program Files\Python313\python.exe"
-DB_PATH = r"C:\DeskPilot\Data\solvent.db"
+#: Asked of Layout, not spelled here. The fixture spelled this
+#: path and the relative one below by hand, and when the database
+#: moved into a directory of its own -- so SQLite's sidecars could
+#: inherit a grant that exists before they do -- 126 tests failed
+#: against a correct installer because the fake machine was
+#: looking in the old place.
+DB_PATH = Layout().db
 
 
 def with_python(host: FakeWindows, path: str = SYSTEM_PYTHON,
@@ -458,7 +464,7 @@ def install_ready(host: FakeWindows | None = None, *,
     # command rather than as the thing under test.
     venv_python = ntpath.join(root, "venv", "Scripts", "python.exe")
     site_packages = ntpath.join(root, "venv", "Lib", "site-packages")
-    db_path = ntpath.join(root, "Data", "solvent.db")
+    db_path = Layout(root=root).db
 
     if system_python:
         with_python(host)

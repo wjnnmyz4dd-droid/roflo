@@ -752,13 +752,39 @@ MUTANTS: tuple[Mutant, ...] = (
     # treated as covered. Mutating a redundant control to make the numbers
     # look better would be the kind of result this harness exists to prevent.
     Mutant("the-database-is-granted-write", "isolation.py",
-           '        Rule(layout.db,\n'
-           '             ("/grant:r", f"{WEB_SID}:(R)"),',
-           '        Rule(layout.db,\n'
-           '             ("/grant:r", f"{WEB_SID}:(R,W)"),',
+           '              "/grant:r", f"{WEB_SID}:(R)"),\n'
+           '             "the control centre reads the database and cannot '
+           'write it"),',
+           '              "/grant:r", f"{WEB_SID}:(R,W)"),\n'
+           '             "the control centre reads the database and cannot '
+           'write it"),',
            "tests_solvent.test_installer_isolation.WhatTheRulesImply"
            ".test_the_web_process_cannot_modify_the_database",
            "the website cannot change what it reports"),
+    # The first attempt at covering SQLite's sidecars put an
+    # inheritable read/write grant on the database's directory, which
+    # reaches the write-ahead log as well as the shared index. A
+    # writable -wal is a writable database: a frame's checksums come
+    # from a salt the attacker can read.
+    Mutant("the-write-ahead-log-is-granted-write", "isolation.py",
+           '        Rule(layout.db + "-wal", ("/grant:r", f"{WEB_SID}:(R)"),',
+           '        Rule(layout.db + "-wal", ("/grant:r", f"{WEB_SID}:(R,W)"),',
+           "tests_solvent.test_installer_isolation.WhatTheRulesImply"
+           ".test_the_web_process_cannot_append_to_the_write_ahead_log",
+           "appending to the WAL is adding committed rows by another name"),
+    # They were required=False, so an installation that had closed the
+    # database skipped both and left the sidecars on an inherited
+    # traverse-only entry. The control centre could not read the
+    # database at all, on a runner or on an owner's machine.
+    Mutant("the-sidecars-are-hardened-only-if-they-happen-to-exist",
+           "isolation.py",
+           '             "SQLite\'s shared index; no reader can open a WAL '
+           'database "\n             "without it"),',
+           '             "SQLite\'s shared index; no reader can open a WAL '
+           'database "\n             "without it", required=False),',
+           "tests_solvent.test_installer_isolation.TheSidecarsAreNotLeftToChance"
+           ".test_both_sidecars_are_hardened_whether_or_not_they_exist",
+           "the sidecars are hardened whether or not they happen to exist"),
     Mutant("a-check-the-probe-skipped-counts-as-held", "isolation.py",
            '            findings.append(Finding(name, expected, False,',
            '            findings.append(Finding(name, expected, True,',

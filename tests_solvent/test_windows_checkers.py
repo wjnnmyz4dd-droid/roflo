@@ -363,8 +363,14 @@ class EveryRuleTheHardeningAppliesHasSomethingToApplyTo(unittest.TestCase):
 
     def test_every_required_rule_targets_something_installed(self):
         """Generalised past the one defect, so the next one is caught."""
+        from deskpilot_installer import isolation
+
+        # Files rather than directories, each created by a named step
+        # of the installation: the two environment files, the
+        # database, and the two SQLite sidecars the database step
+        # creates empty so that these very rules have a target.
         made_by_hand = {self.layout.env_file, self.layout.web_env_file,
-                        self.layout.db}
+                        self.layout.db, *isolation.sidecars(self.layout)}
         for rule in self.rules:
             if not getattr(rule, "required", True):
                 continue

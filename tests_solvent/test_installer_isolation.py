@@ -359,6 +359,79 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class TheSidecarsAreNotLeftToChance(unittest.TestCase):
+    """The control centre could not read the database. At all.
+
+    SQLite cannot open a WAL database, even to read it, without write
+    access to the ``-shm`` shared index -- and it deletes both
+    sidecars on the last clean close. So after an installation
+    neither file existed, both rules were ``required=False`` and were
+    skipped for want of a target, and the files SQLite created on the
+    next open inherited a traverse-only entry.
+
+    The probe found it on a real Windows runner: ``read_database`` is
+    expected ALLOWED and was refused. It was not a runner artefact --
+    an owner's machine would have behaved identically, and the
+    control centre would have shown nothing at all.
+
+    The installation now creates both files empty before the access
+    controls are applied, so there is something to put an entry on,
+    and both rules are required. A zero-length ``-wal`` is a valid
+    empty write-ahead log and a zero-length ``-shm`` is initialised
+    on first open, so neither changes any SQLite behaviour.
+    """
+
+    def setUp(self):
+        from deskpilot_installer import isolation
+        self.isolation = isolation
+        self.layout = Layout(root=r"C:\DeskPilot")
+        self.rules = {r.path: r for r in isolation.rules(self.layout)}
+
+    def test_both_sidecars_are_hardened_whether_or_not_they_exist(self):
+        for path in self.isolation.sidecars(self.layout):
+            with self.subTest(path):
+                rule = self.rules.get(path)
+                self.assertIsNotNone(rule, f"nothing hardens {path}")
+                self.assertTrue(
+                    rule.required,
+                    f"{path} is hardened only if it happens to exist, and "
+                    f"after a clean close it does not")
+
+    def test_the_installation_creates_them(self):
+        """Required is only safe because something makes them."""
+        import inspect
+
+        from deskpilot_installer.engine import Engine
+
+        source = inspect.getsource(Engine.step_database)
+        self.assertIn("isolation.sidecars", source)
+        self.assertIn('write_bytes(path, b"")', source)
+
+    def test_the_shared_index_is_the_only_one_that_may_be_written(self):
+        """The compromise, bounded: -shm writable, -wal and the database not."""
+        shm, wal = self.layout.db + "-shm", self.layout.db + "-wal"
+        self.assertIn("(R,W)", " ".join(self.rules[shm].args))
+        self.assertNotIn("W", self._web_rights(self.rules[wal]))
+        self.assertNotIn("W", self._web_rights(self.rules[self.layout.db]))
+
+    def _web_rights(self, rule) -> str:
+        args = list(rule.args)
+        for index, arg in enumerate(args[:-1]):
+            if arg != "/grant:r":
+                continue
+            grant = args[index + 1].lstrip("*")
+            if grant.startswith(self.isolation.WEB_SID.lstrip("*")):
+                return grant.split(":", 1)[1]
+        return ""
+
+    def test_the_database_directory_grants_nothing_inheritable(self):
+        """The first attempt did, and it reached the write-ahead log."""
+        rule = self.rules[self.layout.db_dir]
+        self.assertNotIn("(OI)", self._web_rights(rule),
+                         "an inheritable grant here covers the -wal too, and "
+                         "a writable -wal is a writable database")
+
+
 class TheHardeningDoesNotLockOutItsOwnVerifier(unittest.TestCase):
     """The probe must be able to read the script it is asked to run.
 

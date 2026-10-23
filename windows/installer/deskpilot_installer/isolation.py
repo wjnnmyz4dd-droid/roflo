@@ -132,19 +132,49 @@ def rules(layout: Layout) -> tuple[Rule, ...]:
              ("/inheritance:r", "/grant:r", full, "/grant:r", admins_full,
               "/grant:r", f"{WEB_SID}:(X,RA)"),
              "traverse only: the control centre cannot list the owner's data"),
+        # The database's own directory. Traverse only, exactly as
+        # ``Data`` is: an inheritable read/write grant here was the
+        # first attempt and it is wrong, because it reaches the
+        # write-ahead log as well as the shared index, and a writable
+        # -wal is a writable database -- a frame's checksums are
+        # computed from a salt the attacker can read. The suite
+        # caught that within a minute, which is what it is for.
+        #
+        # So the sidecars get explicit entries instead, and the
+        # installation creates them so there is something to put an
+        # entry on. See :func:`sidecars` and WAL_SHM_NOTE.
+        Rule(layout.db_dir,
+             ("/inheritance:r", "/grant:r", full, "/grant:r", admins_full,
+              "/grant:r", f"{WEB_SID}:(X,RA)"),
+             "traverse only: the control centre reaches the database and "
+             "cannot list what is beside it"),
+        # And the one permanent file inside it, read-only. Explicit
+        # entries only: an inherited allow and an explicit allow are a
+        # union in Windows, so granting read here while the directory
+        # grants read/write would leave the database writable. Cutting
+        # inheritance on the file is what makes the narrower grant the
+        # whole of it, without a deny entry.
         Rule(layout.db,
-             ("/grant:r", f"{WEB_SID}:(R)"),
+             ("/inheritance:r", "/grant:r", full, "/grant:r", admins_full,
+              "/grant:r", f"{WEB_SID}:(R)"),
              "the control centre reads the database and cannot write it"),
-        # SQLite in WAL mode needs its sidecars. -wal is read-only here;
-        # -shm is the shared index and has to be writable for any reader at
-        # all. See WAL_SHM_NOTE: this is the one grant that is a compromise,
-        # and it is a write to an index rather than to the data.
+        # The sidecars, now required, because the installation
+        # creates them rather than hoping they are there.
+        #
+        # They were ``required=False`` and that is what broke the
+        # boundary. SQLite deletes both on the last clean close, so
+        # after an installation neither file existed, both rules were
+        # skipped for want of a target, and the sidecars SQLite made
+        # on the next open inherited a traverse-only entry. The
+        # control centre could not open the database at all -- not on
+        # a runner, and not on an owner's machine either. The probe
+        # reported ``read_database`` refused, which is exactly what
+        # it is for.
         Rule(layout.db + "-wal", ("/grant:r", f"{WEB_SID}:(R)"),
-             "the write-ahead log is readable so a reader sees committed rows",
-             required=False),
+             "the write-ahead log is readable so a reader sees committed rows"),
         Rule(layout.db + "-shm", ("/grant:r", f"{WEB_SID}:(R,W)"),
-             "SQLite's shared index; no reader can open a WAL database without it",
-             required=False),
+             "SQLite's shared index; no reader can open a WAL database "
+             "without it"),
         # The liveness signal. A file whose only content is the fact that it
         # was recently written, so the control centre may read it -- and has
         # to, because "is the runtime alive *now*" cannot be answered from a
@@ -165,8 +195,25 @@ def rules(layout: Layout) -> tuple[Rule, ...]:
               "/grant:r", f"{OWNER_RIGHTS_SID}:(OI)(IO)(RA)"),
              "a drop box: add a request, and never read, change or remove one"),
         # -- code: readable and runnable, never writable -------------------
+        #
+        # ``/inheritance:r`` here, and it was missing. The grant alone
+        # says what the control centre is *given*; it says nothing
+        # about what the application directory already inherits from
+        # whatever it was installed under. On a host whose install
+        # root sits somewhere broadly writable the inherited entries
+        # remain, and the probe proved it: ``write_application_code``
+        # was expected to be denied and succeeded -- the control
+        # centre could drop a file into the directory holding the
+        # runtime's code.
+        #
+        # An install into ``C:\DeskPilot`` would not have shown this,
+        # which is the point. A boundary that holds because of where
+        # you installed is not a boundary; after this the grant is
+        # the whole story, as it already was for Config, Engine and
+        # Data.
         Rule(layout.app,
-             ("/grant:r", f"{WEB_SID}:(OI)(CI)(RX)"),
+             ("/inheritance:r", "/grant:r", full, "/grant:r", admins_full,
+              "/grant:r", f"{WEB_SID}:(OI)(CI)(RX)"),
              "the control centre runs DeskPilot's code and cannot alter it"),
         Rule(layout.venv,
              ("/grant:r", f"{WEB_SID}:(OI)(CI)(RX)"),
@@ -176,6 +223,32 @@ def rules(layout: Layout) -> tuple[Rule, ...]:
              ("/grant:r", f"{WEB_SID}:(OI)(CI)(M)"),
              "the control centre writes its own log"),
     )
+
+
+def sidecars(layout: Layout) -> tuple[str, ...]:
+    """The two files SQLite makes beside a WAL database.
+
+    Created empty by the installation, before the access controls are
+    applied, so that each can be given the entry it needs. A
+    zero-length ``-wal`` is a valid empty write-ahead log and a
+    zero-length ``-shm`` is initialised on first open, so creating
+    them costs nothing and changes no SQLite behaviour.
+
+    **The residual gap, stated rather than buried.** SQLite deletes
+    both on the last clean close of the database. If the runtime
+    stops cleanly and starts again, the files it recreates inherit
+    the database directory's traverse-only entry and the control
+    centre cannot read the database until the entries are applied
+    again. ``Engine.apply_isolation`` does exactly that and is
+    already the repair path; what does not yet exist is anything
+    that calls it when the runtime restarts. That is named in
+    docs/deskpilot-windows-certification.md as a remaining blocker
+    rather than papered over here, because the alternative -- an
+    inheritable read/write grant on the directory -- would make the
+    write-ahead log writable, and a writable -wal is a writable
+    database.
+    """
+    return (layout.db + "-wal", layout.db + "-shm")
 
 
 #: Stated in the report rather than buried, because it is the one place the
