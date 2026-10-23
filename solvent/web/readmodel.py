@@ -408,7 +408,7 @@ class ReadModel:
 
     def incident_timeline(self, incident_id: str) -> list[dict]:
         return self.rows(
-            "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY ts, id",
+            "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY ts, rowid",
             (incident_id,))
 
     def related_incidents(self, fingerprint: str, exclude: str = "") -> list[dict]:
@@ -423,7 +423,7 @@ class ReadModel:
 
     def flight_frames(self, trace_id: str) -> list[dict]:
         return self.rows(
-            "SELECT * FROM flight_frames WHERE trace_id = ? ORDER BY ts, id",
+            "SELECT * FROM flight_frames WHERE trace_id = ? ORDER BY ts, rowid",
             (trace_id,))
 
     def breakers(self) -> list[dict]:

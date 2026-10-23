@@ -474,7 +474,7 @@ class Resilience:
 
     def timeline(self, incident_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY ts, id",
+            "SELECT * FROM incident_events WHERE incident_id = ? ORDER BY ts, rowid",
             (incident_id,))]
 
     def lesson_for(self, print_: str) -> dict | None:
@@ -518,7 +518,7 @@ class Resilience:
         self._db.execute(
             "DELETE FROM flight_frames WHERE trace_id = ? AND id NOT IN ("
             "SELECT id FROM flight_frames WHERE trace_id = ? "
-            "ORDER BY ts DESC, id DESC LIMIT ?)",
+            "ORDER BY ts DESC, rowid DESC LIMIT ?)",
             (trace_id, trace_id, FRAMES_PER_TRACE))
         self._db.execute(
             "DELETE FROM flight_frames WHERE trace_id NOT IN ("
@@ -529,7 +529,7 @@ class Resilience:
 
     def frames(self, trace_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM flight_frames WHERE trace_id = ? ORDER BY ts, id",
+            "SELECT * FROM flight_frames WHERE trace_id = ? ORDER BY ts, rowid",
             (trace_id,))]
 
     def traces(self) -> list[str]:
@@ -541,7 +541,7 @@ class Resilience:
         """The last durable state this trace reached, for a restart to resume from."""
         row = self._db.query_one(
             "SELECT checkpoint FROM flight_frames WHERE trace_id = ? "
-            "AND checkpoint != '' ORDER BY ts DESC, id DESC LIMIT 1", (trace_id,))
+            "AND checkpoint != '' ORDER BY ts DESC, rowid DESC LIMIT 1", (trace_id,))
         return row["checkpoint"] if row else ""
 
     def replay(self, trace_id: str) -> dict:

@@ -491,7 +491,7 @@ class SkillsLab:
 
     def _latest_claim(self, claim_ref: str) -> dict | None:
         rows = [dict(r) for r in self._db.query(
-            "SELECT * FROM skill_evidence WHERE claim_ref = ? ORDER BY ts, id",
+            "SELECT * FROM skill_evidence WHERE claim_ref = ? ORDER BY ts, rowid",
             (claim_ref,))]
         return rows[-1] if rows else None
 
@@ -500,14 +500,14 @@ class SkillsLab:
         latest: dict[str, dict] = {}
         for row in self._db.query(
                 "SELECT * FROM skill_evidence WHERE project_id = ? "
-                "ORDER BY ts, id", (project_id,)):
+                "ORDER BY ts, rowid", (project_id,)):
             latest[row["claim_ref"]] = dict(row)
         return list(latest.values())
 
     def evidence_history(self, project_id: str) -> list[dict]:
         """Every row, in order. What was claimed, checked, and concluded."""
         return [dict(r) for r in self._db.query(
-            "SELECT * FROM skill_evidence WHERE project_id = ? ORDER BY ts, id",
+            "SELECT * FROM skill_evidence WHERE project_id = ? ORDER BY ts, rowid",
             (project_id,))]
 
     def evidence_blockers(self, project_id: str) -> list[str]:
@@ -1123,7 +1123,7 @@ class SkillsLab:
     def timeline(self, project_id: str) -> list[dict]:
         return [dict(r) for r in self._db.query(
             "SELECT * FROM skill_project_events WHERE project_id = ? "
-            "ORDER BY ts, id", (project_id,))]
+            "ORDER BY ts, rowid", (project_id,))]
 
     def awaiting_owner(self) -> list[Project]:
         """Projects the owner has been asked about. Their queue, from the Lab."""
