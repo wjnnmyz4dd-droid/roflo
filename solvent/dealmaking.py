@@ -386,10 +386,29 @@ def candidates(solvent) -> list[Candidate]:
     """Who is ready for a price, read from the records rather than guessed.
 
     A candidate is a CRM prospect who has replied, has no negotiation
-    and no engagement, and has an accepted opportunity naming a skill.
-    The opportunity is where the skill comes from: a prospect record
+    and no engagement, and has an opportunity naming a skill. The
+    opportunity is where the skill comes from: a prospect record
     holds no service, and matching one to a company by industry would
     be a recommendation engine wearing a connector's clothes.
+
+    **DISCOVERED counts as well as ACCEPTED, and that is the repair.**
+    This asked for ACCEPTED only, and ``OpportunityStatus.ACCEPTED``
+    is set in exactly one place: ``qualification.select``, which also
+    mints a job and applies the Governor's verdict. So the
+    precondition for *quoting* a client was a commitment to *doing*
+    their job -- which is backwards, and is why nothing in production
+    could produce the state. Measured: a job minted that way for a
+    negotiated enquiry sits in ACCEPTED with nothing to execute it,
+    and no watchdog looked at it.
+
+    Nothing is bypassed by widening it. A price is not a commitment:
+    the floor, the capability registry and Capacity all still refuse
+    here, and when the agreed price becomes an order every authority
+    downstream -- Qualification, the Governor, the Action Gate and
+    the owner's threshold -- gets its say before any work starts.
+    REJECTED, QUALIFYING and EXPIRED are still excluded: the first is
+    a decision already made, the second is a cycle in flight, and the
+    third is gone.
     """
     from .discovery import OpportunityStatus
 
@@ -398,10 +417,11 @@ def candidates(solvent) -> list[Candidate]:
         return []
 
     by_client: dict[str, dict] = {}
-    for row in solvent.discovery.opportunities(OpportunityStatus.ACCEPTED):
-        client = str(row.get("client_ref") or "")
-        if client and client not in by_client:
-            by_client[client] = row
+    for status in (OpportunityStatus.ACCEPTED, OpportunityStatus.DISCOVERED):
+        for row in solvent.discovery.opportunities(status):
+            client = str(row.get("client_ref") or "")
+            if client and client not in by_client:
+                by_client[client] = row
 
     out: list[Candidate] = []
     for prospect in solvent.crm.all():

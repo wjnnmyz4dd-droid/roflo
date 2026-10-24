@@ -1442,6 +1442,32 @@ def cmd_payments_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_client_add(args: argparse.Namespace) -> int:
+    """Record a client who wrote in, and what they asked about.
+
+    The door the relationship layer never had. ``CRM.discover`` had
+    no caller anywhere in the package -- no task, no command, no
+    route -- so the CRM, the negotiation engine and the engagement
+    were reachable only from test code.
+
+    Every field is something the owner was told. Nothing here is
+    inferred, and the facts a client's order cannot carry -- who they
+    are, what trade they are in -- are typed rather than guessed.
+    """
+    from .clientintake import record_enquiry
+
+    solvent = _owner_solvent(args)
+    recorded = record_enquiry(
+        solvent, prospect_id=args.id, company=args.company,
+        industry=args.industry, state=args.state,
+        contact_name=args.contact or "", contact_email=args.email,
+        wants=args.wants, budget_cents=int(args.budget_cents),
+        seen_on=args.seen_on, owner_identity=args.owner,
+        source=args.source)
+    print(recorded.summary())
+    return 0 if recorded.done else 1
+
+
 def cmd_readiness(args: argparse.Namespace) -> int:
     """What stands between Solvent and its first real paid job."""
     solvent = Solvent(args.db)
@@ -2096,6 +2122,35 @@ def build_parser() -> argparse.ArgumentParser:
     reject.add_argument("--reason", required=True)
     reject.add_argument("--owner", default=OWNER)
     reject.set_defaults(func=cmd_intents_reject)
+
+    client = sub.add_parser("client", help="the people who write in")
+    client_sub = client.add_subparsers(dest="client_command", required=True)
+    add_client = client_sub.add_parser(
+        "add", help="record a client who asked for a price, and the enquiry")
+    add_client.add_argument("--id", required=True,
+                            help="how this client is referred to, e.g. "
+                                 "client:northstar")
+    add_client.add_argument("--company", required=True)
+    add_client.add_argument("--industry", required=True)
+    add_client.add_argument("--state", required=True,
+                            help="where the client is, for the location rules")
+    add_client.add_argument("--email", required=True,
+                            help="the address they wrote from")
+    add_client.add_argument("--contact", default="",
+                            help="the person's name, if they gave one")
+    add_client.add_argument("--wants", required=True,
+                            help="the skill they asked about")
+    add_client.add_argument("--budget-cents", type=int, default=0,
+                            dest="budget_cents",
+                            help="what they said they could spend, if they said")
+    add_client.add_argument("--seen-on", required=True, dest="seen_on",
+                            help="the date they wrote, YYYY-MM-DD")
+    add_client.add_argument("--source", default="inbox",
+                            help="the registered source to enter the enquiry "
+                                 "under")
+    add_client.add_argument("--owner", default=OWNER)
+    add_client.add_argument("--db", default=rt.DEFAULT_DB)
+    add_client.set_defaults(func=cmd_client_add)
 
     payments = sub.add_parser("payments", help="payment rail operations")
     payments_sub = payments.add_subparsers(dest="payments_command", required=True)

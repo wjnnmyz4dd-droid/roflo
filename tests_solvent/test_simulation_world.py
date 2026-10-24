@@ -298,14 +298,30 @@ class OneWeekOfBusiness(unittest.TestCase):
 
         self.assertEqual(self.s.ledger.real_revenue_cents(), 0)
 
-    def test_the_acts_with_no_production_counterpart_are_counted(self):
+    def test_no_act_is_left_without_a_production_counterpart(self):
+        """There were two, and there are none.
+
+        The counter and its marker stay: the claim is worth
+        re-checking on every run, because a simulation that quietly
+        does DeskPilot's work for it is measuring itself.
+        """
         world = self.run_days()
 
         marked = [a for a in world.log if a.act.startswith("[outside-world]")]
         self.assertEqual(len(marked), world.unbacked_acts)
-        for act in marked:
-            with self.subTest(act.customer_id):
-                self.assertIn("no production", act.detail)
+        self.assertEqual(world.unbacked_acts, 0,
+                         "; ".join(a.line() for a in marked))
+
+    def test_the_marker_would_still_show_one(self):
+        """The control. A counter that cannot count is not a counter."""
+        world = self.run_days()
+        customer = world.population.customers[0]
+
+        world._the_outside_world(customer, 0, "something DeskPilot cannot do",
+                                 "no production path exists for this")
+
+        self.assertEqual(world.unbacked_acts, 1)
+        self.assertTrue(world.log[-1].act.startswith("[outside-world]"))
 
     def test_a_client_who_sends_nothing_gets_no_work_done(self):
         """Asserted on the run, not on the code: every job that ran had

@@ -37,6 +37,7 @@ from solvent.harness import OWNER
 from solvent.negotiation import Outcome
 from solvent.runtime import DEFAULT_INTERVALS
 from solvent.storefront import OFFERS, OrderState
+from solvent.types import JobState
 
 from tests_solvent.test_dealmaking import Connected
 
@@ -764,6 +765,183 @@ class TheOrderStatusGoesOneWay(Contracted):
         self.assertEqual(reachable, set(OrderState),
                          "a state no code path can set is a status no "
                          "customer will ever be shown")
+
+
+# ======================================================================
+#  The customer's own record outlives the process
+# ======================================================================
+
+
+class AnOrderIsNotForgotten(Contracted):
+    """It was held in a dict and nowhere else.
+
+    Every customer order -- the offer, their answers, what they had
+    already paid, and the status they are shown -- vanished when the
+    process stopped, while the job, the opportunity and the
+    receivable all survived. Found in a crash-recovery trace: a
+    reopened shop reported no orders and a live job for one of them.
+    """
+
+    def reopen(self):
+        from solvent.harness import Solvent
+
+        self.s.store.close()
+        self.s = Solvent(str(self.root / "deskpilot.db"))
+        return self.s
+
+    def test_a_configured_shop_says_its_orders_are_durable(self):
+        self.assertTrue(self.s.storefront.durable)
+
+    def test_an_order_survives_a_restart_with_everything_on_it(self):
+        pid, engagement = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        before = self.s.storefront.order(f"eng-{pid}")
+        self.s.storefront.submit_to_pipeline(f"eng-{pid}")
+        before = self.s.storefront.order(f"eng-{pid}")
+
+        reopened = self.reopen()
+        after = reopened.storefront.order(f"eng-{pid}")
+
+        self.assertIsNotNone(after, "the order was lost")
+        self.assertEqual(after.offer_id, before.offer_id)
+        self.assertEqual(after.client_ref, before.client_ref)
+        self.assertEqual(after.offered_cents, before.offered_cents)
+        self.assertEqual(after.prepaid_cents, before.prepaid_cents)
+        self.assertGreater(after.prepaid_cents, 0,
+                           "no deposit, so the interesting field is untested")
+        self.assertIs(after.state, before.state)
+        self.assertEqual(after.opportunity_id, before.opportunity_id)
+        self.assertEqual(after.answers, before.answers)
+
+    def test_the_duplicate_guard_holds_across_a_restart(self):
+        """It failed *open*: an empty dict says it has never seen it."""
+        pid, _ = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+
+        reopened = self.reopen()
+
+        with self.assertRaises(FailClosed) as caught:
+            reopened.storefront.place(
+                order_id=f"eng-{pid}", offer_id="csv-cleanup",
+                client_ref=pid, answers={}, offered_cents=1)
+        self.assertIn("two jobs for one payment", str(caught.exception))
+
+    def test_the_customer_can_still_be_told_after_a_restart(self):
+        pid, _ = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        cycle = self.runtime()._one_business_job()
+        self.assertTrue(cycle.delivered)
+
+        reopened = self.reopen()
+        contracting.tell_the_customer(reopened, order_id=f"eng-{pid}")
+
+        order = reopened.storefront.order(f"eng-{pid}")
+        self.assertIs(order.state, OrderState.DELIVERED)
+        self.assertEqual(order.customer_status(),
+                         "Delivered and checked against your requirements.")
+
+    def test_a_shop_with_no_database_says_so(self):
+        """The catalogue is useful without one; the orders are not durable."""
+        from solvent import storefront as sf
+
+        bare = sf.Storefront(self.s.capability, self.s.policy)
+
+        self.assertFalse(bare.durable)
+        self.assertEqual(bare.orders(), [])
+
+
+# ======================================================================
+#  One price, from the handshake to the reconciliation
+# ======================================================================
+
+
+class TheAgreedPriceIsTheOnlyPrice(Contracted):
+    """No second pricing authority, and no silent substitution.
+
+    The negotiation settles a figure with the client. Everything
+    downstream must carry *that* figure: the order, the opportunity,
+    the Governor's quote, the invoice and the receivable. A pipeline
+    that re-derives a price somewhere in the middle has two answers
+    to "what did we agree", and the client has the other one.
+    """
+
+    def test_the_figure_survives_every_hand_it_passes_through(self):
+        pid, engagement = self.ready()
+        agreed = engagement.proposal.price_cents
+        self.assertGreater(agreed, 0)
+
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        order = self.s.storefront.order(f"eng-{pid}")
+        cycle = self.runtime()._one_business_job()
+        # Read after the cycle: the opportunity does not exist until
+        # the cycle's discover stage polls the storefront for it.
+        opportunity = [r for r in self.s.discovery.opportunities()
+                       if r["external_ref"] == f"eng-{pid}"]
+
+        self.assertEqual(order.offered_cents, agreed, "the order repriced it")
+        self.assertEqual([int(r["quoted_cents"]) for r in opportunity], [agreed],
+                         "the opportunity repriced it")
+        self.assertEqual(cycle.quoted_cents, agreed, "the cycle repriced it")
+        self.assertEqual(cycle.invoiced_cents, agreed, "the invoice repriced it")
+        self.assertEqual(cycle.prepaid_cents + cycle.due_cents, agreed,
+                         "the client was asked for something other than the "
+                         "price they agreed")
+
+    def test_the_budget_grant_is_not_the_price(self):
+        """Two numbers that must never be confused.
+
+        ``authorised_cents`` is what the Governor allows this job to
+        *spend*; ``quoted_cents`` is what the client agreed to *pay*.
+        Measured on one job: 4,935 against 27,409.
+        """
+        pid, engagement = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+
+        cycle = self.runtime()._one_business_job()
+
+        self.assertGreater(cycle.authorised_cents, 0)
+        self.assertLess(cycle.authorised_cents, cycle.quoted_cents,
+                        "a budget grant the size of the price is not a budget")
+        self.assertEqual(cycle.quoted_cents, engagement.proposal.price_cents)
+
+    def test_a_price_above_the_owners_threshold_waits_for_the_owner(self):
+        """Not repriced to fit under it, and not pushed through."""
+        pid, engagement = self.ready()
+        agreed = engagement.proposal.price_cents
+        self.s.policy.amend(
+            {"financial": {"owner_approval_above_cents": agreed - 1}},
+            OWNER, "the owner lowered what they will have done unattended")
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+
+        cycle = self.runtime()._one_business_job()
+
+        self.assertEqual(cycle.stopped_at, "owner-approval")
+        self.assertTrue(cycle.owner_approval_required)
+        self.assertFalse(cycle.owner_approval_given)
+        self.assertFalse(cycle.delivered)
+        self.assertEqual(cycle.invoiced_cents, 0)
+        self.assertIs(self.s.orchestrator.job(cycle.job_id).state,
+                      JobState.AWAITING_OWNER_APPROVAL)
+        self.assertEqual(cycle.quoted_cents, agreed,
+                         "waiting on the owner must not change the price")
+
+    def test_an_unsellable_offer_is_refused_before_a_deposit_is_taken(self):
+        """The order of the checks, measured.
+
+        Raising the owner's minimum out of reach stops the proposal
+        rather than the admission, so the client never pays a deposit
+        for work that cannot be sold to them.
+        """
+        pid = self.agreed()
+        self.s.policy.amend(
+            {"commercial": {"minimum_project_fee_cents": 10_000_000}},
+            OWNER, "the owner raised the floor out of reach")
+
+        result = contracting.propose(self.s, prospect_id=pid, initiator="test")
+
+        self.assertIs(result.refusal, Refused.NOT_SELLABLE)
+        self.assertNotIn(pid, self.s.chief_of_staff.engagements)
+        self.assertEqual(self.s.orchestrator.jobs(), [])
 
 
 # ======================================================================

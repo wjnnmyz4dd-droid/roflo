@@ -301,6 +301,35 @@ class Discovery:
             sources[row["name"]] = source
         return sources
 
+    def attach(self, source: WorkSource) -> bool:
+        """Bind a live source object to a registration that already exists.
+
+        The owner's decision is the **row**: what the source is, what
+        its terms were found to allow, and that automating it is
+        permitted. The object is **code**, rebuilt every time the
+        process starts. :meth:`_rehydrate` can only reconstruct a
+        manual source, because that is the only kind entirely
+        described by its record -- and the rule it states is that
+        "whatever constructs it must register it again".
+
+        Nothing did. The storefront's source is constructed by
+        ``Solvent.__init__`` and was never re-attached, so a
+        restarted installation answered ``unknown source
+        'storefront'`` to every poll and could not run a single
+        inbound order. Found by killing a process mid-job and
+        reopening the database, which is what the rest of that
+        docstring says to do.
+
+        This creates no decision and cannot. It refuses a source with
+        no row, so an unregistered adapter still fails closed and
+        says so; it only puts the code back behind a decision the
+        owner already made. Returns whether it attached.
+        """
+        if self.source_state(source.name) is None:
+            return False
+        self._sources[source.name] = source
+        return True
+
     # ---------------------------------------------------------------- sources
 
     def register_source(self, source: WorkSource, *, owner_identity: str,

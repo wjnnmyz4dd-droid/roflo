@@ -41,7 +41,14 @@ def settle_paid_jobs(solvent, *, initiator: str) -> list[str]:
     for job in solvent.orchestrator.jobs():
         if job.state is not JobState.AWAITING_PAYMENT:
             continue
-        if ledger.collected_for(job.id) <= 0:
+        owed = int((ledger.payment_for(job.id) or {}).get("amount_cents") or 0)
+        collected = ledger.collected_for(job.id)
+        # Fully paid, not merely paid. The Orchestrator refuses a
+        # short payment too -- both checks are deliberate, because
+        # this one decides what is worth asking about and that one is
+        # the rule. Measured before either existed: a client who paid
+        # half closed the job and the rest stopped being chased.
+        if collected <= 0 or (owed and collected < owed):
             continue
         try:
             solvent.orchestrator.complete(job_id=job.id, initiator=initiator)

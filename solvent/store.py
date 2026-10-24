@@ -190,6 +190,12 @@ TABLE_OWNER = {
     # take on more work is not the same as authorising the work it does
     # take, and keeping those apart is why this is a reservation ledger
     # rather than a second gate on everything.
+    # The storefront holds the customer's own record of what they
+    # asked for: the offer, their answers, what they have already
+    # paid, and the status they are shown. It decides nothing -- every
+    # judgement about the work belongs downstream -- but the record
+    # has to outlive the process, and for a long time it did not.
+    "storefront_orders": "storefront",
     "capacity_reservations": "capacity",
     "notifications": "notify",
     "incidents": "resilience",
@@ -267,6 +273,14 @@ CREATE TABLE IF NOT EXISTS payments (
   currency TEXT NOT NULL DEFAULT 'usd', external_ref TEXT NOT NULL DEFAULT '',
   refunded_cents INTEGER NOT NULL DEFAULT 0,
   payout_state TEXT NOT NULL DEFAULT 'NOT_APPLICABLE', payout_verified_at TEXT
+);
+CREATE TABLE IF NOT EXISTS storefront_orders (
+  order_id TEXT PRIMARY KEY, offer_id TEXT NOT NULL, client_ref TEXT NOT NULL,
+  answers TEXT NOT NULL DEFAULT '{}', offered_cents INTEGER NOT NULL DEFAULT 0,
+  prepaid_cents INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL,
+  why TEXT NOT NULL DEFAULT '', opportunity_id TEXT NOT NULL DEFAULT '',
+  missing TEXT NOT NULL DEFAULT '[]', placed_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS billing_obligations (
   job_id TEXT PRIMARY KEY, ts TEXT NOT NULL, amount_cents INTEGER NOT NULL,

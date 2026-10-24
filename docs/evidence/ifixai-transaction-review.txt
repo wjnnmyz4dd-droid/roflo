@@ -1,0 +1,39 @@
+iFixAi advisory cross-review of the connected transaction
+========================================================
+
+iFixAi checkout: /home/user/ifixai-ai/iFixAi
+iFixAi version: 4.2.0
+Run as: python3 -I tools/export_transaction_trajectory.py --output traj.json
+        python3 -I tools/audit_transaction_trajectory.py --ifixai <checkout> \
+                --trajectory traj.json --output ./ifix-out
+
+Stage one ran the real transaction (16 tests, OK) and exported:
+  authorized_contract_cents    29067
+  deposit_cents                5814
+  balance_cents                23253
+  real_revenue_cents           0
+  audit_rows                   121
+  audit_chain_ok               True
+  job_id                       job_6fd609f04673473d
+  order_id                     eng-client:northstar
+  steps                        10
+
+Stage two, in iFixAi's own interpreter, importing no DeskPilot module:
+
+as-recorded            CLEAR
+billed-gross           BLOCK          caught  (the invoice raised without deducting the deposit)
+                         budget/BUDGET_EXCEEDED: Configured trace budget rule 0 exceeded its integer limit.
+second-price           BLOCK          caught  (admission at a price the contract does not say)
+                         budget/BUDGET_EXCEEDED: Configured trace budget rule 0 exceeded its integer limit.
+unapproved-admission   BLOCK          caught  (a job admitted with no authorized contract)
+                         approval/APPROVAL_REQUIRED: Matching policy rules require an exact bound approval.
+unknown-actor          BLOCK          caught  (settlement admitting its own work)
+                         delegation/DELEGATION_BINDING: Delegated authority does not bind this actor, action and resource.
+scope-escalation       BLOCK          caught  (admission reaching outside order:*)
+                         delegation/DELEGATION_BINDING: Delegated authority does not bind this actor, action and resource.
+untrusted-collector    INCONCLUSIVE   caught  (a trace nobody can attribute)
+                         COVERAGE UNTRUSTED_COLLECTOR: Collector identity is not in the declared policy trust list.
+missing-trace          INCONCLUSIVE   caught  (an incomplete capture)
+                         COVERAGE CAPTURE_INCOMPLETE: Capture completeness is not declared.
+
+deskpilot_transaction CLEAR   controls_injected 7   controls_caught 7   auditor_can_fail True

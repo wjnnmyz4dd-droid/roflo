@@ -372,18 +372,27 @@ def _reconcile_invoices(solvent, *, initiator: str) -> list[str]:
         # fabrication this whole exercise is about.
         basis = _agreed_basis(solvent, job.id)
         if basis == "FIXED_PRICE" and int(getattr(job, "quoted_cents", 0)) > 0:
+            # Less whatever the client has already paid toward it. The
+            # obligation the cycle writes is already net of a deposit;
+            # this branch billed the gross, so the same client was
+            # charged 28,515 by one recovery route and 22,812 by the
+            # other. Found by comparing two crash traces.
+            from .contracting import prepaid_for_job
+
+            prepaid = prepaid_for_job(solvent, job.id)
+            due = max(0, int(job.quoted_cents) - prepaid)
             ledger.record_billing_obligation(
-                job_id=job.id, amount_cents=int(job.quoted_cents),
+                job_id=job.id, amount_cents=due,
                 rail=_DEFAULT_RAIL, basis="FIXED_PRICE",
                 client_ref=getattr(job, "client_id", "") or "")
             payment_id = ledger.open_payment(
-                job_id=job.id, amount_cents=int(job.quoted_cents),
-                rail=_DEFAULT_RAIL,
+                job_id=job.id, amount_cents=due, rail=_DEFAULT_RAIL,
                 client_ref=getattr(job, "client_id", "") or "")
             ledger.set_payment_state(payment_id, PaymentState.INVOICED)
             notes.append(
                 f"{job.id} was delivered by recovery and never priced; "
-                f"invoiced {payment_id} at the agreed fixed price")
+                f"invoiced {payment_id} at the agreed fixed price"
+                + (f" less {prepaid} already paid" if prepaid else ""))
             continue
         why = ("delivered, but no billing obligation and no invoice were "
                "recorded, so what the client owes is not on file and only "
@@ -415,7 +424,25 @@ _QUEUED = (JobState.ACCEPTED, JobState.QUALIFYING,
 #: States a crash can strand a job in: work was under way and the process
 #: went away before anything moved it on. None of them is a resting place,
 #: so a job found here after a restart was interrupted.
-_INTERRUPTED = (JobState.EXECUTING, JobState.VERIFYING,
+#:
+#: The first three were the original list and cover a crash during the
+#: work. The last three cover a crash *before* it, which the list
+#: missed: INTAKE, QUALIFYING and ACCEPTED are all passed through
+#: inside a single ``run_business_cycle`` call, so nothing resumes a
+#: job left in one of them either.
+#:
+#: Measured, by killing a process inside ``Capacity.reserve``: the job
+#: stayed in QUALIFYING for ever, its 3,600-second EXECUTE reservation
+#: survived, and ``reconcile`` did nothing at all -- so every crash
+#: during qualification leaked an execution slot and stranded the job
+#: where no watchdog looked. Repeat it a few times and the shop stops
+#: taking work.
+#:
+#: ``AWAITING_OWNER_APPROVAL`` is deliberately **not** here. A job
+#: waiting for a person is waiting, not interrupted, and blocking it
+#: on the owner would be telling them their own decision had crashed.
+_INTERRUPTED = (JobState.INTAKE, JobState.QUALIFYING, JobState.ACCEPTED,
+                JobState.EXECUTING, JobState.VERIFYING,
                 JobState.READY_FOR_DELIVERY)
 
 
@@ -442,8 +469,8 @@ def _reconcile_stranded_jobs(solvent, *, initiator: str) -> list[str]:
     for job in solvent.orchestrator.jobs():
         if job.state not in _INTERRUPTED:
             continue
-        why = (f"found in {job.state.value} after a restart, so it was "
-               "interrupted; the owner decides whether the work resumes")
+        why = (f"found in {job.state.value} with nothing running it, so it "
+               "was interrupted; the owner decides whether the work resumes")
         try:
             solvent.resilience.record_incident(
                 component="runtime", operation="restart-reconciliation",

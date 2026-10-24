@@ -421,6 +421,31 @@ def storefront_terminal():
     return TERMINAL
 
 
+def prepaid_for_job(solvent, job_id: str) -> int:
+    """What the client has already paid toward this job, or ``0``.
+
+    The reverse of :func:`job_for`, through the same records: the
+    opportunity carries the job id and the order id, and the order
+    carries what was paid before the work began. Needed by recovery,
+    which prices a delivery the cycle never got to price and would
+    otherwise bill the whole agreed figure to somebody who had
+    already paid part of it -- the overcharge this codebase repaired,
+    reopened by a crash.
+    """
+    if not job_id:
+        return 0
+    shop = getattr(solvent, "storefront", None)
+    if shop is None:
+        return 0
+    for row in solvent.discovery.opportunities():
+        if str(row.get("job_id") or "") != job_id:
+            continue
+        order = shop.order(str(row.get("external_ref") or ""))
+        if order is not None:
+            return int(getattr(order, "prepaid_cents", 0) or 0)
+    return 0
+
+
 def report_back(solvent, *, prospect_id: str, initiator: str) -> Result:
     """Tell the engagement and the order what the pipeline did.
 

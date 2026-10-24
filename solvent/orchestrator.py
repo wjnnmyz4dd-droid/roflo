@@ -931,6 +931,19 @@ class JobOrchestrator:
                 "verified collected revenue. Expected revenue is not collected "
                 "revenue")
         payment = self._ledger.payment_for(job_id) or {}
+        # Some of it is not all of it. This used to check only that
+        # *something* had arrived, which was true of every caller it
+        # had at the time: the business cycle settles its own
+        # receivable in full. Once a real rail could deliver a part
+        # payment, a client who paid half closed the job, the order
+        # read CLOSED, the customer was told "Complete.", and the
+        # other half stopped being chased.
+        owed = int(payment.get("amount_cents") or 0)
+        if owed and collected < owed:
+            raise FailClosed(
+                f"cannot complete {job_id}: {collected} of {owed} cents has "
+                "been collected. A part payment is not a settled invoice, and "
+                "closing the job would stop the rest being asked for")
         method = payment.get("verification_method", "")
         self._transition(job_id, JobState.COMPLETE,
                          why=f"payment of {collected} cents verified via {method}",

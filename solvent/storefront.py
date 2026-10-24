@@ -40,6 +40,12 @@ from .errors import FailClosed
 from .types import Cents, PrivacyClass
 
 
+def _now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
 class OrderState(Enum):
     """Where a customer's order has got to, in words a customer can read."""
 
@@ -615,11 +621,84 @@ class Storefront:
     authorities that already decide those things.
     """
 
-    def __init__(self, capability=None, policy=None, source=None):
+    def __init__(self, capability=None, policy=None, source=None,
+                 store=None):
         self._capability = capability
         self._policy = policy
         self.source = source if source is not None else StorefrontSource()
-        self._orders: dict[str, Order] = {}
+        #: Written through to ``storefront_orders`` when a store is
+        #: supplied, and held only in memory when one is not.
+        #:
+        #: It was only ever in memory. Every customer order -- what
+        #: they asked for, their answers, what they had already paid,
+        #: and the status they are shown -- vanished when the process
+        #: stopped, while the job, the opportunity and the receivable
+        #: all survived in the database. Found in a crash-recovery
+        #: trace: a reopened shop reported `orders: []` and a live
+        #: job for one of them.
+        #:
+        #: Three things followed. The customer could never be told
+        #: anything again, because nothing could find their order.
+        #: ``prepaid_cents`` went with it, so a job admitted after a
+        #: restart billed the deposit a second time. And the
+        #: duplicate guard in :meth:`place` -- "taking it twice would
+        #: be two jobs for one payment" -- failed *open*, because an
+        #: empty dict says it has never seen the order before.
+        self._db = store.for_authority("storefront") if store else None
+        self._orders: dict[str, Order] = self._restore()
+
+    # ---- durability --------------------------------------------------
+
+    def _restore(self) -> dict:
+        """Everything the database already holds. Empty without one."""
+        if self._db is None:
+            return {}
+        out: dict[str, Order] = {}
+        for row in self._db.query(
+                "SELECT * FROM storefront_orders ORDER BY placed_at"):
+            try:
+                out[row["order_id"]] = Order(
+                    order_id=row["order_id"], offer_id=row["offer_id"],
+                    client_ref=row["client_ref"],
+                    answers=json.loads(row["answers"] or "{}"),
+                    offered_cents=int(row["offered_cents"] or 0),
+                    prepaid_cents=int(row["prepaid_cents"] or 0),
+                    state=OrderState(row["state"]), why=row["why"] or "",
+                    opportunity_id=row["opportunity_id"] or "",
+                    missing=tuple(json.loads(row["missing"] or "[]")))
+            except (ValueError, KeyError, TypeError):
+                # A row that cannot be rebuilt is skipped rather than
+                # guessed at, for the reason the Chief of Staff skips
+                # one: a half-restored order is worse than a missing
+                # one, because the missing one is noticed.
+                continue
+        return out
+
+    def _save(self, order: Order) -> None:
+        """Write one order through. Called on every change, never deferred."""
+        if self._db is None:
+            return
+        stamp = _now()
+        self._db.execute(
+            "INSERT INTO storefront_orders(order_id,offer_id,client_ref,"
+            "answers,offered_cents,prepaid_cents,state,why,opportunity_id,"
+            "missing,placed_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(order_id) DO UPDATE SET answers=excluded.answers, "
+            "offered_cents=excluded.offered_cents, "
+            "prepaid_cents=excluded.prepaid_cents, state=excluded.state, "
+            "why=excluded.why, opportunity_id=excluded.opportunity_id, "
+            "missing=excluded.missing, updated_at=excluded.updated_at",
+            (order.order_id, order.offer_id, order.client_ref,
+             json.dumps(order.answers, sort_keys=True), order.offered_cents,
+             order.prepaid_cents, order.state.value, order.why,
+             order.opportunity_id, json.dumps(list(order.missing)),
+             stamp, stamp))
+        self._db.commit()
+
+    @property
+    def durable(self) -> bool:
+        """Whether orders outlive the process. Said rather than inferred."""
+        return self._db is not None
 
     # ---- what may be advertised at all ------------------------------
 
@@ -684,6 +763,7 @@ class Storefront:
                           offered_cents, int(prepaid_cents),
                           OrderState.DECLINED, why)
             self._orders[order_id] = order
+            self._save(order)
             return order
 
         missing = service.missing_answers(answers)
@@ -693,6 +773,7 @@ class Storefront:
                           OrderState.NEEDS_INFORMATION,
                           "required answers are missing", missing=missing)
             self._orders[order_id] = order
+            self._save(order)
             return order
 
         floor = max(service.minimum_cents, self._minimum_fee())
@@ -702,12 +783,14 @@ class Storefront:
                 int(prepaid_cents), OrderState.DECLINED,
                 f"this service starts at {floor / 100:,.2f}")
             self._orders[order_id] = order
+            self._save(order)
             return order
 
         order = Order(order_id, offer_id, client_ref, dict(answers),
                       offered_cents or floor, int(prepaid_cents),
                       OrderState.RECEIVED)
         self._orders[order_id] = order
+        self._save(order)
         return order
 
     def submit_to_pipeline(self, order_id: str) -> Order:
@@ -735,6 +818,7 @@ class Storefront:
         self.source.enqueue(order)
         order.opportunity_id = f"opp_{order.order_id}"
         order.state = OrderState.IN_QUALIFICATION
+        self._save(order)
         return order
 
     #: Where an order may go from where it is. Forward only, because
@@ -780,6 +864,7 @@ class Storefront:
         order.state = state
         if why:
             order.why = why
+        self._save(order)
         return order
 
     def order(self, order_id: str) -> Order | None:

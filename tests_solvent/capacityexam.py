@@ -87,7 +87,25 @@ from tools.loadsim_solvent import (UNRELIABLE_IF, Simulation,  # noqa: E402
 #: count unchanged. Releasing a determinate reservation rather than an
 #: arbitrary one of two alters no answer this paper asks about -- and
 #: it is the answer being right for a reason rather than by luck.
-FROZEN_AT = "2026-10-23T02:40:00Z"
+#:
+#: RE-SEALED 2026-10-24. ``solvent/store.py`` gained the
+#: ``storefront_orders`` table. Every customer order -- the offer,
+#: their answers, what they had already paid, and the status they are
+#: shown -- lived in a dict on the ``Storefront`` object and nowhere
+#: else, so a restart lost all of it while the job, the opportunity
+#: and the receivable survived. Found in a crash-recovery trace: a
+#: reopened shop reported no orders and a live job for one of them.
+#: Additive, under the owner's connector-repair authorisation, and a
+#: sealed module -- so the seal broke on the next run exactly as it
+#: should.
+#:
+#: Before re-sealing, the TENTH paper was re-sat against the changed
+#: source: 6 questions, 6 passed, 0 failed, and every level's
+#: delivered count identical to the tenth record. A table nothing in
+#: this paper reads changes no answer it asks about. Moving the
+#: freeze moved the seed, so the record below is an eleventh paper
+#: and not a re-mark of the tenth.
+FROZEN_AT = "2026-10-24T22:30:00Z"
 
 #: SHA-256 of each module at the freeze. Changing any of them invalidates
 #: the exam rather than quietly re-marking it.
@@ -99,7 +117,7 @@ DIGESTS = {
     "solvent/revenuemodel.py":
         "2c36183d9ce87c93e029bee036b2490173e47501f607173f56c34faef73a72a3",
     "solvent/store.py":
-        "86e98482e8004747e12fcea576dce54674a2e488a5d2e8944b4a4699737e3258",
+        "2371415801326002bd27dba472e64ca67872106fafbe9a1a42fdee93328206a7",
 }
 
 #: The scoring criteria, fixed before the first run. Identical to the
@@ -465,6 +483,38 @@ commitment(s) attempted and refused. 0 obligation seconds lost
 across any restart.
 """
 
+ELEVENTH_SITTING = """Sat 2026-10-24T22:30:00Z, seed 2860208364.
+
+Six questions, 6 passed, 0 failed. The eleventh sitting, and the
+seventh time the seal has done its job rather than merely held.
+
+Sealed after solvent/store.py gained the storefront_orders table.
+Customer orders were held in a dict on the Storefront object and
+nowhere else, so every restart lost what the client had asked for,
+what they had already paid, and the status they could read -- while
+the job, the opportunity and the receivable all survived in the
+database. Three things followed: the customer could never be told
+anything again, the deposit was billed a second time on a job
+admitted after a restart, and the duplicate-order guard failed OPEN,
+because an empty dict says it has never seen the order before.
+
+The table is additive and reads nothing this paper asks about. Before
+re-sealing, the tenth paper was re-sat against the changed source: 6
+questions, 6 passed, every level's delivered count identical to the
+tenth record. Moving the freeze moved the seed, so this is an
+eleventh paper rather than a re-mark of the tenth.
+
+    level   7, spike+slow_execution                       6 accepted,   6 delivered, peak 0.45
+    level  13, delayed_verification+revisions            11 accepted,  11 delivered, peak 0.9
+    level  37, failed_submissions+outage                 22 accepted,  22 delivered, peak 0.88
+    level  71, spike+payment_delays                      12 accepted,  12 delivered, peak 0.875
+    level 149, slow_execution+revisions                  30 accepted,  30 delivered, peak 0.688
+    level 307, delayed_verification+failed_submissions   81 accepted,  81 delivered, peak 0.787
+
+Every accepted job was delivered at every level, no duplicate
+commitment was admitted, and nothing was lost across a restart.
+"""
+
 SITTINGS = {
     "2026-10-14T14:13:25Z": FIRST_SITTING,
     "2026-10-14T14:31:21Z": SECOND_SITTING,
@@ -476,6 +526,7 @@ SITTINGS = {
     "2026-10-18T16:40:00Z": EIGHTH_SITTING,
     "2026-10-21T18:20:00Z": NINTH_SITTING,
     "2026-10-23T02:40:00Z": TENTH_SITTING,
+    "2026-10-24T22:30:00Z": ELEVENTH_SITTING,
 }
 
 

@@ -209,7 +209,8 @@ class Solvent:
         # not registered here -- registering a work source is an owner
         # act with a recorded determination, and doing it at construction
         # would be this process granting itself a channel.
-        self.storefront = Storefront(self.capability, self.policy)
+        self.storefront = Storefront(self.capability, self.policy,
+                                     store=self.store)
         # The business-management layer. Built here for the same
         # reason the storefront is: a Chief of Staff that nothing
         # constructs is a manager nobody employs, which is the exact
@@ -231,6 +232,15 @@ class Solvent:
             memory=self.memory)
         self.discovery = Discovery(self.store, self.audit, self.policy,
                                    self.gate, capability=self.capability)
+        # Put the storefront's source back behind the registration the
+        # owner already made. Discovery holds live source *objects* in
+        # memory and only rebuilds manual ones from the database, so
+        # without this a restarted installation answered "unknown
+        # source 'storefront'" to every poll and could not run a
+        # single inbound order -- an owner act undone by a restart.
+        # `attach` refuses a source with no row, so this registers
+        # nothing on a shop where the owner has not decided yet.
+        self.discovery.attach(self.storefront.source)
         # Prepares applications; cannot send one. Not an authority -- it owns no
         # table and holds no permission, and every refusal it gives comes from
         # asking the authority that already had the answer.

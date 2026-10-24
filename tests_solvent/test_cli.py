@@ -285,6 +285,22 @@ class NoCommandSellsWork(unittest.TestCase):
              #   * approval   -- the two owner decisions it needs both default
              #     to off, so the unflagged command stops at the first one.
              "cycle",
+             # `client` records an enquiry the owner received and typed
+             # in: a CRM prospect, their evidence, their contact, their
+             # standing and one discovery row, all local writes.
+             # Reviewed for external effect before being listed:
+             #   * it contacts nobody. The contact details it stores are
+             #     an address to hold, not an address to write to, and
+             #     writing to one still goes through the suppression
+             #     list and the Action Gate like every other outbound;
+             #   * it refuses anybody `solvent.policy.is_owner` does not
+             #     recognise, so it is an owner's record and not a
+             #     stranger's;
+             #   * the standing it sets is REPLIED, which makes the
+             #     prospect eligible for `dealmaking`. Opening a
+             #     negotiation records a price; it sends nothing, which
+             #     `test_dealmaking.ItSendsNothing` holds it to.
+             "client",
              "web-password"},
             "a new subcommand was added without reviewing it for external effect",
         )

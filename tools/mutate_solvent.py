@@ -2760,6 +2760,84 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- the door into the relationship layer ------------------------
+
+    Mutant(
+        "a-client-is-recorded-without-the-owner-saying-so",
+        "solvent/clientintake.py",
+        "    if not solvent.policy.is_owner(owner_identity):",
+        "    if False:",
+        "tests_solvent.test_clientintake.WhatTheOwnerHasNotSaid"
+        ".test_only_the_owner_may_enter_a_client",
+        "anybody who can call this can put a contactable person in the "
+        "CRM, which is the first step of an outreach path"),
+
+    Mutant(
+        "an-opted-out-client-is-recorded-again",
+        "solvent/clientintake.py",
+        "        if existing.standing is Standing.OPTED_OUT:",
+        "        if False:",
+        "tests_solvent.test_clientintake.WhatTheOwnerHasNotSaid"
+        ".test_somebody_who_opted_out_stays_opted_out",
+        "somebody who asked not to be contacted is quietly re-entered "
+        "and priced, which is the one thing an opt-out must prevent"),
+
+    Mutant(
+        "a-client-is-recorded-for-work-the-shop-cannot-do",
+        "solvent/clientintake.py",
+        "    permitted, why = solvent.capability.may_deploy(wants)\n"
+        "    if not permitted:",
+        "    permitted, why = solvent.capability.may_deploy(wants)\n"
+        "    if False:",
+        "tests_solvent.test_clientintake.WhatTheOwnerHasNotSaid"
+        ".test_a_skill_the_shop_does_not_sell_is_refused_before_recording",
+        "a real person's address is held for work that cannot be "
+        "delivered, and the only future that record has is a refusal"),
+
+    Mutant(
+        "an-enquiry-is-recorded-with-nothing-in-it",
+        "solvent/clientintake.py",
+        "    if missing:",
+        "    if False:",
+        "tests_solvent.test_clientintake.WhatTheOwnerHasNotSaid"
+        ".test_every_missing_detail_is_named",
+        "a prospect with no company, no contact and no date is written "
+        "into the CRM, where it can never be used and never be trusted"),
+
+    Mutant(
+        "dealmaking-prices-a-rejected-opportunity",
+        "solvent/dealmaking.py",
+        "    for status in (OpportunityStatus.ACCEPTED, "
+        "OpportunityStatus.DISCOVERED):",
+        "    for status in (None,):",
+        "tests_solvent.test_clientintake.AndThenTheyGetAPrice"
+        ".test_a_rejected_opportunity_is_still_not_priced",
+        "every opportunity is priced whatever its status, including "
+        "ones qualification has already turned down"),
+
+    # ---- some of it is not all of it ---------------------------------
+
+    Mutant(
+        "a-part-payment-closes-the-job",
+        "solvent/orchestrator.py",
+        "        if owed and collected < owed:",
+        "        if False:",
+        "tests_solvent.test_money_pathologies.WhenTheyPay"
+        ".test_the_orchestrator_refuses_a_part_payment_when_asked_directly",
+        "a client who pays half has their job closed and their order "
+        "marked Complete, and the other half stops being asked for"),
+
+    Mutant(
+        "settlement-offers-a-part-paid-job-for-closing",
+        "solvent/settlement.py",
+        "        if collected <= 0 or (owed and collected < owed):",
+        "        if collected <= 0:",
+        "tests_solvent.test_money_pathologies.WhenTheyPay"
+        ".test_the_sweep_does_not_even_offer_a_part_paid_job",
+        "every part payment is pushed at the Orchestrator on every "
+        "tick, leaning the whole guarantee on one check and filling "
+        "the audit log with refusals"),
+
     # ---- a deposit is money, and the invoice knows it ----------------
 
     Mutant(
@@ -2812,7 +2890,8 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "a-paid-job-is-never-closed",
         "solvent/settlement.py",
-        "        if ledger.collected_for(job.id) <= 0:\n            continue",
+        "        if collected <= 0 or (owed and collected < owed):\n"
+        "            continue",
         "        if True:\n            continue",
         "tests_solvent.test_payments_tick.TheJobCloses.test_a_paid_job_is_closed",
         "the payment is recorded and the job stays awaiting it, so "
@@ -2822,7 +2901,7 @@ MUTANTS: tuple[Mutant, ...] = (
     Mutant(
         "an-unpaid-job-is-closed-anyway",
         "solvent/settlement.py",
-        "        if ledger.collected_for(job.id) <= 0:",
+        "        if collected <= 0 or (owed and collected < owed):",
         "        if False:",
         "tests_solvent.test_payments_tick.TheJobCloses"
         ".test_an_unpaid_job_is_not_closed",

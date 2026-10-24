@@ -1,0 +1,180 @@
+RECOVERY TRACES
+===============
+
+========== KILLED AT: contract-acceptance ==========
+rc: -9
+stdout: 
+BEFORE jobs        : []
+BEFORE engagements : [('client:northstar', 'ACCEPTED', 0)]
+BEFORE orders      : []
+BEFORE receivables : []
+BEFORE reservations: [] owed 0
+BEFORE real revenue: 0
+notes: []
+settle: []
+AFTER  jobs        : []
+AFTER  engagements : [('client:northstar', 'ACCEPTED', 0)]
+AFTER  orders      : []
+AFTER  receivables : []
+AFTER  reservations: [] owed 0
+AFTER  real revenue: 0
+
+========== KILLED AT: job-admission ==========
+rc: -9
+stdout: CONTRACTED 28515
+BEFORE jobs        : []
+BEFORE engagements : [('client:northstar', 'DEPOSIT_RECEIVED', 5703)]
+BEFORE orders      : [('eng-client:northstar', 'RECEIVED')]
+BEFORE receivables : []
+BEFORE reservations: [] owed 0
+BEFORE real revenue: 0
+notes: []
+settle: []
+AFTER  jobs        : []
+AFTER  engagements : [('client:northstar', 'DEPOSIT_RECEIVED', 5703)]
+AFTER  orders      : [('eng-client:northstar', 'RECEIVED')]
+AFTER  receivables : []
+AFTER  reservations: [] owed 0
+AFTER  real revenue: 0
+
+========== KILLED AT: capacity-reservation ==========
+rc: -9
+stdout: CONTRACTED 28515
+ADMIT NONE order eng-client:northstar placed with the storefront
+BEFORE jobs        : [('job_d1b9ecb5', 'QUALIFYING')]
+BEFORE engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+BEFORE orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+BEFORE receivables : []
+BEFORE reservations: [('job_d1b9ecb5', 'EXECUTE')] owed 3600.0
+BEFORE real revenue: 0
+notes: ['job_d1b9ecb5d40c4435 was stranded in QUALIFYING; blocked on the owner']
+settle: []
+AFTER  jobs        : [('job_d1b9ecb5', 'BLOCKED')]
+AFTER  engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+AFTER  orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+AFTER  receivables : []
+AFTER  reservations: [('job_d1b9ecb5', 'EXECUTE')] owed 3600.0
+AFTER  real revenue: 0
+
+========== KILLED AT: execution ==========
+rc: -9
+stdout: CONTRACTED 28515
+ADMIT NONE order eng-client:northstar placed with the storefront
+BEFORE jobs        : [('job_5c3a0f41', 'AWAITING_PAYMENT')]
+BEFORE engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+BEFORE orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+BEFORE receivables : []
+BEFORE reservations: [('job_5c3a0f41', 'EXECUTE')] owed 3600.0
+BEFORE real revenue: 0
+notes: ['job_5c3a0f41b0314821 was delivered by recovery and never priced; invoiced pay_eb5f7885bb384f5b at the agreed fixed price less 5703 already paid', 'released 1 slot(s) held by job_5c3a0f41b0314821, which is AWAITING_PAYMENT']
+settle: []
+AFTER  jobs        : [('job_5c3a0f41', 'AWAITING_PAYMENT')]
+AFTER  engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+AFTER  orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+AFTER  receivables : [('job_5c3a0f41', 22812, 0)]
+AFTER  reservations: [] owed 0
+AFTER  real revenue: 0
+
+========== KILLED AT: quality-verification ==========
+rc: -9
+stdout: CONTRACTED 28515
+ADMIT NONE order eng-client:northstar placed with the storefront
+BEFORE jobs        : [('job_b0dbbe30', 'READY_FOR_DELIVERY')]
+BEFORE engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+BEFORE orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+BEFORE receivables : []
+BEFORE reservations: [('job_b0dbbe30', 'EXECUTE')] owed 3600.0
+BEFORE real revenue: 0
+notes: ['job_b0dbbe303385423c was stranded in READY_FOR_DELIVERY; blocked on the owner']
+settle: []
+AFTER  jobs        : [('job_b0dbbe30', 'BLOCKED')]
+AFTER  engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+AFTER  orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+AFTER  receivables : []
+AFTER  reservations: [('job_b0dbbe30', 'EXECUTE')] owed 3600.0
+AFTER  real revenue: 0
+
+========== KILLED AT: invoice-creation ==========
+rc: -9
+stdout: CONTRACTED 28515
+ADMIT NONE order eng-client:northstar placed with the storefront
+BEFORE jobs        : [('job_d8b618f3', 'AWAITING_PAYMENT')]
+BEFORE engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+BEFORE orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+BEFORE receivables : []
+BEFORE reservations: [('job_d8b618f3', 'EXECUTE')] owed 3600.0
+BEFORE real revenue: 0
+notes: ['job_d8b618f3d6c84c4c was delivered and unbilled; invoice pay_9ef2c0a174ca432d written from the recorded obligation', 'released 1 slot(s) held by job_d8b618f3d6c84c4c, which is AWAITING_PAYMENT']
+settle: []
+AFTER  jobs        : [('job_d8b618f3', 'AWAITING_PAYMENT')]
+AFTER  engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+AFTER  orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+AFTER  receivables : [('job_d8b618f3', 22812, 0)]
+AFTER  reservations: [] owed 0
+AFTER  real revenue: 0
+
+========== KILLED AT: payment-receipt ==========
+rc: -9
+stdout: CONTRACTED 28515
+ADMIT NONE order eng-client:northstar placed with the storefront
+CYCLE payment job_ad28711b56074066
+BEFORE jobs        : [('job_ad28711b', 'AWAITING_PAYMENT')]
+BEFORE engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+BEFORE orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+BEFORE receivables : [('job_ad28711b', 22812, 0)]
+BEFORE reservations: [('job_ad28711b', 'EXECUTE')] owed 3600.0
+BEFORE real revenue: 0
+notes: ['released 1 slot(s) held by job_ad28711b56074066, which is AWAITING_PAYMENT']
+settle: []
+AFTER  jobs        : [('job_ad28711b', 'AWAITING_PAYMENT')]
+AFTER  engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+AFTER  orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+AFTER  receivables : [('job_ad28711b', 22812, 0)]
+AFTER  reservations: [] owed 0
+AFTER  real revenue: 0
+
+========== KILLED AT: settlement-reconciliation ==========
+rc: -9
+stdout: CONTRACTED 28515
+ADMIT NONE order eng-client:northstar placed with the storefront
+CYCLE payment job_62f915027ad54183
+BEFORE jobs        : [('job_62f91502', 'AWAITING_PAYMENT')]
+BEFORE engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+BEFORE orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+BEFORE receivables : [('job_62f91502', 22812, 22812)]
+BEFORE reservations: [] owed 0
+BEFORE real revenue: 0
+notes: ['job_62f915027ad54183 closed; the Ledger verified payment']
+settle: []
+AFTER  jobs        : [('job_62f91502', 'COMPLETE')]
+AFTER  engagements : [('client:northstar', 'WORK_AUTHORISED', 5703)]
+AFTER  orders      : [('eng-client:northstar', 'IN_QUALIFICATION')]
+AFTER  receivables : [('job_62f91502', 22812, 22812)]
+AFTER  reservations: [] owed 0
+AFTER  real revenue: 0
+
+CASES
+=====
+
+PASS  ItDiesWhereWeAskedIt::test_every_point_is_actually_reachable
+      1 passed, 8 subtests passed in 50.03s
+PASS  NothingIsLostOrDuplicated::test_capacity_reservation
+      1 passed in 6.56s
+PASS  NothingIsLostOrDuplicated::test_contract_acceptance
+      1 passed in 6.56s
+PASS  NothingIsLostOrDuplicated::test_execution
+      1 passed in 6.42s
+PASS  NothingIsLostOrDuplicated::test_invoice_creation
+      1 passed in 6.25s
+PASS  NothingIsLostOrDuplicated::test_job_admission
+      1 passed in 6.71s
+PASS  NothingIsLostOrDuplicated::test_payment_receipt
+      1 passed in 6.72s
+PASS  NothingIsLostOrDuplicated::test_quality_verification
+      1 passed in 6.61s
+PASS  NothingIsLostOrDuplicated::test_settlement_reconciliation
+      1 passed in 6.55s
+PASS  ItFinishesAfterwards::test_a_contract_interrupted_at_admission_still_completes
+      1 passed in 7.07s
+
+10/10 cases passed in their own interpreter

@@ -1,0 +1,38 @@
+K-LEAN advisory review: NOT RUN, and why
+========================================
+
+Checkout: /home/user/calinfaja/k-lean
+
+1. The README's first line is "Archived - here lies K-LEAN (2026)".
+   Archived is not by itself a reason not to run it; the code still
+   runs. The reason is below.
+
+2. K-LEAN's review capability is multi-model consensus. Every review
+   entry point in src/klean/reviews.py -- run_quick_review,
+   run_consensus_review, run_second_opinion -- reaches a LiteLLM
+   proxy:
+
+       LITELLM_URL = "http://localhost:4000"
+       import httpx
+
+   and that proxy fronts OpenAI, Gemini, DeepSeek and Moonshot.
+
+3. Two things make that impossible here, independently:
+
+   a. No proxy is running and no provider API key exists in this
+      environment.
+   b. solvent/egress.py installs a PEP 578 audit hook that denies
+      socket.connect, getaddrinfo, gethostbyname, sendto and bind
+      process-wide and irreversibly. A DeskPilot process cannot make
+      the call even if a key appeared.
+
+4. The part of K-LEAN that does work offline is its knowledge
+   database -- /kln:learn, /kln:remember, /kln:find, with local
+   embeddings. That is a note store, not a reviewer. Running it
+   would produce no advisory finding about this repair.
+
+So K-LEAN's capabilities do not genuinely apply to this assignment,
+and no K-LEAN verdict is claimed anywhere in the report. An earlier
+K-LEAN finding is honoured in solvent/audit.py (redaction applied at
+the write rather than at each caller); that is a past finding being
+kept, not an execution in this session.

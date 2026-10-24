@@ -71,7 +71,16 @@ def pay(spool, *, job_id: str, amount_cents: int, event_id: str,
         "livemode": False,
         "data": {"object": {
             "id": f"pi_{event_id}",
-            "amount_received": int(amount_cents),
+            # The field a real provider uses for this event type.
+            # ``_interpret`` reads `amount_received` first for every
+            # kind, so one field would work -- and a fixture that
+            # does not look like the thing it stands in for stops
+            # being evidence about the thing it stands in for.
+            **({"amount_refunded": int(amount_cents)}
+               if kind == "charge.refunded"
+               else {"amount": int(amount_cents)}
+               if kind.startswith("charge.dispute")
+               else {"amount_received": int(amount_cents)}),
             "currency": currency,
             "status": "succeeded",
             "metadata": {rail_module.JOB_METADATA_KEY: job_id},
@@ -85,6 +94,20 @@ def pay(spool, *, job_id: str, amount_cents: int, event_id: str,
     path = spool / f"{event_id}{rail_module.DELIVERY_SUFFIX}"
     rail_module.write_delivery(path, headers, body)
     return path
+
+
+def refund(spool, *, job_id: str, amount_cents: int, event_id: str,
+           **kw) -> pathlib.Path:
+    """The provider says money went back to the client."""
+    return pay(spool, job_id=job_id, amount_cents=amount_cents,
+               event_id=event_id, kind="charge.refunded", **kw)
+
+
+def dispute(spool, *, job_id: str, amount_cents: int, event_id: str,
+            **kw) -> pathlib.Path:
+    """The client has charged back. The money is withdrawn pending outcome."""
+    return pay(spool, job_id=job_id, amount_cents=amount_cents,
+               event_id=event_id, kind="charge.dispute.created", **kw)
 
 
 def tamper(spool, *, job_id: str, amount_cents: int, event_id: str) -> pathlib.Path:

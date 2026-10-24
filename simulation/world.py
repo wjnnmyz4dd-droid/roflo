@@ -13,26 +13,24 @@ deposit is ``Engagement.record_payment`` with a verified event; a
 file is ``Engagement.supply``. There is no back door and nothing here
 sets a state DeskPilot owns.
 
-**Two acts have no production counterpart, and both are marked.**
-:meth:`World._the_outside_world` wraps them, and the name is
-deliberately greppable:
+**Every act now has a production counterpart, and the counter that
+says so is still here.** :meth:`World._the_outside_world` wraps an
+act DeskPilot has no path for and counts it, and a run currently
+reports zero. Two acts used to need it:
 
-* **Putting a prospect in the CRM.** ``CRM.discover`` has no caller
-  anywhere in ``solvent/``, and no CLI command or web route reaches
-  it. The relationship layer -- CRM, negotiation, engagement, three
-  scheduled tasks -- sits behind a door the product cannot open. In
-  reality a person does it, or a prospecting run does, and
-  DeskPilot's prospecting module says of itself that it is
-  EXPERIMENTAL and deliberately not wired into commercial operation.
+* **Putting a prospect in the CRM.** ``CRM.discover`` had no caller
+  anywhere in ``solvent/`` -- no task, no command, no route -- so the
+  whole relationship layer sat behind a door the product could not
+  open. ``clientintake.record_enquiry`` is that door, and ``solvent
+  client add`` is how a person uses it.
 * **Accepting an opportunity.** ``OpportunityStatus.ACCEPTED`` is set
-  only by ``qualification.select``, which also mints a job and
-  applies the Governor's verdict; for a negotiated enquiry there is
-  nothing to execute that job, and a probe confirms such a job is
-  invisible to supervision for as long as you care to wait.
+  only by ``qualification.select``, which also mints a job; requiring
+  it before a price meant requiring a commitment before the quote.
+  ``dealmaking.candidates`` now counts DISCOVERED as well.
 
-Those two are the simulation standing in for the world, not DeskPilot
-working. A report that counted them as DeskPilot's would be claiming
-an integration that does not exist.
+The counter stays because the claim is worth re-checking on every
+run: a report that counted the simulation's own work as DeskPilot's
+would be claiming an integration that does not exist.
 
 **No message is ever sent.** A client "replying" here means their
 standing moves to REPLIED, which is what DeskPilot would record on
@@ -46,8 +44,7 @@ import pathlib
 from dataclasses import dataclass, field
 
 from solvent import contracting
-from solvent.crm import Basis, Contact, Evidence, Standing
-from solvent.discovery import OpportunityStatus
+from solvent.clientintake import record_enquiry
 from solvent.engagement import Acceptance, Stage
 from solvent.errors import FailClosed
 from solvent.negotiation import Outcome
@@ -197,60 +194,43 @@ class World:
                          f"{offer.offer_id} at {customer.budget_cents}c")
 
     def _write_in(self, customer, day):
-        """The relationship door, and the two gaps it runs into.
+        """The relationship door, through the production entry point.
 
-        A client emails asking for a price. DeskPilot has nowhere to
-        put that: no inbound channel creates a CRM prospect, and no
-        route produces an ACCEPTED opportunity without also minting a
-        job. Both are done here and both are marked.
+        A client emails asking for a price and the owner types in
+        what they said. That is one call --
+        ``clientintake.record_enquiry``, which the CLI exposes as
+        ``solvent client add`` -- and it is production code deciding
+        every refusal.
+
+        This used to be the simulation writing six records by hand
+        and setting an opportunity to ACCEPTED, marked as two acts
+        with no production counterpart. Both are now real: the door
+        exists, and ``dealmaking`` no longer insists on a status that
+        only a job commitment could produce.
+
+        What the owner types is what the client told them. Nothing
+        here is inferred, and the simulation is the client speaking,
+        not DeskPilot deciding.
         """
-        crm = self.solvent.crm
-        # The id the CRM hands back, not the one asked for. It
-        # deduplicates on (company, state) and returns the company it
-        # already holds, so taking the asked-for id on trust raised
-        # "no prospect" the first time two fictional clients happened
-        # to share a name.
-        held = crm.discover(prospect_id=customer.prospect_id,
-                            company=customer.company,
-                            industry=customer.industry, state=customer.state)
-        if held.prospect_id != customer.prospect_id:
-            return self._could_not(
-                customer, day.index, "write in asking for a price",
-                f"the CRM already holds {held.company} in {customer.state} as "
-                f"{held.prospect_id}")
-        crm.add_evidence(customer.prospect_id, Evidence(
-            claim=f"they asked for a price for {customer.wants}",
-            basis=Basis.CLIENT_STATED, source=FICTIONAL,
-            seen_on=day.date.isoformat()))
-        crm.add_contact(customer.prospect_id, Contact(
-            name="Ops", email=customer.email, role="operations",
-            source=FICTIONAL, seen_on=day.date.isoformat()))
-        crm.advance(customer.prospect_id, Standing.QUALIFIED,
-                    "they named a skill DeskPilot sells")
-        crm.advance(customer.prospect_id, Standing.CONTACTED,
-                    "we answered their enquiry")
-        crm.advance(customer.prospect_id, Standing.REPLIED,
-                    "they asked what it would cost")
-
-        self.solvent.discovery.insert(
-            "inbox", owner_identity=self.owner_identity(), postings=[{
-                "ref": f"enq-{customer.customer_id}",
-                "title": f"{customer.wants} for {customer.company}",
-                "quoted_cents": customer.budget_cents,
-                "needs": [customer.wants],
-                "client_ref": customer.prospect_id,
-                "project_state": customer.state,
-                "client_state": customer.state,
-                "body": FICTIONAL}])
-        row = next((r for r in self.solvent.discovery.opportunities()
-                    if r.get("client_ref") == customer.prospect_id), None)
-        if row is not None:
-            self.solvent.discovery.set_status(str(row["id"]),
-                                              OpportunityStatus.ACCEPTED)
-        return self._the_outside_world(
-            customer, day.index, "write in asking for a price",
-            "CRM.discover and OpportunityStatus.ACCEPTED have no production "
-            "caller; the simulation stands in for the world here")
+        recorded = record_enquiry(
+            self.solvent,
+            prospect_id=customer.prospect_id,
+            company=customer.company,
+            industry=customer.industry,
+            state=customer.state,
+            contact_name="Ops",
+            contact_email=customer.email,
+            wants=customer.wants,
+            budget_cents=customer.budget_cents,
+            seen_on=day.date.isoformat(),
+            owner_identity=self.owner_identity(),
+            initiator="simulation")
+        if not recorded.done:
+            return self._could_not(customer, day.index,
+                                   "write in asking for a price",
+                                   recorded.why[:160])
+        return self._did(customer, day.index, "write in asking for a price",
+                         recorded.why)
 
     def owner_identity(self) -> str:
         from solvent.workorder import owner_identity_of
