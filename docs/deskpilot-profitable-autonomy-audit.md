@@ -2,7 +2,8 @@
 
 An evidence-first audit. Nothing here was rebuilt; the question was
 what remains unproven. Every figure below was measured during this
-audit against commit `723039b` unless it says otherwise.
+audit against commit `723039b`, then re-verified against `dc8acc4`
+(see "Re-verification" below), unless it says otherwise.
 
 **The short answer.** The machinery is in much better shape than the
 business model. DeskPilot recovers from crashes, refuses duplicate
@@ -17,7 +18,7 @@ is a gap in the code.
 
 | | |
 |---|---|
-| Commit | `723039b` |
+| Commit | `723039b`; re-verified at `dc8acc4` |
 | Branch | `claude/solvent-architecture-audit-8ot9et` |
 | Working tree | clean |
 
@@ -26,13 +27,32 @@ forward:
 
 | Claim | Measured now | Verdict |
 |---|---|---|
-| 5,383 regression tests passing | **5,499 passed, 0 failed, 50 skipped, 10,926 subtests** (5,549 collected) | superseded upward |
+| 5,383 regression tests passing | **5,508 passed, 0 failed, 50 skipped, 10,985 subtests** at `dc8acc4` (5,499 when first measured at `723039b`) | superseded upward |
 | 234 mutations killed | **234/234 solvent, 203/203 installer**, 0 survived | confirmed, and the installer battery was not in the claim |
+| — | **+1 ad-hoc mutant** on the Phase 6 mechanism, killed by 4 tests | added during re-verification |
 | 110 Chief of Staff certification tests | **111 collected, 110 passed, 1 skipped** | accurate — see the skip below |
 | Thirteen interruption recovery points | 10 tests, **13 subtests**, all passing | confirmed |
 | A genuine process termination test | **exists, and does not run in the suite** | see Defect 3 |
 | Five-industry end-to-end simulations | `TheEightClients` A–H, `AcquisitionAcrossTheFive` | confirmed, simulated |
 | Persistent CRM and contract recovery | `InterruptedAtEveryStage`, durable `_Book` | confirmed |
+
+### Re-verification at `dc8acc4`
+
+The audit's own standard — *historical figures are claims until checked
+against artifacts* — applies to this document. Re-run on the current
+tree rather than carried forward:
+
+| Claim in this report | Re-checked | Result |
+|---|---|---|
+| Regression green | full suite at `dc8acc4` | **5,508 passed, 0 failed, 50 skipped, 10,985 subtests**, 636s |
+| Worked example arithmetic | live `Costs` | total $157.00, contribution **$43.00**, pre-repair belief **$98.00** — exact |
+| Portfolio loss control | live `Ledger` + `metrics` | +$400 at 40% → **−$200 at −20%** — exact |
+| No production negotiation producer | `grep` over `solvent/` | **0** `Negotiation(` outside `negotiation_from_dict`; **0** `negotiations[`; **0** in the CLI |
+| Windows green | CI run 37 | all four jobs success on `dc8acc4` |
+
+Three figures in the first pass were stale and are corrected above:
+the regression count (5,499 → 5,508), the Windows run (35 → 37) and
+the mutation total (one more mutant, described in Phase 6).
 
 ### Evidence matrix
 
@@ -211,6 +231,27 @@ counts operating spend attached to no job, against **real** collected
 revenue only. Simulated money is excluded by name. A delivered,
 unpaid job contributes cost and no revenue. **PROVEN.**
 
+**Re-verified by mutation, not by repeating the measurement.** The
+figures above are a one-off observation, and an observation says the
+mechanism works today, not that it will survive an edit. So the
+mechanism was broken on purpose — `costs = ledger.total_costs_cents()`
+replaced by a per-job sum, which is exactly the regression the method's
+own docstring warns against — and the full suite re-run. **Four tests
+failed**, three of them in `test_master_holdout.SeamsInTheMoney`
+(`test_operating_spend_with_no_job_is_counted`,
+`test_it_still_reports_no_margin`, `test_a_credit_reduces_the_total`)
+and one in `test_business_simulations`. The guard is real and it is
+load-bearing. Restored; 5,508 green again.
+
+This one is worth recording because the audit expected the opposite.
+Searching the tests for `total_costs_cents` finds only a fault-injection
+stub, and every cost test in `test_metrics.py` attaches a `job_id` —
+which reads like an unguarded control, the pattern this programme has
+found seven times. It is not one. The guard asserts through
+`metrics().actual_costs` rather than naming the method, so it is
+invisible to a grep for the method and visible to a mutant. A subset
+search was again the wrong instrument; the mutant was the right one.
+
 Two gaps remain. `fixed_monthly_overhead_cents` is read only by the
 advisory `revenuemodel`, so the dashboard figure is contribution, not
 net operating profit. And nothing yet records acquisition spend, so
@@ -335,7 +376,7 @@ gap is the in-flight question.
 | "DeskPilot is profitable" | arithmetic correct; portfolio loss detected | floor was blind to 35% of the worked cost stack; every settlement rate zero by default | **UNPROVEN** | price and deliver one job with all six cost lines populated |
 | "DeskPilot can acquire clients" | suppression, consent, qualification all real and durable | nothing has ever been sent; steps 6 and 10 absent | **UNPROVEN** | one real outreach, owner-sent, under supervision |
 | "DeskPilot can negotiate" | eight client behaviours A–H against production arithmetic | every negotiation in the repository was opened by a test | **SIMULATED** | one negotiation opened by production code |
-| "DeskPilot completes work reliably" | 5,499 tests; five skills through the real path; 0.000 error rate | delivery measured under a blocker since resolved | **HIGH** | re-measure on an installed tree |
+| "DeskPilot completes work reliably" | 5,508 tests; five skills through the real path; 0.000 error rate | delivery measured under a blocker since resolved | **HIGH** | re-measure on an installed tree |
 | "DeskPilot recovers from crashes" | 13 interruption subtests; 12/12 on Windows; real SIGKILL | the SIGKILL case does not run in the suite | **HIGH** | run it in its own interpreter in CI |
 | "DeskPilot is ready for deployment" | Windows green; installer tested | no customer, no revenue, no negotiation producer | **NOT READY** | — |
 
@@ -394,7 +435,13 @@ that single fact.
 
 ## Phase 16 — Windows status
 
-Separate workstream, current as of run 35 on `c0a429d`:
+Separate workstream, current as of **run 37 on `dc8acc4`** — all four
+jobs green on the tree this audit describes, including the cost-floor
+repair. The detailed per-step figures below are run 35's on `c0a429d`,
+which is the run whose artefacts were read; run 37 re-ran the same four
+jobs green, built `DeskPilot-Setup.exe` on the 3.11 job, and skipped
+the "failing files" step in both suites, which is the step that only
+runs when something failed.
 
 | | |
 |---|---|
