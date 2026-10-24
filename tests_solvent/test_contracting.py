@@ -416,6 +416,28 @@ class NoWorkWithoutMoneyAndMaterials(Contracted):
 # ======================================================================
 
 
+class TheDiscoveryTickNamesWhatIsLive(Contracted):
+    """On a Solvent that actually has a live source.
+
+    ``test_runtime`` covers the no-source and fixture-source cases on
+    a bare rig. This covers the one that matters: a source that **is**
+    a live route to paid work must be reported as one, and the broken
+    filter reported it as nothing at all.
+    """
+
+    def test_a_live_source_is_named(self):
+        report = self.s.discovery.source_report()
+        live = [r["name"] for r in report if r["suitability"] == "ACTIVE"]
+        self.assertEqual(live, ["storefront"],
+                         "the fixture has no live source, so this test "
+                         "could not tell a working filter from a broken one")
+
+        said = self.runtime()._tick_discovery()
+
+        self.assertEqual(said, "1 live source(s): storefront")
+        self.assertNotIn("no live work source", said)
+
+
 class TheSchedulerCarriesTheDeal(Contracted):
 
     def contracts(self, runtime) -> str:

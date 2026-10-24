@@ -958,6 +958,41 @@ class Runtime:
         nothing read it -- ``pressure()["relief"]`` was advice with
         no audience, which is the same as no advice. This is the
         audience.
+
+        **This tick does not poll, and that is a gap, not a design.**
+        It reports which sources are live and stops. Two things make
+        the obvious wiring wrong rather than merely missing:
+
+        * ``Discovery.poll`` returns only candidates it has not seen
+          before, and ``run_business_cycle`` polls the source itself
+          at its ``discover`` stage. A tick that polled first would
+          consume the postings and leave every later cycle stopping
+          at "discover" with "returned no opportunities".
+        * Reaching ACCEPTED means ``qualification.select``, which
+          mints a job and applies the Governor's verdict. A job
+          created here with nothing to execute it sits in ACCEPTED
+          holding a capacity slot -- a stranded job, manufactured on
+          a schedule.
+
+        So found work still enters through the business cycle, which
+        polls, qualifies and selects as one transaction. What is
+        genuinely missing is an unattended route for work found on a
+        board rather than ordered through the storefront, and it is
+        missing for a real reason: a board posting carries no client
+        materials, so there is nothing to run it on. The outbound
+        route therefore goes board -> CRM -> negotiation ->
+        engagement -> the client sends their file -> order, which is
+        what ``solvent.contracting`` now joins up.
+
+        The filter here used to read ``readiness == "PERMITTED"``.
+        No member of ``discovery.Readiness`` has that value -- the
+        nine are RESEARCH_REQUIRED through PRODUCTION_READY -- so the
+        comparison was false for every source that could ever exist,
+        and this tick answered "no permitted work source" on every
+        run of every deployment, including one whose source was
+        PRODUCTION_READY. It now asks ``source_report``, which is the
+        authority that already answers "is this a live route to paid
+        work", rather than mirroring an enum in a string literal.
         """
         state, why = health(self.solvent, started=self.started)
         if not state.may_start_work:
@@ -972,11 +1007,19 @@ class Runtime:
             # apart from a broken one.
             return ("skipped: backing off under pressure — "
                     + "; ".join(shed))
-        sources = self.solvent.discovery.sources()
-        permitted = [s for s in sources if s.get("readiness") == "PERMITTED"]
-        if not permitted:
-            return "skipped: no permitted work source"
-        return f"{len(permitted)} permitted source(s) available"
+        report = self.solvent.discovery.source_report()
+        live = [row for row in report if row["suitability"] == "ACTIVE"]
+        if not live:
+            # Names them and says what each is waiting on. "No
+            # permitted work source" was the old answer, and it was
+            # the *only* answer this line could ever give -- see the
+            # docstring. An owner who has registered a source and
+            # cannot see why it is idle is owed the reason.
+            blocked = ", ".join(f"{row['name']} {row['suitability']}"
+                                for row in report) or "none registered"
+            return f"no live work source: {blocked}"
+        return (f"{len(live)} live source(s): "
+                + ", ".join(row["name"] for row in live))
 
     def _shed(self) -> list:
         """What the capacity gate says to stop doing, in order.

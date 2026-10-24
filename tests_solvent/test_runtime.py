@@ -419,8 +419,33 @@ class Scheduling(unittest.TestCase):
         self.solvent.policy.set_operating_mode(OperatingMode.HALT, OWNER, "test")
         self.assertIn("skipped", self.runtime._tick_discovery())
 
-    def test_discovery_skips_when_no_source_is_permitted(self):
-        self.assertIn("skipped", self.runtime._tick_discovery())
+    def test_discovery_says_which_sources_are_idle_and_why(self):
+        """It used to say "skipped: no permitted work source" always.
+
+        The filter compared ``readiness`` to the string ``"PERMITTED"``,
+        which no member of ``Readiness`` has, so an owner with a
+        PRODUCTION_READY source read the same sentence as an owner
+        with none at all. The two must now be told apart, and the
+        reason must be named.
+        """
+        from solvent.discovery import Compliance, FixtureSource, Readiness
+
+        said = self.runtime._tick_discovery()
+        self.assertIn("none registered", said)
+
+        self.solvent.discovery.register_source(
+            FixtureSource("board", []), owner_identity=OWNER,
+            readiness=Readiness.PERMITTED_AUTOMATION,
+            compliance=Compliance.PERMITTED,
+            determination="an in-process board")
+
+        said = self.runtime._tick_discovery()
+        self.assertNotIn("none registered", said)
+        self.assertIn("board", said)
+        # A fixture is not a live route to paid work, and the line
+        # says which of the two it is rather than lumping both under
+        # one word.
+        self.assertIn("FIXTURE", said)
 
 
 class TheDefaultTasksCanActuallyBeRegistered(unittest.TestCase):

@@ -2760,6 +2760,19 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- the discovery tick tells the truth about its sources --------
+
+    Mutant(
+        "the-discovery-tick-cannot-tell-an-idle-source-from-none",
+        "solvent/runtime.py",
+        '        live = [row for row in report if row["suitability"] == "ACTIVE"]',
+        '        live = [row for row in report if row["suitability"] == "PERMITTED"]',
+        "tests_solvent.test_contracting.TheDiscoveryTickNamesWhatIsLive"
+        ".test_a_live_source_is_named",
+        "the tick compares against a verdict nothing returns, so an "
+        "owner with a PRODUCTION_READY source reads the same sentence "
+        "as an owner with no source at all"),
+
     # ---- the simulated calendar the long runs rest on ----------------
     # Not production code, but a ninety-day figure is only worth what
     # the clock behind it is worth, so the two invariants that make it
