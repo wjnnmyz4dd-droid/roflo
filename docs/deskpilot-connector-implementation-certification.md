@@ -412,7 +412,7 @@ with the permission model it claims — not that the world agreed.
 | 90-day simulation | **COMPLETE** |
 | Simulated net profit | **$2,902 over 90 days = $32.24/day; 4.4% of days ≥ $200** |
 | Real-world profitability | **UNPROVEN until field testing** |
-| Windows | **PASS**, after a regression of mine — see below |
+| Windows | **PASS** — run 41 on `8b4a732`, four jobs green, after a regression of mine |
 | Live pilot | **NOT READY** |
 
 ### Why LIVE PILOT is still NOT READY
@@ -481,6 +481,34 @@ actually ran — and the check reads that. Verified locally against a
 real runtime: `TASKS 11 · COS True · RAN 11 · ALL_RAN True`.
 `NoCheckPinsAHandWrittenCount` in `tests_solvent/test_windows_checkers.py`
 fails if a literal task count ever reappears in that file.
+
+**Run 41 on `8b4a732`: all four jobs green.** Confirmed, not assumed:
+
+| Job | Result |
+|---|---|
+| Install on Windows (3.11) | success — including the step that failed, and `DeskPilot-Setup.exe` built |
+| Install on Windows (3.13) | success |
+| Suite on Windows (3.11) | success |
+| Suite on Windows (3.13) | success |
+
+The "failing files on their own" step was skipped on both suites,
+which is the step that runs only when something failed. Named
+sub-suites on 3.13: five-skill library 46 passed / 149 subtests;
+production path 44 passed; business lifecycle and Chief of Staff
+certification 119 passed, 1 skipped, 102 subtests.
+
+**The connector is registered on real Windows.** The installed
+runtime reports its task list as
+
+```
+heartbeat · health · reconciliation · discovery · diagnostics
+owner_intents · owner_briefing · supervision · dealmaking
+business · chief_of_staff
+```
+
+and the business tick correctly refuses with *"continuous operation is
+not enabled"*, which is the owner's opt-in holding on Windows exactly
+as it does on Linux.
 
 **The three previously named blockers stand**: WAL sidecars are not
 re-hardened after a runtime restart, the `.exe` is compiled and never
