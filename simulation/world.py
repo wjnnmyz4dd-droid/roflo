@@ -87,6 +87,14 @@ class World:
     #: than hidden, so a report can state the figure instead of a
     #: reader having to take the docstring on trust.
     unbacked_acts: int = 0
+    #: The day a client first saw something, keyed by
+    #: ``(customer_id, what)``. Kept here rather than read off the
+    #: engagement's own history, because that history is stamped with
+    #: the **real** wall clock -- ``engagement._now()`` is
+    #: ``datetime.now``, and in a run dated January it would put every
+    #: transition months in the future. A client knows when they got
+    #: their invoice; this is that knowledge.
+    noticed: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.workroot = pathlib.Path(self.workroot)
@@ -114,6 +122,12 @@ class World:
 
     def _draw(self, customer, day: int, act: str):
         return self.population.stream(customer.customer_id, day, act)
+
+    def _since(self, customer, day: int, what: str) -> int:
+        """Working days since the client first saw ``what``, recording it."""
+        key = (customer.customer_id, what)
+        first = self.noticed.setdefault(key, day)
+        return day - first
 
     # ---- the day -------------------------------------------------------
 
@@ -324,8 +338,8 @@ class World:
                 # Nobody has asked them for it yet. The ask is
                 # DeskPilot's move, and the client waits for it.
                 deal.request_deposit()
-            signed = _day_of(deal.acceptance.accepted_on, day)
-            if day.index - signed < customer.temperament.deposit_takes_days:
+            if self._since(customer, day.index, "asked for a deposit") \
+                    < customer.temperament.deposit_takes_days:
                 continue
             deal.record_payment({
                 "verified": True, "cents": deal.deposit_due_cents,
@@ -357,21 +371,43 @@ class World:
     # ---- 7. revisions ------------------------------------------------------
 
     def _ask_for_changes(self, day) -> list:
+        """Send a complaint through the production intake.
+
+        ``ClientRelations.handle`` is the real door: it receives the
+        text as untrusted content, classifies it, investigates it
+        against the committed requirements and the delivered
+        artifact, and drafts a reply. Nothing here decides whether
+        the client is right -- that is the point of the module.
+
+        Asked once per job. A client who complains every day is a
+        different simulation.
+        """
         out = []
         chief = getattr(self.solvent, "chief_of_staff", None)
-        if chief is None:
+        relations = getattr(self.solvent, "relations", None)
+        if chief is None or relations is None:
             return out
         for customer in self.population.active(day.index):
             deal = chief.engagements.get(customer.prospect_id)
-            if deal is None or deal.stage is not Stage.DELIVERED:
+            if deal is None or deal.stage not in (Stage.DELIVERED,
+                                                  Stage.INVOICED):
                 continue
-            if customer.history and customer.history[-1]["what"] == "ask for changes":
+            key = (customer.customer_id, f"complained-{customer.settled}")
+            if key in self.noticed:
                 continue
             if self._draw(customer, day.index, "revision").random() \
                     >= customer.temperament.asks_for_changes:
                 continue
-            out.append(self._did(customer, day.index, "ask for changes",
-                                 "the delivery did not match what they meant"))
+            job_id = _job_of(self.solvent, f"eng-{customer.prospect_id}")
+            if not job_id:
+                continue
+            self.noticed[key] = day.index
+            handled = relations.handle(
+                job_id=job_id, source=customer.email,
+                body="This is not what we asked for. Please look at it again.")
+            out.append(self._did(
+                customer, day.index, "ask for changes",
+                getattr(handled, "classification", "") or "complaint received"))
         return out
 
     # ---- 8. settling -------------------------------------------------------
@@ -385,8 +421,8 @@ class World:
             deal = chief.engagements.get(customer.prospect_id)
             if deal is None or deal.stage is not Stage.INVOICED:
                 continue
-            invoiced = _stage_day(deal, Stage.INVOICED, day)
-            if day.index - invoiced < customer.temperament.balance_takes_days:
+            if self._since(customer, day.index, "was invoiced") \
+                    < customer.temperament.balance_takes_days:
                 continue
             deal.record_payment({
                 "verified": True, "cents": deal.outstanding_cents,
@@ -436,35 +472,11 @@ def _offer_for(capability: str):
     return found[0]
 
 
-def _day_of(iso_date: str, day) -> int:
-    """The day index an ISO date falls on, relative to this run."""
-    import datetime
+def _job_of(solvent, order_id: str) -> str:
+    """The job the pipeline ran for this order.
 
-    try:
-        then = datetime.date.fromisoformat(iso_date)
-    except (TypeError, ValueError):
-        return day.index
-    return day.index - (day.date - then).days
-
-
-def _stage_day(engagement, stage, day) -> int:
-    """When the engagement last entered ``stage``, as a day index.
-
-    Read from the engagement's own history rather than tracked beside
-    it, for the reason the Clock computes its date from its seconds:
-    two records of one fact drift. ``_now`` is a wall-clock ISO
-    stamp, so only the date part is used and a stage entered today
-    reads as today.
+    Asks ``contracting.job_for``, which already follows the order ->
+    opportunity -> job link through the records. A second copy of
+    that walk here would be a second thing to drift.
     """
-    import datetime
-
-    for note in reversed(engagement.history):
-        if note.get("what") != "stage" or not str(
-                note.get("detail", "")).startswith(stage.value):
-            continue
-        try:
-            then = datetime.datetime.fromisoformat(note["at"]).date()
-        except (TypeError, ValueError, KeyError):
-            return day.index
-        return day.index - (day.date - then).days
-    return day.index
+    return contracting.job_for(solvent, order_id)

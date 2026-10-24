@@ -326,9 +326,9 @@ def _reconcile_invoices(solvent, *, initiator: str) -> list[str]:
     if ledger is None:
         return notes
 
-    delivered = {event.get("job_id") for event in solvent.audit.events()
-                 if event.get("event") == "delivery.completed"
-                 and event.get("job_id")}
+    delivered = {event.get("job_id")
+                 for event in solvent.audit.named(("delivery.completed",))
+                 if event.get("job_id")}
 
     for obligation in ledger.unbilled_obligations():
         job_id = obligation["job_id"]
@@ -535,7 +535,17 @@ def health(solvent, *, started: Startup | None = None) -> tuple[Health, str]:
     if started is not None and not started.safe_to_run:
         return Health.NOT_READY, "; ".join(c.name for c in started.fatal)
 
-    intact, detail = solvent.audit.verify_chain()
+    # `verify_tail`, not `verify_chain`. The first call in a process
+    # re-derives the whole chain, as a startup check should; later
+    # ones check only what has been appended since. This function is
+    # called by four scheduled tasks, and the full derivation is
+    # linear in the age of the installation -- measured at 12ms for a
+    # thousand rows and 719ms for fifty thousand -- so asking for it
+    # every time meant a three-month-old shop spending the larger
+    # part of every minute re-hashing its own history. `diagnostics`
+    # still runs the full check on its own cadence; see
+    # `AuditLog.verify_tail` for exactly what each one catches.
+    intact, detail = solvent.audit.verify_tail()
     if not intact:
         return Health.DEGRADED, f"audit chain: {detail}"
 
@@ -1582,10 +1592,16 @@ class Runtime:
         :data:`BUSINESS_LEASE_SECONDS` is treated as abandoned -- and
         saying so in the log beats a silent takeover.
         """
-        for event in reversed(self.solvent.audit.events()):
+        # Asked of the database, not of the whole log. This used to
+        # read `audit.events()`, which is every row the installation
+        # has ever written, build a dict for each, and scan backwards
+        # for the newest lease event. Two scheduled tasks take the
+        # lease on every pass, so the cost of finding out who holds
+        # it grew with the age of the shop: measured at 13ms a call
+        # after four simulated days and still climbing.
+        for event in self.solvent.audit.latest(
+                (BUSINESS_LEASE_TAKEN, BUSINESS_LEASE_RELEASED), limit=1):
             name = event.get("event")
-            if name not in (BUSINESS_LEASE_TAKEN, BUSINESS_LEASE_RELEASED):
-                continue
             if name == BUSINESS_LEASE_RELEASED:
                 return ""
             age = _age_seconds(event.get("ts"))

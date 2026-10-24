@@ -149,8 +149,8 @@ def business_metrics(*, orchestrator, ledger, governor, audit, discovery=None,
         if samples else f"K={calibration:.2f} (bootstrap; no verified samples)")
 
     metrics.verification_failures = sum(
-        1 for e in audit.events() if e["event"] == "verification.recorded"
-        and e["result"] == "FAIL")
+        1 for e in audit.named(("verification.recorded",))
+        if e["result"] == "FAIL")
     if memory is not None:
         metrics.lessons_learned = len(memory.recall())
 

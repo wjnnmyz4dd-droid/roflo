@@ -173,10 +173,25 @@ def _checked(name, category, response_on_failure=OBSERVE):
 class Diagnostics:
     """Reads every authority. Commands none of them."""
 
+    #: Rows that may be appended before the audit chain is re-derived
+    #: from GENESIS again. Counted in rows rather than in seconds so
+    #: the policy is the same on a busy shop and a quiet one, and so
+    #: it does not depend on a clock -- a simulated run advances days
+    #: in milliseconds and a time-based throttle would skip almost
+    #: every full check in it.
+    FULL_AUDIT_CHECK_EVERY_ROWS = 5_000
+
     def __init__(self, solvent, *, started_at: float | None = None) -> None:
         self._s = solvent
         self._db = solvent.store.for_authority("diagnostics")
         self._started_at = started_at if started_at is not None else time.time()
+        #: The sequence number the last full re-derivation reached,
+        #: or ``None`` if this process has not done one. ``None``
+        #: rather than a number, so the first check is always a full
+        #: one however short the log is -- a startup check that a
+        #: quiet installation skips is a startup check that never
+        #: runs.
+        self._last_full_seq: int | None = None
 
     # --------------------------------------------------------------- the run
 
@@ -237,7 +252,37 @@ class Diagnostics:
 
     @_checked("Audit chain", "evidence", HALT_REQUIRED)
     def audit_chain(self) -> Finding:
-        ok, detail = self._s.audit.verify_chain()
+        """Re-derive the chain, fully now and then and at the tail between.
+
+        The full derivation is linear in the age of the installation:
+        12ms at a thousand rows and 719ms at fifty thousand, measured
+        on this machine. Running it on every diagnostics pass made
+        the cost of the check grow with the square of how long the
+        shop had been open -- so an installation was penalised for
+        staying in business, on a host it shares with somebody's
+        trading terminal.
+
+        So the full check runs on the first pass and then every
+        :data:`FULL_AUDIT_CHECK_EVERY_ROWS` rows, and the passes
+        between verify what has been appended since the last look.
+        A tail check catches every badly-formed append and any
+        tampering at the end of the log; an edit to an older row is
+        caught by the next full pass, which is bounded above by that
+        many rows rather than by a clock.
+        """
+        top = self._s.audit.top_seq()
+        if (self._last_full_seq is None
+                or top - self._last_full_seq
+                >= self.FULL_AUDIT_CHECK_EVERY_ROWS):
+            ok, detail = self._s.audit.verify_chain()
+            if ok:
+                self._last_full_seq = top
+                detail = f"{detail} (all {top} row(s) re-derived)"
+        else:
+            ok, detail = self._s.audit.verify_tail()
+            if ok:
+                detail = (f"{detail} (tail only; the last full check "
+                          f"reached row {self._last_full_seq})")
         if not ok:
             return Finding(
                 "Audit chain", FAILED,
@@ -341,7 +386,8 @@ class Diagnostics:
         """
         last_failed = last_ok = -1
         reason = ""
-        for event in self._s.audit.events():
+        for event in self._s.audit.named(
+                ("incident.record_failed", "resilience.incident")):
             name = event.get("event")
             if name == "incident.record_failed":
                 last_failed = max(last_failed, int(event.get("seq") or 0))
@@ -615,7 +661,9 @@ class Diagnostics:
             "database_path": path,
             "database_bytes": database_bytes,
             "wal_bytes": wal_bytes,
-            "audit_events": len(self._s.audit.events()),
+            # Counted in the database. This read the whole log and
+            # built a dict per row in order to call len() on it.
+            "audit_events": self._s.audit.count(),
         }
 
 

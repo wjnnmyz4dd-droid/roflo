@@ -2211,8 +2211,7 @@ def prune_processed_intents(
     # point is that this stays cheap enough to run on every cycle.
     recorded = {
         str(event.get("input_ref") or "")
-        for event in s.audit.events()
-        if event.get("event") == "owner.intent_processed"
+        for event in s.audit.named(("owner.intent_processed",))
     }
 
     removed = reclaimed = kept = failed = 0

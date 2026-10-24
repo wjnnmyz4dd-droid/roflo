@@ -164,13 +164,72 @@ class ItReportsWhatIsActuallyTrue(unittest.TestCase):
 
     def test_a_broken_audit_chain_asks_for_a_halt(self):
         class Broken:
+            def top_seq(self):
+                return 4
+
             def verify_chain(self):
+                return False, "seq 4: content hash mismatch"
+
+            def verify_tail(self):
                 return False, "seq 4: content hash mismatch"
 
         self.s.audit = Broken()
         finding = diag.Diagnostics(self.s).audit_chain()
         self.assertEqual(finding.state, diag.FAILED)
         self.assertEqual(finding.response, diag.HALT_REQUIRED)
+
+    def test_the_first_check_re_derives_every_row(self):
+        """And later ones do not, until enough has been appended.
+
+        The full derivation is linear in the age of the log and the
+        diagnostics pass runs on a timer, so doing it every time made
+        the cost grow with the square of the run. Both the "it is
+        still done" and the "it is not done every time" halves are
+        asserted here, because each without the other is a check that
+        passes for the wrong reason.
+        """
+        asked = []
+
+        class Counting:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def top_seq(self):
+                return self._inner.top_seq()
+
+            def verify_chain(self, **kw):
+                asked.append("full")
+                return self._inner.verify_chain(**kw)
+
+            def verify_tail(self):
+                asked.append("tail")
+                return self._inner.verify_tail()
+
+        self.s.audit = Counting(self.s.audit)
+        checker = diag.Diagnostics(self.s)
+
+        first = checker.audit_chain()
+        second = checker.audit_chain()
+        third = checker.audit_chain()
+
+        self.assertEqual(asked, ["full", "tail", "tail"])
+        self.assertEqual(first.state, diag.HEALTHY)
+        self.assertIn("re-derived", first.detail)
+        self.assertEqual(second.state, diag.HEALTHY)
+        self.assertIn("tail only", second.detail)
+        self.assertEqual(third.state, diag.HEALTHY)
+
+    def test_a_full_check_comes_round_again_after_enough_rows(self):
+        checker = diag.Diagnostics(self.s)
+        checker.FULL_AUDIT_CHECK_EVERY_ROWS = 5
+        self.assertIn("re-derived", checker.audit_chain().detail)
+        self.assertIn("tail only", checker.audit_chain().detail)
+
+        for _ in range(6):
+            self.s.audit.record(event="probe", authority="test",
+                                initiator="test", why="appending rows")
+
+        self.assertIn("re-derived", checker.audit_chain().detail)
 
     def test_payment_ingress_says_it_is_not_needed_for_a_first_trial(self):
         """A first supervised job does not collect money, and reporting the

@@ -51,6 +51,13 @@ class AuditLog:
         #: module. It is consulted, never commanded: this module refuses on a
         #: no, and has no way to change a certification.
         self._verifier_trust = None
+        #: How far :meth:`verify_tail` has checked, and the hash it
+        #: ended on. In memory and per process on purpose: a
+        #: checkpoint written to the database would be a row an
+        #: attacker editing the log could edit too, which would turn
+        #: the integrity check into a check of its own bookmark.
+        self._checked_seq = 0
+        self._checked_hash = GENESIS
 
     def trust_verifiers_via(self, registry) -> None:
         """Wire the certification authority. Composition-root only.
@@ -148,10 +155,21 @@ class AuditLog:
             params = (job_id,)
         return [dict(r) for r in self._db.query(sql + " ORDER BY seq", params)]
 
-    def verify_chain(self) -> tuple[bool, str]:
-        """Recompute the chain. Returns ``(ok, detail)``."""
-        prev = GENESIS
-        for row in self._db.query("SELECT * FROM audit_log ORDER BY seq"):
+    def verify_chain(self, *, after_seq: int = 0,
+                     prev_hash: str = GENESIS) -> tuple[bool, str]:
+        """Recompute the chain. Returns ``(ok, detail)``.
+
+        With no arguments this re-derives every row from GENESIS,
+        which is the full check and what a report should quote.
+        ``after_seq`` and ``prev_hash`` together let a caller verify
+        only the rows appended after a point it has already
+        checked -- see :meth:`verify_tail`, which is the only thing
+        that should pass them.
+        """
+        prev = prev_hash
+        rows = self._db.query(
+            "SELECT * FROM audit_log WHERE seq > ? ORDER BY seq", (after_seq,))
+        for row in rows:
             body = {
                 "ts": row["ts"], "event": row["event"], "authority": row["authority"],
                 "initiator": row["initiator"], "job_id": row["job_id"], "why": row["why"],
@@ -170,7 +188,104 @@ class AuditLog:
             if row["hash"] != expect:
                 return False, f"seq {row['seq']}: content hash mismatch"
             prev = row["hash"]
+        self._checked_seq = max(
+            self._checked_seq,
+            int(rows[-1]["seq"]) if rows else after_seq)
+        if rows:
+            self._checked_hash = prev
+        elif after_seq == 0:
+            self._checked_hash = GENESIS
         return True, "chain intact"
+
+    def top_seq(self) -> int:
+        """The highest sequence number in the log, or ``0``."""
+        rows = self._db.query("SELECT MAX(seq) AS top FROM audit_log")
+        return int((rows[0]["top"] if rows else 0) or 0)
+
+    def count(self, events=None) -> int:
+        """How many rows the log holds, or how many of these events."""
+        if events is None:
+            rows = self._db.query("SELECT COUNT(*) AS n FROM audit_log")
+            return int((rows[0]["n"] if rows else 0) or 0)
+        names = [str(e) for e in events]
+        if not names:
+            return 0
+        holes = ",".join("?" for _ in names)
+        rows = self._db.query(
+            f"SELECT COUNT(*) AS n FROM audit_log WHERE event IN ({holes})",
+            tuple(names))
+        return int((rows[0]["n"] if rows else 0) or 0)
+
+    def named(self, events) -> list[dict]:
+        """Every row with one of these event names, oldest first.
+
+        The filter belongs in the query. Every caller of
+        :meth:`events` that wanted one kind of row was loading the
+        whole log and a dict per row to find it, which is linear in
+        the age of the installation on paths that run every tick.
+        """
+        names = [str(e) for e in events]
+        if not names:
+            return []
+        holes = ",".join("?" for _ in names)
+        return [dict(r) for r in self._db.query(
+            f"SELECT * FROM audit_log WHERE event IN ({holes}) ORDER BY seq",
+            tuple(names))]
+
+    def latest(self, events, *, limit: int = 1) -> list[dict]:
+        """The most recent rows with one of these event names, newest first.
+
+        A narrow query, because the alternative is what the business
+        lease used to do: load every row the installation has ever
+        written into Python dicts and scan backwards for the one it
+        wanted. That is linear in the age of the shop, on a code path
+        taken twice per scheduler pass.
+        """
+        names = [str(e) for e in events]
+        if not names or limit < 1:
+            return []
+        holes = ",".join("?" for _ in names)
+        return [dict(r) for r in self._db.query(
+            f"SELECT * FROM audit_log WHERE event IN ({holes}) "
+            "ORDER BY seq DESC LIMIT ?", (*names, int(limit)))]
+
+    def verify_tail(self) -> tuple[bool, str]:
+        """Verify what has been appended since this process last looked.
+
+        The chain is append-only, so re-deriving all of it on every
+        ask is work that grows with the age of the installation.
+        Measured on this machine: 12ms at a thousand rows, 719ms at
+        fifty thousand, and linear in between. ``runtime.health``
+        asked for the full derivation, and four scheduled tasks ask
+        ``health``, so a shop that had been running for three months
+        spent the larger part of every minute re-hashing its own
+        history -- on a host it shares with somebody's trading
+        terminal.
+
+        So the first call in a process does the full derivation, as a
+        startup check should, and later calls verify only the new
+        rows from the hash the last one ended on.
+
+        **What this catches and what it does not.** It catches every
+        badly-formed append and any tampering at the tail, which is
+        where a running process writes. It does **not** catch an
+        edit to a row this process already verified; only a full
+        :meth:`verify_chain` does, and ``diagnostics`` keeps running
+        one on its own cadence, as does the next restart. That is a
+        real reduction in detection latency for one attack, traded
+        for a check that does not get slower every day it runs, and
+        it is written down here rather than left for somebody to
+        discover from a profile.
+        """
+        top = self.top_seq()
+        if top < self._checked_seq:
+            # Rows have gone. Nothing legitimate removes one.
+            missing = self._checked_seq - top
+            self._checked_seq, self._checked_hash = 0, GENESIS
+            return False, (f"{missing} row(s) that were verified are no "
+                           "longer in the log")
+        return self.verify_chain(after_seq=self._checked_seq,
+                                 prev_hash=self._checked_hash)
 
     # ------------------------------------------------------------ evidence
 

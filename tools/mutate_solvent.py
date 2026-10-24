@@ -2760,6 +2760,52 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- verifying the chain without re-verifying all of it ----------
+
+    Mutant(
+        "the-tail-check-trusts-the-tail-it-has-not-seen",
+        "solvent/audit.py",
+        "        return self.verify_chain(after_seq=self._checked_seq,\n"
+        "                                 prev_hash=self._checked_hash)",
+        "        return True, \"chain intact\"",
+        "tests_solvent.test_audit.TheTailCheck.test_a_tampered_tail_is_caught",
+        "the integrity check stops checking anything after the first "
+        "call, so a rewritten row at the end of the log reads as a "
+        "healthy chain for as long as the process runs"),
+
+    Mutant(
+        "a-shortened-log-reads-as-an-intact-one",
+        "solvent/audit.py",
+        "        if top < self._checked_seq:",
+        "        if False:",
+        "tests_solvent.test_audit.TheTailCheck.test_rows_disappearing_is_caught",
+        "rows can be deleted from the audit log and the next check "
+        "reports it intact, because it only ever looks forwards"),
+
+    Mutant(
+        "a-fresh-process-trusts-the-log-it-found",
+        "solvent/audit.py",
+        "        self._checked_seq = 0\n        self._checked_hash = GENESIS",
+        "        self._checked_seq = 1 << 62\n        self._checked_hash = GENESIS",
+        "tests_solvent.test_audit.TheTailCheck"
+        ".test_the_first_call_in_a_process_derives_everything",
+        "a process starting against a tampered log verifies nothing "
+        "and reports health, which is the one moment the full "
+        "derivation exists to cover"),
+
+    Mutant(
+        "diagnostics-stops-re-deriving-the-chain-at-all",
+        "solvent/diagnostics.py",
+        "        if (self._last_full_seq is None\n"
+        "                or top - self._last_full_seq\n"
+        "                >= self.FULL_AUDIT_CHECK_EVERY_ROWS):",
+        "        if False:",
+        "tests_solvent.test_diagnostics.ItReportsWhatIsActuallyTrue"
+        ".test_the_first_check_re_derives_every_row",
+        "nothing ever re-derives the chain from GENESIS again, so an "
+        "edit to an old row is never caught by anything while the "
+        "process lives"),
+
     # ---- the pipeline's result comes back ----------------------------
 
     Mutant(
