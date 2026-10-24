@@ -468,6 +468,36 @@ def _reconcile_capacity(solvent, *, initiator: str) -> list[str]:
 
     Only settled jobs are touched. A job still owed work keeps its slot,
     and this never looks at an invoice: the debt outlives the slot.
+
+    **The rule is "the work is finished", not "the money arrived".**
+    A slot comes back when the job is terminal, or when it has been
+    delivered and not reopened -- COMPLETE or AWAITING_PAYMENT.
+    REVISION_REQUESTED is delivered too and deliberately keeps its
+    slot, because a client asking for changes owes labour again.
+
+    Note what is *not* used here: ``OCCUPIES_CAPACITY``. That set
+    answers a different question -- which jobs count against the
+    shop-wide committed total -- and it excludes INTAKE and QUALIFYING
+    as well as the delivered states. Releasing on "not in that set"
+    reads correctly and is wrong: it hands back the slot of a job that
+    has only just arrived and is still heading for execution. A test
+    that reserves against an INTAKE job caught it immediately.
+
+    This used to release only terminal and COMPLETE jobs, which left
+    AWAITING_PAYMENT holding an execution slot until a verified payment
+    arrived. Measured consequence: five delivered jobs held five
+    reservations and 18,000 owed seconds that reconciliation would not
+    give back, and with no invoice issuable the shop seized for good
+    after (3 x pipelines) jobs. One client who never paid could stop
+    the whole business.
+
+    Releasing the slot is a statement about *capacity* and nothing else.
+    The money stays owed: the invoice, the payment row and the audit
+    trail are untouched, the budget grant is not revoked, and the
+    Governor's ``max_committed_unverified_cents`` still counts the job
+    against unpaid exposure -- which is the control that bounds
+    unpaid work, and the right one, because it is denominated in money
+    rather than in worker-seconds.
     """
     notes: list[str] = []
     capacity = getattr(solvent, "capacity", None)
@@ -484,9 +514,12 @@ def _reconcile_capacity(solvent, *, initiator: str) -> list[str]:
             capacity.release_job(job_id, why="no such job at reconciliation")
             notes.append(f"released a slot held by unknown job {job_id}")
             continue
-        if job.state.is_terminal or job.state is JobState.COMPLETE:
+        finished = job.state.is_terminal or (
+            job.state.is_delivered
+            and job.state is not JobState.REVISION_REQUESTED)
+        if finished:
             released = capacity.release_job(
-                job_id, why=f"job is {job.state.value} at reconciliation")
+                job_id, why=f"job is {job.state.value} and owes no work")
             if released:
                 notes.append(f"released {released} slot(s) held by "
                              f"{job_id}, which is {job.state.value}")

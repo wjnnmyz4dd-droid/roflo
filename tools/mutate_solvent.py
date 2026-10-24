@@ -2734,6 +2734,32 @@ MUTANTS: tuple[Mutant, ...] = (
     # cost lines did not survive a restart and the recomputed floor came
     # back lower than the one the deal was opened under.
 
+    # ---- execution capacity is about work, not money ----------------
+
+    Mutant(
+        "capacity-is-never-returned-after-delivery",
+        "solvent/runtime.py",
+        "        finished = job.state.is_terminal or (\n"
+        "            job.state.is_delivered\n"
+        "            and job.state is not JobState.REVISION_REQUESTED)",
+        "        finished = job.state.is_terminal",
+        "tests_solvent.test_capacity_and_contracting"
+        ".ExecutionCapacityTracksWorkNotMoney"
+        ".test_a_delivered_job_releases_its_execution_slot",
+        "a delivered job holds its execution slot until somebody pays, so "
+        "one client who never pays freezes the shop for good"),
+
+    Mutant(
+        "capacity-is-taken-back-from-work-still-owed",
+        "solvent/runtime.py",
+        "            and job.state is not JobState.REVISION_REQUESTED)",
+        "            and job.state is not None)",
+        "tests_solvent.test_capacity_and_contracting"
+        ".ExecutionCapacityTracksWorkNotMoney"
+        ".test_work_still_owed_keeps_its_slot",
+        "a client who asked for changes loses the slot the revision needs, "
+        "so re-opened work competes for capacity it already held"),
+
     Mutant(
         "dealmaking-opens-a-second-deal-with-the-same-client",
         "solvent/dealmaking.py",
