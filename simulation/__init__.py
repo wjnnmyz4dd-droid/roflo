@@ -9,7 +9,11 @@ deliberately does not have and should not have:
 * a **fictional customer population** with persistent identity, budget,
   behaviour and history (:mod:`simulation.customers`);
 * a **deterministic business calendar** that advances simulated days
-  without waiting for real ones (:mod:`simulation.calendar`).
+  without waiting for real ones (:mod:`simulation.calendar`). It
+  drives the production scheduler rather than replacing it: the
+  cadences in ``runtime.DEFAULT_INTERVALS`` are the ones that apply,
+  and the calendar chooses only how finely the clock is sampled
+  between them.
 
 The division of authority is deliberate and is the whole reason this
 package is separate:

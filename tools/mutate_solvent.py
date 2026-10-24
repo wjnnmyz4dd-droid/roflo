@@ -2760,6 +2760,34 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- the simulated calendar the long runs rest on ----------------
+    # Not production code, but a ninety-day figure is only worth what
+    # the clock behind it is worth, so the two invariants that make it
+    # measurable are mutated like anything else.
+
+    Mutant(
+        "a-simulated-day-drifts-when-the-step-does-not-divide-it",
+        "simulation/calendar.py",
+        "            closes_at = opened_at + SECONDS_PER_DAY\n"
+        "            if clock.seconds < closes_at:\n"
+        "                clock.advance(closes_at - clock.seconds)",
+        "            closes_at = opened_at + SECONDS_PER_DAY",
+        "tests_solvent.test_simulation_calendar.ItDrivesTheProductionScheduler"
+        ".test_each_day_begins_and_ends_on_the_hour_it_should",
+        "every day is short by the remainder of the step, so a "
+        "ninety-day run ends days early and the per-day figures are "
+        "divided by the wrong number"),
+
+    Mutant(
+        "the-determinism-guard-stops-looking-at-imports",
+        "simulation/calendar.py",
+        "    return (FORBIDDEN_CALLS & used) | (FORBIDDEN_IMPORTS & imported)",
+        "    return FORBIDDEN_CALLS & used",
+        "tests_solvent.test_simulation_calendar.ItIsDeterministic"
+        ".test_the_guard_catches_a_module_that_does",
+        "the calendar could import random or time and the guard that "
+        "certifies it deterministic would still pass"),
+
     # ---- the run says what it did -----------------------------------
 
     Mutant(
