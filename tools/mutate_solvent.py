@@ -2760,6 +2760,67 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- money arriving reaches the books and closes the job ---------
+
+    Mutant(
+        "nothing-drains-the-payment-spool",
+        "solvent/runtime.py",
+        "            results = ingest_payment_spool(self.solvent, spool=spool)",
+        "            results = []",
+        "tests_solvent.test_payments_tick.TheSpoolIsDrained"
+        ".test_a_signed_delivery_reaches_the_books",
+        "a client's money arrives in the account and the books never "
+        "hear, so every delivered job stays AWAITING_PAYMENT and the "
+        "shop eventually refuses work because it believes nobody has "
+        "ever paid it"),
+
+    Mutant(
+        "a-paid-job-is-never-closed",
+        "solvent/settlement.py",
+        "        if ledger.collected_for(job.id) <= 0:\n            continue",
+        "        if True:\n            continue",
+        "tests_solvent.test_payments_tick.TheJobCloses.test_a_paid_job_is_closed",
+        "the payment is recorded and the job stays awaiting it, so "
+        "the customer's order never closes and the profit is never "
+        "recorded against the work"),
+
+    Mutant(
+        "an-unpaid-job-is-closed-anyway",
+        "solvent/settlement.py",
+        "        if ledger.collected_for(job.id) <= 0:",
+        "        if False:",
+        "tests_solvent.test_payments_tick.TheJobCloses"
+        ".test_an_unpaid_job_is_not_closed",
+        "every delivered job is offered for completion whether or not "
+        "anybody paid, which leans the whole weight of the money "
+        "guarantee on one check inside the Orchestrator"),
+
+    Mutant(
+        "a-refused-payment-is-not-reported-to-the-owner",
+        "solvent/runtime.py",
+        '        for item in refused:\n'
+        '            self._notify_owner(\n'
+        '                event="payment.refused",',
+        '        for item in []:\n'
+        '            self._notify_owner(\n'
+        '                event="payment.refused",',
+        "tests_solvent.test_payments_tick.TheSpoolIsDrained"
+        ".test_a_badly_signed_delivery_is_refused_and_the_owner_told",
+        "a forged or corrupted payment delivery is filed away and "
+        "nobody is told, so an attack on the payment path looks "
+        "exactly like a quiet week"),
+
+    Mutant(
+        "an-unreadable-payment-spool-reads-as-an-empty-one",
+        "solvent/runtime.py",
+        '            return f"could not read the payment spool: {problem}"',
+        '            return "no payments waiting"',
+        "tests_solvent.test_payments_tick.TheSpoolIsDrained"
+        ".test_an_unreadable_spool_says_so_rather_than_saying_nothing",
+        "a spool that cannot be read reports the same thing as a spool "
+        "with nothing in it, so an owner cannot tell a quiet week from "
+        "a broken disk"),
+
     # ---- verifying the chain without re-verifying all of it ----------
 
     Mutant(
@@ -2826,9 +2887,9 @@ MUTANTS: tuple[Mutant, ...] = (
         "solvent/contracting.py",
         '        if _order_to(shop, order, OrderState.DELIVERED,\n'
         '                     "delivered and checked against your requirements"):\n'
-        '            moved.append("order DELIVERED")',
+        '            moved.append(OrderState.DELIVERED.value)',
         '        if False:\n'
-        '            moved.append("order DELIVERED")',
+        '            moved.append(OrderState.DELIVERED.value)',
         "tests_solvent.test_contracting.TheResultComesBack"
         ".test_the_customer_is_told_the_truth",
         "a customer whose work is finished, verified and billed is "

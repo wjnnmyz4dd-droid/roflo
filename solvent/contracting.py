@@ -363,6 +363,58 @@ def job_for(solvent, order_id: str) -> str:
     return ""
 
 
+def tell_the_customer(solvent, *, order_id: str) -> str:
+    """Move one order's status to match the job running it. Returns what moved.
+
+    Every order, not only the ones with an engagement behind them. A
+    client who ordered through the storefront and a client who
+    negotiated are owed the same answer to "where is my work", and
+    the storefront is the only place either of them can read it.
+    """
+    shop = getattr(solvent, "storefront", None)
+    if shop is None:
+        return ""
+    order = shop.order(order_id)
+    if order is None or order.state in storefront_terminal():
+        return ""
+    job_id = job_for(solvent, order_id)
+    if not job_id:
+        return ""
+    state = solvent.orchestrator.job(job_id).state
+
+    moved: list[str] = []
+    if state is JobState.REVISION_REQUESTED:
+        _order_to(shop, order, OrderState.IN_PROGRESS, "work started")
+        _order_to(shop, order, OrderState.DELIVERED, "delivered")
+        if _order_to(shop, order, OrderState.IN_REVISION,
+                     "your revision is being worked on"):
+            moved.append(OrderState.IN_REVISION.value)
+    elif state is JobState.COMPLETE:
+        _order_to(shop, order, OrderState.IN_PROGRESS, "work started")
+        _order_to(shop, order, OrderState.DELIVERED, "delivered")
+        if _order_to(shop, order, OrderState.CLOSED, "settled in full"):
+            moved.append(OrderState.CLOSED.value)
+    elif state.is_delivered:
+        _order_to(shop, order, OrderState.IN_PROGRESS, "work started")
+        if _order_to(shop, order, OrderState.DELIVERED,
+                     "delivered and checked against your requirements"):
+            moved.append(OrderState.DELIVERED.value)
+    elif state.is_terminal:
+        if _order_to(shop, order, OrderState.DECLINED,
+                     f"we were not able to complete this ({state.value})"):
+            moved.append(OrderState.DECLINED.value)
+    else:
+        if _order_to(shop, order, OrderState.IN_PROGRESS, "work started"):
+            moved.append(OrderState.IN_PROGRESS.value)
+    return ", ".join(moved)
+
+
+def storefront_terminal():
+    from .storefront import TERMINAL
+
+    return TERMINAL
+
+
 def report_back(solvent, *, prospect_id: str, initiator: str) -> Result:
     """Tell the engagement and the order what the pipeline did.
 
@@ -410,21 +462,11 @@ def report_back(solvent, *, prospect_id: str, initiator: str) -> Result:
 
     moved: list[str] = []
     # The order first. A customer reading the status page is owed the
-    # truth even on a tick where the engagement does not move.
-    if state.is_delivered and state is not JobState.REVISION_REQUESTED:
-        _order_to(shop, order, OrderState.IN_PROGRESS, "work started")
-        if _order_to(shop, order, OrderState.DELIVERED,
-                     "delivered and checked against your requirements"):
-            moved.append("order DELIVERED")
-    elif state is JobState.REVISION_REQUESTED:
-        _order_to(shop, order, OrderState.IN_PROGRESS, "work started")
-        _order_to(shop, order, OrderState.DELIVERED, "delivered")
-        if _order_to(shop, order, OrderState.IN_REVISION,
-                     "your revision is being worked on"):
-            moved.append("order IN_REVISION")
-    elif not state.is_terminal:
-        if _order_to(shop, order, OrderState.IN_PROGRESS, "work started"):
-            moved.append("order IN_PROGRESS")
+    # truth even on a tick where the engagement does not move, and
+    # the same code serves a client who never negotiated.
+    told = tell_the_customer(solvent, order_id=order_id)
+    if told:
+        moved.append(f"order {told}")
 
     # Then the engagement. DELIVERED before INVOICED, because
     # `invoiced` requires it -- an engagement cannot be billed for
@@ -432,7 +474,7 @@ def report_back(solvent, *, prospect_id: str, initiator: str) -> Result:
     if state.is_delivered and engagement.stage is Stage.WORK_AUTHORISED:
         engagement.delivered()
         moved.append("engagement DELIVERED")
-    if (state is JobState.AWAITING_PAYMENT
+    if (state in (JobState.AWAITING_PAYMENT, JobState.COMPLETE)
             and engagement.stage is Stage.DELIVERED):
         engagement.invoiced()
         moved.append("engagement INVOICED")
@@ -531,4 +573,20 @@ def carry_forward(solvent, *, limit: int = 1, initiator: str) -> list[Result]:
                            initiator=initiator)
         if told.done or told.refusal is not Refused.STILL_WORKING:
             out.append(told)
+
+    # And every other order. A client who ordered through the
+    # storefront never has an engagement, so the sweep above never
+    # reaches them -- and before this they were the majority of the
+    # shop and the only ones who could never be told anything.
+    shop = getattr(solvent, "storefront", None)
+    engaged = {f"eng-{pid}" for pid in awaiting_a_result(solvent)}
+    for order in (shop.orders() if shop is not None else []):
+        if order.order_id in engaged:
+            continue
+        told = tell_the_customer(solvent, order_id=order.order_id)
+        if told:
+            out.append(Result(prospect_id=order.client_ref, done=True,
+                              refusal=Refused.NONE,
+                              why=f"told the customer: {told}",
+                              order_id=order.order_id))
     return out

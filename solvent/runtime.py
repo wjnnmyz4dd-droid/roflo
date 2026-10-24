@@ -34,6 +34,7 @@ from typing import Callable
 from .audit import new_id
 from .errors import FailClosed
 from . import resilience as _res
+from . import settlement
 from .types import (BlockedOn, JobState, OperatingMode, PaymentState,
                     default_state_path, fmt)
 
@@ -260,6 +261,7 @@ def reconcile(solvent, *, initiator: str = RUNTIME) -> list[str]:
         notes.append(f"{note}; blocked {job_id} on the owner")
 
     notes.extend(_reconcile_stranded_jobs(solvent, initiator=initiator))
+    notes.extend(settlement.settle_paid_jobs(solvent, initiator=initiator))
     notes.extend(_reconcile_invoices(solvent, initiator=initiator))
     notes.extend(_reconcile_capacity(solvent, initiator=initiator))
 
@@ -608,6 +610,12 @@ DEFAULT_INTERVALS = {
     # button, so this is the one cadence chosen for a person waiting rather
     # than for a cheap host.
     "owner_intents": 30.0,
+    # Money arriving. Brisker than the business cycle and slower than
+    # the owner's buttons: nobody is sitting watching for it, but a
+    # payment the books have not heard about is work the shop thinks
+    # it is still owed for, and the Governor's unpaid-exposure
+    # ceiling is computed from that.
+    "payments": 120.0,
     # The two summaries have a half-hour grace window, so asking every
     # five minutes sends them within five minutes of their slot and
     # still sends them if a tick was missed. The dedupe key is the date
@@ -792,6 +800,7 @@ class Runtime:
         self.add_task("discovery", self._tick_discovery)
         self.add_task("diagnostics", self._tick_diagnostics)
         self.add_task("owner_intents", self._tick_owner_intents)
+        self.add_task("payments", self._tick_payments)
         self.add_task("owner_briefing", self._tick_owner_briefing)
         self.add_task("supervision", self._tick_supervision)
         # Before the business cycle and after supervision, for the same
@@ -845,6 +854,75 @@ class Runtime:
         """
         report = self.solvent.diagnostics.record()
         return f"{len(report.findings)} check(s); worst {report.worst}"
+
+    def _tick_payments(self) -> str:
+        """Hand any spooled payment deliveries to the rail and the Ledger.
+
+        The ingress was complete and unreachable. ``StripeRail``
+        verifies a signature with a replay window and a constant-time
+        compare, ``Ledger.apply_payment_event`` decides what an
+        authentic event means for the books, and
+        ``harness.ingest_payment_spool`` moves the bytes between
+        them. The only caller of the last one was ``solvent payments
+        ingest``, typed at a terminal.
+
+        So ``PaymentState.PAID`` was reachable in a running shop only
+        through the business cycle's ``simulate_payment`` branch. A
+        real client's money arrived in a real account and the books
+        never heard: every delivered job stayed AWAITING_PAYMENT, the
+        Governor went on counting it against
+        ``max_committed_unverified_cents``, and the shop eventually
+        refused new work because it believed nobody had ever paid it.
+
+        This is the same gap ``_tick_owner_intents`` was written to
+        close, and it is closed the same way. **It is plumbing, not
+        an authority.** It verifies nothing and decides nothing: an
+        unverifiable delivery is moved aside by the ingestor and
+        reported, never applied.
+
+        Unlike the business cycle this is not gated on simulation,
+        and deliberately. A payment that genuinely arrived is a fact
+        about the world whether or not DeskPilot is allowed to act on
+        it, and refusing to write down a fact does not make it less
+        true. Reading the spool sends nothing and spends nothing.
+        """
+        from .harness import PAYMENT_SPOOL, ingest_payment_spool
+
+        spool = self.solvent.policy.get("runtime", "payment_spool",
+                                        default="") or PAYMENT_SPOOL
+        try:
+            results = ingest_payment_spool(self.solvent, spool=spool)
+        except Exception as problem:
+            # A broken spool must not stop the tick, and must not be
+            # silent either: "no payments" and "we could not look"
+            # are different answers and an owner needs to tell them
+            # apart.
+            self.solvent.audit.record(
+                event="payment.spool_unreadable", authority="ledger",
+                initiator=RUNTIME, why=f"{type(problem).__name__}: {problem}",
+                decision="NOT_READ", result=str(spool))
+            return f"could not read the payment spool: {problem}"
+        # Settling runs whether or not a delivery arrived this tick: a
+        # payment applied by `solvent payments ingest` at a terminal,
+        # or by the run before a crash, is money the job has not been
+        # closed against yet.
+        closed = settlement.settle_paid_jobs(self.solvent, initiator=RUNTIME)
+        if not results:
+            return ("no payments waiting" if not closed
+                    else f"no payments waiting; {len(closed)} job(s) closed")
+        refused = [r for r in results if r.get("outcome") == "REFUSED"]
+        applied = len(results) - len(refused)
+        for item in refused:
+            self._notify_owner(
+                event="payment.refused",
+                summary=f"{item.get('delivery')}: {item.get('why', '')}"[:400],
+                dedupe_key=f"payment:{item.get('delivery')}")
+        parts = [f"{applied} applied"]
+        if refused:
+            parts.append(f"{len(refused)} refused")
+        if closed:
+            parts.append(f"{len(closed)} job(s) closed")
+        return ", ".join(parts)
 
     def _tick_owner_briefing(self, now=None) -> str:
         """Send the 06:50 and 16:30 summaries when their slot comes round.

@@ -52,7 +52,7 @@ class TheServiceSchedulesTheBusinessCycle(unittest.TestCase):
     #: the test below: it failed the moment `chief_of_staff` appeared,
     #: which is the pin doing its job rather than a defect.
     DECLARED = ["heartbeat", "health", "reconciliation", "discovery",
-                "diagnostics", "owner_intents", "owner_briefing",
+                "diagnostics", "owner_intents", "payments", "owner_briefing",
                 "supervision", "dealmaking", "contracting", "business",
                 "chief_of_staff"]
 

@@ -72,7 +72,21 @@ POLICY = {
     "contracting": {"turnaround_days": 3},
     "operations": {"continuous_enabled": True, "max_jobs_per_run": 5,
                    "max_committed_cents": 5_000_000},
-    "egress": {"simulation_only": True},
+    "egress": {
+        "simulation_only": True,
+        # Delivery goes through the Action Gate, which refuses a
+        # destination that is not listed here. The destination is
+        # `client.example.com` for every job because
+        # `harness` passes that literal -- the Gate never sees the
+        # client's own address, so an allowlist can only ever say
+        # "all clients" or "no clients". Noted as a finding; for a
+        # run in which delivery is simulated anyway it is listed, or
+        # nothing is ever delivered and the run measures the gap
+        # instead of the business.
+        "allowlist": [{"host": "client.example.com",
+                       "max_privacy": "CLIENT_CONFIDENTIAL",
+                       "classes": ["C2_EXTERNAL_COMMUNICATION"]}],
+    },
     "permissions": {"C2_EXTERNAL_COMMUNICATION": "PREAUTHORIZED"},
     "preauthorizations": [{
         "action_class": "C2_EXTERNAL_COMMUNICATION",

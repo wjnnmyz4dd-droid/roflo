@@ -281,17 +281,17 @@ class TheSchedulerActuallyCallsIt(Bench):
         return runtime
 
     def test_it_is_registered_last(self):
-        """Twelfth since `contracting` joined the list; still last.
+        """Thirteenth since `payments` joined the list; still last.
 
         Last is the property that matters and the reason it was pinned:
         the coordinator reads what the other ticks did, so it must run
         behind them. The count is pinned alongside it so that adding a
         task stays a visible change rather than a silent one -- which is
         exactly what this assertion did when `dealmaking` arrived, and
-        again when `contracting` did.
+        again when `contracting` did, and again for `payments`.
         """
         names = [t.name for t in self.runtime().tasks]
-        self.assertEqual(len(names), 12)
+        self.assertEqual(len(names), 13)
         self.assertEqual(names[-1], "chief_of_staff")
         self.assertIn("dealmaking", names)
         self.assertIn("contracting", names)
