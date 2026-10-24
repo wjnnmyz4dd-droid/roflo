@@ -134,6 +134,44 @@ def order_problem(service, order, *, source_file: str) -> str:
     return ""
 
 
+#: Characters a directory name may keep. Everything else is replaced,
+#: including the ones that are merely awkward, because the set that is
+#: safe everywhere is much smaller than the set that is safe here.
+_KEEP = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+
+
+def workdir_name(order_id: str) -> str:
+    """A directory name for an order, safe on every filesystem.
+
+    The order id was used raw, and on Windows that is a real failure
+    rather than a tidiness point: an engagement-backed order is
+    ``eng-client:northstar``, the colon is NTFS's alternate-data-stream
+    separator, and ``os.makedirs`` raises ``NotADirectoryError``
+    [WinError 267]. Thirteen tests failed on Windows CI and passed on
+    Linux for exactly this reason.
+
+    It is also a boundary. An order id can carry a client's own
+    reference, so ``..``, a separator or a drive letter in one would be
+    a path chosen by whoever placed the order. Rewriting the name here
+    means the directory stays under ``workroot`` whatever arrives.
+
+    The digest is what keeps two different order ids from colliding
+    after both have had their awkward characters replaced, and makes
+    the name stable: the same order resolves to the same directory on
+    every call, which is what lets a resumed job find its own work.
+    """
+    import hashlib
+
+    cleaned = "".join(c if c in _KEEP else "-" for c in str(order_id))
+    # Leading dots and dashes read as hidden files and as option flags;
+    # a trailing dot or space is silently stripped by Windows, so two
+    # names that differ only there would become one directory.
+    cleaned = cleaned.strip("-. ")[:60] or "order"
+    digest = hashlib.sha256(str(order_id).encode("utf-8")).hexdigest()[:12]
+    return f"{cleaned}-{digest}"
+
+
 def next_work_order(s, *, workroot: str, owner_identity: str = "") -> "WorkOrder | None":
     """The next customer order to run, or ``None`` when there is none.
 
@@ -178,7 +216,7 @@ def next_work_order(s, *, workroot: str, owner_identity: str = "") -> "WorkOrder
                 result=order.order_id)
             continue
 
-        workdir = os.path.join(workroot, order.order_id)
+        workdir = os.path.join(workroot, workdir_name(order.order_id))
         os.makedirs(workdir, exist_ok=True)
         requirements = _requirements_of(service, order.answers)
         # Submitted last, so a resolution that raised cannot leave the

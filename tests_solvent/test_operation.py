@@ -225,5 +225,75 @@ class ItOwnsNoNewAuthority(unittest.TestCase):
             ["effective_bounds", "owner_bounds", "permitted", "run"])
 
 
+class TheWorkDirectoryNameIsSafeAnywhere(unittest.TestCase):
+    """Found by Windows CI, which is the only place it could be found.
+
+    ``next_work_order`` joined the order id onto the work root raw.
+    An engagement-backed order is ``eng-client:northstar``; on NTFS the
+    colon opens an alternate data stream, so ``os.makedirs`` raises
+    ``NotADirectoryError`` [WinError 267] and the job never runs.
+    Thirteen tests failed on Windows and passed on Linux.
+    """
+
+    def test_a_colon_in_the_order_id_leaves_the_name(self):
+        from solvent.workorder import workdir_name
+
+        self.assertNotIn(":", workdir_name("eng-client:northstar"))
+
+    def test_every_character_windows_refuses_is_gone(self):
+        from solvent.workorder import workdir_name
+
+        for bad in ':*?"<>|/\\' + "\t\n\0":
+            with self.subTest(character=repr(bad)):
+                self.assertNotIn(bad, workdir_name(f"ord-a{bad}b"))
+
+    def test_a_name_cannot_climb_out_of_the_work_root(self):
+        """An order id can carry a client's own reference."""
+        import os.path
+
+        from solvent.workorder import workdir_name
+
+        for attempt in ("../../etc", "..", "/etc/passwd", "C:\\Windows",
+                        "....//....//x"):
+            with self.subTest(attempt):
+                joined = os.path.normpath(
+                    os.path.join("/work", workdir_name(attempt)))
+                self.assertTrue(joined.startswith("/work" + os.sep), joined)
+
+    def test_the_name_does_not_begin_with_a_dot_or_a_dash(self):
+        """A leading dot hides the directory; a leading dash reads as a flag.
+
+        The *trailing* dot and space Windows strips silently are
+        covered by the digest rather than by the strip -- the name
+        never ends in one because it ends in twelve hex characters --
+        so they are not asserted here as though the strip were doing
+        it.
+        """
+        from solvent.workorder import workdir_name
+
+        for start in (".hidden", "-rf", "..", " x"):
+            with self.subTest(start):
+                self.assertFalse(workdir_name(start).startswith((".", "-")),
+                                 workdir_name(start))
+
+    def test_the_same_order_always_gets_the_same_directory(self):
+        """A resumed job has to find the work it already did."""
+        from solvent.workorder import workdir_name
+
+        self.assertEqual(workdir_name("eng-client:northstar"),
+                         workdir_name("eng-client:northstar"))
+
+    def test_two_orders_that_clean_up_alike_stay_apart(self):
+        """`a:b` and `a/b` both become `a-b` before the digest."""
+        from solvent.workorder import workdir_name
+
+        self.assertNotEqual(workdir_name("ord-a:b"), workdir_name("ord-a/b"))
+
+    def test_an_order_id_of_nothing_but_punctuation_still_names_something(self):
+        from solvent.workorder import workdir_name
+
+        self.assertTrue(workdir_name("::::").strip("-"))
+
+
 if __name__ == "__main__":
     unittest.main()

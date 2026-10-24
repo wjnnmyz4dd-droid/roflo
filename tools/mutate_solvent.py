@@ -3325,6 +3325,33 @@ MUTANTS: tuple[Mutant, ...] = (
         "a restart restores the deal with two cost lines at zero, and "
         "because the floor is recomputed rather than restored the "
         "recovered deal is quietly cheaper than the one that was opened"),
+    Mutant(
+        "workdir-name-keeps-the-order-id-raw",
+        "solvent/workorder.py",
+        '    cleaned = "".join(c if c in _KEEP else "-" for c in str(order_id))',
+        "    cleaned = str(order_id)",
+        "tests_solvent.test_operation.TheWorkDirectoryNameIsSafeAnywhere"
+        ".test_every_character_windows_refuses_is_gone",
+        "an engagement-backed order is eng-client:northstar, the colon "
+        "opens an alternate data stream on NTFS, and the job never runs"),
+    Mutant(
+        "workdir-name-drops-the-digest",
+        "solvent/workorder.py",
+        '    return f"{cleaned}-{digest}"',
+        '    return cleaned',
+        "tests_solvent.test_operation.TheWorkDirectoryNameIsSafeAnywhere"
+        ".test_two_orders_that_clean_up_alike_stay_apart",
+        "two orders whose ids differ only in a character that gets "
+        "replaced share one work directory and overwrite each other"),
+    Mutant(
+        "workdir-name-does-not-strip-the-edges",
+        "solvent/workorder.py",
+        '    cleaned = cleaned.strip("-. ")[:60] or "order"',
+        '    cleaned = cleaned[:60] or "order"',
+        "tests_solvent.test_operation.TheWorkDirectoryNameIsSafeAnywhere"
+        ".test_the_name_does_not_begin_with_a_dot_or_a_dash",
+        "an order id beginning with a dot or a dash names a hidden "
+        "directory, or one a command-line tool reads as an option"),
 )
 
 
