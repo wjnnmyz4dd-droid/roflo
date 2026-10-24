@@ -412,7 +412,7 @@ with the permission model it claims — not that the world agreed.
 | 90-day simulation | **COMPLETE** |
 | Simulated net profit | **$2,902 over 90 days = $32.24/day; 4.4% of days ≥ $200** |
 | Real-world profitability | **UNPROVEN until field testing** |
-| Windows | **PASS** — run 37 on `dc8acc4`, four jobs green; three named blockers carry forward |
+| Windows | **PASS**, after a regression of mine — see below |
 | Live pilot | **NOT READY** |
 
 ### Why LIVE PILOT is still NOT READY
@@ -430,7 +430,7 @@ The connector is no longer the blocker. What remains:
 
 | | |
 |---|---|
-| Regression | **5,609 passed, 0 failed, 52 skipped, 11,055 subtests** |
+| Regression | **5,612 passed, 0 failed, 52 skipped, 11,055 subtests** |
 | Mutation, solvent | **245/245 killed, 0 survived, 0 not applied** |
 | Mutation, installer | **203/203 killed, 0 survived** |
 | New tests this assignment | 99 (`test_dealmaking` 33, `test_connected_lifecycle` 20, `test_business_operation_simulations` 46) |
@@ -454,10 +454,39 @@ refusal. The floor and fee gates are now tested separately.
 | 4 | Contribution still reported as "actual profit" | LOW | rename or subtract overhead |
 | 5 | SIGKILL cases skip inside the suite | LOW | CI step |
 
-### Windows
+### Windows — a regression of mine, found by Windows CI
 
-Unchanged by this work and not re-run: run 37 on `dc8acc4`, all four
-jobs green. The three named blockers stand — WAL sidecars are not
+**Run 40 on `e8b77c9` failed both install jobs**, on 3.11 and 3.13
+alike, and the cause was this work.
+
+`tools/windows_install_check.py` asserted
+`"TASKS 10" in asked.stdout` for the installed scheduler. The
+connector makes eleven tasks, so a correct installation reported
+`TASKS 11 | COS True | RAN 11` and the check called it a failure:
+12/13 required checks passed, exit 1. Every other check passed,
+`verify` returned DESKPILOT READY, the restart check was 12/12 and
+uninstall kept the records — the installation was fine and the
+checker was wrong about it.
+
+This is the same hand-written number going stale that the suite's own
+task pins did. Those four failed on the first Linux run after the
+connector landed and were updated; this one lives in a tool the Linux
+suite does not exercise, so Windows CI found it instead of a local
+run. A substring match on a count is doubly wrong anyway:
+`"TASKS 10"` also matches `"TASKS 100"`.
+
+Repaired by pinning the property rather than the number. The
+subprocess now computes `ALL_RAN` — every task the runtime registered
+actually ran — and the check reads that. Verified locally against a
+real runtime: `TASKS 11 · COS True · RAN 11 · ALL_RAN True`.
+`NoCheckPinsAHandWrittenCount` in `tests_solvent/test_windows_checkers.py`
+fails if a literal task count ever reappears in that file.
+
+**The three previously named blockers stand**: WAL sidecars are not
 re-hardened after a runtime restart, the `.exe` is compiled and never
-executed, and cp315 cannot be served. **No Windows claim here rests on
-a Linux result.**
+executed, and cp315 cannot be served.
+
+**No Windows claim here rests on a Linux result.** The PASS above is
+recorded against the re-run on the fixed commit; before that re-run
+went green the honest status was FAIL, and it is written down that
+way rather than quietly overwritten.

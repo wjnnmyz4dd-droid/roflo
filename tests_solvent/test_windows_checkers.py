@@ -25,6 +25,7 @@ from __future__ import annotations
 import io
 import json
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -166,6 +167,56 @@ class TheInstallCheckerReadsTheEnginesVocabulary(unittest.TestCase):
                 line = said["every installation step reported success"]
                 self.assertEqual(line.startswith("FAIL"),
                                  outcome.stops_installation, line)
+
+
+class NoCheckPinsAHandWrittenCount(unittest.TestCase):
+    """The install checker must not carry a number somebody maintains.
+
+    It did. The scheduler check read ``"TASKS 10" in stdout``, and the
+    eleventh task turned a correct installation into a failed one on
+    both interpreters. The suite's own task pins failed the same way
+    and were updated; this one lives in a tool the Linux suite does
+    not exercise, so Windows CI found it instead of a local run.
+
+    Worse than stale: a substring match on a count also matches the
+    wrong thing, because ``"TASKS 10"`` appears in ``"TASKS 100"``.
+
+    The property worth checking is that every task the runtime
+    registered actually ran, which the subprocess now computes and
+    reports as ``ALL_RAN``.
+    """
+
+    SOURCE = (pathlib.Path(__file__).resolve().parent.parent
+              / "tools" / "windows_install_check.py")
+
+    def source(self) -> str:
+        return self.SOURCE.read_text(encoding="utf-8")
+
+    def test_the_scheduler_check_does_not_name_a_task_count(self):
+        # Comments excluded: the comment explaining why the literal was
+        # removed necessarily quotes it, and the first version of this
+        # test flagged that explanation. Third time in this assignment
+        # that a guard has read prose as if it were code.
+        offenders = [line.strip() for line in self.source().splitlines()
+                     if re.search(r'"TASKS \d+"', line)
+                     and not line.lstrip().startswith("#")]
+        self.assertEqual(offenders, [],
+                         "a literal task count in the installed-scheduler "
+                         "check goes stale the next time a task is added")
+
+    def test_it_checks_that_every_registered_task_ran(self):
+        source = self.source()
+        self.assertIn("ALL_RAN", source)
+        self.assertIn("len(lines) == len(names)", source,
+                      "ALL_RAN must be computed from the runtime's own "
+                      "task list, not asserted some other way")
+
+    def test_the_runtime_really_does_register_more_than_ten_tasks_now(self):
+        """Pins why the old literal was wrong, from the live runtime."""
+        from solvent.runtime import DEFAULT_INTERVALS
+
+        self.assertGreater(len(DEFAULT_INTERVALS), 10)
+        self.assertIn("dealmaking", DEFAULT_INTERVALS)
 
 
 class TheSweepCanFindWhatItIsSweepingFor(unittest.TestCase):

@@ -252,10 +252,23 @@ def main(argv: list[str] | None = None) -> int:
         "print('COS', 'chief_of_staff' in names)\n"
         "lines = r.run_due()\n"
         "print('RAN', len(lines))\n"
+        "print('ALL_RAN', len(lines) == len(names) and len(names) > 0)\n"
         "print([l for l in lines if l.startswith('chief_of_staff')])\n"
         "s.store.close()"), timeout=600.0)
+    # ``ALL_RAN``, not a literal count. This read ``"TASKS 10" in
+    # stdout``, and the eleventh task turned a correct installation
+    # into a failed one on both interpreters -- the same hand-written
+    # number going stale that the suite's own task pins did, except
+    # this one lives in a tool the Linux suite does not exercise, so
+    # it was found by Windows CI rather than before the push.
+    #
+    # A substring match on a count is doubly wrong: "TASKS 10" is also
+    # in "TASKS 100". The property worth checking was never the
+    # number, it is that every task the runtime registered actually
+    # ran on this machine, which is what the installation is being
+    # asked to demonstrate.
     checks.record("the scheduler runs on the installed application",
-                  "TASKS 10" in asked.stdout and "COS True" in asked.stdout,
+                  "ALL_RAN True" in asked.stdout and "COS True" in asked.stdout,
                   asked.stdout.strip().replace("\n", " | ")[:300]
                   or asked.stderr.strip()[-300:])
 
