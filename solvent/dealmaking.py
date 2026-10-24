@@ -30,6 +30,22 @@ from enum import Enum
 
 from .capacity import EXECUTE
 from .crm import Standing
+
+#: Standings that mean the client has actually engaged. Pricing anyone
+#: else is pricing a job nobody asked for: it sends nothing, so no
+#: client is bothered by it, but it puts a live negotiation in the book
+#: for somebody who never replied, and from then on the coordinator
+#: reports a conversation that is not happening.
+#:
+#: Found by the iFixAi cross-review export, which drove the gate
+#: directly rather than through ``candidates`` and opened a deal with a
+#: prospect at CONTACTED. ``candidates`` filters on REPLIED, so the
+#: scheduler never asked -- which is exactly what made the hole
+#: invisible, and is the third guard in this module that was
+#: unreachable from the only caller.
+ENGAGED = (Standing.REPLIED, Standing.NEGOTIATING, Standing.PROPOSED,
+           Standing.CONTRACTED, Standing.DELIVERED, Standing.PAID,
+           Standing.REPEAT)
 from .errors import FailClosed
 from .negotiation import Costs, Negotiation, NegotiationPolicy, floor_cents
 from .quoting import rates_from_policy
@@ -60,6 +76,9 @@ class Refused(Enum):
     NO_CLIENT_RECORD = "NO_CLIENT_RECORD"
     #: Opted out or disqualified. Terminal, and honoured for ever.
     TERMINAL = "TERMINAL"
+    #: They have not asked for a price. Written to is not the same as
+    #: interested, and silence is not a request.
+    NOT_ENGAGED = "NOT_ENGAGED"
     #: They asked not to be written to.
     SUPPRESSED = "SUPPRESSED"
     #: A negotiation is already open with them. The idempotence gate.
@@ -249,6 +268,12 @@ def open_negotiation(solvent, *, prospect_id: str, service: str,
     if prospect.standing.terminal:
         return _refuse(prospect_id, Refused.TERMINAL,
                        f"{prospect.company} is {prospect.standing.value}")
+
+    if prospect.standing not in ENGAGED:
+        return _refuse(
+            prospect_id, Refused.NOT_ENGAGED,
+            f"{prospect.company} is {prospect.standing.value}; they have "
+            "not asked for a price, and silence is not a request")
 
     if prospect_id in chief.engagements:
         return _refuse(prospect_id, Refused.ALREADY_ENGAGED,

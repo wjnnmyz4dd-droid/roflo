@@ -2757,6 +2757,17 @@ MUTANTS: tuple[Mutant, ...] = (
         "is the one thing an opt-out is supposed to make impossible"),
 
     Mutant(
+        "dealmaking-prices-a-client-who-never-replied",
+        "solvent/dealmaking.py",
+        "    if prospect.standing not in ENGAGED:",
+        "    if False:",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_a_client_who_has_not_replied_is_not_priced",
+        "a live negotiation appears in the book for somebody who was "
+        "written to and never answered, and the coordinator then "
+        "reports a conversation that is not happening"),
+
+    Mutant(
         "dealmaking-prices-a-suppressed-address",
         "solvent/dealmaking.py",
         "    held = _suppressed(solvent, prospect)\n"

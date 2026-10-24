@@ -305,6 +305,33 @@ class TheGatesAreTheExistingAuthorities(Connected):
         self.assertIs(got.refusal, Refused.TERMINAL)
         self.assertEqual(dict(self.s.chief_of_staff.negotiations), {})
 
+    def test_a_client_who_has_not_replied_is_not_priced(self):
+        """Written to is not the same as interested.
+
+        Found by the iFixAi cross-review export, which drove the gate
+        directly instead of through ``candidates`` and opened a deal
+        with a prospect at CONTACTED. Nothing is sent, so no client is
+        bothered -- but the book then holds a live negotiation with
+        somebody who never replied, and the coordinator reports a
+        conversation that is not happening. The third guard in this
+        module that the only caller could not reach.
+        """
+        pid = self.arrive()
+        self.s.crm.advance(pid, Standing.CONTACTED, "rewound: no reply yet")
+        got = dealmaking.open_negotiation(self.s, prospect_id=pid,
+                                          service="csv-cleanup")
+        self.assertFalse(got.opened)
+        self.assertIs(got.refusal, Refused.NOT_ENGAGED)
+        self.assertEqual(dict(self.s.chief_of_staff.negotiations), {})
+
+    def test_a_returning_client_may_be_priced_again(self):
+        """The gate must not swallow the case it is not guarding."""
+        pid = self.arrive()
+        self.s.crm.advance(pid, Standing.PAID, "settled last time")
+        got = dealmaking.open_negotiation(self.s, prospect_id=pid,
+                                          service="csv-cleanup")
+        self.assertTrue(got.opened, got.why)
+
     def test_a_suppressed_address_is_never_priced(self):
         pid = self.arrive()
         contact = self.s.crm.get(pid).contacts[0]
