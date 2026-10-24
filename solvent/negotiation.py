@@ -30,7 +30,7 @@ costs money on every job that follows.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum
 
 from .errors import FailClosed
@@ -383,28 +383,26 @@ class Negotiation:
         """
         return {
             "opportunity_id": self.opportunity_id, "service": self.service,
-            "costs": {
-                "service_cents": self.costs.service_cents,
-                "ai_cents": self.costs.ai_cents,
-                "verification_cents": self.costs.verification_cents,
-                "expected_revision_cents": self.costs.expected_revision_cents,
-                "platform_fee_cents": self.costs.platform_fee_cents,
-                "payment_processing_cents":
-                    self.costs.payment_processing_cents,
-                "risk_allowance_cents": self.costs.risk_allowance_cents,
-            },
-            "policy": {
-                "minimum_margin_fraction":
-                    self.policy.minimum_margin_fraction,
-                "minimum_contribution_cents":
-                    self.policy.minimum_contribution_cents,
-                "max_discount_fraction": self.policy.max_discount_fraction,
-                "max_concessions": self.policy.max_concessions,
-                "owner_signs_above_cents":
-                    self.policy.owner_signs_above_cents,
-                "max_revisions_without_owner":
-                    self.policy.max_revisions_without_owner,
-            },
+            # Read off the dataclasses rather than listed by hand. Both
+            # lists *were* written out field by field, and both fell
+            # behind the type the moment one gained a field: `Costs`
+            # grew `acquisition_cents` and `supervision_cents`, every
+            # other place that sums costs was updated, and this was
+            # missed. The consequence was not a missing figure in a
+            # report -- `floor` is recomputed from the restored costs
+            # on purpose, so that no stored number can drift, and two
+            # cost lines that did not survive a restart meant the
+            # recomputed floor came back *lower* than the one the deal
+            # was opened under. A crash quietly discounted the job by
+            # the exact amount of the two lines nobody copied.
+            #
+            # Deriving them removes the class of defect rather than
+            # the instance: a field added to either type is carried
+            # from the moment it exists.
+            "costs": {f.name: getattr(self.costs, f.name)
+                      for f in fields(self.costs)},
+            "policy": {f.name: getattr(self.policy, f.name)
+                       for f in fields(self.policy)},
             "scope_units": self.scope_units,
             "band": self.band.as_dict() if self.band is not None else None,
             "steps": [{"move": s.move.value, "cents": s.cents, "why": s.why,

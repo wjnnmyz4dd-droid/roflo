@@ -585,6 +585,11 @@ DEFAULT_INTERVALS = {
     # Operator's own bounds cap how many it does per run, and a tighter
     # loop on a $5 host next to MetaTrader 5 is cost with no benefit.
     "business": 600.0,
+    # Opening deals. A client who has asked for a price is waiting for
+    # one, so this is brisker than the business cycle; it is still not
+    # urgent, because the tick writes a number down rather than sending
+    # it, and the sending has its own cadence rules.
+    "dealmaking": 600.0,
 }
 
 #: Used when a task is registered with no cadence anywhere. That is a
@@ -741,8 +746,11 @@ class Runtime:
         self.add_task("owner_intents", self._tick_owner_intents)
         self.add_task("owner_briefing", self._tick_owner_briefing)
         self.add_task("supervision", self._tick_supervision)
-        # Last, and deliberately after supervision: a tick that takes work
-        # on should run behind the one that notices work already stuck.
+        # Before the business cycle and after supervision, for the same
+        # reason the business cycle is: opening a deal takes work on, and
+        # a tick that takes work on runs behind the one that notices work
+        # already stuck.
+        self.add_task("dealmaking", self._tick_dealmaking)
         self.add_task("business", self._tick_business)
         self.add_task("chief_of_staff", self._tick_chief_of_staff)
 
@@ -1078,6 +1086,72 @@ class Runtime:
     #: itself: the Operator's own ``max_run_seconds`` defaults to 300 and
     #: the owner's policy can only narrow it.
     BUSINESS_LEASE_SECONDS = 3600.0
+
+    def _tick_dealmaking(self) -> str:
+        """Turn clients who asked for a price into open negotiations.
+
+        The connection this codebase was missing. Everything either side
+        of it existed -- the Finder found work, the Qualification judged
+        it, the negotiation engine held the arithmetic -- and nothing
+        joined them, so every negotiation in the repository had been
+        opened by a line of test code. A business whose deals are opened
+        by its test harness opens none.
+
+        **It decides no price.** ``dealmaking.open_ready`` asks the CRM
+        who replied, the registry whether the skill may reach a client,
+        Capacity whether there is room and the owner's recorded costs
+        what the floor is, then calls the existing engine. Every refusal
+        in the log is some other authority's words.
+
+        **It sends nothing**, which is why it is not gated on
+        ``egress.simulation_only`` the way the business cycle is. That
+        gate exists because the business cycle commits money and
+        executes work; this writes an asking price into the book. Gating
+        it on simulation would mean price-setting stopped on the day the
+        owner went live, which is backwards. Telling the client is a
+        separate act down the outreach path, with its own consent rules
+        that this does not touch.
+
+        Three conditions, each refusing on its own: health, the owner's
+        continuous-operation opt-in, and the business lease -- the same
+        lease the business cycle takes, so that a second process cannot
+        open a second set of deals against one database.
+        """
+        from .dealmaking import open_ready
+        from .operation import Operator
+
+        state, why = health(self.solvent, started=self.started)
+        if not state.may_start_work:
+            return f"skipped: {state.value} ({why})"
+        if self.solvent.policy.operating_mode.blocks_new_work:
+            return "skipped: operating mode blocks new work"
+
+        allowed, why = Operator(self.solvent).permitted()
+        if not allowed:
+            return f"not run: {why}"
+
+        limit = int(self.solvent.policy.get(
+            "dealmaking", "max_opened_per_tick", default=1) or 1)
+
+        lease = self._take_business_lease()
+        if lease is None:
+            return "not run: another executor holds the business lease"
+        try:
+            results = open_ready(self.solvent, limit=limit, initiator=RUNTIME)
+        finally:
+            self._release_business_lease(lease)
+
+        if not results:
+            return "nobody is waiting on a price"
+        opened = [r for r in results if r.opened]
+        refused = [r for r in results if not r.opened]
+        for refusal in refused:
+            self.solvent.audit.record(
+                event="negotiation.not_opened", authority="orchestrator",
+                initiator=RUNTIME, why=refusal.why[:200],
+                decision=refusal.refusal.value, result=refusal.prospect_id)
+        return (f"{len(opened)} opened, {len(refused)} refused: "
+                + "; ".join(r.summary() for r in results))
 
     def _tick_business(self) -> str:
         """Do some business, inside the bounds the owner set.

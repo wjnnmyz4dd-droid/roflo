@@ -148,5 +148,85 @@ class EveryCostFieldReachesTheTotal(unittest.TestCase):
             "includes it cannot be decomposed")
 
 
+class EveryCostFieldSurvivesARestart(unittest.TestCase):
+    """The third place the hand-written list fell behind the type.
+
+    ``Negotiation.as_dict`` wrote the cost lines out field by field,
+    and the two the audit added were not among them. That is not a
+    cosmetic omission. ``floor`` is recomputed from the restored costs
+    rather than restored -- deliberately, so that no stored number can
+    be moved by an edit or a migration -- so a cost line that did not
+    survive the round trip came back as a *lower floor* than the one
+    the deal was opened under. A crash discounted the job by exactly
+    the lines that were dropped, and the deal looked perfectly healthy
+    afterwards.
+
+    Found by the first test that opened a deal through production with
+    every line populated and then reopened the database. Nothing before
+    it could have found it, because nothing before it put a non-zero
+    number in those two fields and restarted.
+    """
+
+    def setUp(self):
+        from solvent.negotiation import Negotiation
+
+        self.deal = Negotiation(
+            opportunity_id="o1", service="csv-cleanup",
+            costs=worked_example(),
+            policy=NegotiationPolicy(minimum_margin_fraction=0.30),
+            scope_units=1_000)
+
+    def test_the_round_trip_preserves_every_cost_field(self):
+        import dataclasses
+
+        from solvent.negotiation import negotiation_from_dict
+
+        back = negotiation_from_dict(self.deal.as_dict())
+        for field in dataclasses.fields(Costs):
+            with self.subTest(field.name):
+                self.assertEqual(
+                    getattr(back.costs, field.name),
+                    getattr(self.deal.costs, field.name),
+                    f"{field.name} did not survive the round trip, so a "
+                    "restart moves the floor")
+
+    def test_the_round_trip_preserves_every_limit(self):
+        import dataclasses
+
+        from solvent.negotiation import negotiation_from_dict
+
+        back = negotiation_from_dict(self.deal.as_dict())
+        for field in dataclasses.fields(NegotiationPolicy):
+            with self.subTest(field.name):
+                self.assertEqual(getattr(back.policy, field.name),
+                                 getattr(self.deal.policy, field.name))
+
+    def test_the_floor_is_identical_after_a_round_trip(self):
+        """The property that actually matters to the money."""
+        from solvent.negotiation import negotiation_from_dict
+
+        back = negotiation_from_dict(self.deal.as_dict())
+        self.assertEqual(back.floor, self.deal.floor)
+        self.assertEqual(back.costs.total_cents, TRUE_COST)
+
+    def test_the_stored_shape_names_every_field_of_both_types(self):
+        """Pins the mechanism, not just today's outcome.
+
+        The three tests above would all pass again if somebody replaced
+        the derivation with a hand-written list that happens to be
+        complete today. This one fails the moment the list stops being
+        derived from the type.
+        """
+        import dataclasses
+
+        stored = self.deal.as_dict()
+        self.assertEqual(
+            set(stored["costs"]),
+            {f.name for f in dataclasses.fields(Costs)})
+        self.assertEqual(
+            set(stored["policy"]),
+            {f.name for f in dataclasses.fields(NegotiationPolicy)})
+
+
 if __name__ == "__main__":
     unittest.main()

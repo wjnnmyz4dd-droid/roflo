@@ -2725,6 +2725,128 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_a_contact_with_no_source_is_refused_outright",
         "an address nobody can say where they got becomes a legitimate "
         "contact, which is where the US rules on commercial email begin"),
+
+    # ---- the connector: qualified opportunity -> open negotiation ----
+    # The step production never took. Each gate below is some existing
+    # authority's answer; these mutants remove one at a time and insist
+    # the deal stops being opened. The last one is not a gate at all --
+    # it is the serialisation defect the connector exposed, where two
+    # cost lines did not survive a restart and the recomputed floor came
+    # back lower than the one the deal was opened under.
+
+    Mutant(
+        "dealmaking-opens-a-second-deal-with-the-same-client",
+        "solvent/dealmaking.py",
+        "    if prospect_id in chief.negotiations:\n"
+        "        existing = chief.negotiations[prospect_id]",
+        "    if False:\n"
+        "        existing = chief.negotiations[prospect_id]",
+        "tests_solvent.test_dealmaking.ItOpensNothingTwice"
+        ".test_the_gate_itself_refuses_a_duplicate_when_asked_directly",
+        "one client is quoted two prices for one job, and the second "
+        "opening overwrites the conversation the first started"),
+
+    Mutant(
+        "dealmaking-prices-a-client-who-opted-out",
+        "solvent/dealmaking.py",
+        "    if prospect.standing.terminal:",
+        "    if False:",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_an_opted_out_client_is_refused_when_the_gate_is_asked_directly",
+        "somebody who said STOP is worked up into a priced deal, which "
+        "is the one thing an opt-out is supposed to make impossible"),
+
+    Mutant(
+        "dealmaking-prices-a-suppressed-address",
+        "solvent/dealmaking.py",
+        "    held = _suppressed(solvent, prospect)\n"
+        "    if held:",
+        "    held = _suppressed(solvent, prospect)\n"
+        "    if False:",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_a_suppressed_address_is_never_priced",
+        "the suppression list is consulted and then ignored, which is "
+        "worse than not consulting it: the log says it was checked"),
+
+    Mutant(
+        "dealmaking-ignores-what-capacity-said",
+        "solvent/dealmaking.py",
+        "    if not room.allowed:",
+        "    if False:",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_capacity_is_asked_and_its_refusal_is_final",
+        "deals are opened past the owner's halt and past the seconds "
+        "ceiling, so the shop promises work it has no room to do"),
+
+    Mutant(
+        "dealmaking-opens-a-deal-below-the-floor",
+        "solvent/dealmaking.py",
+        "    if quoted_cents and quoted_cents < floor:",
+        "    if False:",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_a_budget_below_the_floor_is_refused",
+        "a budget that cannot cover the cost stack still opens a deal, "
+        "which is the loss-making job the floor exists to refuse"),
+
+    Mutant(
+        "dealmaking-takes-work-below-the-owners-minimum-fee",
+        "solvent/dealmaking.py",
+        "    if quoted_cents and quoted_cents < minimum_fee:",
+        "    if False:",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_a_budget_below_the_owners_minimum_fee_is_refused_too",
+        "the shop takes jobs too small to be worth the overhead, which "
+        "the floor alone does not catch because a tiny job can still "
+        "clear a tiny cost stack"),
+
+    Mutant(
+        "dealmaking-prices-against-a-floor-of-zero",
+        "solvent/dealmaking.py",
+        "    if floor <= 0:",
+        "    if False:",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_an_unpriced_business_refuses_to_open_rather_than_price_on_nothing",
+        "an owner who has recorded no costs gets deals priced against "
+        "nothing, and every one of them reads as pure profit"),
+
+    Mutant(
+        "dealmaking-files-a-deal-the-pipeline-cannot-see",
+        "solvent/dealmaking.py",
+        "    except FailClosed as problem:\n"
+        "        return _refuse(prospect_id, Refused.NO_CLIENT_RECORD, str(problem))",
+        "    except FailClosed:\n"
+        "        prospect = None",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_a_client_who_is_not_in_the_crm_is_refused_not_orphaned",
+        "a deal is filed under a key the CRM does not know, so the "
+        "pipeline never shows it and the owner never learns it is open"),
+
+    Mutant(
+        "dealmaking-sells-a-skill-the-owner-has-not-cleared",
+        "solvent/dealmaking.py",
+        "    permitted, why = solvent.capability.may_deploy(service)\n"
+        "    if not permitted:",
+        "    permitted, why = solvent.capability.may_deploy(service)\n"
+        "    if False:",
+        "tests_solvent.test_dealmaking.TheGatesAreTheExistingAuthorities"
+        ".test_an_unapproved_skill_cannot_be_sold",
+        "work is sold on a capability the registry has not cleared to "
+        "reach a client, which is the LIMITED switch being bypassed"),
+
+    Mutant(
+        "negotiation-drops-cost-lines-when-it-is-stored",
+        "solvent/negotiation.py",
+        '            "costs": {f.name: getattr(self.costs, f.name)\n'
+        "                      for f in fields(self.costs)},",
+        '            "costs": {f.name: getattr(self.costs, f.name)\n'
+        "                      for f in fields(self.costs)\n"
+        '                      if f.name not in ("acquisition_cents",\n'
+        '                                        "supervision_cents")},',
+        "tests_solvent.test_full_cost_floor.EveryCostFieldSurvivesARestart"
+        ".test_the_round_trip_preserves_every_cost_field",
+        "a restart restores the deal with two cost lines at zero, and "
+        "because the floor is recomputed rather than restored the "
+        "recovered deal is quietly cheaper than the one that was opened"),
 )
 
 

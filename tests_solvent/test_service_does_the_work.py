@@ -53,7 +53,7 @@ class TheServiceSchedulesTheBusinessCycle(unittest.TestCase):
     #: which is the pin doing its job rather than a defect.
     DECLARED = ["heartbeat", "health", "reconciliation", "discovery",
                 "diagnostics", "owner_intents", "owner_briefing",
-                "supervision", "business", "chief_of_staff"]
+                "supervision", "dealmaking", "business", "chief_of_staff"]
 
     def test_the_task_list_is_the_declared_one(self):
         """Adding or removing a timer task stays a visible change."""
