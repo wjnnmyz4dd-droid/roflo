@@ -517,6 +517,12 @@ class Order:
     answers: dict
     #: What the customer says they will pay, if the offer is priced openly.
     offered_cents: Cents = 0
+    #: What they have already paid toward this work -- a deposit
+    #: taken at contract time, before any job existed. Carried so the
+    #: invoice can deduct it: without it a client who paid a deposit
+    #: was billed the full agreed price again, measured at 120% of
+    #: the agreement.
+    prepaid_cents: Cents = 0
     state: OrderState = OrderState.RECEIVED
     why: str = ""
     #: Set once the order has entered the pipeline, so the two can be
@@ -661,7 +667,8 @@ class Storefront:
     # ---- taking an order ---------------------------------------------
 
     def place(self, *, order_id: str, offer_id: str, client_ref: str,
-              answers: dict, offered_cents: Cents = 0) -> Order:
+              answers: dict, offered_cents: Cents = 0,
+              prepaid_cents: Cents = 0) -> Order:
         """Accept a customer's request, or say exactly what is missing."""
         if order_id in self._orders:
             raise FailClosed(
@@ -674,14 +681,16 @@ class Storefront:
         sellable, why = self.sellable(offer_id)
         if not sellable:
             order = Order(order_id, offer_id, client_ref, dict(answers),
-                          offered_cents, OrderState.DECLINED, why)
+                          offered_cents, int(prepaid_cents),
+                          OrderState.DECLINED, why)
             self._orders[order_id] = order
             return order
 
         missing = service.missing_answers(answers)
         if missing:
             order = Order(order_id, offer_id, client_ref, dict(answers),
-                          offered_cents, OrderState.NEEDS_INFORMATION,
+                          offered_cents, int(prepaid_cents),
+                          OrderState.NEEDS_INFORMATION,
                           "required answers are missing", missing=missing)
             self._orders[order_id] = order
             return order
@@ -690,13 +699,14 @@ class Storefront:
         if offered_cents and offered_cents < floor:
             order = Order(
                 order_id, offer_id, client_ref, dict(answers), offered_cents,
-                OrderState.DECLINED,
+                int(prepaid_cents), OrderState.DECLINED,
                 f"this service starts at {floor / 100:,.2f}")
             self._orders[order_id] = order
             return order
 
         order = Order(order_id, offer_id, client_ref, dict(answers),
-                      offered_cents or floor, OrderState.RECEIVED)
+                      offered_cents or floor, int(prepaid_cents),
+                      OrderState.RECEIVED)
         self._orders[order_id] = order
         return order
 

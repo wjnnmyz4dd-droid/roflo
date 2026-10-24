@@ -210,21 +210,30 @@ class AnInvoiceNamesWhoIsAskingToBePaid(unittest.TestCase):
         except Exception:
             pass
 
-    def write(self):
-        from solvent.harness import _write_invoice
+    def write(self, **fields):
+        """A real ``BusinessCycle``, not a stand-in for one.
+
+        This used to be a hand-written class with the seven
+        attributes the invoice happened to read. Adding a field to
+        ``BusinessCycle`` then broke it with an AttributeError from
+        inside production code -- the same "hand-written mirror falls
+        behind the type" shape the rest of this suite keeps finding.
+        """
+        from solvent.harness import BusinessCycle, _write_invoice
         from solvent.quoting import BillingBasis
 
-        class Cycle:
-            job_id = "job_1"
-            client_ref = "client:acme"
-            opportunity_ref = "ref-1"
-            invoiced_cents = 40_000
-            billable_hours = 1.0
-            execution_wall_seconds = 12.0
-            verification_rounds = 1
-            human_equivalent_hours = 0.0
-
-        return _write_invoice(self.s, Cycle(), workdir=self.box.name,
+        cycle = BusinessCycle()
+        cycle.job_id = "job_1"
+        cycle.client_ref = "client:acme"
+        cycle.opportunity_ref = "ref-1"
+        cycle.invoiced_cents = 40_000
+        cycle.due_cents = 40_000
+        cycle.billable_hours = 1.0
+        cycle.execution_wall_seconds = 12.0
+        cycle.verification_rounds = 1
+        for name, value in fields.items():
+            setattr(cycle, name, value)
+        return _write_invoice(self.s, cycle, workdir=self.box.name,
                               basis=BillingBasis.FIXED_PRICE,
                               agreed_hourly_cents=4_000)
 

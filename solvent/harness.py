@@ -829,6 +829,18 @@ class BusinessCycle:
     verification_rounds: int = 0
 
     invoiced_cents: Cents = 0
+    #: What the client has already paid toward this job before it
+    #: started -- a deposit taken at contract time. Carried so the
+    #: invoice can deduct it. Before this existed the client paid a
+    #: deposit into the Engagement and was then billed the full
+    #: agreed price again: measured at 36,074c taken against a
+    #: 30,061c agreement, 120%.
+    prepaid_cents: Cents = 0
+    #: What the client is actually asked for now. ``invoiced_cents``
+    #: stays the job's billable value, because the Governor priced
+    #: the whole job and the costs were incurred against all of it;
+    #: this is that value less what is already in hand.
+    due_cents: Cents = 0
     collected_cents: Cents = 0
     actual_profit_cents: Cents = 0
     payment_simulated: bool = True
@@ -891,6 +903,24 @@ def _record_measurement(s, cycle, *, capability: str, outcome: str) -> None:
             why=f"{type(exc).__name__}: {exc}")
 
 
+def _amount_lines(cycle: "BusinessCycle") -> list:
+    """The money, with any deposit shown as its own line.
+
+    A client who paid a deposit and then reads "Amount due: the
+    whole price" has been billed twice for one job, and has no way
+    to tell from the document that the deposit was ever received.
+    So the deduction is stated rather than silently applied: the
+    value of the work, what is already in hand, and what is left.
+    """
+    if not cycle.prepaid_cents:
+        return [f"Amount due: {fmt(cycle.invoiced_cents)}"]
+    return [
+        f"Value     : {fmt(cycle.invoiced_cents)} for the work delivered",
+        f"Received  : {fmt(cycle.prepaid_cents)} deposit, paid before work began",
+        f"Amount due: {fmt(cycle.due_cents)}",
+    ]
+
+
 def _write_invoice(s: "Solvent", cycle: "BusinessCycle", *, workdir: str,
                    basis, agreed_hourly_cents: Cents) -> str:
     """Write the document the client is actually sent. Plain text, deterministic.
@@ -947,13 +977,11 @@ def _write_invoice(s: "Solvent", cycle: "BusinessCycle", *, workdir: str,
             f"Billed    : {cycle.billable_hours:.4f} hour(s), rounded up to the "
             f"agreed billing increment",
             "",
-            f"Amount due: {fmt(cycle.invoiced_cents)}",
-        ]
+        ] + _amount_lines(cycle)
     else:
         lines += [
             "Basis     : fixed price, agreed before work began",
-            f"Amount due: {fmt(cycle.invoiced_cents)}",
-        ]
+        ] + _amount_lines(cycle)
         if cycle.human_equivalent_hours:
             lines += [
                 "",
@@ -1109,6 +1137,9 @@ def run_business_cycle(
         owner_accepts_quote: bool = False,
         simulate_payment: bool = False,
         payment_rail: str = "fixture",
+        #: What the client has already paid toward this work -- a
+        #: deposit taken at contract time, which the invoice deducts.
+        prepaid_cents: Cents = 0,
         external_ref: str = "") -> BusinessCycle:
     """The supervised entry point. **Every production caller comes here.**
 
@@ -1146,7 +1177,7 @@ def run_business_cycle(
             agreed_hourly_cents=agreed_hourly_cents,
             owner_accepts_quote=owner_accepts_quote,
             simulate_payment=simulate_payment, payment_rail=payment_rail,
-            external_ref=external_ref)
+            prepaid_cents=prepaid_cents, external_ref=external_ref)
 
 
 def _run_business_cycle(
@@ -1164,6 +1195,9 @@ def _run_business_cycle(
         owner_accepts_quote: bool = False,
         simulate_payment: bool = False,
         payment_rail: str = "fixture",
+        #: What the client has already paid toward this work -- a
+        #: deposit taken at contract time, which the invoice deducts.
+        prepaid_cents: Cents = 0,
         external_ref: str = "") -> BusinessCycle:
     """Take one opportunity from a registered source through to profit.
 
@@ -1575,17 +1609,27 @@ def _run_business_cycle(
     else:
         cycle.invoiced_cents = cycle.quoted_cents
 
+    # A deposit is money the client has already paid for this work.
+    # Billing the full price again is charging them twice for the
+    # same job, and it is what happened until this line existed.
+    cycle.prepaid_cents = max(0, int(prepaid_cents))
+    cycle.due_cents = max(0, cycle.invoiced_cents - cycle.prepaid_cents)
+
     # Written before the invoice, not after. Opening the payment row is the
     # second of two writes, and a process that stops between them leaves work
     # delivered with nothing on paper saying it was owed for. This is the
     # first write, and it is what a restart reconciles against.
     if s.ledger.obligation_for(cycle.job_id) is None:
         s.ledger.record_billing_obligation(
-            job_id=cycle.job_id, amount_cents=cycle.invoiced_cents,
+            job_id=cycle.job_id, amount_cents=cycle.due_cents,
             rail=payment_rail, external_ref=external_ref, basis=basis.value,
             client_ref=cycle.client_ref or "")
+    # The receivable is what is still owed, not what the job was
+    # worth. Opening it for the full value against a client who has
+    # already paid part of it is how the books come to show an
+    # outstanding balance nobody owes.
     payment_id = s.ledger.open_payment(
-        job_id=cycle.job_id, amount_cents=cycle.invoiced_cents,
+        job_id=cycle.job_id, amount_cents=cycle.due_cents,
         rail=payment_rail, external_ref=external_ref,
         client_ref=cycle.client_ref or "")
 
@@ -1627,7 +1671,7 @@ def _run_business_cycle(
     # revenue because it does not get to choose the verification method.
     s.ledger.set_payment_state(
         payment_id, PaymentState.PAID,
-        collected_cents=cycle.invoiced_cents,
+        collected_cents=cycle.due_cents,
         verification_method=f"{SIMULATED_PREFIX}{payment_rail}")
     cycle.stages.append("payment")
 
@@ -1636,7 +1680,7 @@ def _run_business_cycle(
     # their business from the one the ledger has.
     try:
         briefing.payment_received(
-            s, job_id=cycle.job_id, gross_cents=cycle.invoiced_cents,
+            s, job_id=cycle.job_id, gross_cents=cycle.due_cents,
             fees_cents=0, simulated=True, provider=payment_rail,
             confirmed_at="")
     except Exception as exc:  # pragma: no cover - exercised by injection

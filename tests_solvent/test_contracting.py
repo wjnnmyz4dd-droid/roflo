@@ -767,6 +767,85 @@ class TheOrderStatusGoesOneWay(Contracted):
 
 
 # ======================================================================
+#  The deposit is money, and the invoice must know it
+# ======================================================================
+
+
+class ADepositIsNotBilledTwice(Contracted):
+    """Measured at 120% of the agreement before this was repaired.
+
+    `client:castleford-001` agreed 30,061c, paid a 6,013c deposit
+    into the Engagement, and was then invoiced 30,061c again through
+    the Ledger -- 36,074c taken against a 30,061c agreement. The
+    business cycle knows nothing about engagements, and
+    `Engagement.balance_cents` was never read by anything that bills.
+    """
+
+    def test_the_order_carries_what_the_client_already_paid(self):
+        pid, engagement = self.ready()
+        deposit = engagement.collected_cents
+        self.assertGreater(deposit, 0, "no deposit, so nothing is tested")
+
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+
+        self.assertEqual(self.s.storefront.order(f"eng-{pid}").prepaid_cents,
+                         deposit)
+
+    def test_the_invoice_is_the_balance_not_the_whole_price(self):
+        pid, engagement = self.ready()
+        deposit = engagement.collected_cents
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+
+        cycle = self.runtime()._one_business_job()
+
+        self.assertEqual(cycle.prepaid_cents, deposit)
+        self.assertEqual(cycle.due_cents, cycle.invoiced_cents - deposit)
+        self.assertGreater(cycle.due_cents, 0)
+
+    def test_the_client_is_asked_for_the_price_once_in_total(self):
+        """The whole point, as one sum."""
+        pid, engagement = self.ready()
+        agreed = engagement.proposal.price_cents
+        deposit = engagement.collected_cents
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        cycle = self.runtime()._one_business_job()
+
+        receivable = int((self.s.ledger.payment_for(cycle.job_id) or {})
+                         .get("amount_cents") or 0)
+
+        self.assertEqual(deposit + receivable, agreed,
+                         f"the client was asked for {deposit + receivable} "
+                         f"against an agreement of {agreed}")
+
+    def test_the_invoice_document_shows_the_deduction(self):
+        """A client who cannot see the deposit on the bill has been
+        billed twice as far as they can tell."""
+        pid, engagement = self.ready()
+        deposit = engagement.collected_cents
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        cycle = self.runtime()._one_business_job()
+
+        self.assertTrue(cycle.invoice_path, "no invoice was written")
+        text = pathlib.Path(cycle.invoice_path).read_text(encoding="utf-8")
+        self.assertIn("deposit, paid before work began", text)
+        self.assertIn(f"{deposit / 100:,.2f}", text)
+        self.assertIn(f"{cycle.due_cents / 100:,.2f}", text)
+
+    def test_an_order_with_no_deposit_bills_the_whole_price(self):
+        """The control. Most clients pay no deposit and must not be
+        shown a deduction of nothing."""
+        order_id = self.place("csv-cleanup", order_id="ord-plain")
+        self.assertEqual(self.s.storefront.order(order_id).prepaid_cents, 0)
+
+        cycle = self.runtime()._one_business_job()
+
+        self.assertEqual(cycle.prepaid_cents, 0)
+        self.assertEqual(cycle.due_cents, cycle.invoiced_cents)
+        text = pathlib.Path(cycle.invoice_path).read_text(encoding="utf-8")
+        self.assertNotIn("deposit", text)
+
+
+# ======================================================================
 #  What the run reports about itself
 # ======================================================================
 

@@ -51,7 +51,9 @@ from solvent.discovery import OpportunityStatus
 from solvent.engagement import Acceptance, Stage
 from solvent.errors import FailClosed
 from solvent.negotiation import Outcome
+from solvent.types import JobState
 
+from simulation import rail
 from simulation.customers import Population
 
 #: Written into evidence and contact records so a reader of the CRM
@@ -81,6 +83,12 @@ class World:
     solvent: object
     population: Population
     workroot: pathlib.Path
+    #: Where a simulated payment provider drops its signed webhook
+    #: deliveries. The production ``payments`` task reads it, the
+    #: production rail verifies the signature and the production
+    #: Ledger decides what it means. Empty means nobody pays, which
+    #: is a run worth being able to ask for.
+    spool: pathlib.Path | None = None
     #: Everything that happened, for the audit to read afterwards.
     log: list = field(default_factory=list)
     #: How many acts have no production counterpart. Counted rather
@@ -146,7 +154,8 @@ class World:
         acts: list = []
         for step in (self._arrive, self._go_quiet, self._haggle, self._sign,
                      self._pay_the_deposit, self._send_the_file,
-                     self._ask_for_changes, self._settle, self._come_back):
+                     self._ask_for_changes, self._pay_the_invoice,
+                     self._come_back):
             acts.extend(step(day))
         return acts
 
@@ -196,8 +205,19 @@ class World:
         job. Both are done here and both are marked.
         """
         crm = self.solvent.crm
-        crm.discover(prospect_id=customer.prospect_id, company=customer.company,
-                     industry=customer.industry, state="TX")
+        # The id the CRM hands back, not the one asked for. It
+        # deduplicates on (company, state) and returns the company it
+        # already holds, so taking the asked-for id on trust raised
+        # "no prospect" the first time two fictional clients happened
+        # to share a name.
+        held = crm.discover(prospect_id=customer.prospect_id,
+                            company=customer.company,
+                            industry=customer.industry, state=customer.state)
+        if held.prospect_id != customer.prospect_id:
+            return self._could_not(
+                customer, day.index, "write in asking for a price",
+                f"the CRM already holds {held.company} in {customer.state} as "
+                f"{held.prospect_id}")
         crm.add_evidence(customer.prospect_id, Evidence(
             claim=f"they asked for a price for {customer.wants}",
             basis=Basis.CLIENT_STATED, source=FICTIONAL,
@@ -219,7 +239,8 @@ class World:
                 "quoted_cents": customer.budget_cents,
                 "needs": [customer.wants],
                 "client_ref": customer.prospect_id,
-                "project_state": "TX", "client_state": "TX",
+                "project_state": customer.state,
+                "client_state": customer.state,
                 "body": FICTIONAL}])
         row = next((r for r in self.solvent.discovery.opportunities()
                     if r.get("client_ref") == customer.prospect_id), None)
@@ -242,14 +263,23 @@ class World:
         """The commonest way a deal dies: nothing at all.
 
         Checked before the other acts, so a client who goes quiet
-        today does not also haggle today. Clients who have settled at
-        least once are not eligible -- somebody who has paid is a
-        customer, and losing them is churn, which is
+        today does not also haggle today.
+
+        Only the uncommitted. Somebody who has signed does not
+        vanish; they decline, or they pay late, and both of those are
+        modelled elsewhere. Somebody who has already paid once is a
+        customer, and losing them is churn --
         :meth:`_come_back`'s absence rather than this.
         """
         out = []
+        chief = getattr(self.solvent, "chief_of_staff", None)
         for customer in self.population.active(day.index):
             if customer.settled or customer.arrives_on == day.index:
+                continue
+            signed = chief is not None and (
+                getattr(chief.engagements.get(customer.prospect_id), "acceptance",
+                        None) is not None)
+            if signed:
                 continue
             if self._draw(customer, day.index, "quiet").random() \
                     >= customer.temperament.goes_quiet:
@@ -410,27 +440,62 @@ class World:
                 getattr(handled, "classification", "") or "complaint received"))
         return out
 
-    # ---- 8. settling -------------------------------------------------------
+    # ---- 8. paying the invoice ----------------------------------------------
 
-    def _settle(self, day) -> list:
+    def _pay_the_invoice(self, day) -> list:
+        """Pay what DeskPilot billed, through the real payment path.
+
+        The client writes a signed webhook delivery into the spool.
+        Nothing else: the ``payments`` task reads it, the rail checks
+        the signature, and the Ledger decides what it means. A client
+        who waits longer than their temperament says simply has not
+        paid yet, and the shop's unpaid exposure grows -- which is
+        the thing the Governor's ceiling is for and therefore worth
+        a run actually producing.
+
+        **They pay what they are billed.** The invoice is the
+        Ledger's figure, not the engagement's: an engagement-backed
+        job is billed its full price even though a deposit has
+        already been taken, and a simulation that quietly paid the
+        balance instead would hide that. See the audit, which
+        compares the two.
+        """
         out = []
-        chief = getattr(self.solvent, "chief_of_staff", None)
-        if chief is None:
+        if self.spool is None:
             return out
-        for customer in self.population.active(day.index):
-            deal = chief.engagements.get(customer.prospect_id)
-            if deal is None or deal.stage is not Stage.INVOICED:
+        ledger = self.solvent.ledger
+        for job in self.solvent.orchestrator.jobs():
+            if job.state is not JobState.AWAITING_PAYMENT:
                 continue
-            if self._since(customer, day.index, "was invoiced") \
-                    < customer.temperament.balance_takes_days:
+            customer = self._customer_of(job.client_id)
+            if customer is None or customer.quiet_since is not None:
                 continue
-            deal.record_payment({
-                "verified": True, "cents": deal.outstanding_cents,
-                "external_ref": f"sim_bal_{customer.customer_id}_{deal.engagement_id}"})
+            key = (customer.customer_id, f"invoiced-{job.id}")
+            if key in self.noticed:
+                waited = day.index - self.noticed[key]
+            else:
+                self.noticed[key] = day.index
+                waited = 0
+            if waited < customer.temperament.balance_takes_days:
+                continue
+            if (customer.customer_id, f"paid-{job.id}") in self.noticed:
+                continue
+            owed = int((ledger.payment_for(job.id) or {}).get("amount_cents") or 0)
+            if owed <= 0:
+                continue
+            self.noticed[(customer.customer_id, f"paid-{job.id}")] = day.index
+            rail.pay(self.spool, job_id=job.id, amount_cents=owed,
+                     event_id=f"evt_{job.id}")
             customer.settled += 1
-            out.append(self._did(customer, day.index, "settle",
-                                 f"{deal.collected_cents}c in total"))
+            out.append(self._did(customer, day.index, "pay the invoice",
+                                 f"{owed}c for {job.id}"))
         return out
+
+    def _customer_of(self, client_ref: str):
+        prefix = "client:"
+        if not str(client_ref).startswith(prefix):
+            return None
+        return self.population.by_id().get(str(client_ref)[len(prefix):])
 
     # ---- 9. coming back -----------------------------------------------------
 

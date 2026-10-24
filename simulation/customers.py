@@ -71,6 +71,13 @@ CAPABILITIES = tuple(offer.capability for offer in shop.OFFERS)
 #: industry that changed how a client haggles would be this module
 #: asserting something about the world it cannot support.
 
+#: States a fictional client might be in. Varied rather than fixed
+#: because ``CRM.discover`` deduplicates on (company, state): two
+#: clients with one name in one state are taken to be one company,
+#: which is correct of the real world and was producing collisions
+#: here until the names were made unique.
+STATES = ("TX", "CA", "NY", "FL", "IL", "WA", "GA", "OH")
+
 #: What a client is called. Deliberately dull.
 STEMS = ("Northgate", "Brightwell", "Castleford", "Dunmore", "Elmridge",
          "Fairhaven", "Greystone", "Harlow", "Innisfree", "Jerricot",
@@ -103,7 +110,12 @@ class Temperament:
     #: Chance of asking for changes once the work arrives.
     asks_for_changes: float
     #: Chance, per working day, of simply stopping -- no reply, no
-    #: refusal, nothing. The most common way a deal actually dies.
+    #: refusal, nothing. The most common way a deal actually dies,
+    #: and it applies only while the client is still *uncommitted*:
+    #: somebody who has agreed a price and signed does not ghost,
+    #: they decline or they pay late. A flat daily rate applied to
+    #: everybody compounds -- at 1-8% a day nobody survives ninety
+    #: days, and a run would measure the rate rather than the shop.
     goes_quiet: float
     #: Chance of coming back with new work after settling.
     comes_back: float
@@ -116,7 +128,7 @@ def a_temperament(rng: random.Random) -> Temperament:
         deposit_takes_days=rng.randint(0, 4),
         balance_takes_days=rng.randint(1, 21),
         asks_for_changes=rng.uniform(0.05, 0.35),
-        goes_quiet=rng.uniform(0.01, 0.08),
+        goes_quiet=rng.uniform(0.01, 0.06),
         comes_back=rng.uniform(0.05, 0.40),
     )
 
@@ -131,6 +143,7 @@ class Customer:
     customer_id: str
     company: str
     industry: str
+    state: str
     email: str
     #: The most they will pay for one job, in cents. A price above it
     #: is refused however well it is argued.
@@ -165,8 +178,13 @@ def a_customer(rng: random.Random, *, index: int, arrives_on: int,
     slug = f"{stem.lower()}-{index:03d}"
     return Customer(
         customer_id=slug,
-        company=f"{stem} {suffix}",
+        # The index is part of the name, not decoration. Fifteen
+        # stems and six suffixes is ninety combinations, and a
+        # ninety-day run meets far more clients than that, so without
+        # it two of them become one company in the CRM.
+        company=f"{stem} {suffix} {index:03d}",
         industry=rng.choice(INDUSTRIES),
+        state=rng.choice(STATES),
         # `.invalid` is reserved by RFC 2606 and cannot resolve.
         email=f"ops@{slug}.invalid",
         # Wide on purpose. A population that can all afford the asking

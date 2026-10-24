@@ -2760,6 +2760,41 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- a deposit is money, and the invoice knows it ----------------
+
+    Mutant(
+        "a-deposit-is-billed-to-the-client-a-second-time",
+        "solvent/harness.py",
+        "    cycle.due_cents = max(0, cycle.invoiced_cents - cycle.prepaid_cents)",
+        "    cycle.due_cents = cycle.invoiced_cents",
+        "tests_solvent.test_contracting.ADepositIsNotBilledTwice"
+        ".test_the_client_is_asked_for_the_price_once_in_total",
+        "every client who paid a deposit is invoiced the whole agreed "
+        "price again, so the shop takes 120% of what it agreed to"),
+
+    Mutant(
+        "the-deposit-never-leaves-the-engagement",
+        "solvent/contracting.py",
+        "                       prepaid_cents=engagement.collected_cents)",
+        "                       prepaid_cents=0)",
+        "tests_solvent.test_contracting.ADepositIsNotBilledTwice"
+        ".test_the_order_carries_what_the_client_already_paid",
+        "the deposit stays in the engagement and the order knows "
+        "nothing about it, so the cycle bills the full price"),
+
+    Mutant(
+        "the-invoice-hides-the-deposit-it-deducted",
+        "solvent/harness.py",
+        "    if not cycle.prepaid_cents:\n"
+        "        return [f\"Amount due: {fmt(cycle.invoiced_cents)}\"]",
+        "    if True:\n"
+        "        return [f\"Amount due: {fmt(cycle.invoiced_cents)}\"]",
+        "tests_solvent.test_contracting.ADepositIsNotBilledTwice"
+        ".test_the_invoice_document_shows_the_deduction",
+        "the bill says the client owes the whole price while the "
+        "receivable says otherwise, so the document and the books "
+        "disagree and the client cannot tell which is right"),
+
     # ---- money arriving reaches the books and closes the job ---------
 
     Mutant(

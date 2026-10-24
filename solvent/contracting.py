@@ -310,7 +310,13 @@ def admit(solvent, *, prospect_id: str, initiator: str) -> Result:
     order = shop.place(order_id=order_id, offer_id=offer.offer_id,
                        client_ref=prospect_id,
                        answers=dict(engagement.materials),
-                       offered_cents=engagement.proposal.price_cents)
+                       offered_cents=engagement.proposal.price_cents,
+                       # The deposit. Without it the client is billed
+                       # the whole agreed price a second time: the
+                       # business cycle knows nothing about
+                       # engagements, and `Engagement.balance_cents`
+                       # was never read by anything that bills.
+                       prepaid_cents=engagement.collected_cents)
     if order.state is not OrderState.RECEIVED:
         # The storefront refused on its own terms. Reported, not
         # retried and not worked around: the engagement keeps its
@@ -526,14 +532,25 @@ def awaiting_a_proposal(solvent) -> list[str]:
 
 
 def awaiting_admission(solvent) -> list[str]:
-    """Engagements whose deposit has cleared and whose work has not begun."""
+    """Engagements whose deposit has cleared and whose work has not begun.
+
+    An engagement whose order already exists is not waiting on
+    anything this can do, even if that order was declined. Without
+    that check a declined order left its engagement in the sweep for
+    ever: measured at 1,439 ALREADY_ADMITTED refusals in twenty
+    simulated days, each one audited. A refusal worth recording once
+    is not worth recording on every tick -- the signal drowns in its
+    own repetition and the audit log pays for it.
+    """
     chief = getattr(solvent, "chief_of_staff", None)
+    shop = getattr(solvent, "storefront", None)
     if chief is None:
         return []
     return [pid for pid, deal in chief.engagements.items()
             if deal.work_authorised
             and deal.stage in (Stage.ACCEPTED, Stage.DEPOSIT_REQUESTED,
-                               Stage.DEPOSIT_RECEIVED)]
+                               Stage.DEPOSIT_RECEIVED)
+            and (shop is None or shop.order(f"eng-{pid}") is None)]
 
 
 def awaiting_a_result(solvent) -> list[str]:
@@ -568,10 +585,16 @@ def carry_forward(solvent, *, limit: int = 1, initiator: str) -> list[Result]:
     for prospect_id in awaiting_admission(solvent)[:max(0, limit)]:
         out.append(admit(solvent, prospect_id=prospect_id,
                          initiator=initiator))
+    # STILL_WORKING and NO_JOB both mean "nothing to report yet", and
+    # both are true on most ticks of a healthy shop. Dropping them
+    # here keeps the tick's line readable and keeps the audit log for
+    # things that happened: measured at 2,304 NO_JOB refusals in
+    # twenty simulated days, every one of them recorded.
+    quiet = (Refused.STILL_WORKING, Refused.NO_JOB)
     for prospect_id in awaiting_a_result(solvent):
         told = report_back(solvent, prospect_id=prospect_id,
                            initiator=initiator)
-        if told.done or told.refusal is not Refused.STILL_WORKING:
+        if told.done or told.refusal not in quiet:
             out.append(told)
 
     # And every other order. A client who ordered through the

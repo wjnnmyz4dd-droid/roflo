@@ -109,6 +109,54 @@ class ProductionPath(unittest.TestCase):
             compliance=Compliance.PERMITTED,
             determination="inbound orders placed against published offers")
         self.s.policy.amend(self._policy(), OWNER, "production-path acceptance")
+        self._freeze_the_hour()
+
+    #: A moment in the owner's own timezone with no summary slot near
+    #: it. 11:00 is four hours from the morning summary and five and
+    #: a half from the evening one.
+    QUIET_HOUR = 11
+
+    def _freeze_the_hour(self):
+        """Stop the suite depending on what time of day it is run at.
+
+        ``_tick_owner_briefing`` reads the wall clock when nothing
+        passes it a moment, and ``run_due`` passes it nothing. So
+        every test that drives the real scheduler sent an owner
+        summary -- an external effect, with
+        ``external_effect="owner notification"`` on the audit row --
+        if and only if it happened to run inside a slot window.
+
+        Found by running the suite in the late afternoon:
+        ``ItSendsNothing.test_opening_a_deal_records_no_outbound_message``
+        failed, on a change that had nothing to do with briefings,
+        and failed the same way with every change of mine stashed.
+        The tick's own docstring warns of exactly this -- "a test
+        whose result comes from the wall clock is not testing the
+        slot logic" -- and the fixture had not taken the advice.
+
+        A test that *wants* a summary passes its own ``now``, which
+        this does not touch.
+        """
+        from solvent import briefing
+
+        real = briefing.owner_now
+
+        def quiet(now=None):
+            moment = real(now)
+            if now is not None:
+                return moment
+            return moment.replace(hour=self.QUIET_HOUR, minute=0, second=0,
+                                  microsecond=0)
+
+        patched = mock.patch.object(briefing, "owner_now", quiet)
+        patched.start()
+        self.addCleanup(patched.stop)
+        # `slot_for` returns "" for no slot, not None. Asserted
+        # rather than assumed: the first version of this check used
+        # `assertIsNone` and failed every test in the file, which is
+        # the self-check doing its job.
+        self.assertFalse(briefing.slot_for(briefing.owner_now()),
+                         "the hour this fixture freezes is not quiet")
 
     def _close(self):
         try:

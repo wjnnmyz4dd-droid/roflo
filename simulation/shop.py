@@ -25,6 +25,7 @@ from __future__ import annotations
 import pathlib
 
 from solvent.discovery import Compliance, ManualSource, Readiness
+from solvent.storefront import OFFERS
 from solvent.harness import (
     OWNER, Solvent, owner_promotions, promote_capability,
 )
@@ -61,15 +62,49 @@ POLICY = {
         "max_committed_unverified_cents": 500_000,
         "margin_floor": 0.30,
     },
+    # The owner's cost model. Every line is a real cost of running
+    # this business, and the negotiation floor is computed from them:
+    # with none of them recorded, DeskPilot's own costs are near zero,
+    # every job looks like a 100% margin, and it quotes a few dollars
+    # for work worth a hundred. Measured before these were set --
+    # agreed prices of $9.29 and $14.32, both below the owner's own
+    # minimum fee, which the storefront then refused.
     "commercial": {
         "minimum_project_fee_cents": 4_000,
-        # A card processor's cut. Without some cost the margin floor
-        # can never reject anything, because DeskPilot's own costs are
-        # near zero and every job would look like a 100% margin.
+        "minimum_margin_fraction": 0.30,
+        # A $5 VPS, charged by the CPU hour it actually uses.
+        "compute_cents_per_cpu_hour": 1_200,
+        # A card processor's cut.
         "payment_fee_fraction": 0.029,
         "payment_fee_flat_cents": 30,
+        # The checker's run, the owner's five minutes, the revision
+        # some fraction of jobs need, and what it cost to find the
+        # client in the first place. Leaving any of them out is how a
+        # business prices itself out of existence while every
+        # individual job looks profitable.
+        "verification_cents_per_job": 2_000,
+        "expected_revision_cents_per_job": 4_000,
+        "acquisition_cents_per_job": 3_000,
+        "supervision_cents_per_job": 2_500,
+        "risk_allowance_cents_per_job": 500,
     },
     "contracting": {"turnaround_days": 3},
+    # How much work the owner is willing to owe at once. Without
+    # this, `Capacity.room_for` refuses everything -- "DeskPilot
+    # takes nothing on until the owner says how much it may owe" --
+    # which is correct and fails closed, and which is why a shop
+    # configured without it quotes nobody. Noted while measuring:
+    # the storefront path admitted work anyway, because it is bounded
+    # by `qualification.max_concurrent_jobs` and the Operator's
+    # per-run limit rather than by this. Two capacity authorities
+    # giving different answers to "is there room".
+    "capacity": {
+        "skills": [offer.capability for offer in OFFERS],
+        "cpu_share": 0.5,
+        "min_free_disk_bytes": 1,
+        # Five skills, four hours of work owed in each.
+        "max_owed_seconds": 72_000.0,
+    },
     "operations": {"continuous_enabled": True, "max_jobs_per_run": 5,
                    "max_committed_cents": 5_000_000},
     "egress": {

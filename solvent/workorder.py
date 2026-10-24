@@ -61,6 +61,10 @@ class WorkOrder:
     agreed_requirements: tuple
     owner_identity: str
     external_ref: str
+    #: What the customer has already paid toward this work. Copied
+    #: from the order, carried no further than the cycle, and
+    #: deducted there -- this module judges nothing about it.
+    prepaid_cents: int = 0
 
     def as_cycle_kwargs(self) -> dict:
         """Exactly the keyword arguments ``run_business_cycle`` declares.
@@ -76,6 +80,7 @@ class WorkOrder:
             "capability": self.capability,
             "owner_identity": self.owner_identity,
             "agreed_requirements": list(self.agreed_requirements),
+            "prepaid_cents": self.prepaid_cents,
             "external_ref": self.external_ref,
         }
 
@@ -183,6 +188,7 @@ def next_work_order(s, *, workroot: str, owner_identity: str = "") -> "WorkOrder
             source_name=shop.source.name, capability=service.capability,
             source_file=source_file, workdir=workdir,
             agreed_requirements=tuple(requirements), owner_identity=owner,
+            prepaid_cents=int(getattr(order, "prepaid_cents", 0) or 0),
             external_ref=order.order_id)
     return None
 

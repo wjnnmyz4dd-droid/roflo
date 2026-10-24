@@ -696,6 +696,16 @@ class Runtime:
         #: business cycle running?" and must not be confused with zero
         #: jobs completed.
         self._business: dict = {}
+        #: Refusals this process has already written down, keyed by
+        #: (tick, subject, reason). A connector re-decides on every
+        #: pass, and a decision re-made on facts that have not
+        #: changed is not a new decision: recording it again fills
+        #: the audit log with repetition -- measured at 2,016
+        #: identical UNPROFITABLE rows in eighteen simulated days --
+        #: and makes the real entries harder to find. In memory, so
+        #: a restart records each refusal once more, which is when
+        #: an owner is most likely to want to see it.
+        self._said_already: set = set()
 
     # ------------------------------------------------------------- lifecycle
     def start(self) -> Startup:
@@ -1316,6 +1326,9 @@ class Runtime:
         opened = [r for r in results if r.opened]
         refused = [r for r in results if not r.opened]
         for refusal in refused:
+            if not self._first_time("dealmaking", refusal.prospect_id,
+                                    refusal.refusal.value):
+                continue
             self.solvent.audit.record(
                 event="negotiation.not_opened", authority="orchestrator",
                 initiator=RUNTIME, why=refusal.why[:200],
@@ -1380,6 +1393,9 @@ class Runtime:
             return "no deal is waiting on a step"
         done = [r for r in results if r.done]
         for refusal in (r for r in results if not r.done):
+            if not self._first_time("contracting", refusal.prospect_id,
+                                    refusal.refusal.value):
+                continue
             self.solvent.audit.record(
                 event="contracting.not_carried", authority="orchestrator",
                 initiator=RUNTIME, why=refusal.why[:200],
@@ -1544,6 +1560,22 @@ class Runtime:
         if not total:
             return "no prospects"
         return (f"{total} prospect(s); {len(escalations)} need the owner")
+
+    def _first_time(self, tick: str, subject: str, reason: str) -> bool:
+        """Is this the first time this process has refused this, this way?
+
+        A refusal that changes reason is new and is recorded again;
+        the same reason on the same subject is the same decision
+        re-made against facts that have not moved.
+        """
+        key = (tick, str(subject), str(reason))
+        if key in self._said_already:
+            return False
+        self._said_already.add(key)
+        # The subject's *other* reasons stay recorded: a client who
+        # was UNPROFITABLE and is now NO_CAPACITY has had two
+        # different things said about them and both are worth having.
+        return True
 
     def _notify_owner(self, *, event: str, summary: str,
                       dedupe_key: str) -> None:
