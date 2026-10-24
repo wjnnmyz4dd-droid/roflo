@@ -727,6 +727,51 @@ class Storefront:
         order.state = OrderState.IN_QUALIFICATION
         return order
 
+    #: Where an order may go from where it is. Forward only, because
+    #: a customer who was told "Delivered" and then reads "Being
+    #: reviewed" has been told the first one was false.
+    PROGRESS = {
+        OrderState.IN_QUALIFICATION: (OrderState.IN_PROGRESS,
+                                      OrderState.DECLINED),
+        OrderState.IN_PROGRESS: (OrderState.DELIVERED, OrderState.DECLINED),
+        OrderState.DELIVERED: (OrderState.IN_REVISION, OrderState.CLOSED),
+        OrderState.IN_REVISION: (OrderState.DELIVERED, OrderState.CLOSED),
+    }
+
+    def report_progress(self, order_id: str, state: OrderState, *,
+                        why: str = "") -> Order:
+        """Record where the pipeline has got this order to.
+
+        The three states after IN_QUALIFICATION -- IN_PROGRESS,
+        DELIVERED, CLOSED -- had no setter anywhere in the package.
+        They existed only in :meth:`Order.customer_status`'s map and
+        in ``TERMINAL``, so the method whose entire purpose is "what
+        to tell the customer" could say nothing after "Being
+        reviewed. You will hear before any work begins." -- including
+        to a customer whose work was finished, verified and billed.
+
+        This decides nothing. The pipeline already decided; this
+        writes down what it decided in words a customer can read.
+        Forward only, and idempotent: reporting the state an order is
+        already in is a no-op rather than an error, because the
+        reporter runs on a timer and will see the same job again.
+        """
+        order = self._orders.get(order_id)
+        if order is None:
+            raise FailClosed(f"there is no order {order_id!r}")
+        if order.state is state:
+            return order
+        allowed = self.PROGRESS.get(order.state, ())
+        if state not in allowed:
+            raise FailClosed(
+                f"order {order_id!r} is {order.state.value} and cannot become "
+                f"{state.value}; from here it may only become "
+                + (", ".join(s.value for s in allowed) or "nothing"))
+        order.state = state
+        if why:
+            order.why = why
+        return order
+
     def order(self, order_id: str) -> Order | None:
         return self._orders.get(order_id)
 

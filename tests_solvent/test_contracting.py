@@ -612,6 +612,161 @@ class WhichTermsTheClientGets(unittest.TestCase):
 
 
 # ======================================================================
+#  Telling the engagement and the customer what happened
+# ======================================================================
+
+
+class TheResultComesBack(Contracted):
+    """The other half of the join, and the status a customer reads.
+
+    ``contracting`` carried the engagement into the pipeline and
+    nothing carried the result out. ``Engagement.delivered`` and
+    ``Engagement.invoiced`` had no caller in the package, and
+    ``OrderState.IN_PROGRESS``, ``DELIVERED`` and ``CLOSED`` had no
+    setter -- they existed only in ``customer_status``'s map. So a
+    customer whose work was finished, verified and billed was told
+    "Being reviewed. You will hear before any work begins."
+    """
+
+    def delivered(self):
+        """One job all the way through, by the production cycle."""
+        pid, engagement = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        cycle = self.runtime()._one_business_job()
+        self.assertTrue(cycle.delivered, cycle.stages)
+        return pid, engagement
+
+    def test_before_the_report_the_customer_is_told_nothing_true(self):
+        """The control. Without it the repair proves nothing."""
+        pid, engagement = self.delivered()
+
+        order = self.s.storefront.order(f"eng-{pid}")
+        self.assertIs(order.state, OrderState.IN_QUALIFICATION)
+        self.assertIs(engagement.stage, Stage.WORK_AUTHORISED)
+
+    def test_the_engagement_learns_the_work_was_delivered_and_billed(self):
+        pid, engagement = self.delivered()
+
+        result = contracting.report_back(self.s, prospect_id=pid,
+                                         initiator="test")
+
+        self.assertTrue(result.done, result.summary())
+        self.assertIs(engagement.stage, Stage.INVOICED)
+        self.assertGreater(engagement.outstanding_cents, 0,
+                           "an invoice for nothing is not an invoice")
+
+    def test_the_customer_is_told_the_truth(self):
+        pid, _ = self.delivered()
+
+        contracting.report_back(self.s, prospect_id=pid, initiator="test")
+
+        order = self.s.storefront.order(f"eng-{pid}")
+        self.assertIs(order.state, OrderState.DELIVERED)
+        self.assertEqual(order.customer_status(),
+                         "Delivered and checked against your requirements.")
+
+    def test_reporting_twice_moves_nothing_twice(self):
+        """It runs on a timer and sees the same job again."""
+        pid, engagement = self.delivered()
+        self.assertTrue(contracting.report_back(
+            self.s, prospect_id=pid, initiator="test").done)
+        collected = engagement.collected_cents
+
+        again = contracting.report_back(self.s, prospect_id=pid,
+                                        initiator="test")
+
+        self.assertIs(again.refusal, Refused.STILL_WORKING)
+        self.assertIs(engagement.stage, Stage.INVOICED)
+        self.assertEqual(engagement.collected_cents, collected)
+
+    def test_work_still_running_reports_progress_and_nothing_else(self):
+        """A customer mid-job is owed "In progress", not "Delivered"."""
+        pid, engagement = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        # Admitted to a job, and the cycle has not run.
+        order = self.s.storefront.order(f"eng-{pid}")
+        self.s.storefront.submit_to_pipeline(order.order_id)
+        self.s.discovery.poll("storefront")
+
+        result = contracting.report_back(self.s, prospect_id=pid,
+                                         initiator="test")
+
+        self.assertIs(result.refusal, Refused.NO_JOB,
+                      "no job exists yet, and saying 'delivered' would be "
+                      "the whole defect in the other direction")
+        self.assertIs(engagement.stage, Stage.WORK_AUTHORISED)
+
+    def test_an_engagement_with_no_order_is_refused(self):
+        pid = self.agreed()
+        self.accepted(pid)
+
+        result = contracting.report_back(self.s, prospect_id=pid,
+                                         initiator="test")
+
+        self.assertIs(result.refusal, Refused.NOT_ADMITTED)
+
+    def test_the_scheduler_does_it(self):
+        pid, engagement = self.ready()
+        runtime = self.runtime()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        runtime._one_business_job()
+
+        runtime.run_due()
+
+        self.assertIs(engagement.stage, Stage.INVOICED)
+        self.assertIs(self.s.storefront.order(f"eng-{pid}").state,
+                      OrderState.DELIVERED)
+
+
+class TheOrderStatusGoesOneWay(Contracted):
+    """A customer told "Delivered" must never then read "Being reviewed"."""
+
+    def test_it_will_not_go_backwards(self):
+        pid, _ = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        shop = self.s.storefront
+        shop.submit_to_pipeline(f"eng-{pid}")
+        shop.report_progress(f"eng-{pid}", OrderState.IN_PROGRESS)
+        shop.report_progress(f"eng-{pid}", OrderState.DELIVERED)
+
+        with self.assertRaises(FailClosed) as caught:
+            shop.report_progress(f"eng-{pid}", OrderState.IN_QUALIFICATION)
+
+        self.assertIn("may only become", str(caught.exception))
+
+    def test_reporting_the_state_it_is_in_is_not_an_error(self):
+        pid, _ = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+
+        order = self.s.storefront.report_progress(
+            f"eng-{pid}", OrderState.RECEIVED)
+
+        self.assertIs(order.state, OrderState.RECEIVED)
+
+    def test_every_state_a_customer_can_be_told_is_reachable(self):
+        """The defect was three states with no setter. Pinned so it stays fixed.
+
+        Every member of ``OrderState`` must be reachable: by
+        ``place`` (RECEIVED, NEEDS_INFORMATION, DECLINED), by
+        ``submit_to_pipeline`` (IN_QUALIFICATION), or by
+        ``report_progress`` (the rest). A state a customer can be
+        shown and the system can never reach is a sentence nobody
+        will ever read.
+        """
+        from solvent import storefront as sf
+
+        placed = {OrderState.RECEIVED, OrderState.NEEDS_INFORMATION,
+                  OrderState.DECLINED, OrderState.IN_QUALIFICATION}
+        reachable = set(placed)
+        for froms, tos in sf.Storefront.PROGRESS.items():
+            reachable.update(tos)
+
+        self.assertEqual(reachable, set(OrderState),
+                         "a state no code path can set is a status no "
+                         "customer will ever be shown")
+
+
+# ======================================================================
 #  What the run reports about itself
 # ======================================================================
 

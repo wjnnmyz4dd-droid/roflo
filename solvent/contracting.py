@@ -42,7 +42,7 @@ from .crm import Standing
 from .engagement import Deliverable, Engagement, Proposal, Stage
 from .negotiation import Outcome
 from .storefront import OFFERS, OrderState
-from .types import Cents
+from .types import Cents, JobState
 
 #: Written into every audit record this module makes, so a reader can
 #: tell a connector's decision from an authority's.
@@ -69,12 +69,16 @@ class Refused(Enum):
     NOT_SELLABLE = "NOT_SELLABLE"
     NO_TURNAROUND = "NO_TURNAROUND"
     NO_PRICE = "NO_PRICE"
-    #: :func:`admit` only, from here down.
+    #: :func:`admit` and :func:`report_back`, from here down.
     NO_ENGAGEMENT = "NO_ENGAGEMENT"
     NOT_AUTHORISED = "NOT_AUTHORISED"
     MATERIALS_MISSING = "MATERIALS_MISSING"
     ALREADY_ADMITTED = "ALREADY_ADMITTED"
     ORDER_REFUSED = "ORDER_REFUSED"
+    #: :func:`report_back` only.
+    NOT_ADMITTED = "NOT_ADMITTED"
+    NO_JOB = "NO_JOB"
+    STILL_WORKING = "STILL_WORKING"
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +345,131 @@ def admit(solvent, *, prospect_id: str, initiator: str) -> Result:
                   order_id=order_id)
 
 
+# ------------------------------------------------------------ report back
+
+
+def job_for(solvent, order_id: str) -> str:
+    """The job the pipeline ran for this order, or ``""``.
+
+    Followed through the records rather than stored twice: the order
+    becomes an opportunity whose ``external_ref`` is the order id, and
+    ``qualification`` writes the job id onto that opportunity when it
+    admits it. A second copy of the link kept here would be a second
+    thing to drift.
+    """
+    for row in solvent.discovery.opportunities():
+        if str(row.get("external_ref") or "") == order_id:
+            return str(row.get("job_id") or "")
+    return ""
+
+
+def report_back(solvent, *, prospect_id: str, initiator: str) -> Result:
+    """Tell the engagement and the order what the pipeline did.
+
+    ``contracting`` carried the engagement *into* the pipeline and
+    nothing carried the result back out. ``Engagement.delivered`` and
+    ``Engagement.invoiced`` had no caller anywhere in the package, so
+    an engagement sat at WORK_AUTHORISED for ever: its outstanding
+    balance never became an invoice the client was asked for, the
+    money was never collected, and the Chief of Staff said
+    AWAIT_DELIVERY on every tick until somebody looked.
+
+    **It decides nothing.** The job's state is the pipeline's answer,
+    reached through the Action Gate, the verification tiers and the
+    owner's threshold. This copies it onto the two records that are
+    supposed to reflect it.
+    """
+    chief = getattr(solvent, "chief_of_staff", None)
+    if chief is None:
+        return _no(prospect_id, Refused.NO_CHIEF_OF_STAFF,
+                   "no coordination layer is configured")
+    shop = getattr(solvent, "storefront", None)
+    if shop is None:
+        return _no(prospect_id, Refused.NO_STOREFRONT,
+                   "no storefront is configured")
+
+    engagement = chief.engagements.get(prospect_id)
+    if engagement is None:
+        return _no(prospect_id, Refused.NO_ENGAGEMENT,
+                   "there is no engagement to report against")
+    service = engagement.proposal.service
+
+    order_id = f"eng-{prospect_id}"
+    order = shop.order(order_id)
+    if order is None:
+        return _no(prospect_id, Refused.NOT_ADMITTED,
+                   "no order has been placed for this engagement",
+                   service=service)
+
+    job_id = job_for(solvent, order_id)
+    if not job_id:
+        return _no(prospect_id, Refused.NO_JOB,
+                   f"order {order_id!r} has not been admitted to a job yet",
+                   service=service, order_id=order_id)
+    state = solvent.orchestrator.job(job_id).state
+
+    moved: list[str] = []
+    # The order first. A customer reading the status page is owed the
+    # truth even on a tick where the engagement does not move.
+    if state.is_delivered and state is not JobState.REVISION_REQUESTED:
+        _order_to(shop, order, OrderState.IN_PROGRESS, "work started")
+        if _order_to(shop, order, OrderState.DELIVERED,
+                     "delivered and checked against your requirements"):
+            moved.append("order DELIVERED")
+    elif state is JobState.REVISION_REQUESTED:
+        _order_to(shop, order, OrderState.IN_PROGRESS, "work started")
+        _order_to(shop, order, OrderState.DELIVERED, "delivered")
+        if _order_to(shop, order, OrderState.IN_REVISION,
+                     "your revision is being worked on"):
+            moved.append("order IN_REVISION")
+    elif not state.is_terminal:
+        if _order_to(shop, order, OrderState.IN_PROGRESS, "work started"):
+            moved.append("order IN_PROGRESS")
+
+    # Then the engagement. DELIVERED before INVOICED, because
+    # `invoiced` requires it -- an engagement cannot be billed for
+    # work it has no record of having delivered.
+    if state.is_delivered and engagement.stage is Stage.WORK_AUTHORISED:
+        engagement.delivered()
+        moved.append("engagement DELIVERED")
+    if (state is JobState.AWAITING_PAYMENT
+            and engagement.stage is Stage.DELIVERED):
+        engagement.invoiced()
+        moved.append("engagement INVOICED")
+
+    if not moved:
+        return _no(prospect_id, Refused.STILL_WORKING,
+                   f"job {job_id} is {state.value}", service=service,
+                   order_id=order_id)
+
+    solvent.audit.record(
+        event="engagement.reported", authority=ORIGIN, initiator=initiator,
+        why=f"job {job_id} is {state.value}", decision="; ".join(moved),
+        result=order_id)
+    return Result(prospect_id=prospect_id, done=True, refusal=Refused.NONE,
+                  why=f"job {job_id} is {state.value}: " + "; ".join(moved),
+                  service=service,
+                  price_cents=engagement.proposal.price_cents,
+                  order_id=order_id)
+
+
+def _order_to(shop, order, state: OrderState, why: str) -> bool:
+    """Move the order one step, or leave it. Never raise at the caller.
+
+    A customer-facing status is not worth failing a tick over, and the
+    reporter sees the same order again in ten minutes.
+    """
+    from .errors import FailClosed
+
+    if order.state is state:
+        return False
+    try:
+        shop.report_progress(order.order_id, state, why=why)
+    except FailClosed:
+        return False
+    return True
+
+
 # ------------------------------------------------------------- the sweeps
 
 
@@ -365,12 +494,30 @@ def awaiting_admission(solvent) -> list[str]:
                                Stage.DEPOSIT_RECEIVED)]
 
 
+def awaiting_a_result(solvent) -> list[str]:
+    """Engagements whose work is under way and whose record has not caught up."""
+    chief = getattr(solvent, "chief_of_staff", None)
+    if chief is None:
+        return []
+    return [pid for pid, deal in chief.engagements.items()
+            if deal.stage in (Stage.WORK_AUTHORISED, Stage.DELIVERED)]
+
+
 def carry_forward(solvent, *, limit: int = 1, initiator: str) -> list[Result]:
     """Perform the next step for each deal that has earned one.
 
-    Proposals first, then admissions, each bounded by ``limit``. Two
-    sweeps rather than one pass with a branch, so that a shop which
-    cannot admit anything today still gets its proposals out.
+    Proposals, then admissions, then reporting back, each bounded by
+    ``limit``. Separate sweeps rather than one pass with a branch, so
+    that a shop which cannot admit anything today still gets its
+    proposals out and still tells yesterday's clients where their
+    work has got to.
+
+    Reporting back is **not** bounded the same way as the other two.
+    A proposal and an admission each start something; reporting is
+    catching a record up with something that already happened, and
+    rationing it would leave a customer reading a status that is
+    merely old. Only refusals are dropped from the result, to keep
+    the tick's line readable on a busy shop.
     """
     out: list[Result] = []
     for prospect_id in awaiting_a_proposal(solvent)[:max(0, limit)]:
@@ -379,4 +526,9 @@ def carry_forward(solvent, *, limit: int = 1, initiator: str) -> list[Result]:
     for prospect_id in awaiting_admission(solvent)[:max(0, limit)]:
         out.append(admit(solvent, prospect_id=prospect_id,
                          initiator=initiator))
+    for prospect_id in awaiting_a_result(solvent):
+        told = report_back(solvent, prospect_id=prospect_id,
+                           initiator=initiator)
+        if told.done or told.refusal is not Refused.STILL_WORKING:
+            out.append(told)
     return out

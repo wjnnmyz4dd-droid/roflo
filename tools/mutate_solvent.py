@@ -2760,6 +2760,44 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- the pipeline's result comes back ----------------------------
+
+    Mutant(
+        "a-delivered-job-never-reaches-its-engagement",
+        "solvent/contracting.py",
+        "    if state.is_delivered and engagement.stage is Stage.WORK_AUTHORISED:\n"
+        "        engagement.delivered()",
+        "    if False:\n"
+        "        engagement.delivered()",
+        "tests_solvent.test_contracting.TheResultComesBack"
+        ".test_the_engagement_learns_the_work_was_delivered_and_billed",
+        "the engagement sits at WORK_AUTHORISED for ever, so the "
+        "balance is never invoiced and the client is never asked for "
+        "the rest of the money"),
+
+    Mutant(
+        "a-finished-order-still-reads-as-being-reviewed",
+        "solvent/contracting.py",
+        '        if _order_to(shop, order, OrderState.DELIVERED,\n'
+        '                     "delivered and checked against your requirements"):\n'
+        '            moved.append("order DELIVERED")',
+        '        if False:\n'
+        '            moved.append("order DELIVERED")',
+        "tests_solvent.test_contracting.TheResultComesBack"
+        ".test_the_customer_is_told_the_truth",
+        "a customer whose work is finished, verified and billed is "
+        "told 'Being reviewed. You will hear before any work begins.'"),
+
+    Mutant(
+        "an-order-status-can-be-walked-backwards",
+        "solvent/storefront.py",
+        "        if state not in allowed:",
+        "        if False:",
+        "tests_solvent.test_contracting.TheOrderStatusGoesOneWay"
+        ".test_it_will_not_go_backwards",
+        "a customer who was told their work was delivered then reads "
+        "that it is being reviewed, which makes the first message a lie"),
+
     # ---- the discovery tick tells the truth about its sources --------
 
     Mutant(
