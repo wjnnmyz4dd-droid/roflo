@@ -186,6 +186,13 @@ class Engagement:
     acceptance: Acceptance | None = None
     #: Verified payment events only. Never a client's say-so.
     payments: list[dict] = field(default_factory=list)
+    #: What the client has actually sent, keyed by the intake question
+    #: it answers. ``Proposal.client_must_supply`` names what is needed;
+    #: until this existed there was nowhere to put it when it arrived,
+    #: so an engagement could be fully paid for and still unable to say
+    #: which file the work was on. Empty is the honest starting state
+    #: and the reason :func:`solvent.contracting.admit` refuses.
+    materials: dict = field(default_factory=dict)
     history: list[dict] = field(default_factory=list)
     #: Called with this engagement after every recorded change.
     #: :meth:`_note` is the one place every transition and every
@@ -297,6 +304,30 @@ class Engagement:
             self._note("payment", f"{fmt(cents)} received ({ref})")
         return self
 
+    def supply(self, **items) -> "Engagement":
+        """Record what the client sent. Never what they promised to send.
+
+        Goes through :meth:`_note`, so it is written down as it
+        arrives like every other change; an engagement that gained its
+        source file in memory and lost it on restart would be one the
+        pipeline could admit before the crash and not after.
+
+        Blank values are refused rather than stored. A key present with
+        an empty string reads downstream as an answered question --
+        ``ServiceOffer.missing_answers`` tests the value, not the key --
+        so storing one would let an order through with nothing in it.
+        """
+        for key, value in items.items():
+            if not str(value).strip():
+                raise FailClosed(
+                    f"{key!r} was supplied empty, which is not an answer; "
+                    "an empty answer reads as a question already answered")
+        if not items:
+            return self
+        self.materials.update({k: str(v) for k, v in items.items()})
+        self._note("materials", ", ".join(sorted(items)) + " supplied")
+        return self
+
     def authorise_work(self) -> "Engagement":
         """Only ever a consequence of the gate, never a way past it."""
         if not self.work_authorised:
@@ -380,6 +411,7 @@ class Engagement:
                 "terms_digest": self.acceptance.terms_digest,
             },
             "payments": [dict(p) for p in self.payments],
+            "materials": dict(self.materials),
             "history": [dict(h) for h in self.history],
         }
 
@@ -433,4 +465,5 @@ def engagement_from_dict(doc: dict) -> Engagement:
         stage=Stage(doc["stage"]),
         acceptance=None if not accepted else Acceptance(**accepted),
         payments=[dict(p) for p in doc.get("payments", [])],
+        materials=dict(doc.get("materials", {})),
         history=[dict(h) for h in doc.get("history", [])])

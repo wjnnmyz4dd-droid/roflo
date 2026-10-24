@@ -280,19 +280,21 @@ class TheSchedulerActuallyCallsIt(Bench):
         self.addCleanup(lambda: None)
         return runtime
 
-    def test_it_is_registered_last_of_eleven(self):
-        """Eleventh since `dealmaking` joined the list; still last.
+    def test_it_is_registered_last(self):
+        """Twelfth since `contracting` joined the list; still last.
 
         Last is the property that matters and the reason it was pinned:
         the coordinator reads what the other ticks did, so it must run
         behind them. The count is pinned alongside it so that adding a
         task stays a visible change rather than a silent one -- which is
-        exactly what this assertion did when `dealmaking` arrived.
+        exactly what this assertion did when `dealmaking` arrived, and
+        again when `contracting` did.
         """
         names = [t.name for t in self.runtime().tasks]
-        self.assertEqual(len(names), 11)
+        self.assertEqual(len(names), 12)
         self.assertEqual(names[-1], "chief_of_staff")
         self.assertIn("dealmaking", names)
+        self.assertIn("contracting", names)
 
     def test_one_tick_runs_production_code_and_leaves_a_trace(self):
         """Not 'the task exists'. The task ran, and wrote what it found."""
@@ -329,8 +331,11 @@ class TheSchedulerActuallyCallsIt(Bench):
         said = [r for r in lines if r.startswith("chief_of_staff")]
         self.assertEqual(said, ["chief_of_staff: could not read the pipeline: "
                                 "the book is on fire"])
-        # Every other task still ran. A coordination failure is not an outage.
-        self.assertEqual(len(lines), 11)
+        # Every other task still ran. A coordination failure is not an
+        # outage. Counted against the runtime's own task list rather
+        # than a literal: the claim is "all of them", and a literal
+        # that falls behind the list stops making that claim quietly.
+        self.assertEqual(len(lines), len(runtime.tasks))
 
 
 # ======================================================================
@@ -1086,7 +1091,7 @@ class FailureInjection(Bench):
         boom = runtime.tasks[0]
         boom.run = lambda: (_ for _ in ()).throw(RuntimeError("no disk"))
         lines = runtime.run_due()
-        self.assertEqual(len(lines), 11)
+        self.assertEqual(len(lines), len(runtime.tasks))
         self.assertTrue(lines[0].startswith(f"{boom.name}: FAILED (1)"))
         self.assertEqual(boom.failures, 1)
 

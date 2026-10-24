@@ -623,6 +623,11 @@ DEFAULT_INTERVALS = {
     # urgent, because the tick writes a number down rather than sending
     # it, and the sending has its own cadence rules.
     "dealmaking": 600.0,
+    # Carrying an agreed deal forward: proposal, then admission once the
+    # deposit has cleared. Same cadence as dealmaking and for the same
+    # reason -- a client who has agreed a price and paid a deposit is
+    # waiting on work, and the step costs a database write.
+    "contracting": 600.0,
 }
 
 #: Used when a task is registered with no cadence anywhere. That is a
@@ -784,6 +789,7 @@ class Runtime:
         # a tick that takes work on runs behind the one that notices work
         # already stuck.
         self.add_task("dealmaking", self._tick_dealmaking)
+        self.add_task("contracting", self._tick_contracting)
         self.add_task("business", self._tick_business)
         self.add_task("chief_of_staff", self._tick_chief_of_staff)
 
@@ -1184,6 +1190,70 @@ class Runtime:
                 initiator=RUNTIME, why=refusal.why[:200],
                 decision=refusal.refusal.value, result=refusal.prospect_id)
         return (f"{len(opened)} opened, {len(refused)} refused: "
+                + "; ".join(r.summary() for r in results))
+
+    def _tick_contracting(self) -> str:
+        """Carry an agreed deal to a proposal, and a paid one to an order.
+
+        The other half of the join. ``dealmaking`` turned a qualified
+        opportunity into a price; this turns an agreed price into a
+        contract and a cleared deposit into an order. Before both
+        existed, ``Proposal(`` and ``Engagement(`` appeared nowhere in
+        ``solvent/`` outside the function that rebuilds a stored one,
+        so the Chief of Staff said PROPOSE and ADMIT_WORK into a
+        codebase where nothing performed either.
+
+        **It admits nothing itself.** ``contracting.admit`` places an
+        order with the storefront and stops. ``next_work_order`` is
+        still the only route from an order into the pipeline, and
+        Qualification, the Governor, the Action Gate and the owner's
+        threshold are all downstream of it and untouched. A second
+        route in would be a second way to get two jobs for one payment.
+
+        **It sends nothing and clears no deposit.**
+        ``Engagement.work_authorised`` is a property computed from
+        verified payment events, read here and never set.
+
+        Not gated on ``egress.simulation_only``, for dealmaking's
+        reason: the business cycle is, so with simulation off an order
+        placed here simply waits. An order waiting for a client who
+        has paid is the correct state; refusing to write it down is
+        not.
+        """
+        from .contracting import carry_forward
+        from .operation import Operator
+
+        state, why = health(self.solvent, started=self.started)
+        if not state.may_start_work:
+            return f"skipped: {state.value} ({why})"
+        if self.solvent.policy.operating_mode.blocks_new_work:
+            return "skipped: operating mode blocks new work"
+
+        allowed, why = Operator(self.solvent).permitted()
+        if not allowed:
+            return f"not run: {why}"
+
+        limit = int(self.solvent.policy.get(
+            "contracting", "max_steps_per_tick", default=1) or 1)
+
+        lease = self._take_business_lease()
+        if lease is None:
+            return "not run: another executor holds the business lease"
+        try:
+            results = carry_forward(self.solvent, limit=limit,
+                                    initiator=RUNTIME)
+        finally:
+            self._release_business_lease(lease)
+
+        if not results:
+            return "no deal is waiting on a step"
+        done = [r for r in results if r.done]
+        for refusal in (r for r in results if not r.done):
+            self.solvent.audit.record(
+                event="contracting.not_carried", authority="orchestrator",
+                initiator=RUNTIME, why=refusal.why[:200],
+                decision=refusal.refusal.value, result=refusal.prospect_id)
+        return (f"{len(done)} carried, {len(results) - len(done)} refused: "
                 + "; ".join(r.summary() for r in results))
 
     def _tick_business(self) -> str:

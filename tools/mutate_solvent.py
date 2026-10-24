@@ -2760,6 +2760,124 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- the connector: agreed price -> contract -> admitted order ---
+    # Each gate below belongs to some existing authority -- the
+    # negotiation's outcome, the owner's turnaround, the deposit, the
+    # offer's intake form, the storefront's own idempotence. These
+    # remove one at a time and insist the work stops being admitted.
+
+    Mutant(
+        "contracting-proposes-against-an-unagreed-price",
+        "solvent/contracting.py",
+        "    if deal.outcome is not Outcome.AGREED_PENDING_AUTHORISATION:",
+        "    if False:",
+        "tests_solvent.test_contracting.NoProposalWithoutAnAgreement"
+        ".test_an_open_negotiation_gets_no_proposal",
+        "a client gets a contract for a price they are still arguing "
+        "about, at whatever figure the last counteroffer happened to "
+        "leave on the table"),
+
+    Mutant(
+        "contracting-draws-a-second-contract-for-one-agreement",
+        "solvent/contracting.py",
+        "    if prospect_id in chief.engagements:\n"
+        "        existing = chief.engagements[prospect_id]",
+        "    if False:\n"
+        "        existing = chief.engagements[prospect_id]",
+        "tests_solvent.test_contracting.NoProposalWithoutAnAgreement"
+        ".test_a_second_proposal_is_refused_not_redrawn",
+        "one agreement becomes two contracts, each with its own deposit "
+        "to collect and its own price to be held to"),
+
+    Mutant(
+        "contracting-invents-a-delivery-date",
+        "solvent/contracting.py",
+        "    days = turnaround_days(solvent.policy)\n"
+        "    if days <= 0:",
+        "    days = turnaround_days(solvent.policy) or 5\n"
+        "    if False:",
+        "tests_solvent.test_contracting.NoProposalWithoutAnAgreement"
+        ".test_no_turnaround_recorded_means_no_promise_made",
+        "the client is promised a delivery date the owner never agreed "
+        "to, written into a contract as though they had"),
+
+    Mutant(
+        "contracting-sells-a-skill-that-may-not-be-delivered",
+        "solvent/contracting.py",
+        "    sellable, why = shop.sellable(offer.offer_id)\n"
+        "    if not sellable:",
+        "    sellable, why = shop.sellable(offer.offer_id)\n"
+        "    if False:",
+        "tests_solvent.test_contracting.NoProposalWithoutAnAgreement"
+        ".test_a_skill_that_may_not_be_delivered_gets_no_proposal",
+        "a deposit is taken for work the capability registry has "
+        "already said must not be delivered"),
+
+    Mutant(
+        "contracting-admits-work-before-the-deposit-clears",
+        "solvent/contracting.py",
+        "    if not engagement.work_authorised:",
+        "    if False:",
+        "tests_solvent.test_contracting.NoWorkWithoutMoneyAndMaterials"
+        ".test_an_accepted_proposal_with_no_deposit_admits_nothing",
+        "the deposit stops being a gate and becomes a milestone, which "
+        "is the one direction a service business loses money in"),
+
+    Mutant(
+        "contracting-admits-work-with-no-materials",
+        "solvent/contracting.py",
+        "    missing = offer.missing_answers(engagement.materials)\n"
+        "    if missing:",
+        "    missing = offer.missing_answers(engagement.materials)\n"
+        "    if False:",
+        "tests_solvent.test_contracting.NoWorkWithoutMoneyAndMaterials"
+        ".test_a_paid_engagement_with_no_file_admits_nothing",
+        "a job is admitted with no source file, holds a capacity slot, "
+        "and fails at execution having told the client nothing"),
+
+    Mutant(
+        "contracting-admits-one-engagement-twice",
+        "solvent/contracting.py",
+        "    if shop.order(order_id) is not None:",
+        "    if False:",
+        "tests_solvent.test_contracting.NoWorkWithoutMoneyAndMaterials"
+        ".test_admitting_twice_places_one_order",
+        "two jobs are run for one payment, which is the exact thing the "
+        "storefront's duplicate check exists to prevent"),
+
+    Mutant(
+        "contracting-authorises-work-the-storefront-declined",
+        "solvent/contracting.py",
+        "    if order.state is not OrderState.RECEIVED:",
+        "    if False:",
+        "tests_solvent.test_contracting"
+        ".NoWorkWithoutMoneyAndMaterials"
+        ".test_the_storefronts_own_refusal_is_reported_not_worked_around",
+        "the engagement believes work is under way against an order the "
+        "storefront refused, so the client is owed a delivery nobody is "
+        "making"),
+
+    Mutant(
+        "contracting-keeps-an-empty-answer-as-an-answer",
+        "solvent/engagement.py",
+        "            if not str(value).strip():",
+        "            if False:",
+        "tests_solvent.test_contracting.NoWorkWithoutMoneyAndMaterials"
+        ".test_an_empty_answer_is_not_an_answer",
+        "a blank source_file satisfies the intake form, because "
+        "missing_answers tests the value and the key is now present"),
+
+    Mutant(
+        "contracting-forgets-the-materials-on-restart",
+        "solvent/engagement.py",
+        '            "materials": dict(self.materials),\n',
+        "",
+        "tests_solvent.test_contracting.WhatSurvivesARestart"
+        ".test_every_engagement_field_survives_a_round_trip",
+        "the client's file is lost in a restart, so an engagement the "
+        "pipeline could admit before the crash cannot be admitted "
+        "after it"),
+
     Mutant(
         "dealmaking-opens-a-second-deal-with-the-same-client",
         "solvent/dealmaking.py",

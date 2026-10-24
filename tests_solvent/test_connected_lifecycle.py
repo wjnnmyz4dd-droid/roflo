@@ -15,8 +15,9 @@ difference between this file and ``test_business_lifecycle``, which
 proves the same chain with the deal constructed by a line of test
 code. Until Stage 1 there was no other way to write it.
 
-**One seam is named rather than papered over.** DeskPilot has two
-inbound channels and they meet at the client, not at a handoff:
+**The seam these tests named is now closed.** When this file was
+written, DeskPilot had two inbound channels that met at the client
+rather than at a handoff:
 
 * a storefront order is the work arriving, and the business tick
   carries it the whole way on its own -- submit, discover, qualify,
@@ -24,18 +25,22 @@ inbound channels and they meet at the client, not at a handoff:
 * a CRM prospect is a relationship, and the negotiation and
   engagement that follow it record what was agreed.
 
-Nothing in ``solvent/`` reads ``chief_of_staff.engagements`` in order
-to admit work -- ``dealmaking`` reads it only as a gate and
-``chiefofstaff`` only to advise -- so an engagement reaching
-``work_authorised`` does not cause a job to be admitted. The existing
-certification has the same seam and crosses it the same way: Phase 9's
-``TheWholeChain`` asserts ADMIT_WORK and then places the order itself.
-These tests cross it in one marked place, :meth:`the_work_arrives`, so
-that the one manual step in an otherwise unattended chain is visible
-rather than buried in a helper. It is reported as a finding, not
-repaired here: turning an agreed price into a work order needs a
-product decision about which price wins, and inventing one would be a
-second pricing authority.
+Nothing in ``solvent/`` read ``chief_of_staff.engagements`` in order
+to admit work, so an engagement reaching ``work_authorised`` caused no
+job to be admitted. These tests crossed that gap in one marked place,
+:meth:`the_work_arrives`, and :class:`TheSeamIsWhereWeSayItIs` pinned
+it so that closing it would be a visible change.
+
+It closed. :mod:`solvent.contracting` draws the proposal from the
+agreed price and, once a verified deposit clears, places an order with
+the storefront -- which is the existing admission door, not a second
+one. The price question that was the stated reason for leaving it open
+is answered the only way that adds no authority: the negotiated figure
+is the price, and the connector reprices nothing.
+
+The helper below stays, and stays marked, because these tests build
+their engagement by hand. :mod:`tests_solvent.test_contracting` is
+where the connector itself is certified end to end.
 """
 
 from __future__ import annotations
@@ -400,27 +405,36 @@ class ItRecoversMidLifecycle(Connected):
 
 
 class TheSeamIsWhereWeSayItIs(Connected):
-    """Pins the finding, so that fixing it is a visible change.
+    """The finding this class pinned has been repaired. It now pins that.
 
-    If an engagement ever does admit work on its own, this fails and
-    the module docstring above needs rewriting. That is the point: a
-    seam recorded in prose drifts, and a seam recorded as an assertion
-    cannot.
+    Kept rather than deleted. The assertion that caught the change is
+    worth more than the claim it used to make: a seam recorded in
+    prose drifts, and one recorded as an assertion cannot -- which is
+    how the docstring above came to be rewritten rather than left
+    describing a gap that had closed underneath it.
     """
 
-    def test_no_production_module_reads_engagements_to_admit_work(self):
+    def test_exactly_three_production_modules_read_the_engagement_book(self):
         import pathlib
 
         root = pathlib.Path(__file__).resolve().parent.parent / "solvent"
         readers = sorted(
             p.name for p in root.glob("*.py")
             if ".engagements" in p.read_text(encoding="utf-8"))
-        self.assertEqual(readers, ["chiefofstaff.py", "dealmaking.py"],
-                         "something new reads the engagement book; if it "
-                         "admits work, the seam this module documents is "
-                         "closed and the docstring is now wrong")
+        self.assertEqual(
+            readers, ["chiefofstaff.py", "contracting.py", "dealmaking.py"],
+            "chiefofstaff advises, dealmaking gates, contracting admits; a "
+            "fourth reader is a second contracting authority unless this "
+            "list is updated deliberately")
 
-    def test_an_authorised_engagement_alone_admits_no_job(self):
+    def test_an_authorised_engagement_is_admitted_once_the_client_sends_it(self):
+        """The repair, from this file's own fixture rather than a new one.
+
+        The engagement here is built by hand, which is why it has no
+        materials: the client has paid but sent nothing. So the first
+        sweep must admit nothing, and the second -- after the file
+        arrives -- must admit, from the same scheduler passes.
+        """
         pid = self.arrive()
         self.deals(self.runtime())
         deal = self.s.chief_of_staff.negotiations[pid]
@@ -429,13 +443,22 @@ class TheSeamIsWhereWeSayItIs(Connected):
         self.assertTrue(engagement.work_authorised)
 
         runtime = self.runtime()
-        for _ in range(3):
-            runtime.run_due()
-            self._now += 601
-        self.assertEqual(self.s.orchestrator.jobs(), [],
-                         "an authorised engagement admitted a job by itself; "
-                         "that would be the seam closing, which is good news "
-                         "and makes this test wrong")
+        runtime.run_due()
+        self._now += 601
+        self.assertIsNone(self.s.storefront.order(f"eng-{pid}"),
+                          "a paid client who has sent no file has sent no "
+                          "work; admitting it would be a job with no input")
+
+        engagement.supply(
+            **dict(self.s.storefront.order("ord-csv-cleanup").answers))
+        runtime.run_due()
+        self._now += 601
+
+        self.assertIsNotNone(self.s.storefront.order(f"eng-{pid}"),
+                             "the deposit cleared and the file arrived, and "
+                             "nothing admitted the work")
+        self.assertTrue(self.s.orchestrator.jobs(),
+                        "the order was placed and no job followed it")
 
 
 if __name__ == "__main__":       # pragma: no cover

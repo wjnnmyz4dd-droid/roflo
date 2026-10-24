@@ -466,7 +466,7 @@ class DependencyFailure(Connected):
         runtime = self.runtime()
         self.s.chief_of_staff = Exploding()
         lines = runtime.run_due()
-        self.assertEqual(len(lines), 11,
+        self.assertEqual(len(lines), len(runtime.tasks),
                          "a failed component took other tasks down with it")
         said = [r for r in lines if r.startswith("chief_of_staff")]
         self.assertIn("could not read the pipeline", said[0])
@@ -476,7 +476,7 @@ class DependencyFailure(Connected):
         task = [t for t in runtime.tasks if t.name == "dealmaking"][0]
         task.run = lambda: (_ for _ in ()).throw(RuntimeError("no disk"))
         lines = runtime.run_due()
-        self.assertEqual(len(lines), 11)
+        self.assertEqual(len(lines), len(runtime.tasks))
         self.assertTrue(any("dealmaking: FAILED" in line for line in lines))
         self.assertEqual(task.failures, 1)
 
