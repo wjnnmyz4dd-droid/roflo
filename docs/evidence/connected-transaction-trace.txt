@@ -1,4 +1,4 @@
-...............uuuuuuuuuuuuuuDISCOVERY              Northstar Business Solutions 001 -> opportunity opp_2bf8b140908d41bf
+...............uuuuuuuuuuuuuuDISCOVERY              Northstar Business Solutions 001 -> opportunity opp_355280a054df4448
 QUALIFICATION          capability cleared, capacity has room, floor 21800c
 NEGOTIATION            opened at 29067c by the scheduler
 AGREEMENT              the client accepted 29067c
@@ -12,9 +12,9 @@ DELIVERY               deliverable.attempt1.csv
 INVOICE                29067c less 5814c deposit = 23253c due
 INVOICE DOC            names the issuer and shows the deduction
 PAYMENT                23253c verified by the rail, filed as SIMULATED:stripe:payment_intent.succeeded:pi_evt_northstar
-RECONCILIATION         job_b3403d3ad0e04a5a closed; the Ledger verified payment; released 1 slot(s) held by job_b3403d3ad0e04a5a, which is COMPLETE
+RECONCILIATION         job_18d3a186281a41c4 closed; the Ledger verified payment; released 1 slot(s) held by job_18d3a186281a41c4, which is COMPLETE
 CUSTOMER               Complete.
 CAPACITY               every slot back, room for the next job
 BOOKS                  5814c deposit + 23253c balance = 29067c agreed; real revenue 0c
 .
-16 passed, 14 subtests passed in 6.14s
+16 passed, 14 subtests passed in 4.47s

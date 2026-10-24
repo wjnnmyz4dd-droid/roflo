@@ -1,0 +1,111 @@
+--- 30 business days, clients pay ---
+ day    owed_s  resv slots   engs orders    recv_c  inv  states
+   0         0     0     0      0      1     34000    1  {'AWAITING_PAYMENT': 1}
+   1         0     0     0      0      2     86000    2  {'AWAITING_PAYMENT': 2}
+   2         0     0     0      0      2     86000    2  {'AWAITING_PAYMENT': 2}
+   3         0     0     0      0      3    161000    3  {'AWAITING_PAYMENT': 3}
+   4         0     0     0      0      4    217500    4  {'AWAITING_PAYMENT': 4}
+   5         0     0     0      0      4    217500    4  {'AWAITING_PAYMENT': 4}
+   6         0     0     0      0      4    217500    4  {'AWAITING_PAYMENT': 4}
+   7         0     0     0      0      5    228500    5  {'AWAITING_PAYMENT': 5}
+   8         0     0     0      0      6    299500    6  {'AWAITING_PAYMENT': 6}
+   9         0     0     0      0      7    370000    7  {'AWAITING_PAYMENT': 7}
+  10         0     0     0      0      7    370000    7  {'AWAITING_PAYMENT': 7}
+  11         0     0     0      1      7    370000    7  {'AWAITING_PAYMENT': 7}
+  12         0     0     0      1      7    370000    7  {'AWAITING_PAYMENT': 7}
+  13         0     0     0      1      7    370000    7  {'AWAITING_PAYMENT': 7}
+  14         0     0     0      2      7    370000    7  {'AWAITING_PAYMENT': 7}
+  15         0     0     0      3     10    407832    9  {'AWAITING_PAYMENT': 9}
+  16         0     0     0      3     11    436832   10  {'AWAITING_PAYMENT': 10}
+  17         0     0     0      3     12    490832   11  {'AWAITING_PAYMENT': 11}
+  18         0     0     0      3     12    437692   12  {'AWAITING_PAYMENT': 11, 'COMPLETE': 1}
+  19         0     0     0      3     12    437692   12  {'AWAITING_PAYMENT': 11, 'COMPLETE': 1}
+  20         0     0     0      3     12    437692   12  {'AWAITING_PAYMENT': 11, 'COMPLETE': 1}
+  21         0     0     0      4     13    484192   14  {'AWAITING_PAYMENT': 12, 'COMPLETE': 2}
+  22         0     0     0      4     13    484192   14  {'AWAITING_PAYMENT': 12, 'COMPLETE': 2}
+  23         0     0     0      5     13    531832   15  {'AWAITING_PAYMENT': 12, 'COMPLETE': 3}
+  24         0     0     0      5     16    651332   18  {'AWAITING_PAYMENT': 15, 'COMPLETE': 3}
+  25         0     0     0      5     17    660832   19  {'AWAITING_PAYMENT': 15, 'COMPLETE': 4}
+  26         0     0     0      5     17    660832   19  {'AWAITING_PAYMENT': 15, 'COMPLETE': 4}
+  27         0     0     0      5     17    660832   19  {'AWAITING_PAYMENT': 15, 'COMPLETE': 4}
+  28         0     0     0      6     17    713832   20  {'AWAITING_PAYMENT': 15, 'COMPLETE': 5}
+  29         0     0     0      6     18    735332   23  {'AWAITING_PAYMENT': 16, 'COMPLETE': 7}
+
+  owed_seconds             0
+  reservations             0
+  holding_a_slot           0
+  engagements              6
+  orders_open              18
+  receivables_cents        735332
+  invoices                 23
+  exposure_cents           130391
+  real_revenue_cents       0
+  states                   {'AWAITING_PAYMENT': 16, 'COMPLETE': 7}
+  room_for_the_next_job    yes -- 0s owed, 3600s requested, 72000s allowed
+  unbacked_acts            0
+
+--- 30 business days, nobody ever pays ---
+ day    owed_s  resv slots   engs orders    recv_c  inv  states
+   0         0     0     0      0      1     34000    1  {'AWAITING_PAYMENT': 1}
+   1         0     0     0      0      2     86000    2  {'AWAITING_PAYMENT': 2}
+   2         0     0     0      0      2     86000    2  {'AWAITING_PAYMENT': 2}
+   3         0     0     0      0      3    161000    3  {'AWAITING_PAYMENT': 3}
+   4         0     0     0      0      4    217500    4  {'AWAITING_PAYMENT': 4}
+   5         0     0     0      0      4    217500    4  {'AWAITING_PAYMENT': 4}
+   6         0     0     0      0      4    217500    4  {'AWAITING_PAYMENT': 4}
+   7         0     0     0      0      5    228500    5  {'AWAITING_PAYMENT': 5}
+   8         0     0     0      0      6    299500    6  {'AWAITING_PAYMENT': 6}
+   9         0     0     0      0      7    370000    7  {'AWAITING_PAYMENT': 7}
+  10         0     0     0      0      7    370000    7  {'AWAITING_PAYMENT': 7}
+  11         0     0     0      1      7    370000    7  {'AWAITING_PAYMENT': 7}
+  12         0     0     0      1      7    370000    7  {'AWAITING_PAYMENT': 7}
+  13         0     0     0      1      7    370000    7  {'AWAITING_PAYMENT': 7}
+  14         0     0     0      2      7    370000    7  {'AWAITING_PAYMENT': 7}
+  15         0     0     0      3     10    407832    9  {'AWAITING_PAYMENT': 9}
+  16         0     0     0      3     11    436832   10  {'AWAITING_PAYMENT': 10}
+  17         0     0     0      3     12    490832   11  {'AWAITING_PAYMENT': 11}
+  18         0     0     0      3     13    512692   12  {'AWAITING_PAYMENT': 12}
+  19         0     0     0      3     13    512692   12  {'AWAITING_PAYMENT': 12}
+  20         0     0     0      3     13    512692   12  {'AWAITING_PAYMENT': 12}
+  21         0     0     0      4     14    559192   13  {'AWAITING_PAYMENT': 13}
+  22         0     0     0      4     14    559192   13  {'AWAITING_PAYMENT': 13}
+  23         0     0     0      5     15    628692   14  {'AWAITING_PAYMENT': 14}
+  24         0     0     0      5     17    673192   16  {'AWAITING_PAYMENT': 16}
+  25         0     0     0      5     18    673192   16  {'AWAITING_PAYMENT': 16}
+  26         0     0     0      5     18    673192   16  {'AWAITING_PAYMENT': 16}
+  27         0     0     0      5     18    673192   16  {'AWAITING_PAYMENT': 16}
+  28         0     0     0      6     19    741192   17  {'AWAITING_PAYMENT': 17}
+  29         0     0     0      6     20    818192   18  {'AWAITING_PAYMENT': 18}
+
+  owed_seconds             0
+  reservations             0
+  holding_a_slot           0
+  engagements              6
+  orders_open              20
+  receivables_cents        818192
+  invoices                 18
+  exposure_cents           146260
+  real_revenue_cents       0
+  states                   {'AWAITING_PAYMENT': 18}
+  room_for_the_next_job    yes -- 0s owed, 3600s requested, 72000s allowed
+  unbacked_acts            0
+
+======================================================================
+A. EXECUTION CAPACITY
+   paying      owed 0s, 0 reservation(s); next job: yes -- 0s owed, 3600s requested, 72000s allowed
+   nobody pays owed 0s, 0 reservation(s); next job: yes -- 0s owed, 3600s requested, 72000s allowed
+B. ACCEPTED COMMITMENTS
+   paying      6 engagement(s), 18 order(s) open
+   nobody pays 6 engagement(s), 20 order(s) open
+C. OUTSTANDING RECEIVABLES
+   paying      735332c over 23 invoice(s)
+   nobody pays 818192c over 18 invoice(s)
+D. FINANCIAL EXPOSURE / REVENUE
+   paying      exposure 130391, real revenue 0c
+   nobody pays exposure 146260, real revenue 0c
+
+The claim being tested: a shop nobody pays still has its execution
+capacity back, because capacity is released by delivery and not by
+settlement, while the receivable stays outstanding and uncollected.
+
+SEIZED PERMANENTLY ON NON-PAYMENT: no
