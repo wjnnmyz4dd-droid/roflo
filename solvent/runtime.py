@@ -1312,15 +1312,23 @@ class Runtime:
             initiator=RUNTIME,
             why=f"bounded business run: {summary['why']}",
             decision=summary["stopped"],
-            result=f"{summary['completed']} of {summary['attempted']} "
-                   f"completed, {fmt(summary['committed_cents'])} committed")
+            # "delivered", not "completed". The loop's own measure of a
+            # good job is delivered-and-billed; `completed` means the
+            # money also arrived, which happens on the client's
+            # schedule and not this run's. Reporting `completed` here
+            # told an owner nothing was being done on every run where
+            # the shop behaved correctly. Both are carried, so neither
+            # question has to be guessed at from the other.
+            result=f"{summary['delivered']} of {summary['attempted']} "
+                   f"delivered ({summary['completed']} settled), "
+                   f"{fmt(summary['committed_cents'])} invoiced")
         self._business = {**summary, "finished_at": self._clock()}
         # Only when it genuinely did nothing. A run that did three jobs
         # and then found the queue empty also stops with NOTHING_TO_DO,
         # and reporting that as "no eligible opportunity" hid the three.
         if report.stopped is StopReason.NOTHING_TO_DO and not summary["attempted"]:
             return "no eligible opportunity"
-        return (f"{summary['completed']}/{summary['attempted']} completed; "
+        return (f"{summary['delivered']}/{summary['attempted']} delivered; "
                 f"stopped: {summary['stopped']}")
 
     def _one_business_job(self):

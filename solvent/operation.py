@@ -111,7 +111,31 @@ class RunReport:
 
     @property
     def completed(self) -> int:
+        """Cycles that went all the way through *payment*.
+
+        Kept with its original meaning, which several evidence tools
+        rely on. It is deliberately **not** this loop's measure of a
+        good job: see :func:`productive`, and read :attr:`delivered`
+        alongside it. An unattended loop does not fabricate payments,
+        so on a shop that bills its customers honestly this is zero
+        on every run and says nothing about the work done.
+        """
         return sum(1 for c in self.cycles if getattr(c, "completed", False))
+
+    @property
+    def delivered(self) -> int:
+        """Cycles that did everything this loop can do: delivered and billed.
+
+        The count the loop itself already used, through
+        :func:`productive`, and the one that was missing from the
+        report. ``summary()`` published ``completed`` alone, so a run
+        that delivered a job, invoiced 27,409c for it and counted it
+        productive -- adding that figure to ``committed_cents`` --
+        was reported by the runtime as ``0/1 completed``. A ninety-day
+        run read off that line shows no deliveries against a ledger
+        full of revenue.
+        """
+        return sum(1 for c in self.cycles if productive(c))
 
     @property
     def elapsed(self) -> float:
@@ -120,7 +144,11 @@ class RunReport:
     def summary(self) -> dict:
         return {
             "attempted": len(self.cycles),
+            "delivered": self.delivered,
             "completed": self.completed,
+            # Quoted, not collected. This is the sum of `invoiced_cents`
+            # over the productive cycles, which is what DeskPilot asked
+            # to be paid; the Ledger is the only record of what arrived.
             "committed_cents": self.committed_cents,
             "stopped": self.stopped.value if self.stopped else "",
             "why": self.why,

@@ -2760,6 +2760,29 @@ MUTANTS: tuple[Mutant, ...] = (
         "a client who asked for changes loses the slot the revision needs, "
         "so re-opened work competes for capacity it already held"),
 
+    # ---- the run says what it did -----------------------------------
+
+    Mutant(
+        "a-run-reports-settlement-as-if-it-were-delivery",
+        "solvent/operation.py",
+        '            "delivered": self.delivered,',
+        '            "delivered": self.completed,',
+        "tests_solvent.test_contracting.TheRunSaysWhatItDid"
+        ".test_a_delivered_job_is_reported_as_delivered",
+        "every run of a shop that bills its customers honestly reports "
+        "zero jobs done, because the money arrives on the client's "
+        "schedule and not the run's"),
+
+    Mutant(
+        "a-run-counts-a-job-that-stopped-before-it-billed",
+        "solvent/operation.py",
+        "        return sum(1 for c in self.cycles if productive(c))",
+        "        return len(self.cycles)",
+        "tests_solvent.test_contracting.TheRunSaysWhatItDid"
+        ".test_a_job_that_never_billed_is_not_counted_as_delivered",
+        "a job that stopped at the budget stage is counted as delivered, "
+        "so a run that did nothing but refuse work reports a full day"),
+
     # ---- the connector: agreed price -> contract -> admitted order ---
     # Each gate below belongs to some existing authority -- the
     # negotiation's outcome, the owner's turnaround, the deposit, the

@@ -589,5 +589,87 @@ class WhichTermsTheClientGets(unittest.TestCase):
         self.assertIn("not this connector's choice", why)
 
 
+# ======================================================================
+#  What the run reports about itself
+# ======================================================================
+
+
+class TheRunSaysWhatItDid(Contracted):
+    """Measured on a real run, not on a constructed report.
+
+    A delivered and invoiced job is everything this loop can do: the
+    money arrives on the client's schedule and the reconciliation task
+    records it. ``RunReport.completed`` counts cycles that went
+    through payment, so on a shop that bills its customers honestly it
+    is zero on every run -- and it was the only count the summary
+    published. The runtime therefore reported ``0/1 completed`` for a
+    job it had delivered, invoiced and counted productive.
+    """
+
+    def a_delivered_job(self):
+        pid, _ = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        runtime = self.runtime()
+        runtime.run_due()
+        return runtime
+
+    def test_a_delivered_job_is_reported_as_delivered(self):
+        runtime = self.a_delivered_job()
+        run = runtime._business
+
+        self.assertEqual(run["attempted"], 1)
+        self.assertEqual(run["delivered"], 1,
+                         "the job was delivered and invoiced, and the run "
+                         "reported that it had done nothing")
+        self.assertGreater(run["committed_cents"], 0)
+
+    def test_settlement_is_still_reported_and_still_separate(self):
+        """Not conflated in the other direction either.
+
+        The money has not arrived -- no payment was simulated -- so
+        ``completed`` is zero, and it must stay zero. A loop that
+        marked its own jobs settled to make the figure look better is
+        the defect this count was protecting against.
+        """
+        run = self.a_delivered_job()._business
+
+        self.assertEqual(run["completed"], 0)
+        self.assertEqual(self.s.ledger.real_revenue_cents(), 0)
+
+    def test_a_job_that_never_billed_is_not_counted_as_delivered(self):
+        """The control, and the reason `delivered` is not `attempted`.
+
+        A run that refused every job it looked at must not report a
+        full day's work. The Governor is made to refuse by raising the
+        owner's margin floor out of reach, so the refusal is a real
+        authority's and not a stub's.
+        """
+        pid, _ = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        self.s.policy.amend({"financial": {"margin_floor": 0.999}},
+                            OWNER, "the owner will not work for this")
+
+        runtime = self.runtime()
+        runtime.run_due()
+        run = runtime._business
+
+        self.assertEqual(run["attempted"], 1, "no job was attempted, so this "
+                                              "test proves nothing")
+        self.assertEqual(run["delivered"], 0)
+        self.assertEqual(run["committed_cents"], 0)
+
+    def test_the_audit_line_says_invoiced_not_collected(self):
+        runtime = self.a_delivered_job()
+
+        rows = [r for r in self.s.audit.events()
+                if r.get("event") == "runtime.business_ran"]
+
+        self.assertTrue(rows)
+        said = rows[-1]["result"]
+        self.assertIn("1 of 1 delivered", said)
+        self.assertIn("invoiced", said)
+        self.assertNotIn("collected", said)
+
+
 if __name__ == "__main__":
     unittest.main()

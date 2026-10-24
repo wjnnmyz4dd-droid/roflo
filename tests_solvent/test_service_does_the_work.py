@@ -239,9 +239,16 @@ class TheTickActuallyRuns(unittest.TestCase):
         self.runtime._one_business_job = one_job
 
     def test_the_tick_runs_without_raising_and_does_work(self):
+        """"delivered", not "completed".
+
+        The substitute job here is delivered and invoiced and never
+        paid, which is what a correct unattended run produces: the
+        loop does not fabricate payments. The line used to read
+        "0/2 completed" for two finished jobs.
+        """
         line = self.runtime._tick_business()
         self.assertTrue(self.ran, "the tick did no job")
-        self.assertIn("completed", line)
+        self.assertIn(f"{len(self.ran)}/{len(self.ran)} delivered", line)
 
     def test_it_records_what_it_did_in_the_audit_log(self):
         self.runtime._tick_business()
