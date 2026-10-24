@@ -532,11 +532,29 @@ nobody, it refuses anybody the policy does not recognise as the owner,
 and the standing it sets makes the prospect eligible for `dealmaking`,
 which records a price and sends nothing.
 
-**Full suite on the final tree, and the full mutation sweep over all
-287 mutants: running at the time this paragraph was committed.** Both
-results, and any finding either produces, are added in the commit that
-follows this one. The numbers above are the ones that had completed;
-nothing here is reported as passing that was not observed passing.
+**Full suite on the final tree**, after the Windows fix:
+
+```
+5834 passed, 62 skipped, 11263 subtests passed in 677.04s (0:11:17)
+```
+
+**Mutation sweep, all 287 mutants** (`tools/mutate_solvent.py`, full
+output in `docs/evidence/mutation-sweep.txt`):
+
+```
+287/287 killed  (0 survived, 0 not applied or harness)
+```
+
+The zero in the second column is the one that matters. `NOT_APPLIED`
+means the mutant's anchor text has moved on and nothing was tested —
+counting those as kills is how a mutation report becomes a decoration,
+and `tests_solvent/test_mutant_anchors.py` exists to make a stale
+anchor fail the suite rather than inflate this number.
+
+Six mutants are new in this work: three over the part-payment guards
+(one per layer, because a single mutant was covered by the other
+guard and survived), and three over `workdir_name`. One of those three
+was retargeted rather than kept: see §12.
 
 ---
 
