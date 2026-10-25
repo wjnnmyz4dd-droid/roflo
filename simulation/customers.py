@@ -236,26 +236,47 @@ class Population:
         """
         return random.Random(":".join([self.seed, *(str(p) for p in parts)]))
 
-    def build(self, working_days: Sequence[int]) -> list[Customer]:
+    def build(self, working_days: Sequence[int], *,
+              rate_for_day=None, budget_scale: float = 1.0) -> list[Customer]:
         """Decide who arrives when. Call once, before the run starts.
 
         ``working_days`` is the day indices clients are willing to
         turn up on -- the calendar's, not DeskPilot's, which works
         every day.
+
+        ``rate_for_day`` lets a market say how busy each day is:
+        given the day index and the base rate it returns the rate
+        that actually applies, so a demand spike is a spike in
+        arrivals rather than a number in a report. It is injected
+        rather than imported, because a population that knew about
+        markets would be two models in one file.
+
+        ``budget_scale`` multiplies every budget, which is how a
+        price-sensitive or a high-value market is expressed. The
+        draws are unchanged: the same client is the same person with
+        more or less money, so two configurations stay comparable.
         """
+        if budget_scale <= 0:
+            raise ValueError("a market where nobody can pay anything is not "
+                             "a market, and would make every run identical")
         self.customers = []
         index = 0
         for day in working_days:
             rng = self.stream("arrivals", day)
-            whole = int(self.arrivals_per_day)
-            extra = 1 if rng.random() < (self.arrivals_per_day - whole) else 0
+            rate = (self.arrivals_per_day if rate_for_day is None
+                    else float(rate_for_day(day, self.arrivals_per_day)))
+            whole = int(rate)
+            extra = 1 if rng.random() < (rate - whole) else 0
             for _ in range(whole + extra):
                 index += 1
                 door = ("order" if self.stream("door", index).random()
                         < self.order_fraction else "relationship")
-                self.customers.append(
-                    a_customer(self.stream("who", index), index=index,
-                               arrives_on=day, door=door))
+                customer = a_customer(self.stream("who", index),
+                                      index=index, arrives_on=day, door=door)
+                if budget_scale != 1.0:
+                    customer.budget_cents = max(
+                        1, int(round(customer.budget_cents * budget_scale)))
+                self.customers.append(customer)
         return self.customers
 
     def by_id(self) -> dict:

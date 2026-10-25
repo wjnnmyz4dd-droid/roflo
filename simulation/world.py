@@ -92,6 +92,12 @@ class World:
     #: than hidden, so a report can state the figure instead of a
     #: reader having to take the docstring on trust.
     unbacked_acts: int = 0
+    #: What else the client could buy, and how busy the week is.
+    #: Optional: a run without one is a run in which the only reason
+    #: to refuse a price is the client's own budget, which is how
+    #: every run before this one worked and why they could not tell
+    #: "too dear for them" from "too dear".
+    market: object = None
     #: The day a client first saw something, keyed by
     #: ``(customer_id, what)``. Kept here rather than read off the
     #: engagement's own history, because that history is stamped with
@@ -290,6 +296,19 @@ class World:
                 out.append(self._did(
                     customer, day.index, "walk away",
                     f"floor {deal.floor}c is above their {customer.budget_cents}c"))
+                continue
+            if (self.market is not None
+                    and self.market.would_switch(asking,
+                                                 customer.budget_cents)):
+                # Somebody else quoted them less. Not a budget
+                # refusal: they can afford this and are going
+                # elsewhere anyway, which is the only way a run can
+                # tell an expensive shop from a poor client.
+                rival = self.market.competitor_quote(customer.budget_cents)
+                customer.quiet_since = day.index
+                out.append(self._did(
+                    customer, day.index, "take the other quote",
+                    f"{asking}c against a rival's {rival}c"))
                 continue
             if asking <= customer.budget_cents:
                 deal.respond(asking, why="the client accepted the price")

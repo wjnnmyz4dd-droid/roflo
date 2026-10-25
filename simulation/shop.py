@@ -87,6 +87,19 @@ POLICY = {
         "acquisition_cents_per_job": 3_000,
         "supervision_cents_per_job": 2_500,
         "risk_allowance_cents_per_job": 500,
+        # The one cost line the owner's model did not carry, added
+        # here because a ninety-day profit-and-loss has to pay for
+        # the software whether or not anything sold that day. $7 a
+        # day, which is a handful of small subscriptions; fictional,
+        # like the rest of this owner, and labelled as an assumption
+        # wherever a report uses it. `simulation.books` reads it from
+        # here rather than holding a number of its own, so there is
+        # still exactly one place the owner's costs are written down.
+        #
+        # Hosting is deliberately *not* here: the VPS is already
+        # charged by the CPU-hour above and the Ledger books it per
+        # job, so a flat server fee would pay for one machine twice.
+        "subscription_cents_per_day": 700,
     },
     "contracting": {"turnaround_days": 3},
     # How much work the owner is willing to owe at once. Without
