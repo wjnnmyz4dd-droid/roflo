@@ -561,25 +561,98 @@ the write-in-flight grace period, one per edge. One of the
 
 ## 12. Windows results
 
-Windows CI is `.github/workflows/windows-preinstall.yml`: four jobs,
-Python 3.11 and 3.13, install and full suite on each. It was in scope
+Windows CI is `.github/workflows/windows-preinstall.yml`: four jobs —
+install and full suite, on Python 3.11 and 3.13. It was in scope
 because this work added a thirteenth scheduled task (`payments`) and a
-table to the store.
+table to the store. Three runs, and each one found something the Linux
+suite could not.
 
-**It found a real defect, and the defect was already there.** Run 51,
-on the baseline `ed6dad3` and before any of this work, failed both
-Suite jobs with thirteen tests that pass on Linux — every one of them
-`NotADirectoryError: [WinError 267] The directory name is invalid:
-'...\work\eng-client:csv-cleanup'`. That is D8 in §1, and it is the
-one defect in this report that no amount of running tests on Linux
-would have surfaced. Both Install jobs passed, on both versions.
+| Run | Head | Result |
+| --- | --- | --- |
+| 51 | `ed6dad3`, the baseline | Installs pass. **Both suites fail**, 13 tests, all `NotADirectoryError [WinError 267]`. |
+| 53 | `82b8239` | The 13 are gone. **5 fail**, all one subtest of mine. |
+| 54 | `73ab87f` | Installs and 3.13 pass. **1 fails** of 5831 on 3.11, in a file that passes alone. |
+| 55 | `81aae19` | **All four jobs pass.** |
 
-The fix is `82b8239`. **Run 53, on that commit, was still in progress
-when this paragraph was committed**; its conclusion is reported in the
-commit that follows this one, with the per-job detail. The fix is
-already pinned on Linux by seven tests and three mutants, but a fix
-for a Windows defect is not proven by a Linux run and is not claimed
-as proven here.
+**Run 51 — the defect only Windows could find.** D8 in §1. An
+engagement-backed order is `eng-client:northstar`; the colon is NTFS's
+alternate-data-stream separator; `os.makedirs` refused it and the job
+never ran. The four `TheRunSaysWhatItDid` failures reporting `0 of 0
+delivered` and a `KeyError` were the same defect read from the other
+end. This was present on the baseline and is not something the repair
+introduced — but it sits squarely in the connector this assignment is
+about, so it is repaired here.
+
+**Run 53 — my own test was the parochial one.** The remaining five
+were one subtest, `test_a_name_cannot_climb_out_of_the_work_root`,
+which joined a name onto `/work` and asserted the result began with
+`/work` and a separator. On Windows that join comes back with
+backslashes and no leading slash, so it failed on a path that was
+perfectly well contained. The production code was right. Both sides go
+through `abspath` now, and the platform-independent half of the
+property — the name is one path component, no separator in it at all —
+is asserted separately, because that is what `workdir_name` actually
+guarantees.
+
+**Run 54 — a pre-existing fail-open, shaken loose by a long run.** One
+failure in 5831, in `test_web_control_centre.py`, which *passed when
+run on its own*. That shape is a timing bug, not a flake to re-run,
+so it was read rather than re-run. `harness._still_being_written`
+decided whether an intent file was a write in flight with:
+
+```python
+return 0 <= age < PARTIAL_GRACE_S
+```
+
+`age` is `time.time()` minus the file's mtime, and those are not the
+same clock. When the filesystem stamp lands a hair *ahead* of the
+reader's, the age is negative, `0 <= age` is false, and the youngest
+possible file reads as old enough to refuse — the grace period failing
+open on the one input it exists to protect, so the owner's
+half-written ask is refused and swept into `refused/`. On Windows the
+two clocks disagree by a tick often enough that a 50-minute run hits
+it; on Linux it had never been seen.
+
+The lower bound is now `-PARTIAL_GRACE_S`, and the upper bound is
+kept, because perpetually young is its own failure: an unparseable
+file stamped next week would never be refused and would sit in the
+spool unexplained, which is what the mechanism is for. Two tests, one
+per edge, and a mutant for each.
+
+This one is **not** in the connector under repair and is not counted
+among the eight defects in §1. It is reported because it was found
+here, it was the only thing between Windows CI and green, and a known
+fail-open in the owner's own input channel is not something to leave
+for rediscovery.
+
+**Run 55, on `81aae19` — all four jobs pass.** The suite job's
+completeness gate is four conditions, not one: pytest exited zero,
+`junit.xml` exists, its summary accounts for the whole suite (it
+fails below 5,000 tests), and it records no failure and no error. That
+gate passed on both 3.11 and 3.13. The Windows-only steps after it
+passed too, on both:
+
+```
+the business scheduler ticks on Windows
+  tasks: [heartbeat, health, reconciliation, discovery, diagnostics,
+          owner_intents, payments, owner_briefing, supervision,
+          dealmaking, contracting, business, chief_of_staff]
+five-skill smoke test            46 passed, 149 subtests
+the production path, end to end  44 passed
+the whole business lifecycle     119 passed, 1 skipped, 102 subtests
+state paths resolve to a drive   DEFAULT_DB, HEARTBEAT_PATH,
+                                 PAYMENT_SPOOL, INTENT_SPOOL all C:
+```
+
+The thirteenth task is in that list, which is the scheduling change
+this work made, running on Windows.
+
+**What Windows does not cover.** `tests_solvent/test_crash_recovery.py`
+skips there, as it does in any single-process run: the egress guard is
+irreversible, so once the first test opens a database no child can be
+spawned. The crash evidence in §10 is from Linux, in one interpreter
+per case. The skip is loud and names the command to run instead; it is
+not silent.
 
 ---
 
@@ -626,29 +699,40 @@ nothing on DeskPilot's behalf — `unbacked_acts` is `0` and asserted. But
 the clients, the calendar and the payment provider in it are fiction,
 and no figure from a run is a business forecast.
 
+**One defect reported here is not in the connector.** The
+write-in-flight grace period failing open on a negative age (§12,
+run 54) is in the owner-intent spool, not in anything this assignment
+names. It is fixed and counted in the test and mutant totals, and it
+is deliberately *not* one of the eight defects in §1.
+
 **The 90-day business simulation of the preceding assignment is still
 outstanding.** `simulation/audit.py` — the independent grader — and the
 30/60/90-day runs were not reached in this session. Nothing here
 conflicts with them; the components they need are the ones repaired
-above.
+above. The 30-day capacity run in §8 is not that simulation: it
+measures four counters and grades nothing.
 
 ---
 
 ## 14. Exact commit hash
 
-The repair is two commits on
-`claude/solvent-architecture-audit-8ot9et`:
+The repair is 7 commits on
+`claude/solvent-architecture-audit-8ot9et`, oldest first:
 
-| Commit | What it carries |
+| Commit | Subject |
 | --- | --- |
-| `05d4c845fc63037213abb5be15febd3af13f357e` | Connect an accepted contract to the work, and the money to the books — D1 to D7, the connectors, the tests, the evidence. |
-| `82b823910652ac1558af56f9ef17d55bd117f078` | Stop naming a work directory after something a filesystem may refuse — D8, found by Windows CI. |
+| `05d4c84` | Connect an accepted contract to the work, and the money to the books |
+| `82b8239` | Stop naming a work directory after something a filesystem may refuse |
+| `9a5bbe0` | Write up the connector repair, with three results still running |
+| `b1f1937` | Record the full suite and the mutation sweep on the final tree |
+| `73ab87f` | Assert the work-directory boundary in a way Windows can agree with |
+| `81aae19` | Stop the write-in-flight grace failing open when the clock runs ahead |
+| `e5bd612` | Refresh the sweep: 289 of 289, after the grace-period mutants |
 
-Baseline for both: `ed6dad3`, itself eleven commits after the
-`2bb8210` the assignment quotes.
-
-This report is committed after them, so its own hash is the commit
-that adds this file.
+Baseline for all of them: `ed6dad3`, itself eleven commits after
+the `2bb8210` the assignment quotes. This report is committed
+after them, so its own hash is the commit that adds these final
+sections.
 
 ---
 
@@ -706,10 +790,74 @@ execution in this session.
 
 ## Mandatory final verdict
 
-**Withheld until the two runs named in §11 and §12 finish.** Six of
-the seven items have their execution evidence already and the seventh
-— the Windows half of CRASH RECOVERY — does not. The standing rule is
-*do not declare PASS without execution evidence*, so no verdict is
-recorded in this commit; it is recorded in the one that follows, when
-the full suite, the mutation sweep and Windows run 53 have all
-reported.
+Each line names the run behind it. Nothing is PASS on the strength of
+code having been written.
+
+**ENGAGEMENT → JOB ADMISSION: PASS**
+`test_connected_transaction` step 7: the order appears because
+`runtime.run_due()` ran the `contracting` tick, and the test reads the
+storefront afterwards rather than placing anything. Step 15 walks this
+file's own parse tree and fails if it contains `place`,
+`submit_to_pipeline`, `set_status` or seven other arranging calls.
+Also green on Windows (run 55, both versions), where this is the chain
+that could not run at all three runs ago.
+
+**CONTRACT PRICE AUTHORITY: PASS**
+29,067c set once by the negotiation engine and asserted unchanged at
+the proposal, the order, the cycle and the invoice, with `5814 + 23253
+= 29067` at the end. iFixAi, given the same trajectory with the
+authorized price as a trace budget, returns CLEAR — and returns BLOCK
+on `billed-gross` and `second-price`, so the clean verdict is worth
+something.
+
+**SIMULATED INVOICING: PASS**
+The invoice document the client would read names Northstar Business
+Solutions LLC, states the deposit as a deduction and asks for 232.53.
+Issued through `may_contract_for("INVOICE")` with the fictional party
+recorded by `PolicyStore.record_contracting_structure`; `PAYMENT_RAIL`
+stays blocked for want of a tax reference that was deliberately not
+supplied.
+
+**SIMULATED PAYMENT RECONCILIATION: PASS**
+A signed webhook into the spool, the production `payments` task, the
+production rail's signature check, the production Ledger's reading of
+it: `SIMULATED:stripe:payment_intent.succeeded:pi_evt_northstar`, and
+`real_revenue_cents() == 0` asserted. 18 money pathologies cover
+prompt, late, partial, absent, refunded, disputed, duplicated and
+interrupted payment. A part payment no longer closes a job, in the
+authority and in the sweep, with a test and a mutant per layer.
+
+**CAPACITY RECOVERY: PASS**
+Thirty simulated business days, twice: clients pay, and nobody ever
+pays. Both end `0s owed, 0 reservations, room for the next job: yes`.
+They differ in receivables (735,332c against 818,192c) and exposure
+(130,391c against 146,260c) and not in capacity, which is the
+separation the assignment asks for. Nothing written off. The slot
+genuinely being held mid-flight is in the crash traces, where an
+interrupted job is caught at `owed 3600.0`.
+
+**CRASH RECOVERY: PASS, on Linux**
+Eight injection points, one process each, killed with `SIGKILL` inside
+the production call stack; 10/10 cases pass and eight before-and-after
+traces are in `docs/evidence/crash-recovery-traces.txt`. The scope is
+stated rather than glossed: this does not run on Windows, because the
+egress guard is irreversible and a single-process suite cannot spawn
+the children. The skip is loud and names the command.
+
+**COMPLETE CONNECTED TRANSACTION: PASS**
+One fictional client, discovery to capacity recovery, 16 ordered tests
+and the trace in `docs/evidence/connected-transaction-trace.txt`. No
+intermediate state inserted, no shortcut around a missing connection —
+where one was missing it was built — and no arithmetic model standing
+in for a component. The only simulated things are the client and the
+payment provider.
+
+### Supporting runs
+
+| | Result |
+| --- | --- |
+| Full suite, Linux | 5837 passed, 62 skipped, 11268 subtests |
+| Mutation, all mutants | 289/289 killed, 0 survived, 0 stale |
+| Windows CI run 55 | 4/4 jobs pass, 3.11 and 3.13 |
+| iFixAi 4.2.0 | CLEAR; 7 of 7 injected controls caught |
+| K-LEAN | not run, and no verdict claimed (§13) |
