@@ -228,5 +228,87 @@ class AndThenTheyGetAPrice(Intake):
         self.assertEqual(engagement.proposal.price_cents, deal.current_cents)
 
 
+
+class OneClientCannotBlockTheQueue(Intake):
+    """Found by a twelve-day simulated run, not by reading the code.
+
+    ``dealmaking.open_ready`` stopped after ``limit`` *candidates
+    tried* rather than ``limit`` opened, and ``candidates`` is
+    deterministically ordered. A prospect whose budget sat under the
+    owner's floor was therefore refused on every tick for ever, and
+    nobody behind them was ever reached: measured at 1,584 identical
+    refusals across eleven simulated days, with the shop's whole
+    relationship channel producing nothing.
+
+    Written here rather than in ``test_dealmaking`` because this is
+    the door the blocked clients came through, and because the
+    storefront fixture gives every order the same ``client_ref`` --
+    two orders there are one prospect, and a queue of one cannot
+    show a queue defect.
+    """
+
+    #: Under the floor the owner's recorded costs imply, and over the
+    #: storefront's published minimum, which is the gap the blocked
+    #: client lived in.
+    TOO_LITTLE = 5_000
+    PLENTY = 70_000
+
+    def two_clients(self):
+        """One the shop cannot serve, one it can."""
+        self.assertTrue(self.enquiry(prospect_id="client:too-cheap",
+                                     company="Too Cheap Ltd",
+                                     budget_cents=self.TOO_LITTLE).done)
+        self.assertTrue(self.enquiry(prospect_id="client:can-pay",
+                                     company="Can Pay Ltd",
+                                     budget_cents=self.PLENTY).done)
+
+    def test_both_clients_are_candidates(self):
+        """The control: a queue of one proves nothing about queues."""
+        self.two_clients()
+
+        found = {c.prospect_id for c in dealmaking.candidates(self.s)}
+
+        self.assertEqual(found, {"client:too-cheap", "client:can-pay"})
+
+    def test_the_cheap_one_really_is_refused(self):
+        """The other control: if it were affordable there is no queue."""
+        self.two_clients()
+
+        tried = dealmaking.open_ready(self.s, limit=2, initiator="test")
+        cheap = [o for o in tried if o.prospect_id == "client:too-cheap"]
+
+        self.assertTrue(cheap)
+        self.assertFalse(cheap[0].opened, cheap[0].summary())
+
+    def test_a_refusal_does_not_spend_the_ticks_budget(self):
+        self.two_clients()
+
+        tried = dealmaking.open_ready(self.s, limit=1, initiator="test")
+
+        self.assertEqual(len(tried), 2,
+                         "the sweep stopped at the refused client: "
+                         + "; ".join(o.summary() for o in tried))
+        opened = [o for o in tried if o.opened]
+        self.assertEqual([o.prospect_id for o in opened], ["client:can-pay"])
+
+    def test_the_bound_it_was_protecting_still_holds(self):
+        """At most `limit` negotiations are actually opened."""
+        for nth in range(3):
+            self.assertTrue(self.enquiry(
+                prospect_id=f"client:payer-{nth}",
+                company=f"Payer {nth} Ltd", budget_cents=self.PLENTY).done)
+
+        tried = dealmaking.open_ready(self.s, limit=1, initiator="test")
+
+        self.assertEqual(len([o for o in tried if o.opened]), 1)
+
+    def test_a_limit_of_zero_opens_nothing(self):
+        self.two_clients()
+
+        tried = dealmaking.open_ready(self.s, limit=0, initiator="test")
+
+        self.assertEqual([o for o in tried if o.opened], [])
+
+
 if __name__ == "__main__":
     unittest.main()

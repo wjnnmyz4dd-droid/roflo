@@ -1646,8 +1646,20 @@ def _run_business_cycle(
     # What the job actually cost to run, recorded against the job so the
     # Ledger -- not this function -- remains the authority on money spent.
     rates = quoting.rates_from_policy(s.policy)
+    # The checker's run is a cost the owner records and prices into
+    # every quote -- `verification_cents_per_job` is one of the lines
+    # the negotiation floor is built from -- and it was never booked
+    # against the job. `operating_cost` has taken the argument since
+    # it was written; nothing passed it, so it defaulted to zero.
+    # Every completed job's recorded cost was understated by the
+    # owner's own verification rate, and `actual_profit` overstated
+    # by the same amount. Found while reconciling a thirty-day run,
+    # where the only direct cost the Ledger held for ten delivered
+    # jobs was the payment processor's fee.
+    verification = int(s.policy.get("commercial", "verification_cents_per_job",
+                                    default=0) or 0)
     cost = quoting.operating_cost(measurement, price_cents=cycle.invoiced_cents,
-                                  rates=rates)
+                                  rates=rates, verification_cents=verification)
     for line in cost.as_cost_lines():
         s.ledger.record_cost(
             job_id=cycle.job_id, category=line.category,

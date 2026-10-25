@@ -467,10 +467,28 @@ def open_ready(solvent, *, limit: int = 1,
     that only moves when work is actually reserved -- so forty would all
     pass the same check. One per tick is the conservative default; the
     caller raises it deliberately.
+
+    **The limit counts deals opened, not clients looked at, and that
+    is a repair.** It counted the list length, so a candidate who is
+    refused consumed the budget for the tick -- and ``candidates`` is
+    deterministically ordered, so the *same* client was refused on
+    every tick for ever and nobody behind them was ever reached.
+    Measured in a twelve-day simulated run: one prospect whose budget
+    sat 143c under the owner's floor was refused 1,584 times while
+    two affordable clients waited behind them, and the shop's entire
+    relationship channel produced nothing at all.
+
+    A refusal is not a commitment, so it does not spend the bound.
+    The bound still does its job: at most ``limit`` negotiations are
+    actually opened per tick, which is the thing it was protecting.
+    The repeated refusals do not flood the audit log either --
+    ``Runtime._tick_dealmaking`` records each prospect-and-reason
+    once.
     """
     out: list[Opening] = []
+    ceiling = max(0, int(limit))
     for candidate in candidates(solvent):
-        if len(out) >= max(0, int(limit)):
+        if sum(1 for opening in out if opening.opened) >= ceiling:
             break
         out.append(open_negotiation(
             solvent, prospect_id=candidate.prospect_id,

@@ -3370,6 +3370,27 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_a_stamp_far_in_the_future_is_still_refused",
         "a file stamped next week is perpetually a write in flight, so an "
         "unparseable one sits in the spool and is never explained"),
+    Mutant(
+        "a-refused-client-spends-the-ticks-budget",
+        "solvent/dealmaking.py",
+        "        if sum(1 for opening in out if opening.opened) >= ceiling:",
+        "        if len(out) >= ceiling:",
+        "tests_solvent.test_clientintake.OneClientCannotBlockTheQueue"
+        ".test_a_refusal_does_not_spend_the_ticks_budget",
+        "one prospect below the owner's floor sits at the head of a "
+        "deterministically ordered queue and blocks every affordable "
+        "client behind them for the life of the shop"),
+    Mutant(
+        "the-checkers-run-is-booked-at-nothing",
+        "solvent/harness.py",
+        "                                  rates=rates, "
+        "verification_cents=verification)",
+        "                                  rates=rates)",
+        "tests_solvent.test_contracting.TheCheckerIsPaidFor"
+        ".test_the_ledger_books_it_against_the_job",
+        "every quote charges the client for the independent check and "
+        "the Ledger records having spent nothing on it, so every job's "
+        "cost is understated and its profit overstated"),
 )
 
 

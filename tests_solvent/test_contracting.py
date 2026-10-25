@@ -1105,5 +1105,53 @@ class TheRunSaysWhatItDid(Contracted):
         self.assertNotIn("collected", said)
 
 
+
+class TheCheckerIsPaidFor(TheConnectorExistsAtAll):
+    """Found by reconciling a thirty-day run, not by reading the code.
+
+    ``verification_cents_per_job`` is one of the lines the owner's
+    negotiation floor is built from, so every quote charges the
+    client for the independent check. ``operating_cost`` has taken a
+    ``verification_cents`` argument since it was written and nothing
+    passed it, so the Ledger booked the check at nothing. Ten
+    delivered jobs, and the only direct cost on the books was the
+    payment processor's fee.
+    """
+
+    def verification_rate(self) -> int:
+        return int(self.s.policy.get("commercial",
+                                     "verification_cents_per_job", default=0))
+
+    def test_the_owner_charges_for_a_check(self):
+        """The control: with no rate there is nothing to book."""
+        self.assertGreater(self.verification_rate(), 0)
+
+    def test_the_ledger_books_it_against_the_job(self):
+        from solvent.types import CostCategory
+
+        pid, _ = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        self.runtime().run_due()
+
+        booked = [
+            int(r["amount_cents"]) for r in
+            self.s.store.for_authority("ledger").query(
+                "SELECT category, amount_cents FROM ledger_entries "
+                "WHERE direction = 'COST' AND category = ?",
+                (CostCategory.VERIFICATION.value,))]
+
+        self.assertTrue(booked, "the checker's run was booked at nothing")
+        self.assertEqual(booked[0], self.verification_rate())
+
+    def test_the_jobs_recorded_cost_includes_it(self):
+        pid, _ = self.ready()
+        contracting.admit(self.s, prospect_id=pid, initiator="test")
+        self.runtime().run_due()
+        job = next(j for j in self.s.orchestrator.jobs())
+
+        self.assertGreaterEqual(self.s.ledger.costs_for(job.id),
+                                self.verification_rate())
+
+
 if __name__ == "__main__":
     unittest.main()
