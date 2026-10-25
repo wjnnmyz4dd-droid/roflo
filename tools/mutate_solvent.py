@@ -3352,6 +3352,24 @@ MUTANTS: tuple[Mutant, ...] = (
         ".test_the_name_does_not_begin_with_a_dot_or_a_dash",
         "an order id beginning with a dot or a dash names a hidden "
         "directory, or one a command-line tool reads as an option"),
+    Mutant(
+        "the-write-in-flight-grace-fails-open-on-a-future-stamp",
+        "solvent/harness.py",
+        "    return -PARTIAL_GRACE_S < age < PARTIAL_GRACE_S",
+        "    return 0 <= age < PARTIAL_GRACE_S",
+        "tests_solvent.test_web_control_centre.TheRuntimeSideOfTheBoundary"
+        ".test_a_clock_a_tick_ahead_of_the_filesystem_does_not_refuse",
+        "a file stamped a tick ahead of the reader's clock reads as old, "
+        "so the owner's half-written ask is refused and swept away"),
+    Mutant(
+        "the-write-in-flight-grace-has-no-upper-bound",
+        "solvent/harness.py",
+        "    return -PARTIAL_GRACE_S < age < PARTIAL_GRACE_S",
+        "    return age < PARTIAL_GRACE_S",
+        "tests_solvent.test_web_control_centre.TheRuntimeSideOfTheBoundary"
+        ".test_a_stamp_far_in_the_future_is_still_refused",
+        "a file stamped next week is perpetually a write in flight, so an "
+        "unparseable one sits in the spool and is never explained"),
 )
 
 

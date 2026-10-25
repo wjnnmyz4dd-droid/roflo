@@ -937,6 +937,48 @@ class TheRuntimeSideOfTheBoundary(unittest.TestCase):
         self.assertEqual([r["outcome"] for r in results], ["REFUSED"])
         self.assertTrue(list((self.spool / "refused").glob("*.intent")))
 
+    def test_a_clock_a_tick_ahead_of_the_filesystem_does_not_refuse(self):
+        """The grace period must not fail open on a negative age.
+
+        ``time.time()`` and a filesystem's timestamps are different
+        clocks. When the file's stamp lands a hair ahead of the
+        reader's clock the age comes out negative, and the first
+        version of this guard read that as "old enough to refuse" --
+        so the owner's half-written ask was refused and swept away on
+        the sweep that first saw it. Windows CI hit it once in a
+        50-minute run; the file passed when run alone.
+        """
+        import os
+        import time
+
+        path = self.spool / "written-just-now.intent"
+        path.write_text('{"verb": "ha', encoding="utf-8")
+        ahead = time.time() + 0.5
+        os.utime(path, (ahead, ahead))
+
+        self.assertEqual(self.consume(), [],
+                         "a file stamped a tick ahead was treated as stale")
+        self.assertTrue(path.exists(), "it was swept out of the spool")
+
+    def test_a_stamp_far_in_the_future_is_still_refused(self):
+        """The other side: perpetually young is its own failure.
+
+        An unparseable file nobody will ever refuse sits in the spool
+        unexplained, which is the thing the grace period exists to
+        avoid. A stamp minutes ahead is not a write in flight.
+        """
+        import os
+        import time
+
+        from solvent.harness import PARTIAL_GRACE_S
+
+        path = self.spool / "stamped-next-week.intent"
+        path.write_text("{oops", encoding="utf-8")
+        ahead = time.time() + PARTIAL_GRACE_S + 60
+        os.utime(path, (ahead, ahead))
+
+        self.assertEqual([r["outcome"] for r in self.consume()], ["REFUSED"])
+
     def test_a_refusal_names_the_verb_on_the_audit_record(self):
         """An investigator needs to know what was declined, not only that
         something was."""

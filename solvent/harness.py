@@ -1827,6 +1827,22 @@ def _still_being_written(path: Path) -> bool:
     Decided from the file's own modification time rather than from a marker,
     because the only process that could write a marker is the one whose write
     may not have finished.
+
+    **A negative age is the youngest a file can be, not the oldest.** This
+    read ``0 <= age`` and so treated a file stamped a hair in the future as
+    old enough to refuse -- which is the grace period failing open, on the
+    one input it exists to protect. ``time.time()`` and a filesystem's
+    timestamps are not the same clock, and on Windows they disagree by a
+    tick often enough that a 50-minute suite run hits it: the owner's
+    half-written ask was refused on the sweep that first saw it and swept
+    into ``refused/``. Found by Windows CI, failing once in a whole run and
+    passing when the file ran alone.
+
+    The bound at the other end is kept, and widened to the same grace: a
+    file stamped minutes into the future is not a write in flight, and
+    treating one as perpetually young would leave an unparseable file
+    sitting in the spool unexplained, which is what this whole mechanism is
+    meant to prevent.
     """
     import time
 
@@ -1835,7 +1851,7 @@ def _still_being_written(path: Path) -> bool:
     except OSError:
         # Gone between the glob and the stat. Nothing to refuse.
         return True
-    return 0 <= age < PARTIAL_GRACE_S
+    return -PARTIAL_GRACE_S < age < PARTIAL_GRACE_S
 
 
 def _already_announced(s: "Solvent", intent_id: str) -> bool:
