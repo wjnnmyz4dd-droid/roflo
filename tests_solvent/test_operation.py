@@ -8,6 +8,7 @@ stop has a recorded reason.
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 
@@ -247,18 +248,39 @@ class TheWorkDirectoryNameIsSafeAnywhere(unittest.TestCase):
             with self.subTest(character=repr(bad)):
                 self.assertNotIn(bad, workdir_name(f"ord-a{bad}b"))
 
-    def test_a_name_cannot_climb_out_of_the_work_root(self):
-        """An order id can carry a client's own reference."""
-        import os.path
+    #: Order ids that are a path rather than a name. A client's own
+    #: reference travels into the order id, so each of these is a
+    #: directory somebody outside this machine could have chosen.
+    CLIMBING = ("../../etc", "..", "/etc/passwd", "C:\\Windows",
+                "....//....//x")
 
+    def test_the_name_is_one_path_component(self):
+        """The property that holds on every platform: no separator."""
         from solvent.workorder import workdir_name
 
-        for attempt in ("../../etc", "..", "/etc/passwd", "C:\\Windows",
-                        "....//....//x"):
+        for attempt in self.CLIMBING:
             with self.subTest(attempt):
-                joined = os.path.normpath(
-                    os.path.join("/work", workdir_name(attempt)))
-                self.assertTrue(joined.startswith("/work" + os.sep), joined)
+                name = workdir_name(attempt)
+                for separator in ("/", "\\", os.sep, os.altsep or "/"):
+                    self.assertNotIn(separator, name, name)
+
+    def test_a_name_cannot_climb_out_of_the_work_root(self):
+        """And the same thing said again, as a path this time.
+
+        Written with ``abspath`` on both sides rather than a literal
+        prefix: the first version compared a joined path against
+        ``"/work"`` and failed on Windows, where the same join comes
+        back with backslashes and no leading slash. The code was right
+        and the test was parochial.
+        """
+        from solvent.workorder import workdir_name
+
+        root = os.path.abspath(os.sep + "work")
+        for attempt in self.CLIMBING:
+            with self.subTest(attempt):
+                joined = os.path.abspath(
+                    os.path.join(root, workdir_name(attempt)))
+                self.assertTrue(joined.startswith(root + os.sep), joined)
 
     def test_the_name_does_not_begin_with_a_dot_or_a_dash(self):
         """A leading dot hides the directory; a leading dash reads as a flag.
