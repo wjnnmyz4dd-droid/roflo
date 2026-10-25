@@ -1,4 +1,4 @@
-isolated: patching a copy of the working tree at /tmp/deskpilot-mutation-sxto4b1f
+isolated: patching a copy of the working tree at /tmp/deskpilot-mutation-_e77_8z2
 KILLED       capacity-admission-ignores-the-budget
 KILLED       capacity-a-bid-reserves-nothing
 KILLED       capacity-concurrency-limit-ignored
@@ -286,5 +286,7 @@ KILLED       negotiation-drops-cost-lines-when-it-is-stored
 KILLED       workdir-name-keeps-the-order-id-raw
 KILLED       workdir-name-drops-the-digest
 KILLED       workdir-name-does-not-strip-the-edges
+KILLED       the-write-in-flight-grace-fails-open-on-a-future-stamp
+KILLED       the-write-in-flight-grace-has-no-upper-bound
 
-287/287 killed  (0 survived, 0 not applied or harness)
+289/289 killed  (0 survived, 0 not applied or harness)

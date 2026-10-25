@@ -535,14 +535,14 @@ which records a price and sends nothing.
 **Full suite on the final tree**, after the Windows fix:
 
 ```
-5834 passed, 62 skipped, 11263 subtests passed in 677.04s (0:11:17)
+5837 passed, 62 skipped, 11268 subtests passed in 627.75s (0:10:27)
 ```
 
-**Mutation sweep, all 287 mutants** (`tools/mutate_solvent.py`, full
+**Mutation sweep, all 289 mutants** (`tools/mutate_solvent.py`, full
 output in `docs/evidence/mutation-sweep.txt`):
 
 ```
-287/287 killed  (0 survived, 0 not applied or harness)
+289/289 killed  (0 survived, 0 not applied or harness)
 ```
 
 The zero in the second column is the one that matters. `NOT_APPLIED`
@@ -551,10 +551,11 @@ counting those as kills is how a mutation report becomes a decoration,
 and `tests_solvent/test_mutant_anchors.py` exists to make a stale
 anchor fail the suite rather than inflate this number.
 
-Six mutants are new in this work: three over the part-payment guards
-(one per layer, because a single mutant was covered by the other
-guard and survived), and three over `workdir_name`. One of those three
-was retargeted rather than kept: see §12.
+Eight mutants are new in this work: three over the part-payment
+guards (one per layer, because a single mutant was covered by the
+other guard and survived), three over `workdir_name`, and two over
+the write-in-flight grace period, one per edge. One of the
+`workdir_name` three was retargeted rather than kept: see §12.
 
 ---
 
