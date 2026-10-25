@@ -54,15 +54,25 @@ RUN_SEPARATELY = "python3 -I -m pytest tests_solvent/test_crash_recovery.py"
 #: Where the child is told to die. One per link of the chain the
 #: assignment names.
 POINTS = (
+    "customer-discovery",
+    "negotiation",
     "contract-acceptance",
     "job-admission",
     "capacity-reservation",
     "execution",
     "quality-verification",
+    "delivery",
     "invoice-creation",
     "payment-receipt",
     "settlement-reconciliation",
+    "customer-complaint",
+    "contract-renewal",
 )
+
+#: The assignment names twelve places to break. These are thirteen,
+#: because "queue scheduling" and the capacity reservation are the
+#: same write -- a job joins a skill's queue by reserving its slot --
+#: and both a complaint and a renewal are worth their own kill.
 
 
 class Crashing(unittest.TestCase):

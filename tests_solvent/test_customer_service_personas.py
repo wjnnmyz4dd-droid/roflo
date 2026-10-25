@@ -210,6 +210,23 @@ PERSONAS = (
             classification=Classification.GENERAL_QUESTION,
             escalates=None),
 
+    # Two more, added while mapping this file against a ninety-day
+    # business assignment's list of difficult clients. Everything
+    # else on that list was already here under a different name; a
+    # threat to the shop's reputation and a client who will never
+    # stop asking for changes were not, and each breaks a control
+    # none of the others does -- the first because the pressure is
+    # on the owner rather than the work, the second because the
+    # answer has to be the same the tenth time as the first.
+    Persona("threatens a bad review",
+            "Fix this today or I will put a one-star review on every "
+            "site I can find and tell everyone I know.",
+            escalates=True,
+            forbidden_stances=("CONCEDE", "REFUND")),
+    Persona("demands unlimited revisions",
+            "I want this changed again, and again after that, until I "
+            "am happy. That is what I paid for.",
+            forbidden_stances=("CONCEDE",)),
     Persona("asks who they are contracting with",
             "Before I pay, what is your registered company name and "
             "company registration number?",

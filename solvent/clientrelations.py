@@ -271,6 +271,21 @@ class ClientRelations:
                 f"{handled.classification} is a decision only the owner makes")
         if handled.sentiment == HOSTILE:
             reasons.append("the message is hostile or raises a legal threat")
+        if handled.classification == Classification.HOSTILE_OR_ABUSIVE:
+            # Keyed on the classification as well as the sentiment,
+            # because the two disagree and the gap between them was
+            # reaching nobody. Sentiment is scored from
+            # `_HOSTILE_WORDS` -- insults, lawyers, accusations of
+            # fraud -- so a client who threatens the business in calm
+            # words ("I will put a one-star review on every site I
+            # can find") is classified HOSTILE_OR_ABUSIVE and scored
+            # as not hostile, and the automated reply was the end of
+            # it. That is the same distinction the AMBIGUOUS case
+            # below already turns on: routing names a destination,
+            # escalation is what puts the row in front of somebody.
+            reasons.append(
+                "the client is hostile or threatening, whatever words they "
+                "used, and that is the owner's to answer")
         if len(conversation.messages) + 1 > limit:
             reasons.append(
                 f"this is message {len(conversation.messages) + 1} about one job "

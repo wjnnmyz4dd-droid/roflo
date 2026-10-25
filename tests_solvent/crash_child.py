@@ -117,7 +117,28 @@ def main(argv: list) -> int:
     offer_id = "csv-cleanup"
 
     # ---- the injections, each inside a production call -------------
-    if stop_at == "capacity-reservation":
+    if stop_at == "customer-discovery":
+        # The first write there is: a prospect exists, and nothing
+        # else about them does.
+        kill_inside(type(solvent.crm), "discover", stop_at, box)
+    elif stop_at == "negotiation":
+        # Between the Governor's floor and the deal being written to
+        # the book.
+        kill_inside(dealmaking, "open_negotiation", stop_at, box)
+    elif stop_at == "delivery":
+        # `record_delivery` is the durable write that says the client
+        # has it: the Action Gate has already authorised the send, so
+        # the kill lands with the file gone and DeskPilot's own books
+        # not yet saying so. Deliberately not `_deliver_now`, which
+        # this job never reaches -- that call sits inside the
+        # independent-review branch, and csv-cleanup is
+        # T1_DETERMINISTIC, where the capability's own certified
+        # verifier is the whole requirement.
+        kill_inside(orchestrator_module.JobOrchestrator, "record_delivery",
+                    stop_at, box)
+    elif stop_at == "customer-complaint":
+        kill_inside(type(solvent.relations), "handle", stop_at, box)
+    elif stop_at == "capacity-reservation":
         from solvent import capacity as capacity_module
         kill_inside(capacity_module.Capacity, "reserve",
                     stop_at, box)
@@ -212,6 +233,32 @@ def main(argv: list) -> int:
     runtime.run_due()
     reconcile(solvent, initiator="crash")
     settlement.settle_paid_jobs(solvent, initiator="crash")
+
+    if stop_at == "customer-complaint":
+        # A client who has had their work and does not like it. The
+        # complaint goes through the production intake, which is
+        # where it is classified and investigated; the kill lands
+        # inside that, with the complaint received and nothing
+        # decided about it.
+        done = [j for j in solvent.orchestrator.jobs()
+                if j.state.value in ("COMPLETE", "AWAITING_PAYMENT")]
+        if done:
+            solvent.relations.handle(
+                job_id=done[0].id, source="ops@northstar-client.invalid",
+                body="This is not what we asked for. Please look again.")
+
+    if stop_at == "contract-renewal":
+        # A settled client coming back for more. The renewal is a
+        # second order from somebody who already has a finished job
+        # and a paid invoice behind them, so the kill lands with one
+        # complete history on the books and one half-written.
+        contracting.tell_the_customer(solvent, order_id=f"eng-{pid}")
+        kill_inside(type(solvent.storefront), "place", stop_at, box)
+        solvent.storefront.place(
+            order_id=f"ord-{pid}-renewal", offer_id=offer_id,
+            client_ref=pid, answers=_materials(solvent, box),
+            offered_cents=60_000)
+
     print("DONE", [j.state.value for j in solvent.orchestrator.jobs()])
     return 0
 

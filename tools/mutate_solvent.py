@@ -3391,6 +3391,17 @@ MUTANTS: tuple[Mutant, ...] = (
         "every quote charges the client for the independent check and "
         "the Ledger records having spent nothing on it, so every job's "
         "cost is understated and its profit overstated"),
+    Mutant(
+        "a-politely-worded-threat-reaches-nobody",
+        "solvent/clientrelations.py",
+        "        if handled.classification == Classification"
+        ".HOSTILE_OR_ABUSIVE:",
+        "        if False:",
+        "tests_solvent.test_customer_service_personas.EveryPersonaIsHandled"
+        ".test_the_personas_that_must_reach_a_person_do",
+        "a client threatening the business in calm words is classified "
+        "hostile, scored as not hostile, answered by an automated reply, "
+        "and the owner never hears about it"),
 )
 
 
